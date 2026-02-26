@@ -110,6 +110,7 @@ export default function CxpApp({ user, onLogout }) {
   const [modalSup, setModalSup] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null); // {id, cur}
   const [importMsg, setImportMsg] = useState("");
+  const [importDupes, setImportDupes] = useState([]);
   const [projFrom, setProjFrom] = useState("");
   const [projTo, setProjTo] = useState("");
   const [projDetail, setProjDetail] = useState(null);
@@ -342,11 +343,17 @@ export default function CxpApp({ user, onLogout }) {
   };
 
   const saveSupplier = async (data) => {
-    const saved = await upsertSupplier(data);
-    setSuppliers(prev => {
-      const exists = prev.find(s=>s.id===data.id || s.id===saved.id);
-      return exists ? prev.map(s=>(s.id===data.id||s.id===saved.id)?saved:s) : [...prev, saved];
-    });
+    const isNew = !data.id;
+    if(isNew) {
+      // Create: remove id so Supabase generates a UUID
+      const { id, ...rest } = data;
+      const saved = await upsertSupplier({ ...rest, id: 'new' });
+      setSuppliers(prev => [...prev, saved]);
+    } else {
+      // Update existing
+      const saved = await upsertSupplier(data);
+      setSuppliers(prev => prev.map(s => s.id === data.id ? saved : s));
+    }
     setModalSup(null);
   };
 
@@ -374,7 +381,6 @@ export default function CxpApp({ user, onLogout }) {
           for(const k of keys){
             const idx=headers.findIndex(h => {
               if(!h.includes(k)) return false;
-              // Exclude matches: e.g. when looking for "TOTAL", skip "SUBTOTAL"
               for(const ex of exclude){ if(h.includes(ex)) return false; }
               return true;
             });
@@ -382,25 +388,49 @@ export default function CxpApp({ user, onLogout }) {
           }
           return "";
         };
+
+        // Build lookup of existing invoices for duplicate detection
+        const existingKeys = new Set();
+        [...invoices.MXN,...invoices.USD,...invoices.EUR].forEach(inv => {
+          if(inv.uuid && inv.uuid.length > 8) existingKeys.add("uuid:" + inv.uuid.trim().toLowerCase());
+          const sfp = (inv.serie||"") + (inv.folio||"") + ":" + (inv.proveedor||"");
+          if(sfp.length > 2) existingKeys.add("sfp:" + sfp.trim().toLowerCase());
+        });
+
         let added=0; let newSuppliers=0;
         const ni={MXN:[],USD:[],EUR:[]};
-        const newSups = []; // suppliers to auto-register
+        const duplicated = [];
+        const newSups = [];
 
         dataRows.forEach(row => {
           const fecha=parseExcelDate(get(row,["FECHA"]));
           const proveedor=String(get(row,["PROVEEDOR","RAZON SOCIAL","NOMBRE","EMISOR"])||"").trim();
           const subtotal=cleanNum(get(row,["SUBTOTAL"]));
           const iva=cleanNum(get(row,["IVA"],["RETIVA","RET IVA","RET. IVA"]));
-          // PRIORITY: Use TOTAL from Excel first — exclude SUBTOTAL column from matching
           const rawTotal=cleanNum(get(row,["TOTAL"],["SUBTOTAL","SUB TOTAL","SUB-TOTAL"]));
           const total = rawTotal > 0 ? rawTotal : (subtotal + (iva || subtotal*0.16));
           const ivaFinal = iva > 0 ? iva : +(subtotal*0.16).toFixed(2);
+          const serie = String(get(row,["SERIE"])||"");
+          const folio = String(get(row,["FOLIO"])||"");
+          const rawUuid = String(get(row,["UUID"])||"");
 
-          // Find or auto-register supplier
+          // Check for duplicates by UUID or serie+folio+proveedor
+          const uuidKey = rawUuid.length > 8 ? "uuid:" + rawUuid.trim().toLowerCase() : "";
+          const sfpKey = "sfp:" + (serie + folio + ":" + proveedor).trim().toLowerCase();
+          const isDupe = (uuidKey && existingKeys.has(uuidKey)) || (sfpKey.length > 6 && existingKeys.has(sfpKey));
+
+          if(isDupe) {
+            duplicated.push({ serie, folio, proveedor, total, fecha });
+            return;
+          }
+
+          // Mark to avoid intra-file duplicates
+          if(uuidKey) existingKeys.add(uuidKey);
+          if(sfpKey.length > 6) existingKeys.add(sfpKey);
+
           let sup = suppliers.find(s=>s.nombre.toUpperCase()===proveedor.toUpperCase());
           if(!sup) sup = newSups.find(s=>s.nombre.toUpperCase()===proveedor.toUpperCase());
           if(!sup && proveedor) {
-            // Auto-register new supplier with minimal data
             const newSup = {
               id:uid(), nombre:proveedor, rfc:"", moneda:"MXN", diasCredito:30,
               contacto:"", telefono:"", email:"", banco:"", clabe:"",
@@ -415,8 +445,7 @@ export default function CxpApp({ user, onLogout }) {
           const diasCredito=sup?.diasCredito||30;
           const inv = {
             id:uid(), tipo:String(get(row,["TIPO"])||"Factura"), fecha,
-            serie:String(get(row,["SERIE"])||""), folio:String(get(row,["FOLIO"])||""),
-            uuid:String(get(row,["UUID"])||uid()), proveedor:proveedor||"SIN PROVEEDOR",
+            serie, folio, uuid:rawUuid||uid(), proveedor:proveedor||"SIN PROVEEDOR",
             clasificacion:sup?.clasificacion||"Otros",
             subtotal, iva:ivaFinal, retIsr:0, retIva:0, total, montoPagado:0, concepto:"",
             diasCredito, vencimiento:addDays(fecha,diasCredito), estatus:"Pendiente",
@@ -425,20 +454,25 @@ export default function CxpApp({ user, onLogout }) {
           if(ni[moneda]){ni[moneda].push(inv);added++;}
         });
 
-        // Register new suppliers (local + DB)
         if(newSups.length>0) {
           setSuppliers(prev=>[...prev,...newSups]);
           upsertManySuppliers(newSups);
         }
 
-        // Save imported invoices (local + DB)
-        const allNew = [...ni.MXN,...ni.USD,...ni.EUR];
-        setInvoices(prev=>({MXN:[...prev.MXN,...ni.MXN],USD:[...prev.USD,...ni.USD],EUR:[...prev.EUR,...ni.EUR]}));
-        upsertManyInvoices(allNew);
-        let msg = `✅ Se importaron ${added} facturas correctamente.`;
-        if(newSuppliers>0) msg += ` Se registraron ${newSuppliers} proveedor${newSuppliers!==1?"es":""} nuevo${newSuppliers!==1?"s":""}  (completa sus datos en Proveedores).`;
+        if(added > 0) {
+          const allNew = [...ni.MXN,...ni.USD,...ni.EUR];
+          setInvoices(prev=>({MXN:[...prev.MXN,...ni.MXN],USD:[...prev.USD,...ni.USD],EUR:[...prev.EUR,...ni.EUR]}));
+          upsertManyInvoices(allNew);
+        }
+
+        let msg = "";
+        if(added > 0) msg += "\u2705 Se importaron " + added + " factura" + (added!==1?"s":"") + " nueva" + (added!==1?"s":"") + ".";
+        if(newSuppliers>0) msg += " Se registraron " + newSuppliers + " proveedor" + (newSuppliers!==1?"es":"") + " nuevo" + (newSuppliers!==1?"s":"") + ".";
+        if(duplicated.length > 0) msg += (msg?" ":"") + "\u26a0\ufe0f " + duplicated.length + " factura" + (duplicated.length!==1?"s":"") + " duplicada" + (duplicated.length!==1?"s":"") + " NO se cargaron:";
+        if(added === 0 && duplicated.length === 0) msg = "\u26a0\ufe0f No se encontraron facturas v\u00e1lidas en el archivo.";
         setImportMsg(msg);
-      } catch(err){ setImportMsg("❌ Error: "+err.message); }
+        setImportDupes(duplicated);
+      } catch(err){ setImportMsg("\u274c Error: "+err.message); setImportDupes([]); }
     };
     reader.readAsArrayBuffer(file); e.target.value="";
   };
@@ -1156,7 +1190,35 @@ export default function CxpApp({ user, onLogout }) {
         <button style={btnStyle} onClick={e=>{e.stopPropagation();fileRef.current?.click();}}>Seleccionar .xlsx</button>
         <input ref={fileRef} type="file" accept=".xlsx,.xls" onChange={handleImport} style={{display:"none"}}/>
       </div>
-      {importMsg && <div style={{padding:16,borderRadius:10,background:importMsg.startsWith("✅")?"#E8F5E9":"#FFEBEE",border:`1px solid ${importMsg.startsWith("✅")?C.ok:C.danger}`,marginBottom:20,fontSize:14,fontWeight:600}}>{importMsg}</div>}
+      {importMsg && (
+        <div style={{marginBottom:20}}>
+          <div style={{padding:16,borderRadius:10,background:importMsg.includes("\u2705")?"#E8F5E9":"#FFEBEE",border:`1px solid ${importMsg.includes("\u2705")?C.ok:C.danger}`,fontSize:14,fontWeight:600,whiteSpace:"pre-line"}}>{importMsg}</div>
+          {importDupes.length > 0 && (
+            <div style={{marginTop:12,background:"#FFF8E1",border:"1px solid #FFE082",borderRadius:12,padding:16}}>
+              <div style={{fontWeight:700,color:"#F57F17",marginBottom:10,fontSize:14}}>\u26a0\ufe0f Facturas duplicadas (no se cargaron):</div>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead><tr style={{background:"#FFF3E0"}}>
+                    {["Folio","Proveedor","Fecha","Total"].map(h=>(
+                      <th key={h} style={{padding:"8px 10px",textAlign:"left",color:"#E65100",fontWeight:700,fontSize:11,textTransform:"uppercase"}}>{h}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {importDupes.map((d,i)=>(
+                      <tr key={i} style={{borderTop:"1px solid #FFE082",background:i%2===0?"#FFFDE7":"#FFF8E1"}}>
+                        <td style={{padding:"8px 10px",fontWeight:600}}>{d.serie}{d.folio}</td>
+                        <td style={{padding:"8px 10px"}}>{d.proveedor}</td>
+                        <td style={{padding:"8px 10px"}}>{d.fecha}</td>
+                        <td style={{padding:"8px 10px",fontWeight:700}}>${fmt(d.total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       <div style={{background:"#EEF2FF",border:"1px solid #C7D7FD",borderRadius:14,padding:20}}>
         <h3 style={{fontWeight:700,color:C.navy,marginBottom:12}}>📋 Formato esperado</h3>
         <div style={{overflowX:"auto"}}>

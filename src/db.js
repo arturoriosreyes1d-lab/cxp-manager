@@ -100,12 +100,17 @@ export async function fetchInvoices() {
 
 export async function upsertInvoice(inv) {
   const row = toDB(inv);
-  // Remove id if it's not a uuid (local temp ids)
-  const isUUID = /^[0-9a-f]{8}-/.test(row.id);
-  if (!isUUID) delete row.id;
-  const { data, error } = await supabase.from('invoices').upsert(row, { onConflict: 'id' }).select().single();
-  if (error) { console.error('upsertInvoice:', error); return inv; }
-  return toApp(data);
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(row.id);
+  if (!isUUID) {
+    delete row.id;
+    const { data, error } = await supabase.from('invoices').insert(row).select().single();
+    if (error) { console.error('insertInvoice:', error); return inv; }
+    return toApp(data);
+  } else {
+    const { data, error } = await supabase.from('invoices').update(row).eq('id', row.id).select().single();
+    if (error) { console.error('updateInvoice:', error); return inv; }
+    return toApp(data);
+  }
 }
 
 export async function upsertManyInvoices(invArr) {
@@ -157,11 +162,19 @@ export async function fetchSuppliers() {
 
 export async function upsertSupplier(sup) {
   const row = supToDB(sup);
-  const isUUID = /^[0-9a-f]{8}-/.test(row.id);
-  if (!isUUID) delete row.id;
-  const { data, error } = await supabase.from('suppliers').upsert(row, { onConflict: 'id' }).select().single();
-  if (error) { console.error('upsertSupplier:', error); return sup; }
-  return supToApp(data);
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(row.id);
+  if (!isUUID) {
+    // New record: insert without id, let Supabase generate it
+    delete row.id;
+    const { data, error } = await supabase.from('suppliers').insert(row).select().single();
+    if (error) { console.error('insertSupplier:', error); return sup; }
+    return supToApp(data);
+  } else {
+    // Existing record: update by id
+    const { data, error } = await supabase.from('suppliers').update(row).eq('id', row.id).select().single();
+    if (error) { console.error('updateSupplier:', error); return sup; }
+    return supToApp(data);
+  }
 }
 
 export async function upsertManySuppliers(sups) {
