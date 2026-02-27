@@ -27,7 +27,9 @@ const toApp = (row) => ({
   moneda: row.moneda || 'MXN',
   voBo: row.vo_bo || false,
   autorizadoDireccion: row.autorizado_direccion || false,
-}); = (inv) => ({
+});
+
+const toDB = (inv) => ({
   id: inv.id,
   tipo: inv.tipo,
   fecha: inv.fecha,
@@ -53,7 +55,9 @@ const toApp = (row) => ({
   moneda: inv.moneda || 'MXN',
   vo_bo: inv.voBo || false,
   autorizado_direccion: inv.autorizadoDireccion || false,
-}); = (row) => ({
+});
+
+const supToApp = (row) => ({
   id: row.id,
   nombre: row.nombre,
   rfc: row.rfc || '',
