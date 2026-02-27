@@ -292,7 +292,7 @@ export default function CxpApp({ user, onLogout }) {
 
   /* ── CRUD (local + Supabase) ────────────────────────────────────── */
   const saveInvoice = async (data) => {
-    const cur = data.moneda || currency;
+    const newCur = data.moneda || currency;
     const iva = +(data.iva ?? (+data.subtotal*0.16).toFixed(2));
     const total = +(+data.subtotal + iva - +data.retIsr - +data.retIva).toFixed(2);
     const diasCred = data.diasCredito || (suppliers.find(s=>s.nombre===data.proveedor)?.diasCredito||30);
@@ -301,13 +301,18 @@ export default function CxpApp({ user, onLogout }) {
     let estatus = data.estatus;
     if(montoPagado>=total && total>0) estatus="Pagado";
     else if(montoPagado>0 && montoPagado<total) estatus="Parcial";
-    const updated = { ...data, iva, total, montoPagado, diasCredito:diasCred, vencimiento:venc, estatus, diasFicticios:+(data.diasFicticios||0), fechaProgramacion:data.fechaProgramacion||"", concepto:data.concepto||"", moneda:cur, id:data.id||uid() };
+    const updated = { ...data, iva, total, montoPagado, diasCredito:diasCred, vencimiento:venc, estatus, diasFicticios:+(data.diasFicticios||0), fechaProgramacion:data.fechaProgramacion||"", concepto:data.concepto||"", moneda:newCur, id:data.id||uid() };
     // Persist to Supabase
     const saved = await upsertInvoice(updated);
     setInvoices(prev => {
-      const list = prev[cur]||[];
-      const exists = list.find(i=>i.id===updated.id || i.id===saved.id);
-      return { ...prev, [cur]: exists ? list.map(i=>(i.id===updated.id||i.id===saved.id)?saved:i) : [...list, saved] };
+      const result = { ...prev };
+      // Remove from ALL currencies first (handles currency change)
+      ["MXN","USD","EUR"].forEach(c => {
+        result[c] = (result[c]||[]).filter(i => i.id !== updated.id && i.id !== saved.id);
+      });
+      // Add to the correct currency
+      result[newCur] = [...(result[newCur]||[]), saved];
+      return result;
     });
     setModalInv(null);
   };
