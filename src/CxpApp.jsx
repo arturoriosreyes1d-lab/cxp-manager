@@ -66,9 +66,9 @@ const Field = ({label,children}) => (
   </div>
 );
 
-const ModalShell = ({title,onClose,wide,children}) => (
+const ModalShell = ({title,onClose,wide,extraWide,children}) => (
   <div style={{position:"fixed",inset:0,background:"rgba(15,45,74,.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}} onClick={onClose}>
-    <div onClick={e=>e.stopPropagation()} style={{background:C.surface,borderRadius:20,padding:32,width:"100%",maxWidth:wide?800:600,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,.25)"}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:C.surface,borderRadius:20,padding:32,width:"100%",maxWidth:extraWide?1200:wide?800:600,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,.25)"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
         <h2 style={{fontSize:20,fontWeight:800,color:C.navy,margin:0}}>{title}</h2>
         <button onClick={onClose} style={{background:"#F1F5F9",border:"none",borderRadius:8,width:36,height:36,cursor:"pointer",fontSize:18}}>×</button>
@@ -127,6 +127,9 @@ export default function CxpApp({ user, onLogout }) {
   const [dashFilterClasif, setDashFilterClasif] = useState("");
   const [dashFilterEstatus, setDashFilterEstatus] = useState("");
   const [dashGroupBy, setDashGroupBy] = useState("");
+  const [dashSelectedIds, setDashSelectedIds] = useState(new Set());
+  const [dashBulkProgPago, setDashBulkProgPago] = useState("");
+  const [dashBulkAutDir, setDashBulkAutDir] = useState("");
   const fileRef = useRef();
   const searchRef = useRef();
 
@@ -219,6 +222,29 @@ export default function CxpApp({ user, onLogout }) {
       return { ...i, voBo: newVal };
     }) }));
     setTimeout(() => updateInvoiceField(id, { voBo: newVal }), 0);
+  };
+
+  const toggleAutorizadoDireccion = (id, cur) => {
+    const c = cur || currency;
+    let newVal;
+    setInvoices(prev => ({ ...prev, [c]: prev[c].map(i => {
+      if(i.id!==id) return i;
+      newVal = !i.autorizadoDireccion;
+      return { ...i, autorizadoDireccion: newVal };
+    }) }));
+    setTimeout(() => updateInvoiceField(id, { autorizadoDireccion: newVal }), 0);
+  };
+
+  // Universal updater: updates an invoice across any currency
+  const updateInvoiceAny = (id, fields) => {
+    setInvoices(prev => {
+      const result = {...prev};
+      ["MXN","USD","EUR"].forEach(c => {
+        result[c] = result[c].map(i => i.id===id ? {...i, ...fields} : i);
+      });
+      return result;
+    });
+    updateInvoiceField(id, fields);
   };
 
   /* ── Bulk selection & update ──────────────────────────────────────── */
@@ -612,6 +638,12 @@ export default function CxpApp({ user, onLogout }) {
             {inv.voBo ? "✅" : "⬜"}
           </button>
         </td>
+        {/* Autorizado Dirección */}
+        <td style={{padding:"10px 8px",textAlign:"center"}}>
+          <button onClick={()=>toggleAutorizadoDireccion(inv.id)} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,padding:2,lineHeight:1}} title={inv.autorizadoDireccion?"Quitar Aut.Dir.":"Autorizar Dir."}>
+            {inv.autorizadoDireccion ? "✅" : "⬜"}
+          </button>
+        </td>
         <td style={{padding:"10px 8px",whiteSpace:"nowrap"}}>
           <button onClick={()=>setModalInv({...inv,moneda:inv.moneda||currency})} style={{...iconBtn,color:C.sky}} title="Editar">✏️</button>
           <button onClick={()=>setDeleteConfirm({id:inv.id,cur:currency,label:`${inv.serie}${inv.folio} - ${inv.proveedor}`})} style={{...iconBtn,color:C.danger}} title="Eliminar">🗑️</button>
@@ -642,7 +674,7 @@ export default function CxpApp({ user, onLogout }) {
                 <th style={{padding:"10px 4px",textAlign:"center",width:32}}>
                   <input type="checkbox" checked={allChecked} onChange={()=>toggleSelectAll(invs)} style={{cursor:"pointer",width:16,height:16,accentColor:C.blue}}/>
                 </th>
-                {["Tipo","Fecha","Folio","Proveedor","Concepto","Clasif.","Total","Pagado","Saldo","Progr.Pago","Vence","Días","Estatus","VoBo","Acciones"].map(h=>(
+                {["Tipo","Fecha","Folio","Proveedor","Concepto","Clasif.","Total","Pagado","Saldo","Progr.Pago","Vence","Días","Estatus","VoBo","Aut.Dir.","Acciones"].map(h=>(
                   <th key={h} style={{padding:"10px 8px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase",letterSpacing:.3,whiteSpace:"nowrap"}}>{h}</th>
                 ))}
               </tr>
@@ -698,7 +730,7 @@ export default function CxpApp({ user, onLogout }) {
     const vencido30 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d<-15 && d>=-30; });
     const vencido60 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d<-30 && d>=-60; });
     const vencidoMas60 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d<-60; });
-    const openDetail = (title, items) => { setDashSearch(""); setDashFilterProv(""); setDashFilterClasif(""); setDashFilterEstatus(""); setDashGroupBy(""); setDashDetail({title, type:"invoices", items}); };
+    const openDetail = (title, items) => { setDashSearch(""); setDashFilterProv(""); setDashFilterClasif(""); setDashFilterEstatus(""); setDashGroupBy(""); setDashSelectedIds(new Set()); setDashBulkProgPago(""); setDashBulkAutDir(""); setDashDetail({title, type:"invoices", items}); };
 
     return (
       <div>
@@ -1557,10 +1589,9 @@ export default function CxpApp({ user, onLogout }) {
 
       {/* Dashboard detail modal */}
       {dashDetail && (
-        <ModalShell title={dashDetail.title} onClose={()=>setDashDetail(null)} wide>
+        <ModalShell title={dashDetail.title} onClose={()=>setDashDetail(null)} extraWide>
           {dashDetail.type==="invoices" && (()=>{
             const allItems = dashDetail.items;
-            // Apply filters
             const items = allItems.filter(inv => {
               if(dashSearch) { const q=dashSearch.toLowerCase(); if(!JSON.stringify(inv).toLowerCase().includes(q)) return false; }
               if(dashFilterProv && inv.proveedor!==dashFilterProv) return false;
@@ -1572,40 +1603,89 @@ export default function CxpApp({ user, onLogout }) {
             const saldoSum = items.reduce((s,i)=>s+((+i.total||0)-(+i.montoPagado||0)),0);
             const provsList = [...new Set(allItems.map(i=>i.proveedor))].sort();
             const clasifList = [...new Set(allItems.map(i=>i.clasificacion))].sort();
+            // Selection
+            const selSaldo = items.filter(i=>dashSelectedIds.has(i.id)).reduce((s,i)=>s+((+i.total||0)-(+i.montoPagado||0)),0);
+            const selCount = items.filter(i=>dashSelectedIds.has(i.id)).length;
+            const allChecked = items.length > 0 && items.every(i=>dashSelectedIds.has(i.id));
+            const toggleDashSel = (id) => setDashSelectedIds(prev => { const n=new Set(prev); if(n.has(id)) n.delete(id); else n.add(id); return n; });
+            const toggleDashSelAll = () => {
+              if(allChecked) setDashSelectedIds(prev => { const n=new Set(prev); items.forEach(i=>n.delete(i.id)); return n; });
+              else setDashSelectedIds(prev => { const n=new Set(prev); items.forEach(i=>n.add(i.id)); return n; });
+            };
+            const applyDashBulk = () => {
+              if(dashSelectedIds.size===0) return;
+              const ids = [...dashSelectedIds].filter(id => items.some(i=>i.id===id));
+              const fields = {};
+              if(dashBulkProgPago) fields.fechaProgramacion = dashBulkProgPago;
+              if(dashBulkAutDir==="true") fields.autorizadoDireccion = true;
+              if(dashBulkAutDir==="false") fields.autorizadoDireccion = false;
+              if(Object.keys(fields).length===0) return;
+              // Update local state across all currencies
+              setInvoices(prev => {
+                const result = {...prev};
+                ["MXN","USD","EUR"].forEach(c => {
+                  result[c] = result[c].map(i => ids.includes(i.id) ? {...i, ...fields} : i);
+                });
+                return result;
+              });
+              // Update dashDetail items too
+              setDashDetail(prev => ({...prev, items: prev.items.map(i => ids.includes(i.id) ? {...i, ...fields} : i)}));
+              bulkUpdateInvoices(ids, fields);
+              setDashSelectedIds(new Set());
+              setDashBulkProgPago(""); setDashBulkAutDir("");
+            };
             // Grouping
             const groups = {};
             if(dashGroupBy) {
               items.forEach(inv => {
-                const k = dashGroupBy==="proveedor"?inv.proveedor:dashGroupBy==="clasificacion"?inv.clasificacion:dashGroupBy==="estatus"?inv.estatus:dashGroupBy==="moneda"?inv.moneda:"—";
+                const k = dashGroupBy==="proveedor"?inv.proveedor:dashGroupBy==="clasificacion"?inv.clasificacion:dashGroupBy==="estatus"?inv.estatus:dashGroupBy==="moneda"?inv.moneda:"\u2014";
                 if(!groups[k]) groups[k]=[];
                 groups[k].push(inv);
               });
             }
             const renderTable = (rows) => (
               <div style={{overflowX:"auto",marginBottom:12}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:900}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:1100}}>
                   <thead><tr style={{background:"#F8FAFC"}}>
-                    {["Folio","Proveedor","Concepto","Clasif.","Fecha","Total","Pagado","Saldo","Vencimiento","Estatus","Moneda"].map(h=>(
-                      <th key={h} style={{padding:"7px 8px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>{h}</th>
+                    <th style={{padding:"7px 4px",textAlign:"center",width:32}}>
+                      <input type="checkbox" checked={allChecked} onChange={toggleDashSelAll} style={{cursor:"pointer",width:15,height:15,accentColor:C.blue}}/>
+                    </th>
+                    {["Folio","Proveedor","Concepto","Clasif.","Fecha","Total","Pagado","Saldo","Progr.Pago","Vence","D\u00edas","Estatus","Aut.Dir.","Moneda"].map(h=>(
+                      <th key={h} style={{padding:"7px 6px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                     ))}
                   </tr></thead>
                   <tbody>
                     {rows.map(inv=>{
                       const saldo=(+inv.total||0)-(+inv.montoPagado||0);
                       const overdue=isOverdue(inv.vencimiento,inv.estatus);
+                      const dias = daysUntil(inv.vencimiento);
+                      const diasLabel = dias===null ? "\u2014" : dias>=0 ? dias+" d" : Math.abs(dias)+" d";
+                      const diasColor = dias===null ? C.muted : dias>=0 ? C.ok : C.danger;
+                      const diasPrefix = dias===null ? "" : dias>=0 ? "\u23f3 " : "\u26a0\ufe0f ";
+                      const checked = dashSelectedIds.has(inv.id);
                       return (
-                        <tr key={inv.id} style={{borderTop:`1px solid ${C.border}`,background:overdue?"#FFF5F5":"transparent"}}>
-                          <td style={{padding:"7px 8px",fontWeight:600}}>{inv.serie}{inv.folio}</td>
-                          <td style={{padding:"7px 8px",fontWeight:600,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{inv.proveedor}</td>
-                          <td style={{padding:"7px 8px",color:inv.concepto?C.text:C.muted,fontStyle:inv.concepto?"normal":"italic",maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{inv.concepto||"—"}</td>
-                          <td style={{padding:"7px 8px"}}><span style={{background:"#EEF2FF",color:C.blue,padding:"1px 6px",borderRadius:20,fontSize:10,fontWeight:600}}>{inv.clasificacion}</span></td>
-                          <td style={{padding:"7px 8px",whiteSpace:"nowrap"}}>{inv.fecha}</td>
-                          <td style={{padding:"7px 8px",fontWeight:700}}>${fmt(inv.total)}</td>
-                          <td style={{padding:"7px 8px",color:C.ok}}>${fmt(inv.montoPagado)}</td>
-                          <td style={{padding:"7px 8px",fontWeight:700,color:saldo>0?(overdue?C.danger:C.warn):C.ok}}>${fmt(saldo)}</td>
-                          <td style={{padding:"7px 8px",whiteSpace:"nowrap",color:overdue?C.danger:C.text}}>{inv.vencimiento||"—"}</td>
-                          <td style={{padding:"7px 8px"}}><span style={{color:statusColor(inv.estatus),fontWeight:700,fontSize:10}}>{inv.estatus}</span></td>
-                          <td style={{padding:"7px 8px"}}><span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[inv.moneda],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[inv.moneda],padding:"1px 6px",borderRadius:20,fontSize:10,fontWeight:700}}>{inv.moneda}</span></td>
+                        <tr key={inv.id} style={{borderTop:`1px solid ${C.border}`,background:checked?"#EEF2FF":overdue?"#FFF5F5":"transparent"}}>
+                          <td style={{padding:"7px 4px",textAlign:"center"}}>
+                            <input type="checkbox" checked={checked} onChange={()=>toggleDashSel(inv.id)} style={{cursor:"pointer",width:15,height:15,accentColor:C.blue}}/>
+                          </td>
+                          <td style={{padding:"7px 6px",fontWeight:600,whiteSpace:"nowrap"}}>{inv.serie}{inv.folio}</td>
+                          <td style={{padding:"7px 6px",fontWeight:600,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{inv.proveedor}</td>
+                          <td style={{padding:"7px 6px",color:inv.concepto?C.text:C.muted,fontStyle:inv.concepto?"normal":"italic",maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{inv.concepto||"\u2014"}</td>
+                          <td style={{padding:"7px 6px"}}><span style={{background:"#EEF2FF",color:C.blue,padding:"1px 5px",borderRadius:20,fontSize:10,fontWeight:600}}>{inv.clasificacion}</span></td>
+                          <td style={{padding:"7px 6px",whiteSpace:"nowrap",fontSize:11}}>{inv.fecha}</td>
+                          <td style={{padding:"7px 6px",fontWeight:700}}>${fmt(inv.total)}</td>
+                          <td style={{padding:"7px 6px",color:C.ok}}>${fmt(inv.montoPagado)}</td>
+                          <td style={{padding:"7px 6px",fontWeight:700,color:saldo>0?(overdue?C.danger:C.warn):C.ok}}>${fmt(saldo)}</td>
+                          <td style={{padding:"7px 6px",whiteSpace:"nowrap",fontSize:11}}>{inv.fechaProgramacion||"\u2014"}</td>
+                          <td style={{padding:"7px 6px",whiteSpace:"nowrap",color:overdue?C.danger:C.text,fontSize:11}}>{inv.vencimiento||"\u2014"}</td>
+                          <td style={{padding:"7px 6px",whiteSpace:"nowrap",fontWeight:700,color:diasColor,fontSize:11}}>{diasPrefix}{diasLabel}</td>
+                          <td style={{padding:"7px 6px"}}><span style={{color:statusColor(inv.estatus),fontWeight:700,fontSize:10}}>{inv.estatus}</span></td>
+                          <td style={{padding:"7px 6px",textAlign:"center"}}>
+                            <button onClick={()=>toggleAutorizadoDireccion(inv.id,inv.moneda)} style={{background:"none",border:"none",cursor:"pointer",fontSize:16,padding:1,lineHeight:1}}>
+                              {inv.autorizadoDireccion ? "\u2705" : "\u2b1c"}
+                            </button>
+                          </td>
+                          <td style={{padding:"7px 6px"}}><span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[inv.moneda],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[inv.moneda],padding:"1px 5px",borderRadius:20,fontSize:10,fontWeight:700}}>{inv.moneda}</span></td>
                         </tr>
                       );
                     })}
@@ -1617,7 +1697,7 @@ export default function CxpApp({ user, onLogout }) {
               <div>
                 {/* Search + Filters */}
                 <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12,alignItems:"center"}}>
-                  <input placeholder="🔍 Buscar…" value={dashSearch} onChange={e=>setDashSearch(e.target.value)} style={{...inputStyle,maxWidth:180,padding:"6px 10px",fontSize:12}}/>
+                  <input placeholder="\ud83d\udd0d Buscar\u2026" value={dashSearch} onChange={e=>setDashSearch(e.target.value)} style={{...inputStyle,maxWidth:180,padding:"6px 10px",fontSize:12}}/>
                   <select value={dashFilterProv} onChange={e=>setDashFilterProv(e.target.value)} style={{...selectStyle,maxWidth:160,padding:"6px 8px",fontSize:12}}>
                     <option value="">Todos proveedores</option>
                     {provsList.map(p=><option key={p}>{p}</option>)}
@@ -1637,8 +1717,8 @@ export default function CxpApp({ user, onLogout }) {
                     </button>
                   ))}
                 </div>
-                {/* Summary */}
-                <div style={{display:"flex",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+                {/* Summary + Selection */}
+                <div style={{display:"flex",gap:12,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
                   <div style={{background:"#F8FAFC",borderRadius:8,padding:"6px 14px",fontSize:12}}>
                     <span style={{color:C.muted}}>Facturas: </span><span style={{fontWeight:700}}>{items.length}</span>
                   </div>
@@ -1648,7 +1728,26 @@ export default function CxpApp({ user, onLogout }) {
                   <div style={{background:"#FFF3E0",borderRadius:8,padding:"6px 14px",fontSize:12}}>
                     <span style={{color:C.muted}}>Saldo: </span><span style={{fontWeight:700,color:C.warn}}>${fmt(saldoSum)}</span>
                   </div>
+                  {selCount>0 && (
+                    <div style={{background:"#E8F0FE",borderRadius:8,padding:"6px 14px",fontSize:12,border:`1px solid ${C.blue}`}}>
+                      <span style={{color:C.blue,fontWeight:700}}>\u2705 {selCount} seleccionada{selCount!==1?"s":""}: ${fmt(selSaldo)}</span>
+                    </div>
+                  )}
                 </div>
+                {/* Bulk edit bar */}
+                {selCount>0 && (
+                  <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:14,padding:"10px 14px",background:"#E8F0FE",borderRadius:10,border:`1px solid ${C.blue}`}}>
+                    <span style={{fontSize:12,fontWeight:700,color:C.blue}}>Edici\u00f3n masiva ({selCount}):</span>
+                    <input type="date" value={dashBulkProgPago} onChange={e=>setDashBulkProgPago(e.target.value)} style={{...inputStyle,maxWidth:160,padding:"5px 8px",fontSize:12}} title="Progr. Pago"/>
+                    <select value={dashBulkAutDir} onChange={e=>setDashBulkAutDir(e.target.value)} style={{...selectStyle,maxWidth:160,padding:"5px 8px",fontSize:12}}>
+                      <option value="">Aut. Direcci\u00f3n</option>
+                      <option value="true">\u2705 Autorizado</option>
+                      <option value="false">\u2b1c No autorizado</option>
+                    </select>
+                    <button onClick={applyDashBulk} style={{...btnStyle,padding:"6px 16px",fontSize:12}}>Aplicar</button>
+                    <button onClick={()=>{setDashSelectedIds(new Set());setDashBulkProgPago("");setDashBulkAutDir("");}} style={{...btnStyle,padding:"6px 12px",fontSize:12,background:"#F1F5F9",color:C.text}}>Cancelar</button>
+                  </div>
+                )}
                 {/* Table or grouped tables */}
                 {dashGroupBy ? (
                   Object.entries(groups).sort((a,b)=>a[0].localeCompare(b[0])).map(([grp,rows])=>{
@@ -1656,8 +1755,8 @@ export default function CxpApp({ user, onLogout }) {
                     return (
                       <div key={grp} style={{marginBottom:16}}>
                         <div style={{display:"flex",justifyContent:"space-between",padding:"6px 12px",background:C.navy,borderRadius:8,marginBottom:4}}>
-                          <span style={{fontWeight:700,color:"#fff",fontSize:13}}>{grp||"—"}</span>
-                          <span style={{color:"#94A3B8",fontSize:12}}>{rows.length} fact. · Saldo: ${fmt(grpSaldo)}</span>
+                          <span style={{fontWeight:700,color:"#fff",fontSize:13}}>{grp||"\u2014"}</span>
+                          <span style={{color:"#94A3B8",fontSize:12}}>{rows.length} fact. \u00b7 Saldo: ${fmt(grpSaldo)}</span>
                         </div>
                         {renderTable(rows)}
                       </div>
@@ -1676,14 +1775,14 @@ export default function CxpApp({ user, onLogout }) {
             });
             return (
               <div>
-                <input placeholder="🔍 Buscar proveedor…" value={dashSearch} onChange={e=>setDashSearch(e.target.value)} style={{...inputStyle,maxWidth:280,padding:"6px 10px",fontSize:12,marginBottom:14}}/>
+                <input placeholder="\ud83d\udd0d Buscar proveedor\u2026" value={dashSearch} onChange={e=>setDashSearch(e.target.value)} style={{...inputStyle,maxWidth:280,padding:"6px 10px",fontSize:12,marginBottom:14}}/>
                 <div style={{marginBottom:12,background:"#F8FAFC",borderRadius:8,padding:"6px 14px",fontSize:12,display:"inline-block"}}>
                   <span style={{color:C.muted}}>Mostrando: </span><span style={{fontWeight:700}}>{filtered.length} proveedores</span>
                 </div>
                 <div style={{overflowX:"auto"}}>
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                     <thead><tr style={{background:"#F8FAFC"}}>
-                      {["Nombre","RFC","Moneda","Días Crédito","Clasificación","Contacto","Email","Teléfono"].map(h=>(
+                      {["Nombre","RFC","Moneda","D\u00edas Cr\u00e9dito","Clasificaci\u00f3n","Contacto","Email","Tel\u00e9fono"].map(h=>(
                         <th key={h} style={{padding:"7px 8px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>{h}</th>
                       ))}
                     </tr></thead>
@@ -1695,9 +1794,9 @@ export default function CxpApp({ user, onLogout }) {
                           <td style={{padding:"7px 8px"}}><span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[sup.moneda],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[sup.moneda],padding:"1px 6px",borderRadius:20,fontSize:10,fontWeight:700}}>{sup.moneda}</span></td>
                           <td style={{padding:"7px 8px"}}>{sup.diasCredito}</td>
                           <td style={{padding:"7px 8px"}}><span style={{background:"#EEF2FF",color:C.blue,padding:"1px 6px",borderRadius:20,fontSize:10,fontWeight:600}}>{sup.clasificacion}</span></td>
-                          <td style={{padding:"7px 8px",color:sup.contacto?C.text:C.muted}}>{sup.contacto||"—"}</td>
-                          <td style={{padding:"7px 8px",color:sup.email?C.text:C.muted}}>{sup.email||"—"}</td>
-                          <td style={{padding:"7px 8px"}}>{sup.telefono||"—"}</td>
+                          <td style={{padding:"7px 8px",color:sup.contacto?C.text:C.muted}}>{sup.contacto||"\u2014"}</td>
+                          <td style={{padding:"7px 8px",color:sup.email?C.text:C.muted}}>{sup.email||"\u2014"}</td>
+                          <td style={{padding:"7px 8px"}}>{sup.telefono||"\u2014"}</td>
                         </tr>
                       ))}
                     </tbody>

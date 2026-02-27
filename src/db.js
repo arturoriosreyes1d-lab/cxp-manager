@@ -26,9 +26,8 @@ const toApp = (row) => ({
   notas: row.notas || '',
   moneda: row.moneda || 'MXN',
   voBo: row.vo_bo || false,
-});
-
-const toDB = (inv) => ({
+  autorizadoDireccion: row.autorizado_direccion || false,
+}); = (inv) => ({
   id: inv.id,
   tipo: inv.tipo,
   fecha: inv.fecha,
@@ -53,9 +52,8 @@ const toDB = (inv) => ({
   notas: inv.notas || '',
   moneda: inv.moneda || 'MXN',
   vo_bo: inv.voBo || false,
-});
-
-const supToApp = (row) => ({
+  autorizado_direccion: inv.autorizadoDireccion || false,
+}); = (row) => ({
   id: row.id,
   nombre: row.nombre,
   rfc: row.rfc || '',
@@ -139,6 +137,7 @@ export async function updateInvoiceField(id, fields) {
   if ('montoPagado' in fields) dbFields.monto_pagado = fields.montoPagado;
   if ('concepto' in fields) dbFields.concepto = fields.concepto;
   if ('voBo' in fields) dbFields.vo_bo = fields.voBo;
+  if ('autorizadoDireccion' in fields) dbFields.autorizado_direccion = fields.autorizadoDireccion;
   const { error } = await supabase.from('invoices').update(dbFields).eq('id', id);
   if (error) console.error('updateInvoiceField:', error);
 }
@@ -149,6 +148,7 @@ export async function bulkUpdateInvoices(ids, fields) {
   if (fields.fechaProgramacion) dbFields.fecha_programacion = fields.fechaProgramacion;
   if (fields.estatus) dbFields.estatus = fields.estatus;
   if (fields.montoPagado !== undefined) dbFields.monto_pagado = fields.montoPagado;
+  if ('autorizadoDireccion' in fields) dbFields.autorizado_direccion = fields.autorizadoDireccion;
   const { error } = await supabase.from('invoices').update(dbFields).in('id', ids);
   if (error) console.error('bulkUpdateInvoices:', error);
 }
