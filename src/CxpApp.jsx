@@ -446,7 +446,11 @@ export default function CxpApp({ user, onLogout }) {
             newSuppliers++;
           }
 
-          const moneda=sup?.moneda||"MXN";
+          const monedaRaw=String(get(row,["MONEDA","CURRENCY","MON"])||"").trim().toUpperCase();
+          const moneda = (monedaRaw==="USD"||monedaRaw==="DOLAR"||monedaRaw==="DOLARES"||monedaRaw==="DOLLAR"||monedaRaw==="US DOLLAR") ? "USD"
+            : (monedaRaw==="EUR"||monedaRaw==="EURO"||monedaRaw==="EUROS") ? "EUR"
+            : (monedaRaw==="MXN"||monedaRaw==="PESO"||monedaRaw==="PESOS"||monedaRaw==="MN"||monedaRaw==="M.N."||monedaRaw==="M.N") ? "MXN"
+            : monedaRaw ? "MXN" : (sup?.moneda||"MXN");
           const diasCredito=sup?.diasCredito||30;
           const inv = {
             id:uid(), tipo:String(get(row,["TIPO"])||"Factura"), fecha,
@@ -609,7 +613,7 @@ export default function CxpApp({ user, onLogout }) {
           </button>
         </td>
         <td style={{padding:"10px 8px",whiteSpace:"nowrap"}}>
-          <button onClick={()=>setModalInv({...inv,moneda:currency})} style={{...iconBtn,color:C.sky}} title="Editar">✏️</button>
+          <button onClick={()=>setModalInv({...inv,moneda:inv.moneda||currency})} style={{...iconBtn,color:C.sky}} title="Editar">✏️</button>
           <button onClick={()=>setDeleteConfirm({id:inv.id,cur:currency,label:`${inv.serie}${inv.folio} - ${inv.proveedor}`})} style={{...iconBtn,color:C.danger}} title="Eliminar">🗑️</button>
         </td>
       </tr>
@@ -1244,12 +1248,13 @@ export default function CxpApp({ user, onLogout }) {
         <h3 style={{fontWeight:700,color:C.navy,marginBottom:12}}>📋 Formato esperado</h3>
         <div style={{overflowX:"auto"}}>
           <table style={{borderCollapse:"collapse",fontSize:13,minWidth:700}}>
-            <thead><tr>{["TIPO","FECHA","SERIE","FOLIO","UUID","PROVEEDOR","SUBTOTAL","IVA","TOTAL"].map(h=><th key={h} style={{padding:"8px 12px",background:C.navy,color:"#fff",fontSize:11,fontWeight:600,textAlign:"center"}}>{h}</th>)}</tr></thead>
-            <tbody><tr style={{background:"#fff"}}>{["Factura","07/01/2026","A","3200","4733f910…","EDUARDO VELAZQUEZ","$6,400","$1,024","$7,424"].map((v,i)=><td key={i} style={{padding:"8px 12px",borderBottom:`1px solid ${C.border}`,textAlign:"center"}}>{v}</td>)}</tr></tbody>
+            <thead><tr>{["TIPO","FECHA","SERIE","FOLIO","UUID","PROVEEDOR","SUBTOTAL","IVA","TOTAL","MONEDA"].map(h=><th key={h} style={{padding:"8px 12px",background:C.navy,color:"#fff",fontSize:11,fontWeight:600,textAlign:"center"}}>{h}</th>)}</tr></thead>
+            <tbody><tr style={{background:"#fff"}}>{["Factura","07/01/2026","A","3200","4733f910…","EDUARDO VELAZQUEZ","$6,400","$1,024","$7,424","MXN"].map((v,i)=><td key={i} style={{padding:"8px 12px",borderBottom:`1px solid ${C.border}`,textAlign:"center"}}>{v}</td>)}</tr></tbody>
           </table>
         </div>
         <div style={{marginTop:12,fontSize:12,color:C.muted,display:"flex",flexDirection:"column",gap:6}}>
           <div>💡 <b>TOTAL tiene prioridad:</b> Si la columna TOTAL tiene valor, se usa directamente. Solo si está vacía se calcula como SUBTOTAL + IVA.</div>
+          <div>💱 <b>MONEDA:</b> Acepta MXN, USD, EUR, M.N., PESOS, DOLAR, EURO. Si no hay columna MONEDA, se usa la moneda del proveedor registrado.</div>
           <div>👤 <b>Proveedores nuevos:</b> Si el proveedor no existe en el catálogo, se registra automáticamente con datos mínimos. Luego puedes completar sus datos en la sección de Proveedores.</div>
           <div>💲 <b>Formato libre:</b> Los importes pueden incluir símbolos ($, €) y comas — se limpian automáticamente.</div>
           <div>🔍 <b>Columnas flexibles:</b> También busca columnas como RAZON SOCIAL, NOMBRE o EMISOR como proveedor.</div>
