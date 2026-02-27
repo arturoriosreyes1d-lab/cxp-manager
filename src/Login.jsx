@@ -52,9 +52,9 @@ export default function Login({ onLogin }) {
       }}>
         {/* Logo */}
         <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <div style={{ fontSize: 56, marginBottom: 8 }}>💼</div>
-          <h1 style={{ fontSize: 28, fontWeight: 900, color: C.navy, margin: 0 }}>CxP Manager</h1>
-          <p style={{ color: C.muted, fontSize: 14, marginTop: 4 }}>Cuentas por Pagar</p>
+          <div style={{ fontSize: 56, marginBottom: 8 }}>✈️</div>
+          <h1 style={{ fontSize: 28, fontWeight: 900, color: C.navy, margin: 0 }}>Viajes Libero</h1>
+          <p style={{ color: C.muted, fontSize: 14, marginTop: 4 }}>Sistema de Cuentas por Pagar</p>
         </div>
 
         <form onSubmit={handleLogin}>

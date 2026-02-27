@@ -738,37 +738,55 @@ export default function CxpApp({ user, onLogout }) {
         </div>
         {/* Row 3: Aging — Corriente */}
         <h3 style={{fontSize:14,fontWeight:700,color:C.navy,marginBottom:10}}>Antigüedad de Saldos</h3>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10,marginBottom:12}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:10,marginBottom:12}}>
           {[
-            {label:"Corriente 0-7d",items:corriente7,bg:"#E8F5E9",border:"#A5D6A7",color:C.ok},
-            {label:"Corriente 8-15d",items:corriente15,bg:"#E8F5E9",border:"#A5D6A7",color:C.ok},
-            {label:"Corriente 16-30d",items:corriente30,bg:"#FFF8E1",border:"#FFE082",color:"#F57F17"},
-            {label:"Corriente +30d",items:corrienteMas30,bg:"#FFF3E0",border:"#FFCC80",color:C.warn},
-          ].map(b=>(
-            <div key={b.label} onClick={()=>openDetail(b.label,b.items)} style={{background:b.bg,border:`1px solid ${b.border}`,borderRadius:12,padding:"12px 14px",cursor:"pointer",transition:"transform .15s"}}
-              onMouseEnter={e=>{e.currentTarget.style.transform="scale(1.03)";}} onMouseLeave={e=>{e.currentTarget.style.transform="scale(1)";}}>
-              <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:"uppercase"}}>{b.label}</div>
-              <div style={{fontSize:18,fontWeight:800,color:b.color}}>${fmt(sumSaldo(b.items))}</div>
-              <div style={{fontSize:11,color:C.muted}}>{b.items.length} fact.</div>
-            </div>
-          ))}
+            {label:"Corriente 0-7 Días",items:corriente7,bg:"#E8F5E9",border:"#A5D6A7",color:C.ok},
+            {label:"Corriente 8-15 Días",items:corriente15,bg:"#E8F5E9",border:"#A5D6A7",color:C.ok},
+            {label:"Corriente 16-30 Días",items:corriente30,bg:"#FFF8E1",border:"#FFE082",color:"#F57F17"},
+            {label:"Corriente +30 Días",items:corrienteMas30,bg:"#FFF3E0",border:"#FFCC80",color:C.warn},
+          ].map(b=>{
+            const byCur={MXN:0,USD:0,EUR:0};
+            b.items.forEach(i=>{byCur[i.moneda]=(byCur[i.moneda]||0)+saldoOf(i);});
+            return (
+              <div key={b.label} onClick={()=>openDetail(b.label,b.items)} style={{background:b.bg,border:`1px solid ${b.border}`,borderRadius:12,padding:"12px 14px",cursor:"pointer",transition:"transform .15s"}}
+                onMouseEnter={e=>{e.currentTarget.style.transform="scale(1.03)";}} onMouseLeave={e=>{e.currentTarget.style.transform="scale(1)";}}>
+                <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:"uppercase",marginBottom:4}}>{b.label}</div>
+                <div style={{fontSize:17,fontWeight:800,color:b.color,marginBottom:4}}>${fmt(sumSaldo(b.items))}</div>
+                <div style={{fontSize:10,color:C.muted,display:"flex",flexDirection:"column",gap:1}}>
+                  {byCur.MXN>0 && <span>🇲🇽 MXN: ${fmt(byCur.MXN)}</span>}
+                  {byCur.USD>0 && <span>🇺🇸 USD: ${fmt(byCur.USD)}</span>}
+                  {byCur.EUR>0 && <span>🇪🇺 EUR: €{fmt(byCur.EUR)}</span>}
+                </div>
+                <div style={{fontSize:10,color:C.muted,marginTop:2}}>{b.items.length} fact.</div>
+              </div>
+            );
+          })}
         </div>
         {/* Aging — Vencido */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10,marginBottom:24}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:10,marginBottom:24}}>
           {[
-            {label:"Vencido 1-7d",items:vencido7,bg:"#FFF5F5",border:"#FFCDD2",color:"#E57373"},
-            {label:"Vencido 8-15d",items:vencido15,bg:"#FFEBEE",border:"#EF9A9A",color:C.danger},
-            {label:"Vencido 16-30d",items:vencido30,bg:"#FFEBEE",border:"#EF9A9A",color:C.danger},
-            {label:"Vencido 31-60d",items:vencido60,bg:"#FFCDD2",border:"#E57373",color:"#C62828"},
-            {label:"Vencido +60d",items:vencidoMas60,bg:"#FFCDD2",border:"#E57373",color:"#B71C1C"},
-          ].map(b=>(
-            <div key={b.label} onClick={()=>openDetail(b.label,b.items)} style={{background:b.bg,border:`1px solid ${b.border}`,borderRadius:12,padding:"12px 14px",cursor:"pointer",transition:"transform .15s"}}
-              onMouseEnter={e=>{e.currentTarget.style.transform="scale(1.03)";}} onMouseLeave={e=>{e.currentTarget.style.transform="scale(1)";}}>
-              <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:"uppercase"}}>{b.label}</div>
-              <div style={{fontSize:18,fontWeight:800,color:b.color}}>${fmt(sumSaldo(b.items))}</div>
-              <div style={{fontSize:11,color:C.muted}}>{b.items.length} fact.</div>
-            </div>
-          ))}
+            {label:"Vencido 1-7 Días",items:vencido7,bg:"#FFF5F5",border:"#FFCDD2",color:"#E57373"},
+            {label:"Vencido 8-15 Días",items:vencido15,bg:"#FFEBEE",border:"#EF9A9A",color:C.danger},
+            {label:"Vencido 16-30 Días",items:vencido30,bg:"#FFEBEE",border:"#EF9A9A",color:C.danger},
+            {label:"Vencido 31-60 Días",items:vencido60,bg:"#FFCDD2",border:"#E57373",color:"#C62828"},
+            {label:"Vencido +60 Días",items:vencidoMas60,bg:"#FFCDD2",border:"#E57373",color:"#B71C1C"},
+          ].map(b=>{
+            const byCur={MXN:0,USD:0,EUR:0};
+            b.items.forEach(i=>{byCur[i.moneda]=(byCur[i.moneda]||0)+saldoOf(i);});
+            return (
+              <div key={b.label} onClick={()=>openDetail(b.label,b.items)} style={{background:b.bg,border:`1px solid ${b.border}`,borderRadius:12,padding:"12px 14px",cursor:"pointer",transition:"transform .15s"}}
+                onMouseEnter={e=>{e.currentTarget.style.transform="scale(1.03)";}} onMouseLeave={e=>{e.currentTarget.style.transform="scale(1)";}}>
+                <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:"uppercase",marginBottom:4}}>{b.label}</div>
+                <div style={{fontSize:17,fontWeight:800,color:b.color,marginBottom:4}}>${fmt(sumSaldo(b.items))}</div>
+                <div style={{fontSize:10,color:C.muted,display:"flex",flexDirection:"column",gap:1}}>
+                  {byCur.MXN>0 && <span>🇲🇽 MXN: ${fmt(byCur.MXN)}</span>}
+                  {byCur.USD>0 && <span>🇺🇸 USD: ${fmt(byCur.USD)}</span>}
+                  {byCur.EUR>0 && <span>🇪🇺 EUR: €{fmt(byCur.EUR)}</span>}
+                </div>
+                <div style={{fontSize:10,color:C.muted,marginTop:2}}>{b.items.length} fact.</div>
+              </div>
+            );
+          })}
         </div>
         {/* Charts */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
@@ -1388,8 +1406,8 @@ export default function CxpApp({ user, onLogout }) {
   if(loading) return (
     <div style={{display:"flex",height:"100vh",alignItems:"center",justifyContent:"center",fontFamily:"'DM Sans','Segoe UI',sans-serif",background:C.cream}}>
       <div style={{textAlign:"center"}}>
-        <div style={{fontSize:56,marginBottom:16}}>💼</div>
-        <div style={{fontSize:20,fontWeight:800,color:C.navy,marginBottom:8}}>CxP Manager</div>
+        <div style={{fontSize:56,marginBottom:16}}>✈️</div>
+        <div style={{fontSize:20,fontWeight:800,color:C.navy,marginBottom:8}}>Viajes Libero</div>
         <div style={{fontSize:14,color:C.muted}}>Cargando datos…</div>
       </div>
     </div>
@@ -1400,7 +1418,7 @@ export default function CxpApp({ user, onLogout }) {
       {/* Sidebar */}
       <aside style={{width:220,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",padding:"24px 12px",flexShrink:0}}>
         <div style={{padding:"0 8px 20px",borderBottom:`1px solid ${C.border}`,marginBottom:12}}>
-          <div style={{fontWeight:900,fontSize:17,color:C.navy}}>💼 CxP Manager</div>
+          <div style={{fontWeight:900,fontSize:17,color:C.navy}}>✈️ Viajes Libero</div>
           <div style={{fontSize:11,color:C.muted}}>Cuentas por Pagar</div>
         </div>
         <NavItem id="dashboard" icon="📊" label="Dashboard"/>
