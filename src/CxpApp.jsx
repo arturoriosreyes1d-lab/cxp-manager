@@ -736,58 +736,56 @@ export default function CxpApp({ user, onLogout }) {
             );
           })}
         </div>
-        {/* Row 3: Aging — Corriente */}
+        {/* Row 3: Aging — per currency */}
         <h3 style={{fontSize:14,fontWeight:700,color:C.navy,marginBottom:10}}>Antigüedad de Saldos</h3>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:10,marginBottom:12}}>
-          {[
-            {label:"Corriente 0-7 Días",items:corriente7,bg:"#E8F5E9",border:"#A5D6A7",color:C.ok},
-            {label:"Corriente 8-15 Días",items:corriente15,bg:"#E8F5E9",border:"#A5D6A7",color:C.ok},
-            {label:"Corriente 16-30 Días",items:corriente30,bg:"#FFF8E1",border:"#FFE082",color:"#F57F17"},
-            {label:"Corriente +30 Días",items:corrienteMas30,bg:"#FFF3E0",border:"#FFCC80",color:C.warn},
-          ].map(b=>{
-            const byCur={MXN:0,USD:0,EUR:0};
-            b.items.forEach(i=>{byCur[i.moneda]=(byCur[i.moneda]||0)+saldoOf(i);});
-            return (
-              <div key={b.label} onClick={()=>openDetail(b.label,b.items)} style={{background:b.bg,border:`1px solid ${b.border}`,borderRadius:12,padding:"12px 14px",cursor:"pointer",transition:"transform .15s"}}
-                onMouseEnter={e=>{e.currentTarget.style.transform="scale(1.03)";}} onMouseLeave={e=>{e.currentTarget.style.transform="scale(1)";}}>
-                <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:"uppercase",marginBottom:4}}>{b.label}</div>
-                <div style={{fontSize:17,fontWeight:800,color:b.color,marginBottom:4}}>${fmt(sumSaldo(b.items))}</div>
-                <div style={{fontSize:10,color:C.muted,display:"flex",flexDirection:"column",gap:1}}>
-                  {byCur.MXN>0 && <span>🇲🇽 MXN: ${fmt(byCur.MXN)}</span>}
-                  {byCur.USD>0 && <span>🇺🇸 USD: ${fmt(byCur.USD)}</span>}
-                  {byCur.EUR>0 && <span>🇪🇺 EUR: €{fmt(byCur.EUR)}</span>}
-                </div>
-                <div style={{fontSize:10,color:C.muted,marginTop:2}}>{b.items.length} fact.</div>
+        {["MXN","USD","EUR"].map(cur => {
+          const curItems = pendAll.filter(i=>i.moneda===cur);
+          if(curItems.length===0) return null;
+          const sym = cur==="EUR"?"€":"$";
+          const flag = {MXN:"🇲🇽",USD:"🇺🇸",EUR:"🇪🇺"}[cur];
+          const curColor = {MXN:C.mxn,USD:C.usd,EUR:C.eur}[cur];
+          const curBg = {MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[cur];
+          const curBorder = {MXN:"#90CAF9",USD:"#A5D6A7",EUR:"#CE93D8"}[cur];
+          const filterCur = arr => arr.filter(i=>i.moneda===cur);
+          const corrBuckets = [
+            {label:`Corriente 0-7 Días`,items:filterCur(corriente7),bg:"#E8F5E9",border:"#A5D6A7",color:C.ok},
+            {label:`Corriente 8-15 Días`,items:filterCur(corriente15),bg:"#E8F5E9",border:"#A5D6A7",color:C.ok},
+            {label:`Corriente 16-30 Días`,items:filterCur(corriente30),bg:"#FFF8E1",border:"#FFE082",color:"#F57F17"},
+            {label:`Corriente +30 Días`,items:filterCur(corrienteMas30),bg:"#FFF3E0",border:"#FFCC80",color:C.warn},
+          ];
+          const vencBuckets = [
+            {label:`Vencido 1-7 Días`,items:filterCur(vencido7),bg:"#FFF5F5",border:"#FFCDD2",color:"#E57373"},
+            {label:`Vencido 8-15 Días`,items:filterCur(vencido15),bg:"#FFEBEE",border:"#EF9A9A",color:C.danger},
+            {label:`Vencido 16-30 Días`,items:filterCur(vencido30),bg:"#FFEBEE",border:"#EF9A9A",color:C.danger},
+            {label:`Vencido 31-60 Días`,items:filterCur(vencido60),bg:"#FFCDD2",border:"#E57373",color:"#C62828"},
+            {label:`Vencido +60 Días`,items:filterCur(vencidoMas60),bg:"#FFCDD2",border:"#E57373",color:"#B71C1C"},
+          ];
+          const AgingCard = ({b}) => (
+            <div onClick={()=>openDetail(`${cur} — ${b.label}`,b.items)} style={{background:b.bg,border:`1px solid ${b.border}`,borderRadius:12,padding:"10px 12px",cursor:b.items.length>0?"pointer":"default",transition:"transform .15s",opacity:b.items.length>0?1:0.5}}
+              onMouseEnter={e=>{if(b.items.length>0)e.currentTarget.style.transform="scale(1.03)";}} onMouseLeave={e=>{e.currentTarget.style.transform="scale(1)";}}>
+              <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:"uppercase",marginBottom:3}}>{b.label}</div>
+              <div style={{fontSize:16,fontWeight:800,color:b.items.length>0?b.color:C.muted}}>{sym}{fmt(sumSaldo(b.items))}</div>
+              <div style={{fontSize:10,color:C.muted}}>{b.items.length} fact.</div>
+            </div>
+          );
+          return (
+            <div key={cur} style={{background:curBg,border:`2px solid ${curBorder}`,borderRadius:16,padding:16,marginBottom:14}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                <span style={{fontSize:18}}>{flag}</span>
+                <span style={{fontSize:15,fontWeight:800,color:curColor}}>{cur}</span>
+                <span style={{fontSize:12,color:C.muted}}>— Saldo total: {sym}{fmt(sumSaldo(curItems))} ({curItems.length} fact.)</span>
               </div>
-            );
-          })}
-        </div>
-        {/* Aging — Vencido */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:10,marginBottom:24}}>
-          {[
-            {label:"Vencido 1-7 Días",items:vencido7,bg:"#FFF5F5",border:"#FFCDD2",color:"#E57373"},
-            {label:"Vencido 8-15 Días",items:vencido15,bg:"#FFEBEE",border:"#EF9A9A",color:C.danger},
-            {label:"Vencido 16-30 Días",items:vencido30,bg:"#FFEBEE",border:"#EF9A9A",color:C.danger},
-            {label:"Vencido 31-60 Días",items:vencido60,bg:"#FFCDD2",border:"#E57373",color:"#C62828"},
-            {label:"Vencido +60 Días",items:vencidoMas60,bg:"#FFCDD2",border:"#E57373",color:"#B71C1C"},
-          ].map(b=>{
-            const byCur={MXN:0,USD:0,EUR:0};
-            b.items.forEach(i=>{byCur[i.moneda]=(byCur[i.moneda]||0)+saldoOf(i);});
-            return (
-              <div key={b.label} onClick={()=>openDetail(b.label,b.items)} style={{background:b.bg,border:`1px solid ${b.border}`,borderRadius:12,padding:"12px 14px",cursor:"pointer",transition:"transform .15s"}}
-                onMouseEnter={e=>{e.currentTarget.style.transform="scale(1.03)";}} onMouseLeave={e=>{e.currentTarget.style.transform="scale(1)";}}>
-                <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:"uppercase",marginBottom:4}}>{b.label}</div>
-                <div style={{fontSize:17,fontWeight:800,color:b.color,marginBottom:4}}>${fmt(sumSaldo(b.items))}</div>
-                <div style={{fontSize:10,color:C.muted,display:"flex",flexDirection:"column",gap:1}}>
-                  {byCur.MXN>0 && <span>🇲🇽 MXN: ${fmt(byCur.MXN)}</span>}
-                  {byCur.USD>0 && <span>🇺🇸 USD: ${fmt(byCur.USD)}</span>}
-                  {byCur.EUR>0 && <span>🇪🇺 EUR: €{fmt(byCur.EUR)}</span>}
-                </div>
-                <div style={{fontSize:10,color:C.muted,marginTop:2}}>{b.items.length} fact.</div>
+              <div style={{fontSize:12,fontWeight:700,color:C.ok,marginBottom:6}}>Corriente</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:8,marginBottom:10}}>
+                {corrBuckets.map(b=><AgingCard key={b.label} b={b}/>)}
               </div>
-            );
-          })}
-        </div>
+              <div style={{fontSize:12,fontWeight:700,color:C.danger,marginBottom:6}}>Vencido</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:8}}>
+                {vencBuckets.map(b=><AgingCard key={b.label} b={b}/>)}
+              </div>
+            </div>
+          );
+        })}
         {/* Charts */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
           <div style={{background:C.surface,borderRadius:16,padding:24,border:`1px solid ${C.border}`}}>
