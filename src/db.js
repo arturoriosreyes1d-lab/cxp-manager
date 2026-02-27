@@ -118,11 +118,11 @@ export async function upsertInvoice(inv) {
 export async function upsertManyInvoices(invArr) {
   const rows = invArr.map(inv => {
     const row = toDB(inv);
-    const isUUID = /^[0-9a-f]{8}-/.test(row.id);
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(row.id);
     if (!isUUID) delete row.id;
     return row;
   });
-  const { data, error } = await supabase.from('invoices').upsert(rows).select();
+  const { data, error } = await supabase.from('invoices').insert(rows).select();
   if (error) { console.error('upsertManyInvoices:', error); return invArr; }
   return (data || []).map(toApp);
 }
@@ -184,11 +184,11 @@ export async function upsertSupplier(sup) {
 export async function upsertManySuppliers(sups) {
   const rows = sups.map(s => {
     const row = supToDB(s);
-    const isUUID = /^[0-9a-f]{8}-/.test(row.id);
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(row.id);
     if (!isUUID) delete row.id;
     return row;
   });
-  const { data, error } = await supabase.from('suppliers').upsert(rows).select();
+  const { data, error } = await supabase.from('suppliers').insert(rows).select();
   if (error) { console.error('upsertManySuppliers:', error); return sups; }
   return (data || []).map(supToApp);
 }

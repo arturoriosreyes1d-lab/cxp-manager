@@ -475,8 +475,7 @@ export default function CxpApp({ user, onLogout }) {
           const monedaRaw=String(get(row,["MONEDA","CURRENCY","MON"])||"").trim().toUpperCase();
           const moneda = (monedaRaw==="USD"||monedaRaw==="DOLAR"||monedaRaw==="DOLARES"||monedaRaw==="DOLLAR"||monedaRaw==="US DOLLAR") ? "USD"
             : (monedaRaw==="EUR"||monedaRaw==="EURO"||monedaRaw==="EUROS") ? "EUR"
-            : (monedaRaw==="MXN"||monedaRaw==="PESO"||monedaRaw==="PESOS"||monedaRaw==="MN"||monedaRaw==="M.N."||monedaRaw==="M.N") ? "MXN"
-            : monedaRaw ? "MXN" : (sup?.moneda||"MXN");
+            : "MXN";
           const diasCredito=sup?.diasCredito||30;
           const inv = {
             id:uid(), tipo:String(get(row,["TIPO"])||"Factura"), fecha,
@@ -484,7 +483,7 @@ export default function CxpApp({ user, onLogout }) {
             clasificacion:sup?.clasificacion||"Otros",
             subtotal, iva:ivaFinal, retIsr:0, retIva:0, total, montoPagado:0, concepto:"",
             diasCredito, vencimiento:addDays(fecha,diasCredito), estatus:"Pendiente",
-            fechaProgramacion:"", diasFicticios:0, referencia:"", notas:"",
+            fechaProgramacion:"", diasFicticios:0, referencia:"", notas:"", moneda,
           };
           if(ni[moneda]){ni[moneda].push(inv);added++;}
         });
@@ -496,18 +495,22 @@ export default function CxpApp({ user, onLogout }) {
 
         if(added > 0) {
           const allNew = [...ni.MXN,...ni.USD,...ni.EUR];
+          // Save to Supabase and then reload from DB to get correct UUIDs
+          upsertManyInvoices(allNew).then(() => {
+            fetchInvoices().then(inv => setInvoices(inv));
+          });
+          // Optimistic local update
           setInvoices(prev=>({MXN:[...prev.MXN,...ni.MXN],USD:[...prev.USD,...ni.USD],EUR:[...prev.EUR,...ni.EUR]}));
-          upsertManyInvoices(allNew);
         }
 
         let msg = "";
-        if(added > 0) msg += "\u2705 Se importaron " + added + " factura" + (added!==1?"s":"") + " nueva" + (added!==1?"s":"") + ".";
+        if(added > 0) msg += "✅ Se importaron " + added + " factura" + (added!==1?"s":"") + " nueva" + (added!==1?"s":"") + ".";
         if(newSuppliers>0) msg += " Se registraron " + newSuppliers + " proveedor" + (newSuppliers!==1?"es":"") + " nuevo" + (newSuppliers!==1?"s":"") + ".";
-        if(duplicated.length > 0) msg += (msg?" ":"") + "\u26a0\ufe0f " + duplicated.length + " factura" + (duplicated.length!==1?"s":"") + " duplicada" + (duplicated.length!==1?"s":"") + " NO se cargaron:";
-        if(added === 0 && duplicated.length === 0) msg = "\u26a0\ufe0f No se encontraron facturas v\u00e1lidas en el archivo.";
+        if(duplicated.length > 0) msg += (msg?" ":"") + "⚠️ " + duplicated.length + " factura" + (duplicated.length!==1?"s":"") + " duplicada" + (duplicated.length!==1?"s":"") + " NO se cargaron:";
+        if(added === 0 && duplicated.length === 0) msg = "⚠️ No se encontraron facturas válidas en el archivo.";
         setImportMsg(msg);
         setImportDupes(duplicated);
-      } catch(err){ setImportMsg("\u274c Error: "+err.message); setImportDupes([]); }
+      } catch(err){ setImportMsg("❌ Error: "+err.message); setImportDupes([]); }
     };
     reader.readAsArrayBuffer(file); e.target.value="";
   };
@@ -1249,10 +1252,10 @@ export default function CxpApp({ user, onLogout }) {
       </div>
       {importMsg && (
         <div style={{marginBottom:20}}>
-          <div style={{padding:16,borderRadius:10,background:importMsg.includes("\u2705")?"#E8F5E9":"#FFEBEE",border:`1px solid ${importMsg.includes("\u2705")?C.ok:C.danger}`,fontSize:14,fontWeight:600,whiteSpace:"pre-line"}}>{importMsg}</div>
+          <div style={{padding:16,borderRadius:10,background:importMsg.includes("✅")?"#E8F5E9":"#FFEBEE",border:`1px solid ${importMsg.includes("✅")?C.ok:C.danger}`,fontSize:14,fontWeight:600,whiteSpace:"pre-line"}}>{importMsg}</div>
           {importDupes.length > 0 && (
             <div style={{marginTop:12,background:"#FFF8E1",border:"1px solid #FFE082",borderRadius:12,padding:16}}>
-              <div style={{fontWeight:700,color:"#F57F17",marginBottom:10,fontSize:14}}>\u26a0\ufe0f Facturas duplicadas (no se cargaron):</div>
+              <div style={{fontWeight:700,color:"#F57F17",marginBottom:10,fontSize:14}}>⚠️ Facturas duplicadas (no se cargaron):</div>
               <div style={{overflowX:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                   <thead><tr style={{background:"#FFF3E0"}}>
@@ -1638,7 +1641,7 @@ export default function CxpApp({ user, onLogout }) {
             const groups = {};
             if(dashGroupBy) {
               items.forEach(inv => {
-                const k = dashGroupBy==="proveedor"?inv.proveedor:dashGroupBy==="clasificacion"?inv.clasificacion:dashGroupBy==="estatus"?inv.estatus:dashGroupBy==="moneda"?inv.moneda:"\u2014";
+                const k = dashGroupBy==="proveedor"?inv.proveedor:dashGroupBy==="clasificacion"?inv.clasificacion:dashGroupBy==="estatus"?inv.estatus:dashGroupBy==="moneda"?inv.moneda:"—";
                 if(!groups[k]) groups[k]=[];
                 groups[k].push(inv);
               });
@@ -1650,7 +1653,7 @@ export default function CxpApp({ user, onLogout }) {
                     <th style={{padding:"7px 4px",textAlign:"center",width:32}}>
                       <input type="checkbox" checked={allChecked} onChange={toggleDashSelAll} style={{cursor:"pointer",width:15,height:15,accentColor:C.blue}}/>
                     </th>
-                    {["Folio","Proveedor","Concepto","Clasif.","Fecha","Total","Pagado","Saldo","Progr.Pago","Vence","D\u00edas","Estatus","Aut.Dir.","Moneda"].map(h=>(
+                    {["Folio","Proveedor","Concepto","Clasif.","Fecha","Total","Pagado","Saldo","Progr.Pago","Vence","Días","Estatus","Aut.Dir.","Moneda"].map(h=>(
                       <th key={h} style={{padding:"7px 6px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                     ))}
                   </tr></thead>
@@ -1659,9 +1662,9 @@ export default function CxpApp({ user, onLogout }) {
                       const saldo=(+inv.total||0)-(+inv.montoPagado||0);
                       const overdue=isOverdue(inv.vencimiento,inv.estatus);
                       const dias = daysUntil(inv.vencimiento);
-                      const diasLabel = dias===null ? "\u2014" : dias>=0 ? dias+" d" : Math.abs(dias)+" d";
+                      const diasLabel = dias===null ? "—" : dias>=0 ? dias+" d" : Math.abs(dias)+" d";
                       const diasColor = dias===null ? C.muted : dias>=0 ? C.ok : C.danger;
-                      const diasPrefix = dias===null ? "" : dias>=0 ? "\u23f3 " : "\u26a0\ufe0f ";
+                      const diasPrefix = dias===null ? "" : dias>=0 ? "⏳ " : "⚠️ ";
                       const checked = dashSelectedIds.has(inv.id);
                       return (
                         <tr key={inv.id} style={{borderTop:`1px solid ${C.border}`,background:checked?"#EEF2FF":overdue?"#FFF5F5":"transparent"}}>
@@ -1670,19 +1673,19 @@ export default function CxpApp({ user, onLogout }) {
                           </td>
                           <td style={{padding:"7px 6px",fontWeight:600,whiteSpace:"nowrap"}}>{inv.serie}{inv.folio}</td>
                           <td style={{padding:"7px 6px",fontWeight:600,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{inv.proveedor}</td>
-                          <td style={{padding:"7px 6px",color:inv.concepto?C.text:C.muted,fontStyle:inv.concepto?"normal":"italic",maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{inv.concepto||"\u2014"}</td>
+                          <td style={{padding:"7px 6px",color:inv.concepto?C.text:C.muted,fontStyle:inv.concepto?"normal":"italic",maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{inv.concepto||"—"}</td>
                           <td style={{padding:"7px 6px"}}><span style={{background:"#EEF2FF",color:C.blue,padding:"1px 5px",borderRadius:20,fontSize:10,fontWeight:600}}>{inv.clasificacion}</span></td>
                           <td style={{padding:"7px 6px",whiteSpace:"nowrap",fontSize:11}}>{inv.fecha}</td>
                           <td style={{padding:"7px 6px",fontWeight:700}}>${fmt(inv.total)}</td>
                           <td style={{padding:"7px 6px",color:C.ok}}>${fmt(inv.montoPagado)}</td>
                           <td style={{padding:"7px 6px",fontWeight:700,color:saldo>0?(overdue?C.danger:C.warn):C.ok}}>${fmt(saldo)}</td>
-                          <td style={{padding:"7px 6px",whiteSpace:"nowrap",fontSize:11}}>{inv.fechaProgramacion||"\u2014"}</td>
-                          <td style={{padding:"7px 6px",whiteSpace:"nowrap",color:overdue?C.danger:C.text,fontSize:11}}>{inv.vencimiento||"\u2014"}</td>
+                          <td style={{padding:"7px 6px",whiteSpace:"nowrap",fontSize:11}}>{inv.fechaProgramacion||"—"}</td>
+                          <td style={{padding:"7px 6px",whiteSpace:"nowrap",color:overdue?C.danger:C.text,fontSize:11}}>{inv.vencimiento||"—"}</td>
                           <td style={{padding:"7px 6px",whiteSpace:"nowrap",fontWeight:700,color:diasColor,fontSize:11}}>{diasPrefix}{diasLabel}</td>
                           <td style={{padding:"7px 6px"}}><span style={{color:statusColor(inv.estatus),fontWeight:700,fontSize:10}}>{inv.estatus}</span></td>
                           <td style={{padding:"7px 6px",textAlign:"center"}}>
                             <button onClick={()=>toggleAutorizadoDireccion(inv.id,inv.moneda)} style={{background:"none",border:"none",cursor:"pointer",fontSize:16,padding:1,lineHeight:1}}>
-                              {inv.autorizadoDireccion ? "\u2705" : "\u2b1c"}
+                              {inv.autorizadoDireccion ? "✅" : "⬜"}
                             </button>
                           </td>
                           <td style={{padding:"7px 6px"}}><span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[inv.moneda],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[inv.moneda],padding:"1px 5px",borderRadius:20,fontSize:10,fontWeight:700}}>{inv.moneda}</span></td>
@@ -1697,7 +1700,7 @@ export default function CxpApp({ user, onLogout }) {
               <div>
                 {/* Search + Filters */}
                 <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12,alignItems:"center"}}>
-                  <input placeholder="\ud83d\udd0d Buscar\u2026" value={dashSearch} onChange={e=>setDashSearch(e.target.value)} style={{...inputStyle,maxWidth:180,padding:"6px 10px",fontSize:12}}/>
+                  <input placeholder="🔍 Buscar…" value={dashSearch} onChange={e=>setDashSearch(e.target.value)} style={{...inputStyle,maxWidth:180,padding:"6px 10px",fontSize:12}}/>
                   <select value={dashFilterProv} onChange={e=>setDashFilterProv(e.target.value)} style={{...selectStyle,maxWidth:160,padding:"6px 8px",fontSize:12}}>
                     <option value="">Todos proveedores</option>
                     {provsList.map(p=><option key={p}>{p}</option>)}
@@ -1730,19 +1733,19 @@ export default function CxpApp({ user, onLogout }) {
                   </div>
                   {selCount>0 && (
                     <div style={{background:"#E8F0FE",borderRadius:8,padding:"6px 14px",fontSize:12,border:`1px solid ${C.blue}`}}>
-                      <span style={{color:C.blue,fontWeight:700}}>\u2705 {selCount} seleccionada{selCount!==1?"s":""}: ${fmt(selSaldo)}</span>
+                      <span style={{color:C.blue,fontWeight:700}}>✅ {selCount} seleccionada{selCount!==1?"s":""}: ${fmt(selSaldo)}</span>
                     </div>
                   )}
                 </div>
                 {/* Bulk edit bar */}
                 {selCount>0 && (
                   <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:14,padding:"10px 14px",background:"#E8F0FE",borderRadius:10,border:`1px solid ${C.blue}`}}>
-                    <span style={{fontSize:12,fontWeight:700,color:C.blue}}>Edici\u00f3n masiva ({selCount}):</span>
+                    <span style={{fontSize:12,fontWeight:700,color:C.blue}}>Edición masiva ({selCount}):</span>
                     <input type="date" value={dashBulkProgPago} onChange={e=>setDashBulkProgPago(e.target.value)} style={{...inputStyle,maxWidth:160,padding:"5px 8px",fontSize:12}} title="Progr. Pago"/>
                     <select value={dashBulkAutDir} onChange={e=>setDashBulkAutDir(e.target.value)} style={{...selectStyle,maxWidth:160,padding:"5px 8px",fontSize:12}}>
-                      <option value="">Aut. Direcci\u00f3n</option>
-                      <option value="true">\u2705 Autorizado</option>
-                      <option value="false">\u2b1c No autorizado</option>
+                      <option value="">Aut. Dirección</option>
+                      <option value="true">✅ Autorizado</option>
+                      <option value="false">⬜ No autorizado</option>
                     </select>
                     <button onClick={applyDashBulk} style={{...btnStyle,padding:"6px 16px",fontSize:12}}>Aplicar</button>
                     <button onClick={()=>{setDashSelectedIds(new Set());setDashBulkProgPago("");setDashBulkAutDir("");}} style={{...btnStyle,padding:"6px 12px",fontSize:12,background:"#F1F5F9",color:C.text}}>Cancelar</button>
@@ -1755,8 +1758,8 @@ export default function CxpApp({ user, onLogout }) {
                     return (
                       <div key={grp} style={{marginBottom:16}}>
                         <div style={{display:"flex",justifyContent:"space-between",padding:"6px 12px",background:C.navy,borderRadius:8,marginBottom:4}}>
-                          <span style={{fontWeight:700,color:"#fff",fontSize:13}}>{grp||"\u2014"}</span>
-                          <span style={{color:"#94A3B8",fontSize:12}}>{rows.length} fact. \u00b7 Saldo: ${fmt(grpSaldo)}</span>
+                          <span style={{fontWeight:700,color:"#fff",fontSize:13}}>{grp||"—"}</span>
+                          <span style={{color:"#94A3B8",fontSize:12}}>{rows.length} fact. · Saldo: ${fmt(grpSaldo)}</span>
                         </div>
                         {renderTable(rows)}
                       </div>
@@ -1775,14 +1778,14 @@ export default function CxpApp({ user, onLogout }) {
             });
             return (
               <div>
-                <input placeholder="\ud83d\udd0d Buscar proveedor\u2026" value={dashSearch} onChange={e=>setDashSearch(e.target.value)} style={{...inputStyle,maxWidth:280,padding:"6px 10px",fontSize:12,marginBottom:14}}/>
+                <input placeholder="🔍 Buscar proveedor…" value={dashSearch} onChange={e=>setDashSearch(e.target.value)} style={{...inputStyle,maxWidth:280,padding:"6px 10px",fontSize:12,marginBottom:14}}/>
                 <div style={{marginBottom:12,background:"#F8FAFC",borderRadius:8,padding:"6px 14px",fontSize:12,display:"inline-block"}}>
                   <span style={{color:C.muted}}>Mostrando: </span><span style={{fontWeight:700}}>{filtered.length} proveedores</span>
                 </div>
                 <div style={{overflowX:"auto"}}>
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                     <thead><tr style={{background:"#F8FAFC"}}>
-                      {["Nombre","RFC","Moneda","D\u00edas Cr\u00e9dito","Clasificaci\u00f3n","Contacto","Email","Tel\u00e9fono"].map(h=>(
+                      {["Nombre","RFC","Moneda","Días Crédito","Clasificación","Contacto","Email","Teléfono"].map(h=>(
                         <th key={h} style={{padding:"7px 8px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>{h}</th>
                       ))}
                     </tr></thead>
@@ -1794,9 +1797,9 @@ export default function CxpApp({ user, onLogout }) {
                           <td style={{padding:"7px 8px"}}><span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[sup.moneda],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[sup.moneda],padding:"1px 6px",borderRadius:20,fontSize:10,fontWeight:700}}>{sup.moneda}</span></td>
                           <td style={{padding:"7px 8px"}}>{sup.diasCredito}</td>
                           <td style={{padding:"7px 8px"}}><span style={{background:"#EEF2FF",color:C.blue,padding:"1px 6px",borderRadius:20,fontSize:10,fontWeight:600}}>{sup.clasificacion}</span></td>
-                          <td style={{padding:"7px 8px",color:sup.contacto?C.text:C.muted}}>{sup.contacto||"\u2014"}</td>
-                          <td style={{padding:"7px 8px",color:sup.email?C.text:C.muted}}>{sup.email||"\u2014"}</td>
-                          <td style={{padding:"7px 8px"}}>{sup.telefono||"\u2014"}</td>
+                          <td style={{padding:"7px 8px",color:sup.contacto?C.text:C.muted}}>{sup.contacto||"—"}</td>
+                          <td style={{padding:"7px 8px",color:sup.email?C.text:C.muted}}>{sup.email||"—"}</td>
+                          <td style={{padding:"7px 8px"}}>{sup.telefono||"—"}</td>
                         </tr>
                       ))}
                     </tbody>
