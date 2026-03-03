@@ -130,6 +130,8 @@ export default function CxpApp({ user, onLogout }) {
   const [dashSelectedIds, setDashSelectedIds] = useState(new Set());
   const [dashBulkProgPago, setDashBulkProgPago] = useState("");
   const [dashBulkAutDir, setDashBulkAutDir] = useState("");
+  const [pagosFecha, setPagosFecha] = useState(today());
+  const [pagosDetail, setPagosDetail] = useState(null); // {proveedor, facturas}
   const fileRef = useRef();
   const searchRef = useRef();
 
@@ -1298,6 +1300,108 @@ export default function CxpApp({ user, onLogout }) {
     </div>
   );
 
+  /* ── PAGOS ─────────────────────────────────────────────────────────── */
+  const renderPagos = () => {
+    const allInvs = [
+      ...invoices.MXN.map(i=>({...i,moneda:"MXN"})),
+      ...invoices.USD.map(i=>({...i,moneda:"USD"})),
+      ...invoices.EUR.map(i=>({...i,moneda:"EUR"})),
+    ];
+    // Filter paid invoices by fechaProgramacion (payment date)
+    const pagadas = allInvs.filter(i => {
+      if(i.estatus!=="Pagado" && i.estatus!=="Parcial") return false;
+      return i.fechaProgramacion === pagosFecha;
+    });
+    // Group by proveedor
+    const porProveedor = {};
+    pagadas.forEach(inv => {
+      if(!porProveedor[inv.proveedor]) porProveedor[inv.proveedor] = { facturas:[], totalPagado:0, monedas:new Set() };
+      porProveedor[inv.proveedor].facturas.push(inv);
+      porProveedor[inv.proveedor].totalPagado += (+inv.montoPagado||0);
+      porProveedor[inv.proveedor].monedas.add(inv.moneda);
+    });
+    const proveedores = Object.entries(porProveedor).sort((a,b) => a[0].localeCompare(b[0]));
+    const totalGeneral = pagadas.reduce((s,i) => s+(+i.montoPagado||0), 0);
+
+    return (
+      <div>
+        <h1 style={{fontSize:22,fontWeight:800,color:C.navy,marginBottom:4}}>💰 Pagos Realizados</h1>
+        <p style={{color:C.muted,fontSize:14,marginBottom:20}}>Consulta los pagos realizados por fecha</p>
+        {/* Date filter */}
+        <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:24}}>
+          <label style={{fontSize:13,fontWeight:700,color:C.navy}}>Fecha de pago:</label>
+          <input type="date" value={pagosFecha} onChange={e=>setPagosFecha(e.target.value)} style={{...inputStyle,maxWidth:200}}/>
+        </div>
+        {/* Summary */}
+        {pagadas.length > 0 && (
+          <div style={{display:"flex",gap:16,marginBottom:20,flexWrap:"wrap"}}>
+            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"14px 20px"}}>
+              <div style={{fontSize:11,color:C.muted,fontWeight:600,textTransform:"uppercase"}}>Proveedores pagados</div>
+              <div style={{fontSize:24,fontWeight:800,color:C.navy}}>{proveedores.length}</div>
+            </div>
+            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"14px 20px"}}>
+              <div style={{fontSize:11,color:C.muted,fontWeight:600,textTransform:"uppercase"}}>Facturas pagadas</div>
+              <div style={{fontSize:24,fontWeight:800,color:C.navy}}>{pagadas.length}</div>
+            </div>
+            <div style={{background:"#E8F5E9",border:"1px solid #A5D6A7",borderRadius:12,padding:"14px 20px"}}>
+              <div style={{fontSize:11,color:C.muted,fontWeight:600,textTransform:"uppercase"}}>Total pagado</div>
+              <div style={{fontSize:24,fontWeight:800,color:C.ok}}>${fmt(totalGeneral)}</div>
+            </div>
+          </div>
+        )}
+        {/* Providers list */}
+        {proveedores.length > 0 ? (
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:14}}>
+              <thead>
+                <tr style={{background:"#F8FAFC"}}>
+                  <th style={{padding:"12px 16px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>Proveedor</th>
+                  <th style={{padding:"12px 16px",textAlign:"center",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>Facturas</th>
+                  <th style={{padding:"12px 16px",textAlign:"center",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>Moneda(s)</th>
+                  <th style={{padding:"12px 16px",textAlign:"right",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>Total Pagado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {proveedores.map(([prov, data]) => {
+                  const monedas = [...data.monedas].join(", ");
+                  return (
+                    <tr key={prov} onClick={()=>setPagosDetail({proveedor:prov, facturas:data.facturas})}
+                      style={{borderTop:`1px solid ${C.border}`,cursor:"pointer",transition:"background .15s"}}
+                      onMouseEnter={e=>{e.currentTarget.style.background="#F0F7FF";}}
+                      onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+                      <td style={{padding:"14px 16px",fontWeight:700,color:C.navy}}>{prov}</td>
+                      <td style={{padding:"14px 16px",textAlign:"center"}}>{data.facturas.length}</td>
+                      <td style={{padding:"14px 16px",textAlign:"center"}}>
+                        {[...data.monedas].map(m=>(
+                          <span key={m} style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[m],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[m],padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,marginRight:4}}>{m}</span>
+                        ))}
+                      </td>
+                      <td style={{padding:"14px 16px",textAlign:"right",fontWeight:800,color:C.ok,fontSize:16}}>${fmt(data.totalPagado)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr style={{borderTop:`2px solid ${C.navy}`,background:"#F8FAFC"}}>
+                  <td style={{padding:"14px 16px",fontWeight:800,color:C.navy}}>TOTAL</td>
+                  <td style={{padding:"14px 16px",textAlign:"center",fontWeight:700}}>{pagadas.length}</td>
+                  <td/>
+                  <td style={{padding:"14px 16px",textAlign:"right",fontWeight:800,color:C.navy,fontSize:16}}>${fmt(totalGeneral)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        ) : (
+          <div style={{textAlign:"center",padding:60,color:C.muted,background:C.surface,borderRadius:14,border:`1px solid ${C.border}`}}>
+            <div style={{fontSize:48,marginBottom:12}}>📭</div>
+            <div style={{fontSize:16,fontWeight:600}}>No se encontraron pagos en esta fecha</div>
+            <div style={{fontSize:13,marginTop:4}}>Selecciona otra fecha o verifica que las facturas tengan Progr. Pago asignada y estatus Pagado</div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   /* ── CONFIG ─────────────────────────────────────────────────────────── */
   const renderConfig = () => {
     const [nc, setNc] = useState("");
@@ -1466,6 +1570,7 @@ export default function CxpApp({ user, onLogout }) {
         </div>
         <NavItem id="dashboard" icon="📊" label="Dashboard"/>
         <NavItem id="cartera" icon="🧾" label="Cartera"/>
+        <NavItem id="pagos" icon="💰" label="Pagos"/>
         <NavItem id="proveedores" icon="🏢" label="Proveedores"/>
         <NavItem id="proyeccion" icon="📅" label="Proyección"/>
         <NavItem id="importar" icon="📥" label="Importar"/>
@@ -1496,6 +1601,7 @@ export default function CxpApp({ user, onLogout }) {
       <main style={{flex:1,overflowY:"auto",padding:32}}>
         {view==="dashboard" && renderDashboard()}
         {view==="cartera" && renderCartera()}
+        {view==="pagos" && renderPagos()}
         {view==="proveedores" && renderProveedores()}
         {view==="proyeccion" && renderProyeccion()}
         {view==="importar" && renderImportar()}
@@ -1587,6 +1693,49 @@ export default function CxpApp({ user, onLogout }) {
               ))}
             </tbody>
           </table>
+        </ModalShell>
+      )}
+
+      {/* Pagos detail modal */}
+      {pagosDetail && (
+        <ModalShell title={`Pagos a ${pagosDetail.proveedor} — ${pagosFecha}`} onClose={()=>setPagosDetail(null)} wide>
+          <div style={{marginBottom:14,display:"flex",gap:12,flexWrap:"wrap"}}>
+            <div style={{background:"#F8FAFC",borderRadius:8,padding:"6px 14px",fontSize:12}}>
+              <span style={{color:C.muted}}>Facturas: </span><span style={{fontWeight:700}}>{pagosDetail.facturas.length}</span>
+            </div>
+            <div style={{background:"#E8F5E9",borderRadius:8,padding:"6px 14px",fontSize:12}}>
+              <span style={{color:C.muted}}>Total pagado: </span><span style={{fontWeight:700,color:C.ok}}>${fmt(pagosDetail.facturas.reduce((s,i)=>s+(+i.montoPagado||0),0))}</span>
+            </div>
+          </div>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+              <thead>
+                <tr style={{background:"#F8FAFC"}}>
+                  {["Tipo","Fecha","Folio","Concepto","Moneda","Importe Pagado"].map(h=>(
+                    <th key={h} style={{padding:"10px 12px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {pagosDetail.facturas.map(inv=>(
+                  <tr key={inv.id} style={{borderTop:`1px solid ${C.border}`}}>
+                    <td style={{padding:"10px 12px"}}>{inv.tipo}</td>
+                    <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>{inv.fecha}</td>
+                    <td style={{padding:"10px 12px",fontWeight:700}}>{inv.serie}{inv.folio}</td>
+                    <td style={{padding:"10px 12px",color:inv.concepto?C.text:C.muted,fontStyle:inv.concepto?"normal":"italic"}}>{inv.concepto||"—"}</td>
+                    <td style={{padding:"10px 12px"}}><span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[inv.moneda],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[inv.moneda],padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{inv.moneda}</span></td>
+                    <td style={{padding:"10px 12px",fontWeight:800,color:C.ok,fontSize:15}}>${fmt(inv.montoPagado)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{borderTop:`2px solid ${C.navy}`,background:"#F8FAFC"}}>
+                  <td colSpan={5} style={{padding:"10px 12px",fontWeight:800,color:C.navy}}>TOTAL</td>
+                  <td style={{padding:"10px 12px",fontWeight:800,color:C.navy,fontSize:15}}>${fmt(pagosDetail.facturas.reduce((s,i)=>s+(+i.montoPagado||0),0))}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </ModalShell>
       )}
 
