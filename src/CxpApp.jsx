@@ -1302,38 +1302,53 @@ export default function CxpApp({ user, onLogout }) {
 
   /* ── PAGOS ─────────────────────────────────────────────────────────── */
   const renderPagos = () => {
+    const [pagosSearch, setPagosSearch] = useState("");
     const allInvs = [
       ...invoices.MXN.map(i=>({...i,moneda:"MXN"})),
       ...invoices.USD.map(i=>({...i,moneda:"USD"})),
       ...invoices.EUR.map(i=>({...i,moneda:"EUR"})),
     ];
+    // Helper: effective paid amount (if Pagado and montoPagado is 0, use total)
+    const importePagado = inv => {
+      const mp = +inv.montoPagado||0;
+      if(mp > 0) return mp;
+      if(inv.estatus === "Pagado") return +inv.total||0;
+      return mp;
+    };
     // Filter paid invoices by fechaProgramacion (payment date)
     const pagadas = allInvs.filter(i => {
       if(i.estatus!=="Pagado" && i.estatus!=="Parcial") return false;
       return i.fechaProgramacion === pagosFecha;
     });
+    // Apply search
+    const pagadasFiltered = pagadas.filter(inv => {
+      if(!pagosSearch) return true;
+      const q = pagosSearch.toLowerCase();
+      return inv.proveedor.toLowerCase().includes(q) || (inv.serie+inv.folio).toLowerCase().includes(q) || (inv.concepto||"").toLowerCase().includes(q) || String(inv.total).includes(q) || inv.moneda.toLowerCase().includes(q);
+    });
     // Group by proveedor
     const porProveedor = {};
-    pagadas.forEach(inv => {
+    pagadasFiltered.forEach(inv => {
       if(!porProveedor[inv.proveedor]) porProveedor[inv.proveedor] = { facturas:[], totalPagado:0, monedas:new Set() };
       porProveedor[inv.proveedor].facturas.push(inv);
-      porProveedor[inv.proveedor].totalPagado += (+inv.montoPagado||0);
+      porProveedor[inv.proveedor].totalPagado += importePagado(inv);
       porProveedor[inv.proveedor].monedas.add(inv.moneda);
     });
     const proveedores = Object.entries(porProveedor).sort((a,b) => a[0].localeCompare(b[0]));
-    const totalGeneral = pagadas.reduce((s,i) => s+(+i.montoPagado||0), 0);
+    const totalGeneral = pagadasFiltered.reduce((s,i) => s+importePagado(i), 0);
 
     return (
       <div>
         <h1 style={{fontSize:22,fontWeight:800,color:C.navy,marginBottom:4}}>💰 Pagos Realizados</h1>
         <p style={{color:C.muted,fontSize:14,marginBottom:20}}>Consulta los pagos realizados por fecha</p>
-        {/* Date filter */}
-        <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:24}}>
+        {/* Date filter + Search */}
+        <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:24,flexWrap:"wrap"}}>
           <label style={{fontSize:13,fontWeight:700,color:C.navy}}>Fecha de pago:</label>
           <input type="date" value={pagosFecha} onChange={e=>setPagosFecha(e.target.value)} style={{...inputStyle,maxWidth:200}}/>
+          <input placeholder="🔍 Buscar proveedor, folio, concepto…" value={pagosSearch} onChange={e=>setPagosSearch(e.target.value)} style={{...inputStyle,maxWidth:320,marginLeft:8}}/>
         </div>
         {/* Summary */}
-        {pagadas.length > 0 && (
+        {pagadasFiltered.length > 0 && (
           <div style={{display:"flex",gap:16,marginBottom:20,flexWrap:"wrap"}}>
             <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"14px 20px"}}>
               <div style={{fontSize:11,color:C.muted,fontWeight:600,textTransform:"uppercase"}}>Proveedores pagados</div>
@@ -1341,7 +1356,7 @@ export default function CxpApp({ user, onLogout }) {
             </div>
             <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"14px 20px"}}>
               <div style={{fontSize:11,color:C.muted,fontWeight:600,textTransform:"uppercase"}}>Facturas pagadas</div>
-              <div style={{fontSize:24,fontWeight:800,color:C.navy}}>{pagadas.length}</div>
+              <div style={{fontSize:24,fontWeight:800,color:C.navy}}>{pagadasFiltered.length}</div>
             </div>
             <div style={{background:"#E8F5E9",border:"1px solid #A5D6A7",borderRadius:12,padding:"14px 20px"}}>
               <div style={{fontSize:11,color:C.muted,fontWeight:600,textTransform:"uppercase"}}>Total pagado</div>
@@ -1362,29 +1377,26 @@ export default function CxpApp({ user, onLogout }) {
                 </tr>
               </thead>
               <tbody>
-                {proveedores.map(([prov, data]) => {
-                  const monedas = [...data.monedas].join(", ");
-                  return (
-                    <tr key={prov} onClick={()=>setPagosDetail({proveedor:prov, facturas:data.facturas})}
-                      style={{borderTop:`1px solid ${C.border}`,cursor:"pointer",transition:"background .15s"}}
-                      onMouseEnter={e=>{e.currentTarget.style.background="#F0F7FF";}}
-                      onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
-                      <td style={{padding:"14px 16px",fontWeight:700,color:C.navy}}>{prov}</td>
-                      <td style={{padding:"14px 16px",textAlign:"center"}}>{data.facturas.length}</td>
-                      <td style={{padding:"14px 16px",textAlign:"center"}}>
-                        {[...data.monedas].map(m=>(
-                          <span key={m} style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[m],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[m],padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,marginRight:4}}>{m}</span>
-                        ))}
-                      </td>
-                      <td style={{padding:"14px 16px",textAlign:"right",fontWeight:800,color:C.ok,fontSize:16}}>${fmt(data.totalPagado)}</td>
-                    </tr>
-                  );
-                })}
+                {proveedores.map(([prov, data]) => (
+                  <tr key={prov} onClick={()=>setPagosDetail({proveedor:prov, facturas:data.facturas})}
+                    style={{borderTop:`1px solid ${C.border}`,cursor:"pointer",transition:"background .15s"}}
+                    onMouseEnter={e=>{e.currentTarget.style.background="#F0F7FF";}}
+                    onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+                    <td style={{padding:"14px 16px",fontWeight:700,color:C.navy}}>{prov}</td>
+                    <td style={{padding:"14px 16px",textAlign:"center"}}>{data.facturas.length}</td>
+                    <td style={{padding:"14px 16px",textAlign:"center"}}>
+                      {[...data.monedas].map(m=>(
+                        <span key={m} style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[m],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[m],padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,marginRight:4}}>{m}</span>
+                      ))}
+                    </td>
+                    <td style={{padding:"14px 16px",textAlign:"right",fontWeight:800,color:C.ok,fontSize:16}}>${fmt(data.totalPagado)}</td>
+                  </tr>
+                ))}
               </tbody>
               <tfoot>
                 <tr style={{borderTop:`2px solid ${C.navy}`,background:"#F8FAFC"}}>
                   <td style={{padding:"14px 16px",fontWeight:800,color:C.navy}}>TOTAL</td>
-                  <td style={{padding:"14px 16px",textAlign:"center",fontWeight:700}}>{pagadas.length}</td>
+                  <td style={{padding:"14px 16px",textAlign:"center",fontWeight:700}}>{pagadasFiltered.length}</td>
                   <td/>
                   <td style={{padding:"14px 16px",textAlign:"right",fontWeight:800,color:C.navy,fontSize:16}}>${fmt(totalGeneral)}</td>
                 </tr>
@@ -1697,14 +1709,17 @@ export default function CxpApp({ user, onLogout }) {
       )}
 
       {/* Pagos detail modal */}
-      {pagosDetail && (
+      {pagosDetail && (()=>{
+        const ipOf = inv => { const mp=+inv.montoPagado||0; return (mp>0)?mp:(inv.estatus==="Pagado"?(+inv.total||0):mp); };
+        const totalPagDetail = pagosDetail.facturas.reduce((s,i)=>s+ipOf(i),0);
+        return (
         <ModalShell title={`Pagos a ${pagosDetail.proveedor} — ${pagosFecha}`} onClose={()=>setPagosDetail(null)} wide>
           <div style={{marginBottom:14,display:"flex",gap:12,flexWrap:"wrap"}}>
             <div style={{background:"#F8FAFC",borderRadius:8,padding:"6px 14px",fontSize:12}}>
               <span style={{color:C.muted}}>Facturas: </span><span style={{fontWeight:700}}>{pagosDetail.facturas.length}</span>
             </div>
             <div style={{background:"#E8F5E9",borderRadius:8,padding:"6px 14px",fontSize:12}}>
-              <span style={{color:C.muted}}>Total pagado: </span><span style={{fontWeight:700,color:C.ok}}>${fmt(pagosDetail.facturas.reduce((s,i)=>s+(+i.montoPagado||0),0))}</span>
+              <span style={{color:C.muted}}>Total pagado: </span><span style={{fontWeight:700,color:C.ok}}>${fmt(totalPagDetail)}</span>
             </div>
           </div>
           <div style={{overflowX:"auto"}}>
@@ -1724,20 +1739,21 @@ export default function CxpApp({ user, onLogout }) {
                     <td style={{padding:"10px 12px",fontWeight:700}}>{inv.serie}{inv.folio}</td>
                     <td style={{padding:"10px 12px",color:inv.concepto?C.text:C.muted,fontStyle:inv.concepto?"normal":"italic"}}>{inv.concepto||"—"}</td>
                     <td style={{padding:"10px 12px"}}><span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[inv.moneda],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[inv.moneda],padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{inv.moneda}</span></td>
-                    <td style={{padding:"10px 12px",fontWeight:800,color:C.ok,fontSize:15}}>${fmt(inv.montoPagado)}</td>
+                    <td style={{padding:"10px 12px",fontWeight:800,color:C.ok,fontSize:15}}>${fmt(ipOf(inv))}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr style={{borderTop:`2px solid ${C.navy}`,background:"#F8FAFC"}}>
                   <td colSpan={5} style={{padding:"10px 12px",fontWeight:800,color:C.navy}}>TOTAL</td>
-                  <td style={{padding:"10px 12px",fontWeight:800,color:C.navy,fontSize:15}}>${fmt(pagosDetail.facturas.reduce((s,i)=>s+(+i.montoPagado||0),0))}</td>
+                  <td style={{padding:"10px 12px",fontWeight:800,color:C.navy,fontSize:15}}>${fmt(totalPagDetail)}</td>
                 </tr>
               </tfoot>
             </table>
           </div>
         </ModalShell>
-      )}
+        );
+      })()}
 
       {/* Dashboard detail modal */}
       {dashDetail && (
