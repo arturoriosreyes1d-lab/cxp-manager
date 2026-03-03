@@ -132,6 +132,8 @@ export default function CxpApp({ user, onLogout }) {
   const [dashBulkAutDir, setDashBulkAutDir] = useState("");
   const [pagosFecha, setPagosFecha] = useState(today());
   const [pagosDetail, setPagosDetail] = useState(null); // {proveedor, facturas}
+  const [pagosSearch, setPagosSearch] = useState("");
+  const [ncInput, setNcInput] = useState("");
   const fileRef = useRef();
   const searchRef = useRef();
 
@@ -1302,7 +1304,6 @@ export default function CxpApp({ user, onLogout }) {
 
   /* ── PAGOS ─────────────────────────────────────────────────────────── */
   const renderPagos = () => {
-    const [pagosSearch, setPagosSearch] = useState("");
     const allInvs = [
       ...invoices.MXN.map(i=>({...i,moneda:"MXN"})),
       ...invoices.USD.map(i=>({...i,moneda:"USD"})),
@@ -1416,9 +1417,8 @@ export default function CxpApp({ user, onLogout }) {
 
   /* ── CONFIG ─────────────────────────────────────────────────────────── */
   const renderConfig = () => {
-    const [nc, setNc] = useState("");
     const removeClase = (c) => { setClases(p => { const n=p.filter(x=>x!==c); saveClasificaciones(n); return n; }); };
-    const addClase = (val) => { if(val.trim()){ setClases(p => { const n=[...p,val.trim()]; saveClasificaciones(n); return n; }); setNc(""); } };
+    const addClase = (val) => { if(val.trim()){ setClases(p => { const n=[...p,val.trim()]; saveClasificaciones(n); return n; }); setNcInput(""); } };
     return (
       <div>
         <h1 style={{fontSize:22,fontWeight:800,color:C.navy,marginBottom:24}}>⚙️ Configuración</h1>
@@ -1433,10 +1433,10 @@ export default function CxpApp({ user, onLogout }) {
             ))}
           </div>
           <div style={{display:"flex",gap:8}}>
-            <input placeholder="Nueva clasificación…" value={nc} onChange={e=>setNc(e.target.value)}
-              onKeyDown={e=>{if(e.key==="Enter") addClase(nc);}}
+            <input placeholder="Nueva clasificación…" value={ncInput} onChange={e=>setNcInput(e.target.value)}
+              onKeyDown={e=>{if(e.key==="Enter") addClase(ncInput);}}
               style={{...inputStyle,flex:1}}/>
-            <button onClick={()=>addClase(nc)} style={btnStyle}>Agregar</button>
+            <button onClick={()=>addClase(ncInput)} style={btnStyle}>Agregar</button>
           </div>
         </div>
       </div>
