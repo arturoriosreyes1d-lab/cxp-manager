@@ -134,6 +134,8 @@ export default function CxpApp({ user, onLogout }) {
   const [pagosDetail, setPagosDetail] = useState(null); // {proveedor, facturas}
   const [pagosSearch, setPagosSearch] = useState("");
   const [ncInput, setNcInput] = useState("");
+  const [sortCol, setSortCol] = useState("");
+  const [sortDir, setSortDir] = useState("asc");
   const fileRef = useRef();
   const searchRef = useRef();
 
@@ -153,23 +155,38 @@ export default function CxpApp({ user, onLogout }) {
   const curInvoices = invoices[currency] || [];
 
   const filtered = useMemo(() => {
-    return curInvoices.filter(inv => {
+    let result = curInvoices.filter(inv => {
       if(filters.proveedor && inv.proveedor!==filters.proveedor) return false;
       if(filters.clasificacion && inv.clasificacion!==filters.clasificacion) return false;
       if(filters.estatus && inv.estatus!==filters.estatus) return false;
       if(filters.fechaFrom && inv.fecha<filters.fechaFrom) return false;
       if(filters.fechaTo && inv.fecha>filters.fechaTo) return false;
-      // Filter by fecha programacion de pago
       if(filters.pagoFrom || filters.pagoTo) {
         const fp = inv.fechaProgramacion || "";
-        if(!fp) return false; // no payment date set = exclude
+        if(!fp) return false;
         if(filters.pagoFrom && fp < filters.pagoFrom) return false;
         if(filters.pagoTo && fp > filters.pagoTo) return false;
       }
       if(search && !JSON.stringify(inv).toLowerCase().includes(search.toLowerCase())) return false;
       return true;
     });
-  }, [curInvoices, filters, search]);
+    if(sortCol) {
+      result = [...result].sort((a,b) => {
+        let va, vb;
+        if(sortCol==="fecha"||sortCol==="vencimiento"||sortCol==="fechaProgramacion") { va=a[sortCol]||""; vb=b[sortCol]||""; }
+        else if(sortCol==="total"||sortCol==="montoPagado"||sortCol==="saldo") {
+          va = sortCol==="saldo" ? ((+a.total||0)-(+a.montoPagado||0)) : (+a[sortCol]||0);
+          vb = sortCol==="saldo" ? ((+b.total||0)-(+b.montoPagado||0)) : (+b[sortCol]||0);
+        }
+        else if(sortCol==="dias") { va=daysUntil(a.vencimiento)??999; vb=daysUntil(b.vencimiento)??999; }
+        else { va=String(a[sortCol]||"").toLowerCase(); vb=String(b[sortCol]||"").toLowerCase(); }
+        if(va<vb) return sortDir==="asc"?-1:1;
+        if(va>vb) return sortDir==="asc"?1:-1;
+        return 0;
+      });
+    }
+    return result;
+  }, [curInvoices, filters, search, sortCol, sortDir]);
 
   const kpis = useMemo(() => {
     const allInvs = [...invoices.MXN,...invoices.USD,...invoices.EUR];
@@ -641,13 +658,13 @@ export default function CxpApp({ user, onLogout }) {
         </td>
         {/* Visto Bueno — toggle with click */}
         <td style={{padding:"10px 8px",textAlign:"center"}}>
-          <button onClick={()=>toggleVoBo(inv.id)} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,padding:2,lineHeight:1}} title={inv.voBo?"Quitar VoBo":"Dar VoBo"}>
+          <button onClick={e=>{e.preventDefault();e.stopPropagation();toggleVoBo(inv.id);}} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,padding:2,lineHeight:1,outline:"none"}} title={inv.voBo?"Quitar VoBo":"Dar VoBo"} tabIndex={-1}>
             {inv.voBo ? "✅" : "⬜"}
           </button>
         </td>
         {/* Autorizado Dirección */}
         <td style={{padding:"10px 8px",textAlign:"center"}}>
-          <button onClick={()=>toggleAutorizadoDireccion(inv.id)} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,padding:2,lineHeight:1}} title={inv.autorizadoDireccion?"Quitar Aut.Dir.":"Autorizar Dir."}>
+          <button onClick={e=>{e.preventDefault();e.stopPropagation();toggleAutorizadoDireccion(inv.id);}} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,padding:2,lineHeight:1,outline:"none"}} title={inv.autorizadoDireccion?"Quitar Aut.Dir.":"Autorizar Dir."} tabIndex={-1}>
             {inv.autorizadoDireccion ? "✅" : "⬜"}
           </button>
         </td>
@@ -681,8 +698,16 @@ export default function CxpApp({ user, onLogout }) {
                 <th style={{padding:"10px 4px",textAlign:"center",width:32}}>
                   <input type="checkbox" checked={allChecked} onChange={()=>toggleSelectAll(invs)} style={{cursor:"pointer",width:16,height:16,accentColor:C.blue}}/>
                 </th>
-                {["Tipo","Fecha","Folio","Proveedor","Concepto","Clasif.","Total","Pagado","Saldo","Progr.Pago","Vence","Días","Estatus","VoBo","Aut.Dir.","Acciones"].map(h=>(
-                  <th key={h} style={{padding:"10px 8px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase",letterSpacing:.3,whiteSpace:"nowrap"}}>{h}</th>
+                {[
+                  {h:"Tipo",col:"tipo"},{h:"Fecha",col:"fecha"},{h:"Folio",col:"folio"},{h:"Proveedor",col:"proveedor"},
+                  {h:"Concepto",col:"concepto"},{h:"Clasif.",col:"clasificacion"},{h:"Total",col:"total"},{h:"Pagado",col:"montoPagado"},
+                  {h:"Saldo",col:"saldo"},{h:"Progr.Pago",col:"fechaProgramacion"},{h:"Vence",col:"vencimiento"},{h:"Días",col:"dias"},
+                  {h:"Estatus",col:"estatus"},{h:"VoBo",col:""},{h:"Aut.Dir.",col:""},{h:"Acciones",col:""}
+                ].map(({h,col})=>(
+                  <th key={h} onClick={col?()=>{if(sortCol===col) setSortDir(d=>d==="asc"?"desc":"asc"); else {setSortCol(col);setSortDir("asc");}}:undefined}
+                    style={{padding:"10px 8px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase",letterSpacing:.3,whiteSpace:"nowrap",cursor:col?"pointer":"default",userSelect:"none"}}>
+                    {h}{sortCol===col ? (sortDir==="asc"?" ▲":" ▼") : ""}
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -970,10 +995,15 @@ export default function CxpApp({ user, onLogout }) {
           <button onClick={()=>setModalInv({tipo:"Factura",fecha:today(),serie:"",folio:"",uuid:"",proveedor:"",clasificacion:clases[0],subtotal:"",iva:"",retIsr:0,retIva:0,total:"",montoPagado:0,concepto:"",diasCredito:30,vencimiento:"",estatus:"Pendiente",fechaProgramacion:"",diasFicticios:0,referencia:"",notas:"",moneda:currency})} style={btnStyle}>+ Nueva Factura</button>
         </div>
         {/* Bulk edit toolbar */}
-        {selectedIds.size > 0 && (
+        {selectedIds.size > 0 && (()=>{
+          const selInvs = (invoices[currency]||[]).filter(i=>selectedIds.has(i.id));
+          const selTotal = selInvs.reduce((s,i)=>s+(+i.total||0),0);
+          const selSaldo = selInvs.reduce((s,i)=>s+((+i.total||0)-(+i.montoPagado||0)),0);
+          return (
           <div style={{background:"#E8F0FE",border:`2px solid ${C.blue}`,borderRadius:14,padding:"14px 20px",marginBottom:20,display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",position:"sticky",top:0,zIndex:10,boxShadow:"0 4px 16px rgba(0,0,0,.1)"}}>
             <div style={{fontWeight:700,color:C.blue,fontSize:14,marginRight:8}}>
               ✅ {selectedIds.size} factura{selectedIds.size!==1?"s":""} seleccionada{selectedIds.size!==1?"s":""}
+              <span style={{fontWeight:600,fontSize:12,color:C.navy,marginLeft:10}}>Total: ${fmt(selTotal)} · Saldo: ${fmt(selSaldo)}</span>
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",flex:1}}>
               <select value={bulkClasif} onChange={e=>setBulkClasif(e.target.value)} style={{...selectStyle,maxWidth:160,padding:"6px 10px",fontSize:12}}>
@@ -993,7 +1023,8 @@ export default function CxpApp({ user, onLogout }) {
               </button>
             </div>
           </div>
-        )}
+          );
+        })()}
         {/* Grouped content */}
         {Object.entries(grouped).map(([g1, data]) => (
           <div key={g1} style={{marginBottom:24}}>
@@ -1349,7 +1380,10 @@ export default function CxpApp({ user, onLogout }) {
           <input placeholder="🔍 Buscar proveedor, folio, concepto…" value={pagosSearch} onChange={e=>setPagosSearch(e.target.value)} style={{...inputStyle,maxWidth:320,marginLeft:8}}/>
         </div>
         {/* Summary */}
-        {pagadasFiltered.length > 0 && (
+        {pagadasFiltered.length > 0 && (()=>{
+          const porMoneda = {MXN:0,USD:0,EUR:0};
+          pagadasFiltered.forEach(i=>{porMoneda[i.moneda]=(porMoneda[i.moneda]||0)+importePagado(i);});
+          return (
           <div style={{display:"flex",gap:16,marginBottom:20,flexWrap:"wrap"}}>
             <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"14px 20px"}}>
               <div style={{fontSize:11,color:C.muted,fontWeight:600,textTransform:"uppercase"}}>Proveedores pagados</div>
@@ -1363,8 +1397,27 @@ export default function CxpApp({ user, onLogout }) {
               <div style={{fontSize:11,color:C.muted,fontWeight:600,textTransform:"uppercase"}}>Total pagado</div>
               <div style={{fontSize:24,fontWeight:800,color:C.ok}}>${fmt(totalGeneral)}</div>
             </div>
+            {porMoneda.MXN>0 && (
+              <div style={{background:"#E3F2FD",border:"1px solid #90CAF9",borderRadius:12,padding:"14px 20px"}}>
+                <div style={{fontSize:11,color:C.muted,fontWeight:600,textTransform:"uppercase"}}>🇲🇽 MXN</div>
+                <div style={{fontSize:20,fontWeight:800,color:C.mxn}}>${fmt(porMoneda.MXN)}</div>
+              </div>
+            )}
+            {porMoneda.USD>0 && (
+              <div style={{background:"#E8F5E9",border:"1px solid #A5D6A7",borderRadius:12,padding:"14px 20px"}}>
+                <div style={{fontSize:11,color:C.muted,fontWeight:600,textTransform:"uppercase"}}>🇺🇸 USD</div>
+                <div style={{fontSize:20,fontWeight:800,color:C.usd}}>${fmt(porMoneda.USD)}</div>
+              </div>
+            )}
+            {porMoneda.EUR>0 && (
+              <div style={{background:"#F3E5F5",border:"1px solid #CE93D8",borderRadius:12,padding:"14px 20px"}}>
+                <div style={{fontSize:11,color:C.muted,fontWeight:600,textTransform:"uppercase"}}>🇪🇺 EUR</div>
+                <div style={{fontSize:20,fontWeight:800,color:C.eur}}>€{fmt(porMoneda.EUR)}</div>
+              </div>
+            )}
           </div>
-        )}
+          );
+        })()}
         {/* Providers list */}
         {proveedores.length > 0 ? (
           <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden"}}>
@@ -1502,9 +1555,9 @@ export default function CxpApp({ user, onLogout }) {
             {showCal && (
               <div style={{position:"absolute",zIndex:10,top:"100%",left:0,marginTop:-8,background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:16,boxShadow:"0 8px 30px rgba(0,0,0,.15)",width:280}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-                  <button onClick={()=>{if(calMonth===0){setCalMonth(11);setCalYear(y=>y-1);}else setCalMonth(m=>m-1);}} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,padding:4}}>◀</button>
+                  <button onClick={e=>{e.stopPropagation();e.preventDefault();if(calMonth===0){setCalMonth(11);setCalYear(y=>y-1);}else setCalMonth(m=>m-1);}} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,padding:4}}>◀</button>
                   <span style={{fontWeight:700,color:C.navy,fontSize:14}}>{meses[calMonth]} {calYear}</span>
-                  <button onClick={()=>{if(calMonth===11){setCalMonth(0);setCalYear(y=>y+1);}else setCalMonth(m=>m+1);}} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,padding:4}}>▶</button>
+                  <button onClick={e=>{e.stopPropagation();e.preventDefault();if(calMonth===11){setCalMonth(0);setCalYear(y=>y+1);}else setCalMonth(m=>m+1);}} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,padding:4}}>▶</button>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,textAlign:"center"}}>
                   {["Do","Lu","Ma","Mi","Ju","Vi","Sá"].map(d=><div key={d} style={{fontSize:11,color:C.muted,fontWeight:600,padding:4}}>{d}</div>)}
@@ -1678,13 +1731,14 @@ export default function CxpApp({ user, onLogout }) {
 
       {/* Projection detail modal */}
       {projDetail && (
-        <ModalShell title={`Detalle — ${projDetail.proveedor}`} onClose={()=>setProjDetail(null)} wide>
+        <ModalShell title={`Detalle — ${projDetail.proveedor}`} onClose={()=>setProjDetail(null)} extraWide>
           <div style={{marginBottom:16}}>
             <span style={{fontSize:14,color:C.muted}}>Fecha: </span>
             <span style={{fontWeight:700,color:C.navy}}>{fmtDateLabel(projDetail.fecha)}</span>
             <span style={{marginLeft:16,fontSize:14,color:C.muted}}>Total: </span>
             <span style={{fontWeight:800,color:C.blue,fontSize:18}}>${fmt(projDetail.invoices.reduce((s,i)=>s+i.saldo,0))}</span>
           </div>
+          <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead><tr style={{background:"#F8FAFC"}}>
               {["Folio","Concepto","Clasificación","Fecha","Total","Pagado","Saldo","Vencimiento","Moneda"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>{h}</th>)}
@@ -1692,19 +1746,20 @@ export default function CxpApp({ user, onLogout }) {
             <tbody>
               {projDetail.invoices.map(inv=>(
                 <tr key={inv.id} style={{borderTop:`1px solid ${C.border}`}}>
-                  <td style={{padding:"10px 12px",fontWeight:600}}>{inv.serie}{inv.folio}</td>
-                  <td style={{padding:"10px 12px",color:inv.concepto?C.text:C.muted,fontStyle:inv.concepto?"normal":"italic",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{inv.concepto||"—"}</td>
+                  <td style={{padding:"10px 12px",fontWeight:600,whiteSpace:"nowrap"}}>{inv.serie}{inv.folio}</td>
+                  <td style={{padding:"10px 12px",color:inv.concepto?C.text:C.muted,fontStyle:inv.concepto?"normal":"italic"}}>{inv.concepto||"—"}</td>
                   <td style={{padding:"10px 12px"}}><span style={{background:"#EEF2FF",color:C.blue,padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:600}}>{inv.clasificacion}</span></td>
-                  <td style={{padding:"10px 12px"}}>{inv.fecha}</td>
-                  <td style={{padding:"10px 12px"}}>${fmt(inv.total)}</td>
-                  <td style={{padding:"10px 12px",color:C.ok}}>${fmt(inv.montoPagado)}</td>
-                  <td style={{padding:"10px 12px",fontWeight:700,color:C.warn}}>${fmt(inv.saldo)}</td>
-                  <td style={{padding:"10px 12px"}}>{inv.vencimiento}</td>
+                  <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>{inv.fecha}</td>
+                  <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>${fmt(inv.total)}</td>
+                  <td style={{padding:"10px 12px",color:C.ok,whiteSpace:"nowrap"}}>${fmt(inv.montoPagado)}</td>
+                  <td style={{padding:"10px 12px",fontWeight:700,color:C.warn,whiteSpace:"nowrap"}}>${fmt(inv.saldo)}</td>
+                  <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>{inv.vencimiento}</td>
                   <td style={{padding:"10px 12px"}}><span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[inv.moneda],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[inv.moneda],padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{inv.moneda}</span></td>
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
         </ModalShell>
       )}
 
