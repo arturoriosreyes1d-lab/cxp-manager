@@ -8,6 +8,7 @@ import {
   fetchInvoices, fetchSuppliers, fetchClasificaciones,
   upsertInvoice, upsertManyInvoices, deleteInvoiceDB, updateInvoiceField, bulkUpdateInvoices,
   upsertSupplier, upsertManySuppliers, saveClasificaciones,
+  fetchPayments, insertPayment, deletePayment, updatePayment,
 } from "./db.js";
 
 /* ── Palette ─────────────────────────────────────────────────────────────── */
@@ -130,12 +131,15 @@ export default function CxpApp({ user, onLogout }) {
   const [dashSelectedIds, setDashSelectedIds] = useState(new Set());
   const [dashBulkProgPago, setDashBulkProgPago] = useState("");
   const [dashBulkAutDir, setDashBulkAutDir] = useState("");
-  const [pagosFecha, setPagosFecha] = useState(today());
   const [pagosDetail, setPagosDetail] = useState(null); // {proveedor, facturas}
   const [pagosSearch, setPagosSearch] = useState("");
   const [ncInput, setNcInput] = useState("");
   const [sortCol, setSortCol] = useState("");
   const [sortDir, setSortDir] = useState("asc");
+  const [payments, setPayments] = useState([]); // all payments from DB
+  const [payModal, setPayModal] = useState(null); // {invoiceId, proveedor, folio, total, moneda}
+  const [pagosFechaFrom, setPagosFechaFrom] = useState(today());
+  const [pagosFechaTo, setPagosFechaTo] = useState(today());
   const fileRef = useRef();
   const searchRef = useRef();
 
@@ -143,13 +147,58 @@ export default function CxpApp({ user, onLogout }) {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const [inv, sup, cls] = await Promise.all([fetchInvoices(), fetchSuppliers(), fetchClasificaciones()]);
+      const [inv, sup, cls, pays] = await Promise.all([fetchInvoices(), fetchSuppliers(), fetchClasificaciones(), fetchPayments()]);
       setInvoices(inv);
       setSuppliers(sup.length > 0 ? sup : []);
       setClases(cls.length > 0 ? cls : DEFAULT_CLASES);
+      setPayments(pays);
       setLoading(false);
     })();
   }, []);
+
+  /* ── Payments helpers ───────────────────────────────────────────── */
+  const paymentsFor = (invoiceId) => payments.filter(p => p.invoiceId === invoiceId);
+  const totalPaidViaPayments = (invoiceId) => paymentsFor(invoiceId).reduce((s,p) => s + p.monto, 0);
+
+  const addPayment = async (invoiceId, monto, fechaPago, notas) => {
+    const saved = await insertPayment({ invoiceId, monto: +monto, fechaPago, notas });
+    setPayments(prev => [saved, ...prev]);
+    // Update invoice montoPagado and estatus
+    const allPays = [...payments.filter(p=>p.invoiceId===invoiceId), saved];
+    const totalPaid = allPays.reduce((s,p)=>s+p.monto,0);
+    syncInvoicePayment(invoiceId, totalPaid);
+  };
+
+  const removePayment = async (paymentId, invoiceId) => {
+    await deletePayment(paymentId);
+    setPayments(prev => prev.filter(p => p.id !== paymentId));
+    const remaining = payments.filter(p => p.invoiceId === invoiceId && p.id !== paymentId);
+    const totalPaid = remaining.reduce((s,p)=>s+p.monto,0);
+    syncInvoicePayment(invoiceId, totalPaid);
+  };
+
+  const syncInvoicePayment = (invoiceId, totalPaid) => {
+    // Find the invoice across all currencies and update montoPagado + estatus
+    setInvoices(prev => {
+      const result = {...prev};
+      ["MXN","USD","EUR"].forEach(c => {
+        result[c] = result[c].map(i => {
+          if(i.id !== invoiceId) return i;
+          const estatus = totalPaid >= (+i.total||0) && (+i.total||0)>0 ? "Pagado" : totalPaid > 0 ? "Parcial" : "Pendiente";
+          return {...i, montoPagado: totalPaid, estatus};
+        });
+      });
+      return result;
+    });
+    updateInvoiceField(invoiceId, { montoPagado: totalPaid });
+    // Also update estatus in DB
+    let inv = null;
+    ["MXN","USD","EUR"].forEach(c => { const f = invoices[c].find(i=>i.id===invoiceId); if(f) inv=f; });
+    if(inv) {
+      const estatus = totalPaid >= (+inv.total||0) && (+inv.total||0)>0 ? "Pagado" : totalPaid > 0 ? "Parcial" : "Pendiente";
+      updateInvoiceField(invoiceId, { montoPagado: totalPaid, estatus });
+    }
+  };
 
   /* ── Derived ─────────────────────────────────────────────────────────── */
   const curInvoices = invoices[currency] || [];
@@ -536,32 +585,59 @@ export default function CxpApp({ user, onLogout }) {
     reader.readAsArrayBuffer(file); e.target.value="";
   };
 
-  /* ── Projection matrix (uses fechaProgramacion, fallback to vencimiento) */
+  /* ── Projection matrix (uses payments, fallback to fechaProgramacion/vencimiento) */
   const projMatrix = useMemo(() => {
     const allInvs = [...invoices.MXN.map(i=>({...i,moneda:"MXN"})),...invoices.USD.map(i=>({...i,moneda:"USD"})),...invoices.EUR.map(i=>({...i,moneda:"EUR"}))].filter(i=>i.estatus!=="Pagado");
     const matrix = {}; const provSet = new Set(); const allDatesSet = new Set();
+
     allInvs.forEach(inv => {
-      const saldo = (+inv.total||0)-(+inv.montoPagado||0);
-      if(saldo<=0) return;
-      const payDate = inv.fechaProgramacion || inv.vencimiento || "";
-      if(!payDate) return;
-      // If date range is set, filter by it
-      if(projFrom && payDate<projFrom) return;
-      if(projTo && payDate>projTo) return;
-      if(projSearch) {
-        const q = projSearch.toLowerCase();
-        const match = inv.proveedor.toLowerCase().includes(q) || (inv.serie+inv.folio).toLowerCase().includes(q) || String(inv.total).includes(q) || (inv.concepto||"").toLowerCase().includes(q) || inv.clasificacion.toLowerCase().includes(q);
-        if(!match) return;
+      const totalSaldo = (+inv.total||0)-(+inv.montoPagado||0);
+      if(totalSaldo<=0) return;
+
+      // Get scheduled (future) payments for this invoice
+      const invPayments = payments.filter(p => p.invoiceId === inv.id && p.fechaPago);
+      const scheduledTotal = invPayments.reduce((s,p)=>s+p.monto,0);
+      const unscheduledSaldo = totalSaldo - scheduledTotal;
+
+      // Add each scheduled payment as a separate entry
+      invPayments.forEach(pay => {
+        const payDate = pay.fechaPago;
+        if(projFrom && payDate<projFrom) return;
+        if(projTo && payDate>projTo) return;
+        if(projSearch) {
+          const q = projSearch.toLowerCase();
+          const match = inv.proveedor.toLowerCase().includes(q) || (inv.serie+inv.folio).toLowerCase().includes(q) || String(inv.total).includes(q) || (inv.concepto||"").toLowerCase().includes(q) || inv.clasificacion.toLowerCase().includes(q);
+          if(!match) return;
+        }
+        allDatesSet.add(payDate);
+        provSet.add(inv.proveedor);
+        if(!matrix[inv.proveedor]) matrix[inv.proveedor]={};
+        if(!matrix[inv.proveedor][payDate]) matrix[inv.proveedor][payDate]={total:0,invoices:[],byCur:{MXN:0,USD:0,EUR:0}};
+        matrix[inv.proveedor][payDate].total += pay.monto;
+        matrix[inv.proveedor][payDate].byCur[inv.moneda] = (matrix[inv.proveedor][payDate].byCur[inv.moneda]||0) + pay.monto;
+        matrix[inv.proveedor][payDate].invoices.push({...inv,saldo:pay.monto,paymentNote:pay.notas});
+      });
+
+      // If there's unscheduled saldo, use fechaProgramacion or vencimiento as fallback
+      if(unscheduledSaldo > 0) {
+        const payDate = inv.fechaProgramacion || inv.vencimiento || "";
+        if(!payDate) return;
+        if(projFrom && payDate<projFrom) return;
+        if(projTo && payDate>projTo) return;
+        if(projSearch) {
+          const q = projSearch.toLowerCase();
+          const match = inv.proveedor.toLowerCase().includes(q) || (inv.serie+inv.folio).toLowerCase().includes(q) || String(inv.total).includes(q) || (inv.concepto||"").toLowerCase().includes(q) || inv.clasificacion.toLowerCase().includes(q);
+          if(!match) return;
+        }
+        allDatesSet.add(payDate);
+        provSet.add(inv.proveedor);
+        if(!matrix[inv.proveedor]) matrix[inv.proveedor]={};
+        if(!matrix[inv.proveedor][payDate]) matrix[inv.proveedor][payDate]={total:0,invoices:[],byCur:{MXN:0,USD:0,EUR:0}};
+        matrix[inv.proveedor][payDate].total += unscheduledSaldo;
+        matrix[inv.proveedor][payDate].byCur[inv.moneda] = (matrix[inv.proveedor][payDate].byCur[inv.moneda]||0) + unscheduledSaldo;
+        matrix[inv.proveedor][payDate].invoices.push({...inv,saldo:unscheduledSaldo});
       }
-      allDatesSet.add(payDate);
-      provSet.add(inv.proveedor);
-      if(!matrix[inv.proveedor]) matrix[inv.proveedor]={};
-      if(!matrix[inv.proveedor][payDate]) matrix[inv.proveedor][payDate]={total:0,invoices:[],byCur:{MXN:0,USD:0,EUR:0}};
-      matrix[inv.proveedor][payDate].total += saldo;
-      matrix[inv.proveedor][payDate].byCur[inv.moneda] = (matrix[inv.proveedor][payDate].byCur[inv.moneda]||0) + saldo;
-      matrix[inv.proveedor][payDate].invoices.push({...inv,saldo});
     });
-    // Build dates: use range if set, else use all dates found in invoices
     let dates;
     if(projFrom && projTo) {
       dates = getDatesInRange(projFrom, projTo);
@@ -569,7 +645,7 @@ export default function CxpApp({ user, onLogout }) {
       dates = [...allDatesSet].sort();
     }
     return { providers:[...provSet].sort(), dates, matrix };
-  }, [invoices,projFrom,projTo,projSearch]);
+  }, [invoices,payments,projFrom,projTo,projSearch]);
 
   /* ── Nav item ────────────────────────────────────────────────────────── */
   const NavItem = ({id,icon,label}) => (
@@ -669,6 +745,7 @@ export default function CxpApp({ user, onLogout }) {
           </button>
         </td>
         <td style={{padding:"10px 8px",whiteSpace:"nowrap"}}>
+          <button onClick={e=>{e.stopPropagation();setPayModal({invoiceId:inv.id,proveedor:inv.proveedor,folio:`${inv.serie}${inv.folio}`,total:inv.total,moneda:inv.moneda||currency});}} style={{...iconBtn,color:C.ok}} title="Pagos">💰</button>
           <button onClick={()=>setModalInv({...inv,moneda:inv.moneda||currency})} style={{...iconBtn,color:C.sky}} title="Editar">✏️</button>
           <button onClick={()=>setDeleteConfirm({id:inv.id,cur:currency,label:`${inv.serie}${inv.folio} - ${inv.proveedor}`})} style={{...iconBtn,color:C.danger}} title="Eliminar">🗑️</button>
         </td>
@@ -1340,128 +1417,113 @@ export default function CxpApp({ user, onLogout }) {
       ...invoices.USD.map(i=>({...i,moneda:"USD"})),
       ...invoices.EUR.map(i=>({...i,moneda:"EUR"})),
     ];
-    // Helper: effective paid amount (if Pagado and montoPagado is 0, use total)
-    const importePagado = inv => {
-      const mp = +inv.montoPagado||0;
-      if(mp > 0) return mp;
-      if(inv.estatus === "Pagado") return +inv.total||0;
-      return mp;
-    };
-    // Filter paid invoices by fechaProgramacion (payment date)
-    const pagadas = allInvs.filter(i => {
-      if(i.estatus!=="Pagado" && i.estatus!=="Parcial") return false;
-      return i.fechaProgramacion === pagosFecha;
+    // Build payment records: merge payment rows with invoice data
+    const payRecords = payments.map(p => {
+      const inv = allInvs.find(i=>i.id===p.invoiceId);
+      if(!inv) return null;
+      return { ...p, proveedor:inv.proveedor, folio:`${inv.serie}${inv.folio}`, tipo:inv.tipo, fecha:inv.fecha, concepto:inv.concepto, moneda:inv.moneda, totalFactura:inv.total };
+    }).filter(Boolean);
+
+    // Filter by date range
+    const byDate = payRecords.filter(p => {
+      if(pagosFechaFrom && p.fechaPago < pagosFechaFrom) return false;
+      if(pagosFechaTo && p.fechaPago > pagosFechaTo) return false;
+      return true;
     });
-    // Apply search
-    const pagadasFiltered = pagadas.filter(inv => {
+
+    // Filter by search
+    const filtered = byDate.filter(p => {
       if(!pagosSearch) return true;
       const q = pagosSearch.toLowerCase();
-      return inv.proveedor.toLowerCase().includes(q) || (inv.serie+inv.folio).toLowerCase().includes(q) || (inv.concepto||"").toLowerCase().includes(q) || String(inv.total).includes(q) || inv.moneda.toLowerCase().includes(q);
+      return p.proveedor.toLowerCase().includes(q) || p.folio.toLowerCase().includes(q) || (p.concepto||"").toLowerCase().includes(q) || String(p.monto).includes(q) || p.moneda.toLowerCase().includes(q);
     });
+
     // Group by proveedor
     const porProveedor = {};
-    pagadasFiltered.forEach(inv => {
-      if(!porProveedor[inv.proveedor]) porProveedor[inv.proveedor] = { facturas:[], totalPagado:0, monedas:new Set() };
-      porProveedor[inv.proveedor].facturas.push(inv);
-      porProveedor[inv.proveedor].totalPagado += importePagado(inv);
-      porProveedor[inv.proveedor].monedas.add(inv.moneda);
+    filtered.forEach(p => {
+      if(!porProveedor[p.proveedor]) porProveedor[p.proveedor] = { pagos:[], totalPagado:0, monedas:new Set() };
+      porProveedor[p.proveedor].pagos.push(p);
+      porProveedor[p.proveedor].totalPagado += p.monto;
+      porProveedor[p.proveedor].monedas.add(p.moneda);
     });
     const proveedores = Object.entries(porProveedor).sort((a,b) => a[0].localeCompare(b[0]));
-    const totalGeneral = pagadasFiltered.reduce((s,i) => s+importePagado(i), 0);
+    const totalGeneral = filtered.reduce((s,p) => s+p.monto, 0);
+    const porMoneda = {MXN:0,USD:0,EUR:0};
+    filtered.forEach(p => { porMoneda[p.moneda] = (porMoneda[p.moneda]||0) + p.monto; });
 
     return (
       <div>
         <h1 style={{fontSize:22,fontWeight:800,color:C.navy,marginBottom:4}}>💰 Pagos Realizados</h1>
-        <p style={{color:C.muted,fontSize:14,marginBottom:20}}>Consulta los pagos realizados por fecha</p>
-        {/* Date filter + Search */}
+        <p style={{color:C.muted,fontSize:14,marginBottom:20}}>Consulta pagos por rango de fechas o por proveedor</p>
+        {/* Filters */}
         <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:24,flexWrap:"wrap"}}>
-          <label style={{fontSize:13,fontWeight:700,color:C.navy}}>Fecha de pago:</label>
-          <input type="date" value={pagosFecha} onChange={e=>setPagosFecha(e.target.value)} style={{...inputStyle,maxWidth:200}}/>
-          <input placeholder="🔍 Buscar proveedor, folio, concepto…" value={pagosSearch} onChange={e=>setPagosSearch(e.target.value)} style={{...inputStyle,maxWidth:320,marginLeft:8}}/>
+          <label style={{fontSize:13,fontWeight:700,color:C.navy}}>Desde:</label>
+          <input type="date" value={pagosFechaFrom} onChange={e=>setPagosFechaFrom(e.target.value)} style={{...inputStyle,maxWidth:180}}/>
+          <label style={{fontSize:13,fontWeight:700,color:C.navy}}>Hasta:</label>
+          <input type="date" value={pagosFechaTo} onChange={e=>setPagosFechaTo(e.target.value)} style={{...inputStyle,maxWidth:180}}/>
+          <input placeholder="🔍 Buscar proveedor, folio, concepto…" value={pagosSearch} onChange={e=>setPagosSearch(e.target.value)} style={{...inputStyle,maxWidth:320}}/>
+          {(pagosFechaFrom!==today()||pagosFechaTo!==today()||pagosSearch) && (
+            <button onClick={()=>{setPagosFechaFrom(today());setPagosFechaTo(today());setPagosSearch("");}} style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"6px 12px",fontSize:12}}>✕ Limpiar</button>
+          )}
         </div>
         {/* Summary */}
-        {pagadasFiltered.length > 0 && (()=>{
-          const porMoneda = {MXN:0,USD:0,EUR:0};
-          pagadasFiltered.forEach(i=>{porMoneda[i.moneda]=(porMoneda[i.moneda]||0)+importePagado(i);});
-          return (
+        {filtered.length > 0 && (
           <div style={{display:"flex",gap:16,marginBottom:20,flexWrap:"wrap"}}>
             <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"14px 20px"}}>
-              <div style={{fontSize:11,color:C.muted,fontWeight:600,textTransform:"uppercase"}}>Proveedores pagados</div>
+              <div style={{fontSize:11,color:C.muted,fontWeight:600,textTransform:"uppercase"}}>Proveedores</div>
               <div style={{fontSize:24,fontWeight:800,color:C.navy}}>{proveedores.length}</div>
             </div>
             <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"14px 20px"}}>
-              <div style={{fontSize:11,color:C.muted,fontWeight:600,textTransform:"uppercase"}}>Facturas pagadas</div>
-              <div style={{fontSize:24,fontWeight:800,color:C.navy}}>{pagadasFiltered.length}</div>
+              <div style={{fontSize:11,color:C.muted,fontWeight:600,textTransform:"uppercase"}}>Pagos registrados</div>
+              <div style={{fontSize:24,fontWeight:800,color:C.navy}}>{filtered.length}</div>
             </div>
             <div style={{background:"#E8F5E9",border:"1px solid #A5D6A7",borderRadius:12,padding:"14px 20px"}}>
               <div style={{fontSize:11,color:C.muted,fontWeight:600,textTransform:"uppercase"}}>Total pagado</div>
               <div style={{fontSize:24,fontWeight:800,color:C.ok}}>${fmt(totalGeneral)}</div>
             </div>
-            {porMoneda.MXN>0 && (
-              <div style={{background:"#E3F2FD",border:"1px solid #90CAF9",borderRadius:12,padding:"14px 20px"}}>
-                <div style={{fontSize:11,color:C.muted,fontWeight:600,textTransform:"uppercase"}}>🇲🇽 MXN</div>
-                <div style={{fontSize:20,fontWeight:800,color:C.mxn}}>${fmt(porMoneda.MXN)}</div>
-              </div>
-            )}
-            {porMoneda.USD>0 && (
-              <div style={{background:"#E8F5E9",border:"1px solid #A5D6A7",borderRadius:12,padding:"14px 20px"}}>
-                <div style={{fontSize:11,color:C.muted,fontWeight:600,textTransform:"uppercase"}}>🇺🇸 USD</div>
-                <div style={{fontSize:20,fontWeight:800,color:C.usd}}>${fmt(porMoneda.USD)}</div>
-              </div>
-            )}
-            {porMoneda.EUR>0 && (
-              <div style={{background:"#F3E5F5",border:"1px solid #CE93D8",borderRadius:12,padding:"14px 20px"}}>
-                <div style={{fontSize:11,color:C.muted,fontWeight:600,textTransform:"uppercase"}}>🇪🇺 EUR</div>
-                <div style={{fontSize:20,fontWeight:800,color:C.eur}}>€{fmt(porMoneda.EUR)}</div>
-              </div>
-            )}
+            {porMoneda.MXN>0 && <div style={{background:"#E3F2FD",border:"1px solid #90CAF9",borderRadius:12,padding:"14px 20px"}}><div style={{fontSize:11,color:C.muted,fontWeight:600}}>🇲🇽 MXN</div><div style={{fontSize:20,fontWeight:800,color:C.mxn}}>${fmt(porMoneda.MXN)}</div></div>}
+            {porMoneda.USD>0 && <div style={{background:"#E8F5E9",border:"1px solid #A5D6A7",borderRadius:12,padding:"14px 20px"}}><div style={{fontSize:11,color:C.muted,fontWeight:600}}>🇺🇸 USD</div><div style={{fontSize:20,fontWeight:800,color:C.usd}}>${fmt(porMoneda.USD)}</div></div>}
+            {porMoneda.EUR>0 && <div style={{background:"#F3E5F5",border:"1px solid #CE93D8",borderRadius:12,padding:"14px 20px"}}><div style={{fontSize:11,color:C.muted,fontWeight:600}}>🇪🇺 EUR</div><div style={{fontSize:20,fontWeight:800,color:C.eur}}>€{fmt(porMoneda.EUR)}</div></div>}
           </div>
-          );
-        })()}
+        )}
         {/* Providers list */}
         {proveedores.length > 0 ? (
           <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:14}}>
-              <thead>
-                <tr style={{background:"#F8FAFC"}}>
-                  <th style={{padding:"12px 16px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>Proveedor</th>
-                  <th style={{padding:"12px 16px",textAlign:"center",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>Facturas</th>
-                  <th style={{padding:"12px 16px",textAlign:"center",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>Moneda(s)</th>
-                  <th style={{padding:"12px 16px",textAlign:"right",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>Total Pagado</th>
-                </tr>
-              </thead>
+              <thead><tr style={{background:"#F8FAFC"}}>
+                <th style={{padding:"12px 16px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>Proveedor</th>
+                <th style={{padding:"12px 16px",textAlign:"center",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>Pagos</th>
+                <th style={{padding:"12px 16px",textAlign:"center",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>Moneda(s)</th>
+                <th style={{padding:"12px 16px",textAlign:"right",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>Total Pagado</th>
+              </tr></thead>
               <tbody>
                 {proveedores.map(([prov, data]) => (
-                  <tr key={prov} onClick={()=>setPagosDetail({proveedor:prov, facturas:data.facturas})}
+                  <tr key={prov} onClick={()=>setPagosDetail({proveedor:prov, pagos:data.pagos})}
                     style={{borderTop:`1px solid ${C.border}`,cursor:"pointer",transition:"background .15s"}}
                     onMouseEnter={e=>{e.currentTarget.style.background="#F0F7FF";}}
                     onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
                     <td style={{padding:"14px 16px",fontWeight:700,color:C.navy}}>{prov}</td>
-                    <td style={{padding:"14px 16px",textAlign:"center"}}>{data.facturas.length}</td>
+                    <td style={{padding:"14px 16px",textAlign:"center"}}>{data.pagos.length}</td>
                     <td style={{padding:"14px 16px",textAlign:"center"}}>
-                      {[...data.monedas].map(m=>(
-                        <span key={m} style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[m],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[m],padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,marginRight:4}}>{m}</span>
-                      ))}
+                      {[...data.monedas].map(m=><span key={m} style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[m],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[m],padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,marginRight:4}}>{m}</span>)}
                     </td>
                     <td style={{padding:"14px 16px",textAlign:"right",fontWeight:800,color:C.ok,fontSize:16}}>${fmt(data.totalPagado)}</td>
                   </tr>
                 ))}
               </tbody>
-              <tfoot>
-                <tr style={{borderTop:`2px solid ${C.navy}`,background:"#F8FAFC"}}>
-                  <td style={{padding:"14px 16px",fontWeight:800,color:C.navy}}>TOTAL</td>
-                  <td style={{padding:"14px 16px",textAlign:"center",fontWeight:700}}>{pagadasFiltered.length}</td>
-                  <td/>
-                  <td style={{padding:"14px 16px",textAlign:"right",fontWeight:800,color:C.navy,fontSize:16}}>${fmt(totalGeneral)}</td>
-                </tr>
-              </tfoot>
+              <tfoot><tr style={{borderTop:`2px solid ${C.navy}`,background:"#F8FAFC"}}>
+                <td style={{padding:"14px 16px",fontWeight:800,color:C.navy}}>TOTAL</td>
+                <td style={{padding:"14px 16px",textAlign:"center",fontWeight:700}}>{filtered.length}</td>
+                <td/>
+                <td style={{padding:"14px 16px",textAlign:"right",fontWeight:800,color:C.navy,fontSize:16}}>${fmt(totalGeneral)}</td>
+              </tr></tfoot>
             </table>
           </div>
         ) : (
           <div style={{textAlign:"center",padding:60,color:C.muted,background:C.surface,borderRadius:14,border:`1px solid ${C.border}`}}>
             <div style={{fontSize:48,marginBottom:12}}>📭</div>
-            <div style={{fontSize:16,fontWeight:600}}>No se encontraron pagos en esta fecha</div>
-            <div style={{fontSize:13,marginTop:4}}>Selecciona otra fecha o verifica que las facturas tengan Progr. Pago asignada y estatus Pagado</div>
+            <div style={{fontSize:16,fontWeight:600}}>No se encontraron pagos en este rango</div>
+            <div style={{fontSize:13,marginTop:4}}>Ajusta las fechas o busca por nombre de proveedor</div>
           </div>
         )}
       </div>
@@ -1765,13 +1827,12 @@ export default function CxpApp({ user, onLogout }) {
 
       {/* Pagos detail modal */}
       {pagosDetail && (()=>{
-        const ipOf = inv => { const mp=+inv.montoPagado||0; return (mp>0)?mp:(inv.estatus==="Pagado"?(+inv.total||0):mp); };
-        const totalPagDetail = pagosDetail.facturas.reduce((s,i)=>s+ipOf(i),0);
+        const totalPagDetail = pagosDetail.pagos.reduce((s,p)=>s+p.monto,0);
         return (
-        <ModalShell title={`Pagos a ${pagosDetail.proveedor} — ${pagosFecha}`} onClose={()=>setPagosDetail(null)} wide>
+        <ModalShell title={`Pagos a ${pagosDetail.proveedor}`} onClose={()=>setPagosDetail(null)} wide>
           <div style={{marginBottom:14,display:"flex",gap:12,flexWrap:"wrap"}}>
             <div style={{background:"#F8FAFC",borderRadius:8,padding:"6px 14px",fontSize:12}}>
-              <span style={{color:C.muted}}>Facturas: </span><span style={{fontWeight:700}}>{pagosDetail.facturas.length}</span>
+              <span style={{color:C.muted}}>Pagos: </span><span style={{fontWeight:700}}>{pagosDetail.pagos.length}</span>
             </div>
             <div style={{background:"#E8F5E9",borderRadius:8,padding:"6px 14px",fontSize:12}}>
               <span style={{color:C.muted}}>Total pagado: </span><span style={{fontWeight:700,color:C.ok}}>${fmt(totalPagDetail)}</span>
@@ -1779,33 +1840,109 @@ export default function CxpApp({ user, onLogout }) {
           </div>
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-              <thead>
-                <tr style={{background:"#F8FAFC"}}>
-                  {["Tipo","Fecha","Folio","Concepto","Moneda","Importe Pagado"].map(h=>(
-                    <th key={h} style={{padding:"10px 12px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
+              <thead><tr style={{background:"#F8FAFC"}}>
+                {["Fecha Pago","Tipo","Fecha Fact.","Folio","Concepto","Moneda","Importe Pagado","Notas"].map(h=>(
+                  <th key={h} style={{padding:"10px 12px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>{h}</th>
+                ))}
+              </tr></thead>
               <tbody>
-                {pagosDetail.facturas.map(inv=>(
-                  <tr key={inv.id} style={{borderTop:`1px solid ${C.border}`}}>
-                    <td style={{padding:"10px 12px"}}>{inv.tipo}</td>
-                    <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>{inv.fecha}</td>
-                    <td style={{padding:"10px 12px",fontWeight:700}}>{inv.serie}{inv.folio}</td>
-                    <td style={{padding:"10px 12px",color:inv.concepto?C.text:C.muted,fontStyle:inv.concepto?"normal":"italic"}}>{inv.concepto||"—"}</td>
-                    <td style={{padding:"10px 12px"}}><span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[inv.moneda],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[inv.moneda],padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{inv.moneda}</span></td>
-                    <td style={{padding:"10px 12px",fontWeight:800,color:C.ok,fontSize:15}}>${fmt(ipOf(inv))}</td>
+                {pagosDetail.pagos.map(p=>(
+                  <tr key={p.id} style={{borderTop:`1px solid ${C.border}`}}>
+                    <td style={{padding:"10px 12px",whiteSpace:"nowrap",fontWeight:600}}>{p.fechaPago}</td>
+                    <td style={{padding:"10px 12px"}}>{p.tipo}</td>
+                    <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>{p.fecha}</td>
+                    <td style={{padding:"10px 12px",fontWeight:700}}>{p.folio}</td>
+                    <td style={{padding:"10px 12px",color:p.concepto?C.text:C.muted,fontStyle:p.concepto?"normal":"italic"}}>{p.concepto||"—"}</td>
+                    <td style={{padding:"10px 12px"}}><span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[p.moneda],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[p.moneda],padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{p.moneda}</span></td>
+                    <td style={{padding:"10px 12px",fontWeight:800,color:C.ok,fontSize:15}}>${fmt(p.monto)}</td>
+                    <td style={{padding:"10px 12px",color:C.muted,fontSize:12}}>{p.notas||"—"}</td>
                   </tr>
                 ))}
               </tbody>
-              <tfoot>
-                <tr style={{borderTop:`2px solid ${C.navy}`,background:"#F8FAFC"}}>
-                  <td colSpan={5} style={{padding:"10px 12px",fontWeight:800,color:C.navy}}>TOTAL</td>
-                  <td style={{padding:"10px 12px",fontWeight:800,color:C.navy,fontSize:15}}>${fmt(totalPagDetail)}</td>
-                </tr>
-              </tfoot>
+              <tfoot><tr style={{borderTop:`2px solid ${C.navy}`,background:"#F8FAFC"}}>
+                <td colSpan={6} style={{padding:"10px 12px",fontWeight:800,color:C.navy}}>TOTAL</td>
+                <td style={{padding:"10px 12px",fontWeight:800,color:C.navy,fontSize:15}}>${fmt(totalPagDetail)}</td>
+                <td/>
+              </tr></tfoot>
             </table>
           </div>
+        </ModalShell>
+        );
+      })()}
+
+      {/* Payment modal — add/view payments for an invoice */}
+      {payModal && (()=>{
+        const invPays = paymentsFor(payModal.invoiceId);
+        const totalPaid = invPays.reduce((s,p)=>s+p.monto,0);
+        const saldoRest = (+payModal.total||0) - totalPaid;
+        return (
+        <ModalShell title={`Pagos — ${payModal.folio} · ${payModal.proveedor}`} onClose={()=>setPayModal(null)} wide>
+          <div style={{display:"flex",gap:16,marginBottom:16,flexWrap:"wrap"}}>
+            <div style={{background:"#F8FAFC",borderRadius:8,padding:"8px 14px",fontSize:13}}>
+              <span style={{color:C.muted}}>Total factura: </span><span style={{fontWeight:800}}>${fmt(payModal.total)}</span>
+            </div>
+            <div style={{background:"#E8F5E9",borderRadius:8,padding:"8px 14px",fontSize:13}}>
+              <span style={{color:C.muted}}>Pagado: </span><span style={{fontWeight:800,color:C.ok}}>${fmt(totalPaid)}</span>
+            </div>
+            <div style={{background:saldoRest>0?"#FFF3E0":"#E8F5E9",borderRadius:8,padding:"8px 14px",fontSize:13}}>
+              <span style={{color:C.muted}}>Saldo pendiente: </span><span style={{fontWeight:800,color:saldoRest>0?C.warn:C.ok}}>${fmt(saldoRest)}</span>
+            </div>
+          </div>
+          {/* Existing payments */}
+          {invPays.length > 0 && (
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:13,fontWeight:700,color:C.navy,marginBottom:8}}>Pagos registrados:</div>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                <thead><tr style={{background:"#F8FAFC"}}>
+                  {["Fecha","Monto","Notas",""].map(h=><th key={h} style={{padding:"8px 10px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>{h}</th>)}
+                </tr></thead>
+                <tbody>
+                  {invPays.map(p=>(
+                    <tr key={p.id} style={{borderTop:`1px solid ${C.border}`}}>
+                      <td style={{padding:"8px 10px",fontWeight:600}}>{p.fechaPago}</td>
+                      <td style={{padding:"8px 10px",fontWeight:800,color:C.ok}}>${fmt(p.monto)}</td>
+                      <td style={{padding:"8px 10px",color:C.muted}}>{p.notas||"—"}</td>
+                      <td style={{padding:"8px 10px",textAlign:"right"}}>
+                        <button onClick={()=>removePayment(p.id,payModal.invoiceId)} style={{background:"none",border:"none",cursor:"pointer",color:C.danger,fontSize:14}} title="Eliminar pago">🗑️</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {/* Add new payment form */}
+          {saldoRest > 0 && (
+            <div style={{background:"#F0F7FF",border:`1px solid ${C.blue}22`,borderRadius:12,padding:16}}>
+              <div style={{fontSize:13,fontWeight:700,color:C.navy,marginBottom:10}}>Agregar pago:</div>
+              <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
+                <div>
+                  <label style={{fontSize:11,fontWeight:600,color:C.muted,display:"block",marginBottom:4}}>Monto</label>
+                  <input id="pay-monto" type="number" defaultValue={saldoRest.toFixed(2)} style={{...inputStyle,width:140}} step="0.01"/>
+                </div>
+                <div>
+                  <label style={{fontSize:11,fontWeight:600,color:C.muted,display:"block",marginBottom:4}}>Fecha de pago</label>
+                  <input id="pay-fecha" type="date" defaultValue={today()} style={{...inputStyle,width:160}}/>
+                </div>
+                <div style={{flex:1,minWidth:120}}>
+                  <label style={{fontSize:11,fontWeight:600,color:C.muted,display:"block",marginBottom:4}}>Notas (opcional)</label>
+                  <input id="pay-notas" type="text" placeholder="Transferencia, cheque…" style={{...inputStyle,width:"100%"}}/>
+                </div>
+                <button onClick={()=>{
+                  const monto = +document.getElementById("pay-monto").value;
+                  const fecha = document.getElementById("pay-fecha").value;
+                  const notas = document.getElementById("pay-notas").value;
+                  if(!monto || monto<=0 || !fecha) return;
+                  addPayment(payModal.invoiceId, monto, fecha, notas);
+                  document.getElementById("pay-monto").value = "";
+                  document.getElementById("pay-notas").value = "";
+                }} style={{...btnStyle,padding:"8px 20px",fontSize:13}}>+ Agregar</button>
+              </div>
+            </div>
+          )}
+          {saldoRest <= 0 && invPays.length > 0 && (
+            <div style={{textAlign:"center",padding:16,background:"#E8F5E9",borderRadius:10,color:C.ok,fontWeight:700,fontSize:14}}>✅ Factura completamente pagada</div>
+          )}
         </ModalShell>
         );
       })()}

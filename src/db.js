@@ -207,3 +207,37 @@ export async function saveClasificaciones(list) {
   const { error } = await supabase.from('clasificaciones').upsert(rows, { onConflict: 'nombre' });
   if (error) console.error('saveClasificaciones:', error);
 }
+
+/* ── Payments (pagos parciales / múltiples) ──────────────────── */
+export async function fetchPayments() {
+  const { data, error } = await supabase.from('payments').select('*').order('fecha_pago', { ascending: false });
+  if (error) { console.error('fetchPayments:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id,
+    invoiceId: r.invoice_id,
+    monto: +r.monto || 0,
+    fechaPago: r.fecha_pago || '',
+    notas: r.notas || '',
+  }));
+}
+
+export async function insertPayment(p) {
+  const row = { invoice_id: p.invoiceId, monto: p.monto, fecha_pago: p.fechaPago, notas: p.notas || '' };
+  const { data, error } = await supabase.from('payments').insert(row).select().single();
+  if (error) { console.error('insertPayment:', error); return p; }
+  return { id: data.id, invoiceId: data.invoice_id, monto: +data.monto, fechaPago: data.fecha_pago, notas: data.notas || '' };
+}
+
+export async function deletePayment(id) {
+  const { error } = await supabase.from('payments').delete().eq('id', id);
+  if (error) console.error('deletePayment:', error);
+}
+
+export async function updatePayment(id, fields) {
+  const dbFields = {};
+  if ('monto' in fields) dbFields.monto = fields.monto;
+  if ('fechaPago' in fields) dbFields.fecha_pago = fields.fechaPago;
+  if ('notas' in fields) dbFields.notas = fields.notas;
+  const { error } = await supabase.from('payments').update(dbFields).eq('id', id);
+  if (error) console.error('updatePayment:', error);
+}
