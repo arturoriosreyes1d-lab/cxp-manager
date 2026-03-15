@@ -138,8 +138,8 @@ export default function CxpApp({ user, onLogout }) {
   const [sortDir, setSortDir] = useState("asc");
   const [payments, setPayments] = useState([]); // all payments from DB
   const [payModal, setPayModal] = useState(null); // {invoiceId, proveedor, folio, total, moneda}
-  const [pagosFechaFrom, setPagosFechaFrom] = useState(today());
-  const [pagosFechaTo, setPagosFechaTo] = useState(today());
+  const [pagosFechaFrom, setPagosFechaFrom] = useState("");
+  const [pagosFechaTo, setPagosFechaTo] = useState("");
   const fileRef = useRef();
   const searchRef = useRef();
 
@@ -1462,8 +1462,8 @@ export default function CxpApp({ user, onLogout }) {
           <label style={{fontSize:13,fontWeight:700,color:C.navy}}>Hasta:</label>
           <input type="date" value={pagosFechaTo} onChange={e=>setPagosFechaTo(e.target.value)} style={{...inputStyle,maxWidth:180}}/>
           <input placeholder="🔍 Buscar proveedor, folio, concepto…" value={pagosSearch} onChange={e=>setPagosSearch(e.target.value)} style={{...inputStyle,maxWidth:320}}/>
-          {(pagosFechaFrom!==today()||pagosFechaTo!==today()||pagosSearch) && (
-            <button onClick={()=>{setPagosFechaFrom(today());setPagosFechaTo(today());setPagosSearch("");}} style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"6px 12px",fontSize:12}}>✕ Limpiar</button>
+          {(pagosFechaFrom||pagosFechaTo||pagosSearch) && (
+            <button onClick={()=>{setPagosFechaFrom("");setPagosFechaTo("");setPagosSearch("");}} style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"6px 12px",fontSize:12}}>✕ Limpiar</button>
           )}
         </div>
         {/* Summary */}
@@ -1522,8 +1522,8 @@ export default function CxpApp({ user, onLogout }) {
         ) : (
           <div style={{textAlign:"center",padding:60,color:C.muted,background:C.surface,borderRadius:14,border:`1px solid ${C.border}`}}>
             <div style={{fontSize:48,marginBottom:12}}>📭</div>
-            <div style={{fontSize:16,fontWeight:600}}>No se encontraron pagos en este rango</div>
-            <div style={{fontSize:13,marginTop:4}}>Ajusta las fechas o busca por nombre de proveedor</div>
+            <div style={{fontSize:16,fontWeight:600}}>No se encontraron pagos</div>
+            <div style={{fontSize:13,marginTop:4}}>Busca por proveedor o ajusta el rango de fechas. Si no hay fechas, se muestran todos los pagos registrados.</div>
           </div>
         )}
       </div>
