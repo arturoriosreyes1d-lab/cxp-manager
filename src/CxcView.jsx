@@ -306,8 +306,14 @@ export default function CxcView({
 
   /* ── Ingreso Detail Modal ────────────────────────────────────── */
   const DetailModal = () => {
+    // ── Hooks SIEMPRE primero (regla de React) ──
+    const [cobroMonto, setCobroMonto] = useState("");
+    const [cobroFecha, setCobroFecha] = useState(today());
+    const [cobroNotas, setCobroNotas] = useState("");
+
     const ing = ingresos.find(i => i.id === detailIngreso);
     if (!ing) return null;
+
     const m = metrics[ing.id] || {};
     const ingCobros = cobros.filter(c => c.ingresoId === ing.id).sort((a,b)=>b.fechaCobro.localeCompare(a.fechaCobro));
     const vincs = invoiceIngresos.filter(v => v.ingresoId === ing.id);
@@ -318,18 +324,12 @@ export default function CxcView({
     const catStyle = getCatStyle(ing.categoria);
     const sym = monedaSym(ing.moneda);
 
-    // Chart data: cobrado vs consumido vs disponible
     const chartData = [
       { name:"Monto Total", value:ing.monto, fill:"#90CAF9" },
       { name:"Cobrado", value:m.totalCobrado||0, fill:C.ok },
       { name:"Consumido", value:m.consumido||0, fill:C.danger },
       { name:"Disponible", value:Math.max(0,m.disponible||0), fill:C.teal },
     ];
-
-    /* Cobro add form */
-    const [cobroMonto, setCobroMonto] = useState("");
-    const [cobroFecha, setCobroFecha] = useState(today());
-    const [cobroNotas, setCobroNotas] = useState("");
 
     return (
       <ModalShell title={`Detalle — ${ing.cliente}`} onClose={()=>setDetailIngreso(null)} extraWide>
