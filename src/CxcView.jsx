@@ -100,7 +100,8 @@ export default function CxcView({
   const [configCats, setConfigCats] = useState(false);
   const [newCatInput, setNewCatInput] = useState("");
   const [proyeccionView, setProyeccionView] = useState(false);
-  const [calDayDetail, setCalDayDetail] = useState(null); // { fecha, cobros: [] }
+  const [calDayDetail, setCalDayDetail] = useState(null);
+  const [kpiModal, setKpiModal] = useState(null); // { titulo, tipo, moneda }
 
   /* ── Derived data ──────────────────────────────────────────── */
   const allInvoices = useMemo(() => [
@@ -800,7 +801,7 @@ export default function CxcView({
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)"}}>
             {Array.from({length:firstDay}).map((_,i)=>(
-              <div key={`e${i}`} style={{minHeight:90,background:"#FAFBFC",borderRight:`1px solid ${C.border}`,borderBottom:`1px solid ${C.border}`}}/>
+              <div key={`e${i}`} style={{minHeight:110,background:"#FAFBFC",borderRight:`1px solid ${C.border}`,borderBottom:`1px solid ${C.border}`}}/>
             ))}
             {Array.from({length:daysInMonth}).map((_,i)=>{
               const day = i + 1;
@@ -814,16 +815,24 @@ export default function CxcView({
               return (
                 <div key={day}
                   onClick={hasCobros ? ()=>setCalDayDetailLocal({fecha:dateStr,entries}) : undefined}
-                  style={{minHeight:90,padding:"6px 6px 4px",borderRight:`1px solid ${C.border}`,borderBottom:`1px solid ${C.border}`,background:hasCobros?"#F3E5F5":isToday?"#E8F0FE":C.surface,cursor:hasCobros?"pointer":"default",transition:"background .15s"}}
+                  style={{minHeight:110,padding:"8px 8px 6px",borderRight:`1px solid ${C.border}`,borderBottom:`1px solid ${C.border}`,background:hasCobros?"#F3E5F5":isToday?"#E8F0FE":C.surface,cursor:hasCobros?"pointer":"default",transition:"background .15s"}}
                   onMouseEnter={e=>{if(hasCobros)e.currentTarget.style.background="#EDD5F5";}}
                   onMouseLeave={e=>{if(hasCobros)e.currentTarget.style.background="#F3E5F5";}}>
-                  <div style={{width:24,height:24,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:isToday?C.navy:"transparent",color:isToday?"#fff":hasCobros?"#7B1FA2":C.text,fontWeight:isToday||hasCobros?800:400,fontSize:13,marginBottom:4}}>{day}</div>
+                  {/* Número del día */}
+                  <div style={{width:28,height:28,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:isToday?C.navy:"transparent",color:isToday?"#fff":hasCobros?"#7B1FA2":C.text,fontWeight:isToday||hasCobros?800:400,fontSize:14,marginBottom:6}}>{day}</div>
+                  {/* Chips de monto por moneda */}
                   {Object.entries(byMon).map(([mon,val])=>(
-                    <div key={mon} style={{background:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[mon]||"#7B1FA2",color:"#fff",borderRadius:6,padding:"2px 5px",fontSize:10,fontWeight:700,marginBottom:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                      {mon==="EUR"?"€":"$"}{fmt(val)} {mon}
+                    <div key={mon} style={{background:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[mon]||"#7B1FA2",color:"#fff",borderRadius:7,padding:"4px 7px",fontSize:13,fontWeight:800,marginBottom:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",letterSpacing:"-0.3px"}}>
+                      {mon==="EUR"?"€":"$"}{fmt(val)}
+                      <span style={{fontSize:10,fontWeight:600,opacity:.85,marginLeft:3}}>{mon}</span>
                     </div>
                   ))}
-                  {hasCobros && entries.length>1 && <div style={{fontSize:9,color:"#7B1FA2",fontWeight:600}}>{entries.length} cobros</div>}
+                  {/* Conteo de cobros */}
+                  {hasCobros && (
+                    <div style={{fontSize:11,color:"#7B1FA2",fontWeight:700,marginTop:2}}>
+                      {entries.length} cobro{entries.length>1?"s":""}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -927,17 +936,121 @@ export default function CxcView({
           const flagMap = {MXN:"🇲🇽",USD:"🇺🇸",EUR:"🇪🇺"};
           const colMap  = {MXN:C.mxn,USD:C.usd,EUR:C.eur};
           const bgMap   = {MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"};
+          const mk = (key,label,value,color,icon,bg,tipo) => (
+            <div key={key} onClick={()=>setKpiModal({titulo:label,tipo,moneda:mon})}
+              style={{background:bg||C.surface,borderRadius:16,padding:"18px 22px",border:`1px solid ${C.border}`,boxShadow:"0 2px 8px rgba(0,0,0,.05)",flex:1,minWidth:150,cursor:"pointer",transition:"transform .15s, box-shadow .15s"}}
+              onMouseEnter={e=>{e.currentTarget.style.transform="scale(1.03)";e.currentTarget.style.boxShadow="0 6px 20px rgba(0,0,0,.12)";}}
+              onMouseLeave={e=>{e.currentTarget.style.transform="scale(1)";e.currentTarget.style.boxShadow="0 2px 8px rgba(0,0,0,.05)";}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                <div>
+                  <div style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>{label}</div>
+                  <div style={{fontSize:22,fontWeight:800,color,marginTop:4}}>{value}</div>
+                  <div style={{fontSize:10,color:C.muted,marginTop:3}}>Clic para ver desglose</div>
+                </div>
+                <div style={{fontSize:26}}>{icon}</div>
+              </div>
+            </div>
+          );
           return [
-            <KpiCard key={`${mon}-monto`}         label={`${flagMap[mon]} ${mon} Total`}   value={`${sym}${fmt(v.monto)}`}          sub={`${ingresos.filter(i=>i.moneda===mon).length} ingresos`} color={colMap[mon]} icon="💼" bg={bgMap[mon]}/>,
-            <KpiCard key={`${mon}-cobrado`}        label={`${mon} Cobrado`}                value={`${sym}${fmt(v.cobrado)}`}        color={C.ok}   icon="✅"/>,
-            <KpiCard key={`${mon}-porCobrar`}      label={`${mon} Por Cobrar`}             value={`${sym}${fmt(v.porCobrar)}`}      color={C.warn} icon="⏳"/>,
-            <KpiCard key={`${mon}-consumido`}      label={`${mon} Consumido`}              value={`${sym}${fmt(v.consumido)}`}      color={C.danger} icon="📤"/>,
-            <KpiCard key={`${mon}-porPagar`}       label={`${mon} Por Pagar`}              value={`${sym}${fmt(v.porPagar)}`}       color="#E65100" icon="🧾" bg="#FFF3E0"/>,
-            <KpiCard key={`${mon}-disponible`}     label={`${mon} Disponible`}             value={`${sym}${fmt(v.disponible)}`}     color={C.teal} icon="💰"/>,
-            <KpiCard key={`${mon}-disponibleNeto`} label={`${mon} Disponible Neto`}        value={`${sym}${fmt(v.disponibleNeto)}`} color={v.disponibleNeto>=0?C.green:C.danger} icon="🏦" bg={v.disponibleNeto>=0?"#E8F5E9":"#FFEBEE"}/>,
+            mk(`${mon}-monto`,    `${flagMap[mon]} ${mon} Total`,  `${sym}${fmt(v.monto)}`,         colMap[mon],    "💼", bgMap[mon],    "total"),
+            mk(`${mon}-cobrado`,  `${mon} Cobrado`,                `${sym}${fmt(v.cobrado)}`,        C.ok,           "✅", null,          "cobrado"),
+            mk(`${mon}-porCobrar`,`${mon} Por Cobrar`,             `${sym}${fmt(v.porCobrar)}`,      C.warn,         "⏳", null,          "porCobrar"),
+            mk(`${mon}-consumido`,`${mon} Consumido`,              `${sym}${fmt(v.consumido)}`,      C.danger,       "📤", null,          "consumido"),
+            mk(`${mon}-porPagar`, `${mon} Por Pagar`,              `${sym}${fmt(v.porPagar)}`,       "#E65100",      "🧾", "#FFF3E0",     "porPagar"),
+            mk(`${mon}-disponible`,`${mon} Disponible`,            `${sym}${fmt(v.disponible)}`,     C.teal,         "💰", null,          "disponible"),
+            mk(`${mon}-dispNeto`, `${mon} Disponible Neto`,        `${sym}${fmt(v.disponibleNeto)}`, v.disponibleNeto>=0?C.green:C.danger,"🏦",v.disponibleNeto>=0?"#E8F5E9":"#FFEBEE","disponibleNeto"),
           ];
         })}
       </div>
+
+      {/* ── KPI Desglose Modal ── */}
+      {kpiModal && (()=>{
+        const { titulo, tipo, moneda } = kpiModal;
+        const sym = monedaSym(moneda);
+
+        // Filtra los ingresos de esa moneda según el tipo de KPI
+        const rows = ingresos.filter(ing => ing.moneda === moneda).map(ing => {
+          const m = metrics[ing.id] || {};
+          let valor = 0;
+          if (tipo === "total")          valor = ing.monto;
+          else if (tipo === "cobrado")   valor = m.totalCobrado || 0;
+          else if (tipo === "porCobrar") valor = m.porCobrar || 0;
+          else if (tipo === "consumido") valor = m.consumido || 0;
+          else if (tipo === "porPagar")  valor = m.porPagar || 0;
+          else if (tipo === "disponible")    valor = m.disponible || 0;
+          else if (tipo === "disponibleNeto") valor = m.disponibleNeto || 0;
+          return { ing, valor };
+        }).filter(r => r.valor !== 0).sort((a,b) => Math.abs(b.valor) - Math.abs(a.valor));
+
+        const total = rows.reduce((s,r) => s+r.valor, 0);
+        const colorTipo = {
+          total:C.navy, cobrado:C.ok, porCobrar:C.warn, consumido:C.danger,
+          porPagar:"#E65100", disponible:C.teal, disponibleNeto:total>=0?C.green:C.danger
+        }[tipo]||C.navy;
+
+        return (
+          <div style={{position:"fixed",inset:0,background:"rgba(15,45,74,.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:2500,padding:20}}
+            onClick={()=>setKpiModal(null)}>
+            <div onClick={e=>e.stopPropagation()}
+              style={{background:C.surface,borderRadius:20,padding:28,width:"100%",maxWidth:620,maxHeight:"85vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}>
+              {/* Header */}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
+                <div>
+                  <div style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Desglose</div>
+                  <div style={{fontSize:20,fontWeight:900,color:colorTipo}}>{titulo}</div>
+                </div>
+                <button onClick={()=>setKpiModal(null)} style={{background:"#F1F5F9",border:"none",borderRadius:8,width:34,height:34,cursor:"pointer",fontSize:18}}>×</button>
+              </div>
+              {/* Total */}
+              <div style={{background:"#F8FAFC",borderRadius:10,padding:"12px 16px",marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontSize:13,color:C.muted,fontWeight:600}}>Total {moneda}</span>
+                <span style={{fontSize:22,fontWeight:900,color:colorTipo}}>{sym}{fmt(total)}</span>
+              </div>
+              {/* Tabla de ingresos */}
+              {rows.length === 0 ? (
+                <div style={{textAlign:"center",padding:30,color:C.muted}}>Sin registros</div>
+              ) : (
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                  <thead>
+                    <tr style={{background:"#F8FAFC"}}>
+                      {["Cliente","Concepto","Categoría","Fecha","Importe"].map(h=>(
+                        <th key={h} style={{padding:"9px 10px",textAlign:h==="Importe"?"right":"left",color:C.muted,fontWeight:700,fontSize:11,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map(({ing,valor},idx)=>{
+                      const catStyle = getCatStyle(ing.categoria);
+                      return (
+                        <tr key={ing.id}
+                          style={{borderBottom:`1px solid ${C.border}`,background:idx%2===0?C.surface:"#FAFBFC",cursor:"pointer",transition:"background .12s"}}
+                          onClick={()=>{setKpiModal(null); setDetailIngreso(ing.id);}}
+                          onMouseEnter={e=>{e.currentTarget.style.background="#F0F7FF";}}
+                          onMouseLeave={e=>{e.currentTarget.style.background=idx%2===0?C.surface:"#FAFBFC";}}>
+                          <td style={{padding:"10px 10px",fontWeight:700,color:C.navy}}>{ing.cliente}</td>
+                          <td style={{padding:"10px 10px",color:ing.concepto?C.text:C.muted,fontStyle:ing.concepto?"normal":"italic",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.concepto||"—"}</td>
+                          <td style={{padding:"10px 10px"}}>
+                            <span style={{background:catStyle.bg,color:catStyle.text,border:`1px solid ${catStyle.border}`,padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>{ing.categoria}</span>
+                          </td>
+                          <td style={{padding:"10px 10px",fontSize:12,color:C.muted,whiteSpace:"nowrap"}}>{ing.fecha||"—"}</td>
+                          <td style={{padding:"10px 10px",textAlign:"right",fontWeight:800,color:valor>=0?colorTipo:C.danger}}>{sym}{fmt(valor)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{borderTop:`2px solid ${C.navy}`,background:"#EEF2FF"}}>
+                      <td colSpan={4} style={{padding:"10px 10px",fontWeight:800,color:C.navy,fontSize:13}}>TOTAL ({rows.length} ingresos)</td>
+                      <td style={{padding:"10px 10px",textAlign:"right",fontWeight:900,fontSize:15,color:colorTipo}}>{sym}{fmt(total)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+              <div style={{fontSize:11,color:C.muted,marginTop:12,textAlign:"center"}}>Clic en una fila para abrir el detalle del ingreso</div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Global stats strip */}
       <div style={{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap"}}>
