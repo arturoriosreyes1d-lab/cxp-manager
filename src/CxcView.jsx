@@ -341,6 +341,7 @@ export default function CxcView({
     const [cobroFecha, setCobroFecha] = useState(today());
     const [cobroNotas, setCobroNotas] = useState("");
     const [invDetail, setInvDetail] = useState(null);
+    const [sortFacturas, setSortFacturas] = useState("estatus"); // "estatus"|"proveedor"|"monto"|"fecha"
 
     const ing = ingresos.find(i => i.id === detailIngreso);
     if (!ing) return null;
@@ -508,12 +509,44 @@ export default function CxcView({
 
           {/* RIGHT: Facturas vinculadas */}
           <div>
-            <h3 style={{fontSize:15,fontWeight:800,color:C.navy,marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
-              🔗 Facturas Vinculadas
-              <span style={{fontSize:12,fontWeight:500,color:C.muted}}>({vincsWithInv.length})</span>
-            </h3>
-            {vincsWithInv.length === 0 && <div style={{textAlign:"center",color:C.muted,fontSize:13,padding:20}}>Sin facturas vinculadas.<br/><span style={{fontSize:11}}>Vincula desde la sección Cartera.</span></div>}
-            {vincsWithInv.map(v=>{
+            {/* Header + control de ordenamiento */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
+              <h3 style={{fontSize:15,fontWeight:800,color:C.navy,margin:0,display:"flex",alignItems:"center",gap:6}}>
+                🔗 Facturas Vinculadas
+                <span style={{fontSize:12,fontWeight:500,color:C.muted}}>({vincsWithInv.length})</span>
+              </h3>
+              {vincsWithInv.length > 1 && (
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{fontSize:11,color:C.muted,fontWeight:600}}>Ordenar:</span>
+                  {[
+                    {v:"estatus",  l:"Estatus"},
+                    {v:"proveedor",l:"Proveedor"},
+                    {v:"monto",    l:"Monto"},
+                    {v:"fecha",    l:"Fecha"},
+                  ].map(opt=>(
+                    <button key={opt.v} onClick={()=>setSortFacturas(opt.v)}
+                      style={{padding:"3px 10px",borderRadius:20,border:`1px solid ${sortFacturas===opt.v?C.blue:C.border}`,background:sortFacturas===opt.v?"#E8F0FE":C.surface,color:sortFacturas===opt.v?C.blue:C.text,cursor:"pointer",fontSize:11,fontWeight:sortFacturas===opt.v?700:500,fontFamily:"inherit",transition:"all .15s"}}>
+                      {opt.l}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {vincsWithInv.length === 0 && (
+              <div style={{textAlign:"center",color:C.muted,fontSize:13,padding:20}}>
+                Sin facturas vinculadas.<br/><span style={{fontSize:11}}>Vincula desde la sección Cartera.</span>
+              </div>
+            )}
+
+            {[...vincsWithInv].sort((a,b) => {
+              const ESTATUS_ORDER = {Pagado:1, Parcial:2, Pendiente:3, Vencido:4};
+              if (sortFacturas === "estatus")   return (ESTATUS_ORDER[a.inv.estatus]||5) - (ESTATUS_ORDER[b.inv.estatus]||5);
+              if (sortFacturas === "proveedor") return (a.inv.proveedor||"").localeCompare(b.inv.proveedor||"");
+              if (sortFacturas === "monto")     return b.montoAsignado - a.montoAsignado;
+              if (sortFacturas === "fecha")     return (b.inv.fecha||"").localeCompare(a.inv.fecha||"");
+              return 0;
+            }).map(v=>{
               const inv = v.inv;
               const montoConv = convertToMonedaIngreso(v.montoAsignado, inv.moneda, ing);
               const sameMoneda = inv.moneda === ing.moneda;
@@ -530,7 +563,7 @@ export default function CxcView({
                       <div style={{fontSize:11,color:C.muted}}>Folio: {inv.serie}{inv.folio} · {inv.fecha}</div>
                     </div>
                     <div style={{display:"flex",alignItems:"center",gap:8}}>
-                      <span style={{color:statusColor,fontWeight:700,fontSize:11}}>{inv.estatus}</span>
+                      <span style={{color:statusColor,fontWeight:700,fontSize:11,background:`${statusColor}18`,padding:"2px 8px",borderRadius:20}}>{inv.estatus}</span>
                       <span style={{fontSize:11,color:C.muted,background:"#fff",padding:"1px 6px",borderRadius:6,border:`1px solid ${C.border}`}}>ver detalle →</span>
                     </div>
                   </div>
