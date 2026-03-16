@@ -620,23 +620,23 @@ export default function CxcView({
               <title>Desglose — ${ing.cliente}</title>
               <style>
                 *{box-sizing:border-box;margin:0;padding:0;}
-                body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#1A2332;padding:28px 32px;background:#fff;}
-                h1{font-size:22px;font-weight:900;color:#0F2D4A;margin:4px 0 2px;}
-                .sub{font-size:13px;color:#64748B;}
-                .label{font-size:9px;color:#64748B;font-weight:700;text-transform:uppercase;letter-spacing:.5px;}
-                .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #0F2D4A;padding-bottom:14px;margin-bottom:16px;}
-                .kpi-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;}
-                .kpi-box{border:1px solid #E2E8F0;border-radius:8px;padding:10px 14px;min-width:110px;}
-                .kpi-val{font-size:17px;font-weight:800;margin-top:3px;}
-                table{width:100%;border-collapse:collapse;margin-top:8px;margin-bottom:20px;}
-                th{background:#0F2D4A;color:#fff;padding:8px 10px;text-align:left;font-size:10px;text-transform:uppercase;font-weight:700;}
-                td{padding:8px 10px;border-bottom:1px solid #E2E8F0;font-size:12px;}
-                tfoot td{background:#EEF2FF;font-weight:800;border-top:2px solid #0F2D4A;}
-                .badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10px;font-weight:700;}
-                .section-title{font-size:11px;font-weight:700;color:#0F2D4A;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;margin-top:4px;}
-                .footer{margin-top:20px;font-size:9px;color:#94A3B8;border-top:1px solid #E2E8F0;padding-top:8px;}
+                body{font-family:'Segoe UI',Arial,sans-serif;font-size:10px;color:#1A2332;padding:16px 20px;background:#fff;}
+                h1{font-size:16px;font-weight:900;color:#0F2D4A;margin:3px 0 2px;}
+                .sub{font-size:10px;color:#64748B;}
+                .label{font-size:8px;color:#64748B;font-weight:700;text-transform:uppercase;letter-spacing:.4px;}
+                .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #0F2D4A;padding-bottom:8px;margin-bottom:10px;}
+                .kpi-row{display:flex;gap:6px;flex-wrap:nowrap;margin-bottom:10px;}
+                .kpi-box{border:1px solid #E2E8F0;border-radius:6px;padding:6px 8px;flex:1;}
+                .kpi-val{font-size:12px;font-weight:800;margin-top:2px;}
+                table{width:100%;border-collapse:collapse;margin-top:4px;margin-bottom:10px;}
+                th{background:#0F2D4A;color:#fff;padding:5px 7px;text-align:left;font-size:8px;text-transform:uppercase;font-weight:700;}
+                td{padding:4px 7px;border-bottom:1px solid #E2E8F0;font-size:9px;}
+                tfoot td{background:#EEF2FF;font-weight:800;border-top:2px solid #0F2D4A;font-size:9px;}
+                .badge{display:inline-block;padding:1px 6px;border-radius:20px;font-size:8px;font-weight:700;}
+                .section-title{font-size:9px;font-weight:700;color:#0F2D4A;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;margin-top:2px;}
+                .footer{margin-top:10px;font-size:8px;color:#94A3B8;border-top:1px solid #E2E8F0;padding-top:6px;}
                 .right{text-align:right;}
-                @page{size:A4 landscape;margin:14mm;}
+                @page{size:A4 portrait;margin:10mm;}
                 @media print{body{padding:0;}}
               </style>
             </head><body>
