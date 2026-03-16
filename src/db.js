@@ -243,3 +243,132 @@ export async function updatePayment(id, fields) {
   const { error } = await supabase.from('payments').update(dbFields).eq('id', id);
   if (error) console.error('updatePayment:', error);
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   CxC — CUENTAS POR COBRAR
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Helpers ─────────────────────────────────────────────────── */
+const ingresoToApp = (r) => ({
+  id: r.id,
+  cliente: r.cliente || '',
+  concepto: r.concepto || '',
+  categoria: r.categoria || '',
+  monto: +r.monto || 0,
+  moneda: r.moneda || 'MXN',
+  tipoCambio: +r.tipo_cambio || 1,
+  fecha: r.fecha || '',
+  notas: r.notas || '',
+});
+
+const ingresoToDB = (i) => ({
+  id: i.id,
+  cliente: i.cliente,
+  concepto: i.concepto || '',
+  categoria: i.categoria || '',
+  monto: i.monto,
+  moneda: i.moneda || 'MXN',
+  tipo_cambio: i.tipoCambio || 1,
+  fecha: i.fecha || null,
+  notas: i.notas || '',
+});
+
+/* ── Ingresos ────────────────────────────────────────────────── */
+export async function fetchIngresos() {
+  const { data, error } = await supabase.from('ingresos').select('*').order('fecha', { ascending: false });
+  if (error) { console.error('fetchIngresos:', error); return []; }
+  return (data || []).map(ingresoToApp);
+}
+
+export async function upsertIngreso(ing) {
+  const row = ingresoToDB(ing);
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(row.id);
+  if (!isUUID) {
+    delete row.id;
+    const { data, error } = await supabase.from('ingresos').insert(row).select().single();
+    if (error) { console.error('insertIngreso:', error); return ing; }
+    return ingresoToApp(data);
+  } else {
+    const { data, error } = await supabase.from('ingresos').update(row).eq('id', row.id).select().single();
+    if (error) { console.error('updateIngreso:', error); return ing; }
+    return ingresoToApp(data);
+  }
+}
+
+export async function deleteIngreso(id) {
+  const { error } = await supabase.from('ingresos').delete().eq('id', id);
+  if (error) console.error('deleteIngreso:', error);
+}
+
+/* ── Cobros ──────────────────────────────────────────────────── */
+export async function fetchCobros() {
+  const { data, error } = await supabase.from('cobros').select('*').order('fecha_cobro', { ascending: false });
+  if (error) { console.error('fetchCobros:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id,
+    ingresoId: r.ingreso_id,
+    monto: +r.monto || 0,
+    fechaCobro: r.fecha_cobro || '',
+    notas: r.notas || '',
+  }));
+}
+
+export async function insertCobro(c) {
+  const row = { ingreso_id: c.ingresoId, monto: c.monto, fecha_cobro: c.fechaCobro || null, notas: c.notas || '' };
+  const { data, error } = await supabase.from('cobros').insert(row).select().single();
+  if (error) { console.error('insertCobro:', error); return c; }
+  return { id: data.id, ingresoId: data.ingreso_id, monto: +data.monto, fechaCobro: data.fecha_cobro || '', notas: data.notas || '' };
+}
+
+export async function deleteCobro(id) {
+  const { error } = await supabase.from('cobros').delete().eq('id', id);
+  if (error) console.error('deleteCobro:', error);
+}
+
+/* ── Invoice-Ingresos ────────────────────────────────────────── */
+export async function fetchInvoiceIngresos() {
+  const { data, error } = await supabase.from('invoice_ingresos').select('*');
+  if (error) { console.error('fetchInvoiceIngresos:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id,
+    invoiceId: r.invoice_id,
+    ingresoId: r.ingreso_id,
+    montoAsignado: +r.monto_asignado || 0,
+  }));
+}
+
+export async function upsertInvoiceIngreso(item) {
+  const row = { invoice_id: item.invoiceId, ingreso_id: item.ingresoId, monto_asignado: item.montoAsignado };
+  if (item.id && /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(item.id)) {
+    const { data, error } = await supabase.from('invoice_ingresos').update(row).eq('id', item.id).select().single();
+    if (error) { console.error('updateInvoiceIngreso:', error); return item; }
+    return { id: data.id, invoiceId: data.invoice_id, ingresoId: data.ingreso_id, montoAsignado: +data.monto_asignado };
+  } else {
+    const { data, error } = await supabase.from('invoice_ingresos').insert(row).select().single();
+    if (error) { console.error('insertInvoiceIngreso:', error); return item; }
+    return { id: data.id, invoiceId: data.invoice_id, ingresoId: data.ingreso_id, montoAsignado: +data.monto_asignado };
+  }
+}
+
+export async function deleteInvoiceIngreso(id) {
+  const { error } = await supabase.from('invoice_ingresos').delete().eq('id', id);
+  if (error) console.error('deleteInvoiceIngreso:', error);
+}
+
+/* ── Categorías Ingreso ──────────────────────────────────────── */
+export async function fetchCategoriasIngreso() {
+  const { data, error } = await supabase.from('categorias_ingreso').select('*').order('nombre');
+  if (error) { console.error('fetchCategoriasIngreso:', error); return []; }
+  return (data || []).map(r => ({ id: r.id, nombre: r.nombre }));
+}
+
+export async function upsertCategoriaIngreso(nombre) {
+  const { data, error } = await supabase.from('categorias_ingreso').upsert({ nombre }, { onConflict: 'nombre' }).select().single();
+  if (error) { console.error('upsertCategoriaIngreso:', error); return null; }
+  return { id: data.id, nombre: data.nombre };
+}
+
+export async function deleteCategoriaIngreso(id) {
+  const { error } = await supabase.from('categorias_ingreso').delete().eq('id', id);
+  if (error) console.error('deleteCategoriaIngreso:', error);
+}

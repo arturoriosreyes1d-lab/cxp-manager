@@ -9,7 +9,10 @@ import {
   upsertInvoice, upsertManyInvoices, deleteInvoiceDB, updateInvoiceField, bulkUpdateInvoices,
   upsertSupplier, upsertManySuppliers, saveClasificaciones,
   fetchPayments, insertPayment, deletePayment, updatePayment,
+  fetchIngresos, fetchCobros, fetchInvoiceIngresos, fetchCategoriasIngreso,
+  upsertInvoiceIngreso, deleteInvoiceIngreso,
 } from "./db.js";
+import CxcView from "./CxcView.jsx";
 
 /* ── Palette ─────────────────────────────────────────────────────────────── */
 const C = {
@@ -143,15 +146,29 @@ export default function CxpApp({ user, onLogout }) {
   const fileRef = useRef();
   const searchRef = useRef();
 
+  /* ── CxC State ──────────────────────────────────────────────────────── */
+  const [ingresos, setIngresos] = useState([]);
+  const [cobros, setCobros] = useState([]);
+  const [invoiceIngresos, setInvoiceIngresos] = useState([]);
+  const [categoriasIngreso, setCategoriasIngreso] = useState([]);
+  const [vincularModal, setVincularModal] = useState(null); // {invoiceId, proveedor, folio, total, moneda}
+
   /* ── Load data from Supabase ────────────────────────────────────── */
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const [inv, sup, cls, pays] = await Promise.all([fetchInvoices(), fetchSuppliers(), fetchClasificaciones(), fetchPayments()]);
+      const [inv, sup, cls, pays, ings, cbs, invIngs, cats] = await Promise.all([
+        fetchInvoices(), fetchSuppliers(), fetchClasificaciones(), fetchPayments(),
+        fetchIngresos(), fetchCobros(), fetchInvoiceIngresos(), fetchCategoriasIngreso(),
+      ]);
       setInvoices(inv);
       setSuppliers(sup.length > 0 ? sup : []);
       setClases(cls.length > 0 ? cls : DEFAULT_CLASES);
       setPayments(pays);
+      setIngresos(ings);
+      setCobros(cbs);
+      setInvoiceIngresos(invIngs);
+      setCategoriasIngreso(cats);
       setLoading(false);
     })();
   }, []);
@@ -771,6 +788,7 @@ export default function CxpApp({ user, onLogout }) {
         </td>
         <td style={{padding:"10px 8px",whiteSpace:"nowrap"}}>
           <button onClick={e=>{e.stopPropagation();setPayModal({invoiceId:inv.id,proveedor:inv.proveedor,folio:`${inv.serie}${inv.folio}`,total:inv.total,moneda:inv.moneda||currency});}} style={{...iconBtn,color:C.ok}} title="Pagos">💰</button>
+          <button onClick={e=>{e.stopPropagation();setVincularModal({invoiceId:inv.id,proveedor:inv.proveedor,folio:`${inv.serie}${inv.folio}`,total:inv.total,moneda:inv.moneda||currency});}} style={{...iconBtn,color:C.teal}} title="Vincular a Ingreso CxC">🔗</button>
           <button onClick={()=>setModalInv({...inv,moneda:inv.moneda||currency})} style={{...iconBtn,color:C.sky}} title="Editar">✏️</button>
           <button onClick={()=>setDeleteConfirm({id:inv.id,cur:currency,label:`${inv.serie}${inv.folio} - ${inv.proveedor}`})} style={{...iconBtn,color:C.danger}} title="Eliminar">🗑️</button>
         </td>
@@ -1688,20 +1706,33 @@ export default function CxpApp({ user, onLogout }) {
       <aside style={{width:220,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",padding:"24px 12px",flexShrink:0}}>
         <div style={{padding:"0 8px 20px",borderBottom:`1px solid ${C.border}`,marginBottom:12}}>
           <div style={{fontWeight:900,fontSize:17,color:C.navy}}>✈️ Viajes Libero</div>
-          <div style={{fontSize:11,color:C.muted}}>Cuentas por Pagar</div>
+          <div style={{fontSize:11,color:C.muted}}>CxP · CxC</div>
         </div>
         <NavItem id="dashboard" icon="📊" label="Dashboard"/>
-        <NavItem id="cartera" icon="🧾" label="Cartera"/>
+        <NavItem id="cartera" icon="🧾" label="Cartera (CxP)"/>
         <NavItem id="pagos" icon="💰" label="Pagos"/>
         <NavItem id="proveedores" icon="🏢" label="Proveedores"/>
         <NavItem id="proyeccion" icon="📅" label="Proyección"/>
         <NavItem id="importar" icon="📥" label="Importar"/>
+        <NavItem id="cxc" icon="💵" label="CxC — Ingresos"/>
         <NavItem id="config" icon="⚙️" label="Configuración"/>
         {kpis.vencidas>0 && (
           <div style={{marginTop:12,background:"#FFF5F5",border:"1px solid #FFCDD2",borderRadius:10,padding:"10px 12px",fontSize:12}}>
             <div style={{fontWeight:700,color:C.danger}}>⚠️ {kpis.vencidas} factura{kpis.vencidas!==1?"s":""} vencida{kpis.vencidas!==1?"s":""}</div>
           </div>
         )}
+        {ingresos.length > 0 && (() => {
+          const porCobrar = ingresos.filter(ing => {
+            const cobrado = cobros.filter(c=>c.ingresoId===ing.id).reduce((s,c)=>s+c.monto,0);
+            return cobrado < ing.monto;
+          }).length;
+          if (porCobrar === 0) return null;
+          return (
+            <div style={{marginTop:8,background:"#E0F2F1",border:"1px solid #80CBC4",borderRadius:10,padding:"10px 12px",fontSize:12}}>
+              <div style={{fontWeight:700,color:C.teal}}>💵 {porCobrar} ingreso{porCobrar!==1?"s":""} por cobrar</div>
+            </div>
+          );
+        })()}
         {/* User info & logout */}
         <div style={{marginTop:"auto",borderTop:`1px solid ${C.border}`,paddingTop:14}}>
           <div style={{display:"flex",alignItems:"center",gap:8,padding:"0 8px",marginBottom:10}}>
@@ -1728,6 +1759,20 @@ export default function CxpApp({ user, onLogout }) {
         {view==="proyeccion" && renderProyeccion()}
         {view==="importar" && renderImportar()}
         {view==="config" && renderConfig()}
+        {view==="cxc" && (
+          <CxcView
+            invoices={invoices}
+            payments={payments}
+            ingresos={ingresos}
+            setIngresos={setIngresos}
+            cobros={cobros}
+            setCobros={setCobros}
+            invoiceIngresos={invoiceIngresos}
+            setInvoiceIngresos={setInvoiceIngresos}
+            categorias={categoriasIngreso}
+            setCategorias={setCategoriasIngreso}
+          />
+        )}
       </main>
 
       {/* Modals */}
@@ -2297,6 +2342,147 @@ export default function CxpApp({ user, onLogout }) {
           })()}
         </ModalShell>
       )}
+
+      {/* Vincular Ingreso Modal */}
+      {vincularModal && (()=>{
+        const inv = [...invoices.MXN,...invoices.USD,...invoices.EUR].find(i=>i.id===vincularModal.invoiceId);
+        const currentVincs = invoiceIngresos.filter(v=>v.invoiceId===vincularModal.invoiceId);
+        const sym = vincularModal.moneda==="EUR"?"€":"$";
+        const fmt2 = n => isNaN(n)||n===""||n===null ? "—" : new Intl.NumberFormat("es-MX",{minimumFractionDigits:2,maximumFractionDigits:2}).format(+n);
+
+        const VincularForm = () => {
+          const [selectedIngreso, setSelectedIngreso] = useState("");
+          const [montoAsig, setMontoAsig] = useState("");
+          const [saving, setSaving] = useState(false);
+
+          const calcSugerido = (ingId) => {
+            if(!ingId) return "";
+            const saldo = (+vincularModal.total||0) - (+inv?.montoPagado||0);
+            return saldo > 0 ? saldo.toFixed(2) : "";
+          };
+
+          const handleAdd = async () => {
+            if(!selectedIngreso||!montoAsig||+montoAsig<=0) return;
+            setSaving(true);
+            const saved = await upsertInvoiceIngreso({ invoiceId:vincularModal.invoiceId, ingresoId:selectedIngreso, montoAsignado:+montoAsig });
+            setInvoiceIngresos(prev=>[...prev,saved]);
+            setSelectedIngreso("");
+            setMontoAsig("");
+            setSaving(false);
+          };
+
+          const handleRemove = async (id) => {
+            await deleteInvoiceIngreso(id);
+            setInvoiceIngresos(prev=>prev.filter(v=>v.id!==id));
+          };
+
+          const availableIngresos = ingresos.filter(ing=>!currentVincs.some(v=>v.ingresoId===ing.id));
+
+          return (
+            <ModalShell title={`🔗 Vincular — ${vincularModal.folio}`} onClose={()=>setVincularModal(null)} wide>
+              <div style={{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap"}}>
+                <div style={{background:"#F8FAFC",borderRadius:8,padding:"8px 14px",fontSize:13}}>
+                  <span style={{color:"#64748B"}}>Proveedor: </span><span style={{fontWeight:700}}>{vincularModal.proveedor}</span>
+                </div>
+                <div style={{background:"#F8FAFC",borderRadius:8,padding:"8px 14px",fontSize:13}}>
+                  <span style={{color:"#64748B"}}>Total: </span><span style={{fontWeight:700}}>{sym}{fmt2(vincularModal.total)} {vincularModal.moneda}</span>
+                </div>
+              </div>
+              {currentVincs.length > 0 && (
+                <div style={{marginBottom:20}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"#0F2D4A",marginBottom:8}}>Vinculaciones actuales</div>
+                  {currentVincs.map(v=>{
+                    const ing = ingresos.find(i=>i.id===v.ingresoId);
+                    if(!ing) return null;
+                    const sameCur = ing.moneda===vincularModal.moneda;
+                    const tc = ing.tipoCambio||1;
+                    return (
+                      <div key={v.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderRadius:10,border:"1px solid #80CBC4",background:"#E0F2F1",marginBottom:6}}>
+                        <div>
+                          <span style={{fontWeight:700,color:"#0F2D4A"}}>{ing.cliente}</span>
+                          <span style={{color:"#64748B",fontSize:12,marginLeft:8}}>{ing.concepto||ing.categoria}</span>
+                          <span style={{fontSize:11,color:"#64748B",marginLeft:8}}>{ing.moneda}</span>
+                          {!sameCur && <span style={{fontSize:10,color:"#64748B",marginLeft:4}}>TC:{fmt2(tc)}</span>}
+                        </div>
+                        <div style={{display:"flex",alignItems:"center",gap:10}}>
+                          <span style={{fontWeight:700,color:"#00897B"}}>{sym}{fmt2(v.montoAsignado)}</span>
+                          {!sameCur && (() => {
+                            let cv = 0;
+                            if(ing.moneda==="MXN" && vincularModal.moneda!=="MXN") cv = v.montoAsignado/tc;
+                            else if(ing.moneda!=="MXN" && vincularModal.moneda==="MXN") cv = v.montoAsignado*tc;
+                            if(!cv) return null;
+                            return <span style={{fontSize:11,color:"#64748B"}}>≈ {ing.moneda==="EUR"?"€":"$"}{fmt2(cv)} {ing.moneda}</span>;
+                          })()}
+                          <button onClick={()=>handleRemove(v.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#E53935",fontSize:14,padding:"2px 4px"}}>🗑️</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div style={{fontSize:12,color:"#64748B",padding:"4px 0"}}>
+                    Total asignado: {sym}{fmt2(currentVincs.reduce((s,v)=>s+v.montoAsignado,0))} / {sym}{fmt2(vincularModal.total)}
+                  </div>
+                </div>
+              )}
+              {ingresos.length === 0 ? (
+                <div style={{textAlign:"center",padding:24,color:"#64748B",background:"#F8FAFC",borderRadius:10}}>
+                  <div style={{fontSize:32,marginBottom:8}}>💵</div>
+                  <div>Primero crea un ingreso en <b>CxC — Ingresos</b>.</div>
+                </div>
+              ) : availableIngresos.length === 0 && currentVincs.length > 0 ? (
+                <div style={{textAlign:"center",padding:12,color:"#43A047",background:"#E8F5E9",borderRadius:10,fontSize:13}}>
+                  ✅ Factura vinculada a todos los ingresos disponibles.
+                </div>
+              ) : availableIngresos.length > 0 ? (
+                <div style={{background:"#F0FFF4",border:"1px solid #A5D6A7",borderRadius:12,padding:16}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"#43A047",marginBottom:12}}>+ Agregar vinculación</div>
+                  <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
+                    <div style={{flex:2,minWidth:200}}>
+                      <div style={{fontSize:11,color:"#64748B",fontWeight:600,marginBottom:4}}>Ingreso</div>
+                      <select value={selectedIngreso}
+                        onChange={e=>{setSelectedIngreso(e.target.value); setMontoAsig(calcSugerido(e.target.value));}}
+                        style={{padding:"8px 12px",borderRadius:8,border:"1px solid #E2E8F0",fontSize:13,width:"100%",background:"#FAFBFC",fontFamily:"inherit",cursor:"pointer"}}>
+                        <option value="">— Seleccionar ingreso —</option>
+                        {availableIngresos.map(ing=>(
+                          <option key={ing.id} value={ing.id}>
+                            {ing.cliente} | {ing.concepto||ing.categoria} | {ing.moneda==="EUR"?"€":"$"}{fmt2(ing.monto)} {ing.moneda}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div style={{minWidth:140}}>
+                      <div style={{fontSize:11,color:"#64748B",fontWeight:600,marginBottom:4}}>Monto ({vincularModal.moneda})</div>
+                      <input type="number" value={montoAsig} onChange={e=>setMontoAsig(e.target.value)}
+                        placeholder="0.00" style={{padding:"8px 12px",borderRadius:8,border:"1px solid #E2E8F0",fontSize:13,width:"100%",fontFamily:"inherit",boxSizing:"border-box"}} step="0.01"/>
+                    </div>
+                    <button onClick={handleAdd} disabled={saving||!selectedIngreso||!montoAsig||+montoAsig<=0}
+                      style={{padding:"9px 20px",borderRadius:10,border:"none",background:"#00897B",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",opacity:(saving||!selectedIngreso||!montoAsig)?0.5:1}}>
+                      {saving?"Guardando…":"🔗 Vincular"}
+                    </button>
+                  </div>
+                  {selectedIngreso && (() => {
+                    const ing = ingresos.find(i=>i.id===selectedIngreso);
+                    if(!ing||ing.moneda===vincularModal.moneda) return null;
+                    const tc = ing.tipoCambio||1;
+                    const monto = +montoAsig||0;
+                    let cv = 0;
+                    if(ing.moneda==="MXN") cv = monto/tc;
+                    else cv = monto*tc;
+                    return (
+                      <div style={{fontSize:11,color:"#64748B",marginTop:8,padding:"6px 10px",background:"#FFFDE7",borderRadius:6}}>
+                        💱 TC: 1 {ing.moneda} = {fmt2(tc)} MXN · {sym}{fmt2(monto)} {vincularModal.moneda} ≈ {ing.moneda==="EUR"?"€":"$"}{fmt2(cv)} {ing.moneda}
+                      </div>
+                    );
+                  })()}
+                </div>
+              ) : null}
+              <div style={{display:"flex",justifyContent:"flex-end",marginTop:20}}>
+                <button onClick={()=>setVincularModal(null)} style={{padding:"9px 20px",borderRadius:10,border:"none",background:"#1565C0",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>Cerrar</button>
+              </div>
+            </ModalShell>
+          );
+        };
+        return <VincularForm/>;
+      })()}
     </div>
   );
 }
