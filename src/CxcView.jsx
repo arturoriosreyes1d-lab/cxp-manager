@@ -91,14 +91,16 @@ export default function CxcView({
   const [filtroFechaFrom, setFiltroFechaFrom] = useState("");
   const [filtroFechaTo, setFiltroFechaTo] = useState("");
   const [filtroSearch, setFiltroSearch] = useState("");
+  const [filtroCobro, setFiltroCobro] = useState(""); // "" | "cobrado" | "porCobrar"
 
   /* ── Modals ────────────────────────────────────────────────── */
-  const [modalIngreso, setModalIngreso] = useState(null);   // null | ingreso obj (new={})
-  const [detailIngreso, setDetailIngreso] = useState(null); // null | ingreso id
-  const [deleteConfirm, setDeleteConfirm] = useState(null); // null | { id, label }
+  const [modalIngreso, setModalIngreso] = useState(null);
+  const [detailIngreso, setDetailIngreso] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [configCats, setConfigCats] = useState(false);
   const [newCatInput, setNewCatInput] = useState("");
   const [proyeccionView, setProyeccionView] = useState(false);
+  const [calDayDetail, setCalDayDetail] = useState(null); // { fecha, cobros: [] }
 
   /* ── Derived data ──────────────────────────────────────────── */
   const allInvoices = useMemo(() => [
@@ -132,14 +134,17 @@ export default function CxcView({
   const metrics = useMemo(() => {
     const result = {};
     ingresos.forEach(ing => {
-      const ingCobros = cobros.filter(c => c.ingresoId === ing.id);
-      const totalCobrado = ingCobros.reduce((s,c) => s+c.monto, 0);
-      const porCobrar = Math.max(0, ing.monto - totalCobrado);
+      const ingCobros         = cobros.filter(c => c.ingresoId === ing.id);
+      const cobrosRealizados  = ingCobros.filter(c => c.tipo !== 'proyectado');
+      const cobrosProyectados = ingCobros.filter(c => c.tipo === 'proyectado');
+      const totalCobrado      = cobrosRealizados.reduce((s,c) => s+c.monto, 0);
+      const totalProyectado   = cobrosProyectados.reduce((s,c) => s+c.monto, 0);
+      const porCobrar         = Math.max(0, ing.monto - totalCobrado);
 
       const vincs = invoiceIngresos.filter(v => v.ingresoId === ing.id);
-      let consumido = 0;    // facturas PAGADAS vinculadas
-      let porPagar = 0;     // facturas PENDIENTES/PARCIALES vinculadas (comprometido no pagado)
-      let comprometido = 0; // TODAS las facturas vinculadas
+      let consumido = 0;
+      let porPagar  = 0;
+      let comprometido = 0;
 
       vincs.forEach(v => {
         const inv = allInvoices.find(i => i.id === v.invoiceId);
@@ -151,9 +156,8 @@ export default function CxcView({
         } else if (inv.estatus === "Parcial") {
           const ratio = (+inv.total||0) > 0 ? (+inv.montoPagado||0)/(+inv.total||0) : 0;
           consumido += converted * ratio;
-          porPagar += converted * (1 - ratio);
+          porPagar  += converted * (1 - ratio);
         } else {
-          // Pendiente o Vencido
           porPagar += converted;
         }
       });
@@ -161,6 +165,7 @@ export default function CxcView({
       const disponible = totalCobrado - consumido;
       result[ing.id] = {
         totalCobrado,
+        totalProyectado,
         porCobrar,
         consumido,
         porPagar,
@@ -206,9 +211,17 @@ export default function CxcView({
       if (filtroMoneda && ing.moneda !== filtroMoneda) return false;
       if (filtroFechaFrom && ing.fecha && ing.fecha < filtroFechaFrom) return false;
       if (filtroFechaTo && ing.fecha && ing.fecha > filtroFechaTo) return false;
+      if (filtroCobro === "cobrado") {
+        const m = metrics[ing.id] || {};
+        if ((m.totalCobrado||0) <= 0) return false;
+      }
+      if (filtroCobro === "porCobrar") {
+        const m = metrics[ing.id] || {};
+        if ((m.porCobrar||0) <= 0) return false;
+      }
       return true;
     });
-  }, [ingresos, filtroSearch, filtroCliente, filtroCategoria, filtroMoneda, filtroFechaFrom, filtroFechaTo]);
+  }, [ingresos, filtroSearch, filtroCliente, filtroCategoria, filtroMoneda, filtroFechaFrom, filtroFechaTo, filtroCobro, metrics]);
 
   /* ── CRUD Handlers ─────────────────────────────────────────── */
   const saveIngreso = async (data) => {
@@ -231,8 +244,8 @@ export default function CxcView({
     if (detailIngreso === deleteConfirm.id) setDetailIngreso(null);
   };
 
-  const addCobro = async (ingresoId, monto, fechaCobro, notas) => {
-    const saved = await insertCobro({ ingresoId, monto:+monto, fechaCobro, notas });
+  const addCobro = async (ingresoId, monto, fechaCobro, notas, tipo = 'realizado') => {
+    const saved = await insertCobro({ ingresoId, monto:+monto, fechaCobro, notas, tipo });
     setCobros(prev => [saved, ...prev]);
   };
 
@@ -396,47 +409,98 @@ export default function CxcView({
         )}
 
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24}}>
-          {/* LEFT: Cobros */}
+          {/* LEFT: Cobros — realizados arriba, proyectados abajo */}
           <div>
-            <h3 style={{fontSize:15,fontWeight:800,color:C.navy,marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
-              💵 Cobros Recibidos
-              <span style={{fontSize:12,fontWeight:500,color:C.muted}}>({ingCobros.length})</span>
+            {/* REALIZADOS */}
+            <h3 style={{fontSize:14,fontWeight:800,color:C.ok,marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+              💵 Cobros Realizados
+              <span style={{fontSize:11,fontWeight:500,color:C.muted}}>({ingCobros.filter(c=>c.tipo!=='proyectado').length})</span>
             </h3>
-            {/* Add cobro form */}
-            <div style={{background:"#F0FFF4",border:"1px solid #A5D6A7",borderRadius:10,padding:14,marginBottom:12}}>
-              <div style={{fontSize:12,fontWeight:700,color:C.ok,marginBottom:8}}>+ Registrar cobro</div>
+            <div style={{background:"#F0FFF4",border:"1px solid #A5D6A7",borderRadius:10,padding:12,marginBottom:10}}>
+              <div style={{fontSize:11,fontWeight:700,color:C.ok,marginBottom:8}}>+ Registrar cobro recibido</div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end"}}>
                 <div>
                   <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}>Monto</div>
-                  <input type="number" value={cobroMonto} onChange={e=>setCobroMonto(e.target.value)} placeholder="0.00" style={{...inputStyle,width:120}} step="0.01"/>
+                  <input type="number" value={cobroMonto} onChange={e=>setCobroMonto(e.target.value)} placeholder="0.00" style={{...inputStyle,width:110}} step="0.01"/>
                 </div>
                 <div>
                   <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}>Fecha</div>
-                  <input type="date" value={cobroFecha} onChange={e=>setCobroFecha(e.target.value)} style={{...inputStyle,width:150}}/>
+                  <input type="date" value={cobroFecha} onChange={e=>setCobroFecha(e.target.value)} style={{...inputStyle,width:140}}/>
                 </div>
-                <div style={{flex:1,minWidth:100}}>
+                <div style={{flex:1,minWidth:80}}>
                   <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}>Notas</div>
-                  <input value={cobroNotas} onChange={e=>setCobroNotas(e.target.value)} placeholder="Anticipo, liquidación…" style={{...inputStyle}}/>
+                  <input value={cobroNotas} onChange={e=>setCobroNotas(e.target.value)} placeholder="Anticipo, liq…" style={{...inputStyle}}/>
                 </div>
-                <button onClick={()=>{if(!cobroMonto||+cobroMonto<=0||!cobroFecha) return; addCobro(ing.id,cobroMonto,cobroFecha,cobroNotas); setCobroMonto(""); setCobroNotas("");}} style={{...btnStyle,padding:"8px 16px",fontSize:13,background:C.ok}}>
-                  Agregar
-                </button>
+                <button onClick={()=>{if(!cobroMonto||+cobroMonto<=0||!cobroFecha) return; addCobro(ing.id,cobroMonto,cobroFecha,cobroNotas,'realizado'); setCobroMonto(""); setCobroNotas("");}}
+                  style={{...btnStyle,padding:"7px 14px",fontSize:12,background:C.ok}}>+ Agregar</button>
               </div>
             </div>
-            {ingCobros.length === 0 && <div style={{textAlign:"center",color:C.muted,fontSize:13,padding:20}}>Sin cobros registrados</div>}
-            {ingCobros.map(c=>(
-              <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:6,background:C.surface}}>
-                <div>
-                  <div style={{fontWeight:700,color:C.ok}}>{sym}{fmt(c.monto)}</div>
-                  <div style={{fontSize:11,color:C.muted}}>📅 {c.fechaCobro||"—"}</div>
-                  {c.notas && <div style={{fontSize:11,color:C.muted,fontStyle:"italic"}}>{c.notas}</div>}
+            {ingCobros.filter(c=>c.tipo!=='proyectado').length === 0
+              ? <div style={{textAlign:"center",color:C.muted,fontSize:12,padding:12}}>Sin cobros realizados</div>
+              : ingCobros.filter(c=>c.tipo!=='proyectado').map(c=>(
+                <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 11px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:5,background:C.surface}}>
+                  <div>
+                    <div style={{fontWeight:700,color:C.ok,fontSize:13}}>{sym}{fmt(c.monto)}</div>
+                    <div style={{fontSize:11,color:C.muted}}>📅 {c.fechaCobro||"—"}</div>
+                    {c.notas && <div style={{fontSize:10,color:C.muted,fontStyle:"italic"}}>{c.notas}</div>}
+                  </div>
+                  <button onClick={()=>removeCobro(c.id)} style={{...iconBtn,color:C.danger}}>🗑️</button>
                 </div>
-                <button onClick={()=>removeCobro(c.id)} style={{...iconBtn,color:C.danger}}>🗑️</button>
-              </div>
-            ))}
-            {ingCobros.length > 0 && (
-              <div style={{padding:"8px 12px",background:"#E8F5E9",borderRadius:8,fontWeight:800,color:C.ok,fontSize:13}}>
+              ))
+            }
+            {(m.totalCobrado||0) > 0 && (
+              <div style={{padding:"7px 11px",background:"#E8F5E9",borderRadius:8,fontWeight:800,color:C.ok,fontSize:12,marginTop:4}}>
                 Total cobrado: {sym}{fmt(m.totalCobrado)}
+              </div>
+            )}
+
+            {/* PROYECTADOS */}
+            <h3 style={{fontSize:14,fontWeight:800,color:"#7B1FA2",marginBottom:10,marginTop:18,display:"flex",alignItems:"center",gap:6}}>
+              📆 Cobros Proyectados
+              <span style={{fontSize:11,fontWeight:500,color:C.muted}}>({ingCobros.filter(c=>c.tipo==='proyectado').length})</span>
+            </h3>
+            <div style={{background:"#F3E5F5",border:"1px solid #CE93D8",borderRadius:10,padding:12,marginBottom:10}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:8}}>+ Proyectar cobro futuro</div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end"}}>
+                <div>
+                  <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}>Monto</div>
+                  <input id="proy-monto" type="number" placeholder="0.00" style={{...inputStyle,width:110}} step="0.01"/>
+                </div>
+                <div>
+                  <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}>Fecha estimada</div>
+                  <input id="proy-fecha" type="date" defaultValue={today()} style={{...inputStyle,width:140}}/>
+                </div>
+                <div style={{flex:1,minWidth:80}}>
+                  <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}>Notas</div>
+                  <input id="proy-notas" type="text" placeholder="2do anticipo…" style={{...inputStyle}}/>
+                </div>
+                <button onClick={()=>{
+                  const m2 = +document.getElementById('proy-monto').value;
+                  const f2 = document.getElementById('proy-fecha').value;
+                  const n2 = document.getElementById('proy-notas').value;
+                  if(!m2||m2<=0||!f2) return;
+                  addCobro(ing.id, m2, f2, n2, 'proyectado');
+                  document.getElementById('proy-monto').value='';
+                  document.getElementById('proy-notas').value='';
+                }} style={{...btnStyle,padding:"7px 14px",fontSize:12,background:"#7B1FA2"}}>+ Proyectar</button>
+              </div>
+            </div>
+            {ingCobros.filter(c=>c.tipo==='proyectado').length === 0
+              ? <div style={{textAlign:"center",color:C.muted,fontSize:12,padding:12}}>Sin cobros proyectados.<br/><span style={{fontSize:10}}>Aparecerán en el calendario de proyección.</span></div>
+              : ingCobros.filter(c=>c.tipo==='proyectado').map(c=>(
+                <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 11px",borderRadius:8,border:"1px solid #CE93D8",marginBottom:5,background:"#FAF0FF"}}>
+                  <div>
+                    <div style={{fontWeight:700,color:"#7B1FA2",fontSize:13}}>{sym}{fmt(c.monto)}</div>
+                    <div style={{fontSize:11,color:C.muted}}>📅 {c.fechaCobro||"—"}</div>
+                    {c.notas && <div style={{fontSize:10,color:C.muted,fontStyle:"italic"}}>{c.notas}</div>}
+                  </div>
+                  <button onClick={()=>removeCobro(c.id)} style={{...iconBtn,color:C.danger}}>🗑️</button>
+                </div>
+              ))
+            }
+            {(m.totalProyectado||0) > 0 && (
+              <div style={{padding:"7px 11px",background:"#F3E5F5",border:"1px solid #CE93D8",borderRadius:8,fontWeight:800,color:"#7B1FA2",fontSize:12,marginTop:4}}>
+                Total proyectado: {sym}{fmt(m.totalProyectado)}
               </div>
             )}
           </div>
@@ -624,8 +688,8 @@ export default function CxcView({
         onMouseEnter={e=>{e.currentTarget.style.background="#F0F7FF";}}
         onMouseLeave={e=>{e.currentTarget.style.background=idx%2===0?C.surface:"#FAFBFC";}}
         onClick={()=>setDetailIngreso(ing.id)}>
-        <td style={{padding:"12px 10px",fontWeight:700,color:C.navy,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.cliente}</td>
-        <td style={{padding:"12px 10px",color:ing.concepto?C.text:C.muted,fontStyle:ing.concepto?"normal":"italic",maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.concepto||"—"}</td>
+        <td style={{padding:"12px 10px",fontWeight:700,color:C.navy,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.cliente}</td>
+        <td style={{padding:"12px 10px",color:ing.concepto?C.text:C.muted,fontStyle:ing.concepto?"normal":"italic",minWidth:160,maxWidth:220,whiteSpace:"normal",lineHeight:1.4,wordBreak:"break-word"}}>{ing.concepto||"—"}</td>
         <td style={{padding:"12px 10px"}}>
           <span style={{background:catStyle.bg,color:catStyle.text,border:`1px solid ${catStyle.border}`,padding:"2px 9px",borderRadius:20,fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>{ing.categoria}</span>
         </td>
@@ -667,61 +731,160 @@ export default function CxcView({
     );
   };
 
-  /* ── Proyección de cobros pendientes ─────────────────────────── */
-  const renderProyeccion = () => {
-    const pendientes = ingresos.filter(ing => {
-      const m = metrics[ing.id] || {};
-      return (m.porCobrar||0) > 0;
-    }).sort((a,b)=>(a.fecha||"").localeCompare(b.fecha||""));
+  /* ── Proyección en Calendario ───────────────────────────────── */
+  const ProyeccionCalendario = () => {
+    const [calYear,  setCalYear]  = useState(() => new Date().getFullYear());
+    const [calMonth, setCalMonth] = useState(() => new Date().getMonth());
+    const [calDayDetailLocal, setCalDayDetailLocal] = useState(null);
+
+    const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+    const DIAS  = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+
+    // Build map: "YYYY-MM-DD" → [ { ing, cobro } ]
+    const calMap = useMemo(() => {
+      const map = {};
+      cobros.filter(c => c.tipo === 'proyectado' && c.fechaCobro).forEach(c => {
+        const ing = ingresos.find(i => i.id === c.ingresoId);
+        if (!ing) return;
+        if (!map[c.fechaCobro]) map[c.fechaCobro] = [];
+        map[c.fechaCobro].push({ ing, cobro: c });
+      });
+      return map;
+    }, [cobros, ingresos]);
+
+    const firstDay    = new Date(calYear, calMonth, 1).getDay();
+    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+    const todayStr    = today();
+
+    const prevMonth = () => { if(calMonth===0){setCalYear(y=>y-1);setCalMonth(11);}else setCalMonth(m=>m-1); };
+    const nextMonth = () => { if(calMonth===11){setCalYear(y=>y+1);setCalMonth(0);}else setCalMonth(m=>m+1); };
+
+    const monthPrefix = `${calYear}-${String(calMonth+1).padStart(2,'0')}`;
+    const monthEntries = Object.entries(calMap).filter(([d])=>d.startsWith(monthPrefix));
+    const monthTotals = {};
+    monthEntries.forEach(([,items])=>items.forEach(({ing,cobro})=>{
+      monthTotals[ing.moneda] = (monthTotals[ing.moneda]||0) + cobro.monto;
+    }));
 
     return (
       <div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-          <h2 style={{fontSize:18,fontWeight:800,color:C.navy,margin:0}}>📆 Proyección de Cobros Pendientes</h2>
+          <div>
+            <h2 style={{fontSize:18,fontWeight:800,color:C.navy,margin:0}}>📆 Proyección de Cobros</h2>
+            <p style={{color:C.muted,fontSize:13,margin:"4px 0 0"}}>Cobros proyectados capturados en el detalle de cada ingreso</p>
+          </div>
           <button onClick={()=>setProyeccionView(false)} style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"7px 14px",fontSize:12}}>← Volver</button>
         </div>
-        {pendientes.length === 0 ? (
-          <div style={{textAlign:"center",padding:40,color:C.ok}}>✅ No hay cobros pendientes</div>
-        ) : (
-          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden"}}>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-              <thead>
-                <tr style={{background:C.navy}}>
-                  {["Fecha","Cliente","Concepto","Categoría","Monto","Cobrado","Por Cobrar","Disponible"].map(h=>(
-                    <th key={h} style={{padding:"10px 12px",textAlign:"left",color:"#fff",fontWeight:600,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+
+        {Object.keys(monthTotals).length > 0 && (
+          <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
+            <span style={{fontSize:12,color:C.muted,alignSelf:"center"}}>Este mes:</span>
+            {Object.entries(monthTotals).map(([mon,val])=>(
+              <div key={mon} style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[mon]||"#F8FAFC",border:"1px solid",borderColor:{MXN:"#90CAF9",USD:"#A5D6A7",EUR:"#CE93D8"}[mon]||"#E0E0E0",borderRadius:20,padding:"5px 14px",fontSize:13,fontWeight:700,color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[mon]||C.navy}}>
+                {mon==="EUR"?"€":"$"}{fmt(val)} {mon}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:16,overflow:"hidden",boxShadow:"0 2px 12px rgba(0,0,0,.06)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 20px",background:C.navy}}>
+            <button onClick={prevMonth} style={{background:"rgba(255,255,255,.15)",border:"none",color:"#fff",borderRadius:8,width:34,height:34,cursor:"pointer",fontSize:16,fontWeight:700}}>‹</button>
+            <span style={{fontWeight:800,fontSize:17,color:"#fff"}}>{MESES[calMonth]} {calYear}</span>
+            <button onClick={nextMonth} style={{background:"rgba(255,255,255,.15)",border:"none",color:"#fff",borderRadius:8,width:34,height:34,cursor:"pointer",fontSize:16,fontWeight:700}}>›</button>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",background:"#F8FAFC",borderBottom:`1px solid ${C.border}`}}>
+            {DIAS.map(d=>(
+              <div key={d} style={{padding:"8px 4px",textAlign:"center",fontSize:11,fontWeight:700,color:C.muted,textTransform:"uppercase"}}>{d}</div>
+            ))}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)"}}>
+            {Array.from({length:firstDay}).map((_,i)=>(
+              <div key={`e${i}`} style={{minHeight:90,background:"#FAFBFC",borderRight:`1px solid ${C.border}`,borderBottom:`1px solid ${C.border}`}}/>
+            ))}
+            {Array.from({length:daysInMonth}).map((_,i)=>{
+              const day = i + 1;
+              const dateStr = `${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+              const entries = calMap[dateStr] || [];
+              const isToday = dateStr === todayStr;
+              const hasCobros = entries.length > 0;
+              const byMon = {};
+              entries.forEach(({ing,cobro})=>{ byMon[ing.moneda]=(byMon[ing.moneda]||0)+cobro.monto; });
+
+              return (
+                <div key={day}
+                  onClick={hasCobros ? ()=>setCalDayDetailLocal({fecha:dateStr,entries}) : undefined}
+                  style={{minHeight:90,padding:"6px 6px 4px",borderRight:`1px solid ${C.border}`,borderBottom:`1px solid ${C.border}`,background:hasCobros?"#F3E5F5":isToday?"#E8F0FE":C.surface,cursor:hasCobros?"pointer":"default",transition:"background .15s"}}
+                  onMouseEnter={e=>{if(hasCobros)e.currentTarget.style.background="#EDD5F5";}}
+                  onMouseLeave={e=>{if(hasCobros)e.currentTarget.style.background="#F3E5F5";}}>
+                  <div style={{width:24,height:24,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:isToday?C.navy:"transparent",color:isToday?"#fff":hasCobros?"#7B1FA2":C.text,fontWeight:isToday||hasCobros?800:400,fontSize:13,marginBottom:4}}>{day}</div>
+                  {Object.entries(byMon).map(([mon,val])=>(
+                    <div key={mon} style={{background:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[mon]||"#7B1FA2",color:"#fff",borderRadius:6,padding:"2px 5px",fontSize:10,fontWeight:700,marginBottom:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                      {mon==="EUR"?"€":"$"}{fmt(val)} {mon}
+                    </div>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {pendientes.map((ing,idx)=>{
-                  const m = metrics[ing.id]||{};
-                  const sym = monedaSym(ing.moneda);
-                  const catStyle = getCatStyle(ing.categoria);
-                  return (
-                    <tr key={ing.id} style={{borderTop:`1px solid ${C.border}`,background:idx%2===0?C.surface:"#FAFBFC",cursor:"pointer"}}
-                      onClick={()=>setDetailIngreso(ing.id)}>
-                      <td style={{padding:"10px 12px",whiteSpace:"nowrap",color:C.muted,fontSize:12}}>{ing.fecha||"—"}</td>
-                      <td style={{padding:"10px 12px",fontWeight:700,color:C.navy}}>{ing.cliente}</td>
-                      <td style={{padding:"10px 12px",color:C.muted,fontStyle:ing.concepto?"normal":"italic"}}>{ing.concepto||"—"}</td>
-                      <td style={{padding:"10px 12px"}}><span style={{background:catStyle.bg,color:catStyle.text,border:`1px solid ${catStyle.border}`,padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{ing.categoria}</span></td>
-                      <td style={{padding:"10px 12px",fontWeight:700}}>{sym}{fmt(ing.monto)}</td>
-                      <td style={{padding:"10px 12px",color:C.ok}}>{sym}{fmt(m.totalCobrado||0)}</td>
-                      <td style={{padding:"10px 12px",fontWeight:700,color:C.warn}}>{sym}{fmt(m.porCobrar||0)}</td>
-                      <td style={{padding:"10px 12px",fontWeight:700,color:(m.disponible||0)>=0?C.teal:C.danger}}>{sym}{fmt(m.disponible||0)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-              <tfoot>
-                <tr style={{borderTop:`2px solid ${C.navy}`,background:"#EEF2FF"}}>
-                  <td colSpan={4} style={{padding:"10px 12px",fontWeight:800,color:C.navy}}>TOTAL ({pendientes.length} ingresos)</td>
-                  <td style={{padding:"10px 12px",fontWeight:800}}>—</td>
-                  <td style={{padding:"10px 12px",fontWeight:800,color:C.ok}}>—</td>
-                  <td style={{padding:"10px 12px",fontWeight:800,color:C.warn}}>— (multimoneda)</td>
-                  <td/>
-                </tr>
-              </tfoot>
-            </table>
+                  {hasCobros && entries.length>1 && <div style={{fontSize:9,color:"#7B1FA2",fontWeight:600}}>{entries.length} cobros</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div style={{display:"flex",gap:16,marginTop:12,fontSize:11,color:C.muted,flexWrap:"wrap"}}>
+          <span style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:14,height:14,borderRadius:3,background:"#F3E5F5",border:"1px solid #CE93D8",display:"inline-block"}}/>Día con cobro proyectado — clic para ver detalle</span>
+          <span style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:14,height:14,borderRadius:"50%",background:C.navy,display:"inline-block"}}/>Hoy</span>
+        </div>
+
+        {/* Day detail popup */}
+        {calDayDetailLocal && (
+          <div style={{position:"fixed",inset:0,background:"rgba(15,45,74,.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:3000,padding:20}}
+            onClick={()=>setCalDayDetailLocal(null)}>
+            <div onClick={e=>e.stopPropagation()}
+              style={{background:C.surface,borderRadius:20,padding:28,width:"100%",maxWidth:540,maxHeight:"80vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
+                <div>
+                  <div style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:"uppercase"}}>Cobros proyectados</div>
+                  <div style={{fontSize:20,fontWeight:900,color:"#7B1FA2"}}>📅 {calDayDetailLocal.fecha}</div>
+                </div>
+                <button onClick={()=>setCalDayDetailLocal(null)} style={{background:"#F1F5F9",border:"none",borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:16}}>×</button>
+              </div>
+              {(()=>{
+                const dt = {};
+                calDayDetailLocal.entries.forEach(({ing,cobro})=>{ dt[ing.moneda]=(dt[ing.moneda]||0)+cobro.monto; });
+                return (
+                  <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+                    {Object.entries(dt).map(([mon,val])=>(
+                      <div key={mon} style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[mon],border:"1px solid",borderColor:{MXN:"#90CAF9",USD:"#A5D6A7",EUR:"#CE93D8"}[mon],borderRadius:10,padding:"10px 16px",textAlign:"center"}}>
+                        <div style={{fontSize:10,color:C.muted,fontWeight:700,textTransform:"uppercase"}}>{mon}</div>
+                        <div style={{fontSize:20,fontWeight:800,color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[mon]}}>{mon==="EUR"?"€":"$"}{fmt(val)}</div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+              {calDayDetailLocal.entries.map(({ing,cobro})=>{
+                const sym = monedaSym(ing.moneda);
+                const catStyle = getCatStyle(ing.categoria);
+                return (
+                  <div key={cobro.id}
+                    style={{padding:"12px 14px",borderRadius:10,border:"1px solid #CE93D8",background:"#FAF0FF",marginBottom:8,cursor:"pointer"}}
+                    onClick={()=>{setCalDayDetailLocal(null); setProyeccionView(false); setDetailIngreso(ing.id);}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                      <div>
+                        <div style={{fontWeight:800,color:C.navy,fontSize:14}}>{ing.cliente}</div>
+                        <div style={{fontSize:12,color:C.muted,marginTop:2}}>{ing.concepto||ing.categoria}</div>
+                        <span style={{background:catStyle.bg,color:catStyle.text,border:`1px solid ${catStyle.border}`,padding:"1px 8px",borderRadius:20,fontSize:10,fontWeight:700,marginTop:4,display:"inline-block"}}>{ing.categoria}</span>
+                      </div>
+                      <div style={{textAlign:"right"}}>
+                        <div style={{fontWeight:900,fontSize:16,color:"#7B1FA2"}}>{sym}{fmt(cobro.monto)} {ing.moneda}</div>
+                        {cobro.notas && <div style={{fontSize:11,color:C.muted,fontStyle:"italic",marginTop:2}}>{cobro.notas}</div>}
+                        <div style={{fontSize:10,color:C.muted,marginTop:4}}>Clic para ver detalle →</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
@@ -731,7 +894,7 @@ export default function CxcView({
   /* ── Main Render ───────────────────────────────────────────────── */
   if (proyeccionView) return (
     <div>
-      {renderProyeccion()}
+      <ProyeccionCalendario/>
       {detailIngreso && <DetailModal/>}
     </div>
   );
@@ -807,10 +970,16 @@ export default function CxcView({
             <option value="USD">🇺🇸 USD</option>
             <option value="EUR">🇪🇺 EUR</option>
           </select>
+          {/* Filtro Cobrado / Por Cobrar */}
+          <select value={filtroCobro} onChange={e=>setFiltroCobro(e.target.value)} style={{...selectStyle,maxWidth:160}}>
+            <option value="">💵 Todos</option>
+            <option value="cobrado">✅ Con cobros</option>
+            <option value="porCobrar">⏳ Por cobrar</option>
+          </select>
           <input type="date" value={filtroFechaFrom} onChange={e=>setFiltroFechaFrom(e.target.value)} style={{...inputStyle,maxWidth:150}} title="Desde"/>
           <input type="date" value={filtroFechaTo} onChange={e=>setFiltroFechaTo(e.target.value)} style={{...inputStyle,maxWidth:150}} title="Hasta"/>
-          {(filtroSearch||filtroCliente||filtroCategoria||filtroMoneda||filtroFechaFrom||filtroFechaTo) && (
-            <button onClick={()=>{setFiltroSearch("");setFiltroCliente("");setFiltroCategoria("");setFiltroMoneda("");setFiltroFechaFrom("");setFiltroFechaTo("");}} style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"7px 14px",fontSize:12}}>✕ Limpiar</button>
+          {(filtroSearch||filtroCliente||filtroCategoria||filtroMoneda||filtroFechaFrom||filtroFechaTo||filtroCobro) && (
+            <button onClick={()=>{setFiltroSearch("");setFiltroCliente("");setFiltroCategoria("");setFiltroMoneda("");setFiltroFechaFrom("");setFiltroFechaTo("");setFiltroCobro("");}} style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"7px 14px",fontSize:12}}>✕ Limpiar</button>
           )}
         </div>
       </div>

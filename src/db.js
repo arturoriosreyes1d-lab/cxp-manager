@@ -310,14 +310,28 @@ export async function fetchCobros() {
     monto: +r.monto || 0,
     fechaCobro: r.fecha_cobro || '',
     notas: r.notas || '',
+    tipo: r.tipo || 'realizado', // 'realizado' | 'proyectado'
   }));
 }
 
 export async function insertCobro(c) {
-  const row = { ingreso_id: c.ingresoId, monto: c.monto, fecha_cobro: c.fechaCobro || null, notas: c.notas || '' };
+  const row = {
+    ingreso_id: c.ingresoId,
+    monto: c.monto,
+    fecha_cobro: c.fechaCobro || null,
+    notas: c.notas || '',
+    tipo: c.tipo || 'realizado',
+  };
   const { data, error } = await supabase.from('cobros').insert(row).select().single();
   if (error) { console.error('insertCobro:', error); return c; }
-  return { id: data.id, ingresoId: data.ingreso_id, monto: +data.monto, fechaCobro: data.fecha_cobro || '', notas: data.notas || '' };
+  return {
+    id: data.id,
+    ingresoId: data.ingreso_id,
+    monto: +data.monto,
+    fechaCobro: data.fecha_cobro || '',
+    notas: data.notas || '',
+    tipo: data.tipo || 'realizado',
+  };
 }
 
 export async function deleteCobro(id) {
