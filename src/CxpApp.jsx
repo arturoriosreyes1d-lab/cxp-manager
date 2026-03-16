@@ -120,8 +120,8 @@ export default function CxpApp({ user, onLogout }) {
   const [projSearch, setProjSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkClasif, setBulkClasif] = useState("");
-  const [bulkProgPago, setBulkProgPago] = useState("");
   const [bulkEstatus, setBulkEstatus] = useState("");
+  const [bulkPayModal, setBulkPayModal] = useState(null); // "programado" or "realizado"
   const [dashDetail, setDashDetail] = useState(null); // {title, invoices, type}
   const [dashSearch, setDashSearch] = useState("");
   const [dashFilterProv, setDashFilterProv] = useState("");
@@ -129,7 +129,6 @@ export default function CxpApp({ user, onLogout }) {
   const [dashFilterEstatus, setDashFilterEstatus] = useState("");
   const [dashGroupBy, setDashGroupBy] = useState("");
   const [dashSelectedIds, setDashSelectedIds] = useState(new Set());
-  const [dashBulkProgPago, setDashBulkProgPago] = useState("");
   const [dashBulkAutDir, setDashBulkAutDir] = useState("");
   const [pagosDetail, setPagosDetail] = useState(null);
   const [pagosExpandedDates, setPagosExpandedDates] = useState(new Set()); // {proveedor, facturas}
@@ -338,7 +337,6 @@ export default function CxpApp({ user, onLogout }) {
     const ids = [...selectedIds];
     const fields = {};
     if(bulkClasif) fields.clasificacion = bulkClasif;
-    if(bulkProgPago) fields.fechaProgramacion = bulkProgPago;
     if(bulkEstatus) fields.estatus = bulkEstatus;
     setInvoices(prev => ({
       ...prev,
@@ -346,7 +344,6 @@ export default function CxpApp({ user, onLogout }) {
         if(!selectedIds.has(i.id)) return i;
         const upd = { ...i };
         if(bulkClasif) upd.clasificacion = bulkClasif;
-        if(bulkProgPago) upd.fechaProgramacion = bulkProgPago;
         if(bulkEstatus) {
           upd.estatus = bulkEstatus;
           if(bulkEstatus === "Pagado") upd.montoPagado = +i.total;
@@ -354,7 +351,6 @@ export default function CxpApp({ user, onLogout }) {
         return upd;
       })
     }));
-    // Persist: for "Pagado" we need per-invoice montoPagado, else bulk
     if(bulkEstatus === "Pagado") {
       ids.forEach(id => {
         const inv = invoices[currency].find(i=>i.id===id);
@@ -364,7 +360,18 @@ export default function CxpApp({ user, onLogout }) {
       bulkUpdateInvoices(ids, fields);
     }
     setSelectedIds(new Set());
-    setBulkClasif(""); setBulkProgPago(""); setBulkEstatus("");
+    setBulkClasif(""); setBulkEstatus("");
+  };
+
+  // Bulk payment: add a payment record for each selected invoice
+  const applyBulkPayment = async (tipo, monto, fecha, notas) => {
+    if(selectedIds.size === 0 || !monto || !fecha) return;
+    const ids = [...selectedIds];
+    for(const id of ids) {
+      await addPayment(id, +monto, fecha, notas, tipo);
+    }
+    setSelectedIds(new Set());
+    setBulkPayModal(null);
   };
 
   /* ── Grouped (supports dual grouping) ────────────────────────────────── */
@@ -715,20 +722,6 @@ export default function CxpApp({ user, onLogout }) {
         <td style={{padding:"10px 8px",fontWeight:700}}>${fmt(inv.total)}</td>
         <td style={{padding:"10px 8px",fontWeight:600,color:pagado>0?C.ok:C.muted}}>${fmt(pagado)}</td>
         <td style={{padding:"10px 8px",fontWeight:700,color:saldo>0?(overdue?C.danger:C.warn):C.ok}}>${fmt(saldo)}</td>
-        {/* Programación de pago — editable inline with date input */}
-        <td style={{padding:"10px 8px",minWidth:130}}>
-          {editingProgPago ? (
-            <input autoFocus type="date" value={inv.fechaProgramacion||""}
-              onChange={e=>{updateFechaProgramacion(inv.id,e.target.value);}}
-              onBlur={()=>setEditingProgPago(false)}
-              onClick={e=>e.stopPropagation()}
-              style={{...inputStyle,padding:"4px 6px",fontSize:12,width:"100%"}} />
-          ) : (
-            <span onClick={()=>setEditingProgPago(true)} style={{cursor:"pointer",color:inv.fechaProgramacion?C.blue:C.muted,fontSize:12,fontStyle:inv.fechaProgramacion?"normal":"italic",display:"block",minHeight:20,padding:"4px 0",borderBottom:`1px dashed ${C.border}`}}>
-              {inv.fechaProgramacion || "Clic para asignar…"}
-            </span>
-          )}
-        </td>
         <td style={{padding:"10px 8px",whiteSpace:"nowrap",color:overdue?C.danger:C.text}}>{inv.vencimiento||"—"}</td>
         <td style={{padding:"10px 8px",color:days<0?C.danger:days<=7?C.warn:C.ok,fontWeight:600}}>
           {days!==null?(days<0?`${Math.abs(days)}d venc.`:`${days}d`):"—"}
@@ -785,7 +778,7 @@ export default function CxpApp({ user, onLogout }) {
                 {[
                   {h:"Tipo",col:"tipo"},{h:"Fecha",col:"fecha"},{h:"Folio",col:"folio"},{h:"Proveedor",col:"proveedor"},
                   {h:"Concepto",col:"concepto"},{h:"Clasif.",col:"clasificacion"},{h:"Total",col:"total"},{h:"Pagado",col:"montoPagado"},
-                  {h:"Saldo",col:"saldo"},{h:"Progr.Pago",col:"fechaProgramacion"},{h:"Vence",col:"vencimiento"},{h:"Días",col:"dias"},
+                  {h:"Saldo",col:"saldo"},{h:"Vence",col:"vencimiento"},{h:"Días",col:"dias"},
                   {h:"Estatus",col:"estatus"},{h:"VoBo",col:""},{h:"Aut.Dir.",col:""},{h:"Acciones",col:""}
                 ].map(({h,col})=>(
                   <th key={h} onClick={col?()=>{if(sortCol===col) setSortDir(d=>d==="asc"?"desc":"asc"); else {setSortCol(col);setSortDir("asc");}}:undefined}
@@ -846,7 +839,7 @@ export default function CxpApp({ user, onLogout }) {
     const vencido30 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d<-15 && d>=-30; });
     const vencido60 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d<-30 && d>=-60; });
     const vencidoMas60 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d<-60; });
-    const openDetail = (title, items) => { setDashSearch(""); setDashFilterProv(""); setDashFilterClasif(""); setDashFilterEstatus(""); setDashGroupBy(""); setDashSelectedIds(new Set()); setDashBulkProgPago(""); setDashBulkAutDir(""); setDashDetail({title, type:"invoices", items}); };
+    const openDetail = (title, items) => { setDashSearch(""); setDashFilterProv(""); setDashFilterClasif(""); setDashFilterEstatus(""); setDashGroupBy(""); setDashSelectedIds(new Set()); setDashBulkAutDir(""); setDashDetail({title, type:"invoices", items}); };
 
     return (
       <div>
@@ -1055,7 +1048,7 @@ export default function CxpApp({ user, onLogout }) {
             <input type="date" value={filters.pagoFrom||""} onChange={e=>setFilters(f=>({...f,pagoFrom:e.target.value}))} style={{...inputStyle,maxWidth:150}} title="Pago desde"/>
             <span style={{color:C.muted,fontSize:12}}>a</span>
             <input type="date" value={filters.pagoTo||""} onChange={e=>setFilters(f=>({...f,pagoTo:e.target.value}))} style={{...inputStyle,maxWidth:150}} title="Pago hasta"/>
-            {(filters.pagoFrom||filters.pagoTo) && <span style={{fontSize:11,color:C.blue,fontStyle:"italic"}}>Filtra por fecha de programación de pago (útil para ver pagadas en un rango)</span>}
+            {(filters.pagoFrom||filters.pagoTo) && <span style={{fontSize:11,color:C.blue,fontStyle:"italic"}}>Filtra por pagos registrados en ese rango</span>}
           </div>
           {/* Grouping controls */}
           <div style={{display:"flex",gap:8,marginTop:12,alignItems:"center",flexWrap:"wrap"}}>
@@ -1094,15 +1087,17 @@ export default function CxpApp({ user, onLogout }) {
                 <option value="">Clasificación…</option>
                 {clases.map(c=><option key={c}>{c}</option>)}
               </select>
-              <input type="date" value={bulkProgPago} onChange={e=>setBulkProgPago(e.target.value)} style={{...inputStyle,maxWidth:160,padding:"6px 10px",fontSize:12}} title="Progr. Pago"/>
               <select value={bulkEstatus} onChange={e=>setBulkEstatus(e.target.value)} style={{...selectStyle,maxWidth:140,padding:"6px 10px",fontSize:12}}>
                 <option value="">Estatus…</option>
                 {["Pendiente","Pagado","Vencido","Parcial"].map(s=><option key={s}>{s}</option>)}
               </select>
-              <button onClick={applyBulkEdit} disabled={!bulkClasif&&!bulkProgPago&&!bulkEstatus} style={{...btnStyle,padding:"7px 18px",fontSize:13,opacity:(!bulkClasif&&!bulkProgPago&&!bulkEstatus)?0.5:1}}>
+              <button onClick={applyBulkEdit} disabled={!bulkClasif&&!bulkEstatus} style={{...btnStyle,padding:"7px 18px",fontSize:13,opacity:(!bulkClasif&&!bulkEstatus)?0.5:1}}>
                 Aplicar cambios
               </button>
-              <button onClick={()=>{setSelectedIds(new Set());setBulkClasif("");setBulkProgPago("");setBulkEstatus("");}} style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"7px 14px",fontSize:13}}>
+              <span style={{width:1,height:24,background:C.border,margin:"0 4px"}}/>
+              <button onClick={()=>setBulkPayModal("programado")} style={{...btnStyle,padding:"7px 14px",fontSize:12,background:"#F57F17",color:"#fff"}}>📅 Programar pago</button>
+              <button onClick={()=>setBulkPayModal("realizado")} style={{...btnStyle,padding:"7px 14px",fontSize:12,background:C.ok,color:"#fff"}}>💰 Registrar pago</button>
+              <button onClick={()=>{setSelectedIds(new Set());setBulkClasif("");setBulkEstatus("");setBulkPayModal(null);}} style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"7px 14px",fontSize:13}}>
                 Cancelar
               </button>
             </div>
@@ -1613,38 +1608,6 @@ export default function CxpApp({ user, onLogout }) {
           <Field label="Saldo Pendiente"><div style={{padding:"8px 12px",borderRadius:8,border:`1px solid ${C.border}`,background:"#FFF8E1",fontWeight:800,fontSize:14,color:((+form.total||0)-(+form.montoPagado||0))>0?C.warn:C.ok}}>${fmt((+form.total||0)-(+form.montoPagado||0))}</div></Field>
           <Field label="Referencia Pago"><input value={form.referencia||""} onChange={e=>set("referencia",e.target.value)} style={inputStyle}/></Field>
           <Field label="Días Ficticios"><input type="number" min="0" value={form.diasFicticios||0} onChange={e=>set("diasFicticios",e.target.value)} style={inputStyle}/></Field>
-          {/* Calendar picker for fechaProgramacion */}
-          <div style={{gridColumn:"1/-1",position:"relative"}}>
-            <Field label="📅 Fecha Programación de Pago">
-              <div onClick={()=>setShowCal(!showCal)} style={{...inputStyle,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",background:form.fechaProgramacion?"#E8F5E9":"#FAFBFC",borderColor:form.fechaProgramacion?C.ok:C.border}}>
-                <span style={{color:form.fechaProgramacion?C.text:C.muted}}>{form.fechaProgramacion||"Seleccionar fecha…"}</span>
-                <span>📅</span>
-              </div>
-            </Field>
-            {showCal && (
-              <div style={{position:"absolute",zIndex:10,top:"100%",left:0,marginTop:-8,background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:16,boxShadow:"0 8px 30px rgba(0,0,0,.15)",width:280}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-                  <button onClick={e=>{e.stopPropagation();e.preventDefault();if(calMonth===0){setCalMonth(11);setCalYear(y=>y-1);}else setCalMonth(m=>m-1);}} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,padding:4}}>◀</button>
-                  <span style={{fontWeight:700,color:C.navy,fontSize:14}}>{meses[calMonth]} {calYear}</span>
-                  <button onClick={e=>{e.stopPropagation();e.preventDefault();if(calMonth===11){setCalMonth(0);setCalYear(y=>y+1);}else setCalMonth(m=>m+1);}} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,padding:4}}>▶</button>
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,textAlign:"center"}}>
-                  {["Do","Lu","Ma","Mi","Ju","Vi","Sá"].map(d=><div key={d} style={{fontSize:11,color:C.muted,fontWeight:600,padding:4}}>{d}</div>)}
-                  {calCells.map((d,i)=>{
-                    if(!d) return <div key={i}/>;
-                    const ds=`${calYear}-${String(calMonth+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-                    const isSel=ds===form.fechaProgramacion;
-                    const isT=ds===today();
-                    return <button key={i} onClick={()=>{set("fechaProgramacion",ds);setShowCal(false);}} style={{width:34,height:34,borderRadius:"50%",border:isT?`2px solid ${C.blue}`:"none",background:isSel?C.blue:"transparent",color:isSel?"#fff":C.text,fontWeight:isSel?700:400,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>{d}</button>;
-                  })}
-                </div>
-                <div style={{marginTop:10,display:"flex",gap:8,justifyContent:"space-between"}}>
-                  <button onClick={()=>{set("fechaProgramacion","");setShowCal(false);}} style={{...btnStyle,background:"#F1F5F9",color:C.text,fontSize:12,padding:"6px 12px"}}>Limpiar</button>
-                  <button onClick={()=>setShowCal(false)} style={{...btnStyle,fontSize:12,padding:"6px 12px"}}>Cerrar</button>
-                </div>
-              </div>
-            )}
-          </div>
         </div>
         <Field label="Notas"><textarea value={form.notas||""} onChange={e=>set("notas",e.target.value)} rows={2} style={{...inputStyle,resize:"vertical"}}/></Field>
         <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
@@ -2023,6 +1986,49 @@ export default function CxpApp({ user, onLogout }) {
         );
       })()}
 
+      {/* Bulk payment modal */}
+      {bulkPayModal && (()=>{
+        const tipo = bulkPayModal;
+        const count = selectedIds.size;
+        const label = tipo==="programado" ? "📅 Programar pago masivo" : "💰 Registrar pago masivo";
+        const color = tipo==="programado" ? "#F57F17" : C.ok;
+        return (
+        <ModalShell title={`${label} (${count} factura${count!==1?"s":""})`} onClose={()=>setBulkPayModal(null)}>
+          <p style={{fontSize:13,color:C.muted,marginBottom:16}}>
+            {tipo==="programado"
+              ? "Se programará este pago en cada factura seleccionada. Aparecerá en Proyección."
+              : "Se registrará este pago como realizado en cada factura seleccionada. Actualizará el saldo y estatus."}
+          </p>
+          <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:20}}>
+            <div>
+              <label style={{fontSize:11,fontWeight:600,color:C.muted,display:"block",marginBottom:4}}>Monto por factura</label>
+              <input id="bulk-pay-monto" type="number" placeholder="0.00" style={{...inputStyle,width:160}} step="0.01"/>
+            </div>
+            <div>
+              <label style={{fontSize:11,fontWeight:600,color:C.muted,display:"block",marginBottom:4}}>Fecha</label>
+              <input id="bulk-pay-fecha" type="date" defaultValue={today()} style={{...inputStyle,width:160}}/>
+            </div>
+            <div style={{flex:1,minWidth:150}}>
+              <label style={{fontSize:11,fontWeight:600,color:C.muted,display:"block",marginBottom:4}}>Notas</label>
+              <input id="bulk-pay-notas" type="text" placeholder="Pago masivo…" style={{...inputStyle,width:"100%"}}/>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+            <button onClick={()=>setBulkPayModal(null)} style={{...btnStyle,background:"#F1F5F9",color:C.text}}>Cancelar</button>
+            <button onClick={()=>{
+              const m = document.getElementById("bulk-pay-monto").value;
+              const f = document.getElementById("bulk-pay-fecha").value;
+              const n = document.getElementById("bulk-pay-notas").value;
+              if(!m||+m<=0||!f) return;
+              applyBulkPayment(tipo, m, f, n);
+            }} style={{...btnStyle,background:color,color:"#fff",padding:"10px 28px"}}>
+              {tipo==="programado" ? "📅 Programar" : "💰 Registrar"} {count} pago{count!==1?"s":""}
+            </button>
+          </div>
+        </ModalShell>
+        );
+      })()}
+
       {/* Dashboard detail modal */}
       {dashDetail && (
         <ModalShell title={dashDetail.title} onClose={()=>setDashDetail(null)} extraWide>
@@ -2052,7 +2058,6 @@ export default function CxpApp({ user, onLogout }) {
               if(dashSelectedIds.size===0) return;
               const ids = [...dashSelectedIds].filter(id => items.some(i=>i.id===id));
               const fields = {};
-              if(dashBulkProgPago) fields.fechaProgramacion = dashBulkProgPago;
               if(dashBulkAutDir==="true") fields.autorizadoDireccion = true;
               if(dashBulkAutDir==="false") fields.autorizadoDireccion = false;
               if(Object.keys(fields).length===0) return;
@@ -2068,7 +2073,7 @@ export default function CxpApp({ user, onLogout }) {
               setDashDetail(prev => ({...prev, items: prev.items.map(i => ids.includes(i.id) ? {...i, ...fields} : i)}));
               bulkUpdateInvoices(ids, fields);
               setDashSelectedIds(new Set());
-              setDashBulkProgPago(""); setDashBulkAutDir("");
+              setDashBulkAutDir("");
             };
             // Grouping
             const groups = {};
@@ -2086,7 +2091,7 @@ export default function CxpApp({ user, onLogout }) {
                     <th style={{padding:"7px 4px",textAlign:"center",width:32}}>
                       <input type="checkbox" checked={allChecked} onChange={toggleDashSelAll} style={{cursor:"pointer",width:15,height:15,accentColor:C.blue}}/>
                     </th>
-                    {["Folio","Proveedor","Concepto","Clasif.","Fecha","Total","Pagado","Saldo","Progr.Pago","Vence","Días","Estatus","Aut.Dir.","Moneda"].map(h=>(
+                    {["Folio","Proveedor","Concepto","Clasif.","Fecha","Total","Pagado","Saldo","Vence","Días","Estatus","Aut.Dir.","Moneda"].map(h=>(
                       <th key={h} style={{padding:"7px 6px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                     ))}
                   </tr></thead>
@@ -2112,7 +2117,6 @@ export default function CxpApp({ user, onLogout }) {
                           <td style={{padding:"7px 6px",fontWeight:700}}>${fmt(inv.total)}</td>
                           <td style={{padding:"7px 6px",color:C.ok}}>${fmt(inv.montoPagado)}</td>
                           <td style={{padding:"7px 6px",fontWeight:700,color:saldo>0?(overdue?C.danger:C.warn):C.ok}}>${fmt(saldo)}</td>
-                          <td style={{padding:"7px 6px",whiteSpace:"nowrap",fontSize:11}}>{inv.fechaProgramacion||"—"}</td>
                           <td style={{padding:"7px 6px",whiteSpace:"nowrap",color:overdue?C.danger:C.text,fontSize:11}}>{inv.vencimiento||"—"}</td>
                           <td style={{padding:"7px 6px",whiteSpace:"nowrap",fontWeight:700,color:diasColor,fontSize:11}}>{diasPrefix}{diasLabel}</td>
                           <td style={{padding:"7px 6px"}}><span style={{color:statusColor(inv.estatus),fontWeight:700,fontSize:10}}>{inv.estatus}</span></td>
@@ -2174,14 +2178,13 @@ export default function CxpApp({ user, onLogout }) {
                 {selCount>0 && (
                   <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:14,padding:"10px 14px",background:"#E8F0FE",borderRadius:10,border:`1px solid ${C.blue}`}}>
                     <span style={{fontSize:12,fontWeight:700,color:C.blue}}>Edición masiva ({selCount}):</span>
-                    <input type="date" value={dashBulkProgPago} onChange={e=>setDashBulkProgPago(e.target.value)} style={{...inputStyle,maxWidth:160,padding:"5px 8px",fontSize:12}} title="Progr. Pago"/>
                     <select value={dashBulkAutDir} onChange={e=>setDashBulkAutDir(e.target.value)} style={{...selectStyle,maxWidth:160,padding:"5px 8px",fontSize:12}}>
                       <option value="">Aut. Dirección</option>
                       <option value="true">✅ Autorizado</option>
                       <option value="false">⬜ No autorizado</option>
                     </select>
                     <button onClick={applyDashBulk} style={{...btnStyle,padding:"6px 16px",fontSize:12}}>Aplicar</button>
-                    <button onClick={()=>{setDashSelectedIds(new Set());setDashBulkProgPago("");setDashBulkAutDir("");}} style={{...btnStyle,padding:"6px 12px",fontSize:12,background:"#F1F5F9",color:C.text}}>Cancelar</button>
+                    <button onClick={()=>{setDashSelectedIds(new Set());setDashBulkAutDir("");}} style={{...btnStyle,padding:"6px 12px",fontSize:12,background:"#F1F5F9",color:C.text}}>Cancelar</button>
                   </div>
                 )}
                 {/* Table or grouped tables */}
