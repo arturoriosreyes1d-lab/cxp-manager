@@ -603,110 +603,132 @@ export default function CxcView({
           <button onClick={()=>{setDetailIngreso(null); setModalIngreso({...ing});}} style={{...btnStyle,background:"#F1F5F9",color:C.text}}>✏️ Editar</button>
           <button onClick={()=>{setDetailIngreso(null); setDeleteConfirm({id:ing.id,label:`${ing.cliente} — ${ing.concepto||ing.categoria}`});}} style={{...btnStyle,background:C.danger}}>🗑️ Eliminar</button>
           <button onClick={()=>{
-            // Inyectar estilos de impresión y disparar print
-            const styleId = "cxc-print-style";
-            if (!document.getElementById(styleId)) {
-              const s = document.createElement("style");
-              s.id = styleId;
-              s.innerHTML = `
-                @media print {
-                  body > * { display: none !important; }
-                  #cxc-print-area { display: block !important; }
-                  #cxc-print-area { position: fixed; inset: 0; background: #fff; padding: 32px; font-family: 'DM Sans','Segoe UI',sans-serif; font-size: 12px; color: #1A2332; z-index: 99999; }
-                  #cxc-print-area table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-                  #cxc-print-area th { background: #0F2D4A; color: #fff; padding: 8px 10px; text-align: left; font-size: 10px; text-transform: uppercase; }
-                  #cxc-print-area td { padding: 8px 10px; border-bottom: 1px solid #E2E8F0; font-size: 12px; }
-                  #cxc-print-area .print-badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 700; }
-                  #cxc-print-area .kpi-row { display: flex; gap: 12px; margin: 16px 0; flex-wrap: wrap; }
-                  #cxc-print-area .kpi-box { border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 14px; min-width: 100px; }
-                  @page { size: A4 landscape; margin: 15mm; }
-                }
-              `;
-              document.head.appendChild(s);
-            }
-
-            // Construir contenido del área imprimible
             const sortedVincs = [...vincsWithInv].sort((a,b)=>{
               const O = {Pagado:1,Parcial:2,Pendiente:3,Vencido:4};
               return (O[a.inv.estatus]||5)-(O[b.inv.estatus]||5);
             });
-            const totalCobrado   = m.totalCobrado||0;
-            const totalPorCobrar = m.porCobrar||0;
-            const totalConsumido = m.consumido||0;
-            const totalDisp      = m.disponible||0;
-            const totalDispNeto  = m.disponibleNeto||0;
-            const statusBgPrint  = {Pagado:"#E8F5E9",Parcial:"#FFF3E0",Pendiente:"#EEF2FF",Vencido:"#FFEBEE"};
-            const statusColPrint = {Pagado:"#43A047",Parcial:"#F59E0B",Pendiente:"#2196F3",Vencido:"#E53935"};
+            const totalCobrado  = m.totalCobrado||0;
+            const totalPorCobrar= m.porCobrar||0;
+            const totalConsumido= m.consumido||0;
+            const totalDisp     = m.disponible||0;
+            const totalDispNeto = m.disponibleNeto||0;
+            const sBg = {Pagado:"#E8F5E9",Parcial:"#FFF3E0",Pendiente:"#EEF2FF",Vencido:"#FFEBEE"};
+            const sCol= {Pagado:"#43A047",Parcial:"#F57F17",Pendiente:"#1565C0",Vencido:"#E53935"};
 
-            document.getElementById("cxc-print-area").innerHTML = `
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;border-bottom:3px solid #0F2D4A;padding-bottom:12px;">
+            const html = `<!DOCTYPE html><html lang="es"><head>
+              <meta charset="UTF-8"/>
+              <title>Desglose — ${ing.cliente}</title>
+              <style>
+                *{box-sizing:border-box;margin:0;padding:0;}
+                body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#1A2332;padding:28px 32px;background:#fff;}
+                h1{font-size:22px;font-weight:900;color:#0F2D4A;margin:4px 0 2px;}
+                .sub{font-size:13px;color:#64748B;}
+                .label{font-size:9px;color:#64748B;font-weight:700;text-transform:uppercase;letter-spacing:.5px;}
+                .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #0F2D4A;padding-bottom:14px;margin-bottom:16px;}
+                .kpi-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;}
+                .kpi-box{border:1px solid #E2E8F0;border-radius:8px;padding:10px 14px;min-width:110px;}
+                .kpi-val{font-size:17px;font-weight:800;margin-top:3px;}
+                table{width:100%;border-collapse:collapse;margin-top:8px;margin-bottom:20px;}
+                th{background:#0F2D4A;color:#fff;padding:8px 10px;text-align:left;font-size:10px;text-transform:uppercase;font-weight:700;}
+                td{padding:8px 10px;border-bottom:1px solid #E2E8F0;font-size:12px;}
+                tfoot td{background:#EEF2FF;font-weight:800;border-top:2px solid #0F2D4A;}
+                .badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10px;font-weight:700;}
+                .section-title{font-size:11px;font-weight:700;color:#0F2D4A;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;margin-top:4px;}
+                .footer{margin-top:20px;font-size:9px;color:#94A3B8;border-top:1px solid #E2E8F0;padding-top:8px;}
+                .right{text-align:right;}
+                @page{size:A4 landscape;margin:14mm;}
+                @media print{body{padding:0;}}
+              </style>
+            </head><body>
+              <div class="header">
                 <div>
-                  <div style="font-size:10px;color:#64748B;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Viajes Libero · CxC — Desglose de Ingreso</div>
-                  <div style="font-size:22px;font-weight:900;color:#0F2D4A;margin-top:4px;">${ing.cliente}</div>
-                  <div style="font-size:13px;color:#64748B;margin-top:2px;">${ing.concepto||""}  ·  ${ing.categoria}  ·  ${ing.fecha||""}</div>
+                  <div class="label">Viajes Libero · CxC — Desglose de Ingreso</div>
+                  <h1>${ing.cliente}</h1>
+                  <div class="sub">${ing.concepto||""}${ing.concepto?" · ":""}${ing.categoria} · ${ing.fecha||""}</div>
                 </div>
-                <div style="text-align:right;font-size:11px;color:#64748B;">Generado: ${new Date().toLocaleDateString("es-MX",{day:"2-digit",month:"long",year:"numeric"})}<br/>Moneda: ${ing.moneda}${ing.moneda!=="MXN"?" · TC: "+ing.tipoCambio:""}</div>
+                <div style="text-align:right;">
+                  <div class="label">Generado</div>
+                  <div style="font-size:12px;color:#1A2332;margin-top:2px;">${new Date().toLocaleDateString("es-MX",{day:"2-digit",month:"long",year:"numeric"})}</div>
+                  <div style="font-size:11px;color:#64748B;margin-top:2px;">Moneda: ${ing.moneda}${ing.moneda!=="MXN"?" · TC: "+ing.tipoCambio:""}</div>
+                </div>
               </div>
 
               <div class="kpi-row">
-                <div class="kpi-box"><div style="font-size:9px;color:#64748B;font-weight:700;text-transform:uppercase;">Monto Total</div><div style="font-size:16px;font-weight:800;color:#0F2D4A;">${sym}${fmt(ing.monto)}</div></div>
-                <div class="kpi-box"><div style="font-size:9px;color:#64748B;font-weight:700;text-transform:uppercase;">Cobrado</div><div style="font-size:16px;font-weight:800;color:#43A047;">${sym}${fmt(totalCobrado)}</div></div>
-                <div class="kpi-box"><div style="font-size:9px;color:#64748B;font-weight:700;text-transform:uppercase;">Por Cobrar</div><div style="font-size:16px;font-weight:800;color:#F59E0B;">${sym}${fmt(totalPorCobrar)}</div></div>
-                <div class="kpi-box"><div style="font-size:9px;color:#64748B;font-weight:700;text-transform:uppercase;">Consumido</div><div style="font-size:16px;font-weight:800;color:#E53935;">${sym}${fmt(totalConsumido)}</div></div>
-                <div class="kpi-box"><div style="font-size:9px;color:#64748B;font-weight:700;text-transform:uppercase;">Disponible</div><div style="font-size:16px;font-weight:800;color:#00897B;">${sym}${fmt(totalDisp)}</div></div>
-                <div class="kpi-box" style="background:${totalDispNeto>=0?"#E8F5E9":"#FFEBEE"}"><div style="font-size:9px;color:#64748B;font-weight:700;text-transform:uppercase;">Disponible Neto</div><div style="font-size:16px;font-weight:800;color:${totalDispNeto>=0?"#1B5E20":"#E53935"};">${sym}${fmt(totalDispNeto)}</div></div>
+                ${[
+                  ["Monto Total",   `${sym}${fmt(ing.monto)}`,      "#0F2D4A", "#fff"],
+                  ["Cobrado",       `${sym}${fmt(totalCobrado)}`,   "#43A047", "#E8F5E9"],
+                  ["Por Cobrar",    `${sym}${fmt(totalPorCobrar)}`, "#F57F17", "#FFF3E0"],
+                  ["Consumido",     `${sym}${fmt(totalConsumido)}`, "#E53935", "#FFEBEE"],
+                  ["Disponible",    `${sym}${fmt(totalDisp)}`,      "#00897B", "#E0F2F1"],
+                  ["Disponible Neto",`${sym}${fmt(totalDispNeto)}`, totalDispNeto>=0?"#1B5E20":"#E53935", totalDispNeto>=0?"#E8F5E9":"#FFEBEE"],
+                ].map(([l,v,c,bg])=>`<div class="kpi-box" style="background:${bg}"><div class="label">${l}</div><div class="kpi-val" style="color:${c}">${v}</div></div>`).join("")}
               </div>
 
-              ${ingCobros.length>0 ? `
-              <div style="margin-top:16px;">
-                <div style="font-size:11px;font-weight:700;color:#0F2D4A;margin-bottom:6px;text-transform:uppercase;">Cobros Recibidos</div>
-                <table>
-                  <thead><tr><th>Fecha</th><th>Monto</th><th>Tipo</th><th>Notas</th></tr></thead>
-                  <tbody>
-                    ${ingCobros.map(c=>`<tr><td>${c.fechaCobro||"—"}</td><td style="font-weight:700;">${sym}${fmt(c.monto)}</td><td>${c.tipo==="proyectado"?"Proyectado":"Realizado"}</td><td style="color:#64748B;">${c.notas||"—"}</td></tr>`).join("")}
-                  </tbody>
-                </table>
-              </div>` : ""}
+              ${ingCobros.length>0?`
+              <div class="section-title">Cobros (${ingCobros.length})</div>
+              <table>
+                <thead><tr><th>Fecha</th><th>Tipo</th><th>Monto</th><th>Notas</th></tr></thead>
+                <tbody>
+                  ${ingCobros.map(c=>`<tr>
+                    <td>${c.fechaCobro||"—"}</td>
+                    <td><span class="badge" style="background:${c.tipo==="proyectado"?"#F3E5F5":"#E8F5E9"};color:${c.tipo==="proyectado"?"#7B1FA2":"#43A047"}">${c.tipo==="proyectado"?"📆 Proyectado":"✅ Realizado"}</span></td>
+                    <td style="font-weight:700;">${sym}${fmt(c.monto)}</td>
+                    <td style="color:#64748B;">${c.notas||"—"}</td>
+                  </tr>`).join("")}
+                </tbody>
+                <tfoot><tr>
+                  <td colspan="2">Total cobrado realizado</td>
+                  <td style="font-weight:900;color:#43A047;">${sym}${fmt(totalCobrado)}</td>
+                  <td></td>
+                </tr></tfoot>
+              </table>`:""}
 
-              ${sortedVincs.length>0 ? `
-              <div style="margin-top:20px;">
-                <div style="font-size:11px;font-weight:700;color:#0F2D4A;margin-bottom:6px;text-transform:uppercase;">Facturas Vinculadas (ordenadas por estatus)</div>
-                <table>
-                  <thead><tr><th>Estatus</th><th>Proveedor</th><th>Folio</th><th>Fecha</th><th>Clasificación</th><th>Asignado (${ing.moneda})</th><th style="text-align:right">Total Factura</th><th style="text-align:right">Saldo Fact.</th></tr></thead>
-                  <tbody>
-                    ${sortedVincs.map(v=>{
-                      const inv = v.inv;
-                      const saldoFact = (+inv.total||0)-(+inv.montoPagado||0);
-                      const convMonto = convertToMonedaIngreso(v.montoAsignado, inv.moneda, ing);
-                      const bg = statusBgPrint[inv.estatus]||"#fff";
-                      const col = statusColPrint[inv.estatus]||"#1A2332";
-                      return `<tr style="background:${bg}">
-                        <td><span class="print-badge" style="background:${bg};color:${col};border:1px solid ${col}44">${inv.estatus}</span></td>
-                        <td style="font-weight:600;">${inv.proveedor}</td>
-                        <td>${inv.serie}${inv.folio}</td>
-                        <td>${inv.fecha||"—"}</td>
-                        <td>${inv.clasificacion||"—"}</td>
-                        <td style="font-weight:700;">${sym}${fmt(convMonto)}</td>
-                        <td style="text-align:right;">${inv.moneda==="EUR"?"€":"$"}${fmt(inv.total)}</td>
-                        <td style="text-align:right;font-weight:700;color:${saldoFact>0?"#F59E0B":"#43A047"}">${inv.moneda==="EUR"?"€":"$"}${fmt(saldoFact)}</td>
-                      </tr>`;
-                    }).join("")}
-                  </tbody>
-                  <tfoot><tr style="background:#EEF2FF;font-weight:800;"><td colspan="5">TOTAL (${sortedVincs.length} facturas)</td><td>${sym}${fmt(m.comprometido)}</td><td colspan="2" style="text-align:right;color:#E53935">${sym}${fmt(m.consumido)} consumido</td></tr></tfoot>
-                </table>
-              </div>` : ""}
+              ${sortedVincs.length>0?`
+              <div class="section-title">Facturas Vinculadas — ${sortedVincs.length} factura${sortedVincs.length!==1?"s":""} (orden por estatus)</div>
+              <table>
+                <thead><tr>
+                  <th>Estatus</th><th>Proveedor</th><th>Folio</th><th>Fecha</th>
+                  <th>Clasificación</th><th>Asignado ${ing.moneda}</th>
+                  <th class="right">Total Factura</th><th class="right">Saldo Fact.</th>
+                </tr></thead>
+                <tbody>
+                  ${sortedVincs.map(v=>{
+                    const inv=v.inv;
+                    const sf=(+inv.total||0)-(+inv.montoPagado||0);
+                    const cm=convertToMonedaIngreso(v.montoAsignado,inv.moneda,ing);
+                    const fb=sBg[inv.estatus]||"#fff";
+                    const fc=sCol[inv.estatus]||"#1A2332";
+                    return `<tr style="background:${fb}">
+                      <td><span class="badge" style="background:${fb};color:${fc};border:1px solid ${fc}55">${inv.estatus}</span></td>
+                      <td style="font-weight:600;">${inv.proveedor}</td>
+                      <td>${inv.serie}${inv.folio}</td>
+                      <td>${inv.fecha||"—"}</td>
+                      <td>${inv.clasificacion||"—"}</td>
+                      <td style="font-weight:700;">${sym}${fmt(cm)}</td>
+                      <td class="right">${inv.moneda==="EUR"?"€":"$"}${fmt(inv.total)}</td>
+                      <td class="right" style="font-weight:700;color:${sf>0?"#F57F17":"#43A047"}">${inv.moneda==="EUR"?"€":"$"}${fmt(sf)}</td>
+                    </tr>`;
+                  }).join("")}
+                </tbody>
+                <tfoot><tr>
+                  <td colspan="5">TOTAL (${sortedVincs.length} facturas)</td>
+                  <td style="color:#0F2D4A;">${sym}${fmt(m.comprometido)}</td>
+                  <td class="right" colspan="2" style="color:#E53935;">${sym}${fmt(m.consumido)} consumido</td>
+                </tr></tfoot>
+              </table>`:""}
 
-              <div style="margin-top:24px;font-size:9px;color:#94A3B8;border-top:1px solid #E2E8F0;padding-top:8px;">
-                Disponible = Cobrado − Consumido · Disponible Neto = Disponible − Por Pagar · TC aplicado del ingreso
+              <div class="footer">
+                Disponible = Cobrado − Consumido &nbsp;·&nbsp; Disponible Neto = Disponible − Por Pagar &nbsp;·&nbsp; TC aplicado del ingreso
               </div>
-            `;
-            window.print();
+              <script>window.onload=()=>{window.print();}<\/script>
+            </body></html>`;
+
+            const w = window.open("","_blank","width=1100,height=750");
+            w.document.write(html);
+            w.document.close();
           }} style={{...btnStyle,background:"#7C3AED",color:"#fff"}}>🖨️ Imprimir PDF</button>
           <button onClick={()=>setDetailIngreso(null)} style={btnStyle}>Cerrar</button>
         </div>
-
-        {/* Área oculta para impresión */}
-        <div id="cxc-print-area" style={{display:"none"}}/>
 
         {/* ── Popup detalle de factura vinculada ── */}
         {invDetail && (()=>{
