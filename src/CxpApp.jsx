@@ -364,11 +364,23 @@ export default function CxpApp({ user, onLogout }) {
   };
 
   // Bulk payment: add a payment record for each selected invoice
-  const applyBulkPayment = async (tipo, monto, fecha, notas) => {
-    if(selectedIds.size === 0 || !monto || !fecha) return;
+  const applyBulkPayment = async (tipo, montoMode, montoFijo, fecha, notas) => {
+    if(selectedIds.size === 0 || !fecha) return;
     const ids = [...selectedIds];
     for(const id of ids) {
-      await addPayment(id, +monto, fecha, notas, tipo);
+      let monto = 0;
+      if(montoMode === "saldo") {
+        // Pay each invoice's full remaining saldo
+        let inv = null;
+        ["MXN","USD","EUR"].forEach(c => { const f = invoices[c].find(i=>i.id===id); if(f) inv=f; });
+        if(inv) {
+          const paid = realizedPayments(id).reduce((s,p)=>s+p.monto,0);
+          monto = (+inv.total||0) - paid;
+        }
+      } else {
+        monto = +montoFijo;
+      }
+      if(monto > 0) await addPayment(id, monto, fecha, notas, tipo);
     }
     setSelectedIds(new Set());
     setBulkPayModal(null);
@@ -1990,17 +2002,37 @@ export default function CxpApp({ user, onLogout }) {
       {bulkPayModal && (()=>{
         const tipo = bulkPayModal;
         const count = selectedIds.size;
+        const selInvs = (invoices[currency]||[]).filter(i=>selectedIds.has(i.id));
+        const totalSaldoSel = selInvs.reduce((s,i)=>s+((+i.total||0)-realizedPayments(i.id).reduce((a,p)=>a+p.monto,0)),0);
         const label = tipo==="programado" ? "📅 Programar pago masivo" : "💰 Registrar pago masivo";
         const color = tipo==="programado" ? "#F57F17" : C.ok;
         return (
         <ModalShell title={`${label} (${count} factura${count!==1?"s":""})`} onClose={()=>setBulkPayModal(null)}>
-          <p style={{fontSize:13,color:C.muted,marginBottom:16}}>
+          <p style={{fontSize:13,color:C.muted,marginBottom:12}}>
             {tipo==="programado"
-              ? "Se programará este pago en cada factura seleccionada. Aparecerá en Proyección."
-              : "Se registrará este pago como realizado en cada factura seleccionada. Actualizará el saldo y estatus."}
+              ? "Se programará un pago en cada factura seleccionada. Aparecerá en Proyección."
+              : "Se registrará un pago realizado en cada factura seleccionada. Actualizará el saldo y estatus."}
           </p>
-          <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:20}}>
-            <div>
+          <div style={{background:"#F8FAFC",borderRadius:8,padding:"8px 14px",fontSize:13,marginBottom:16}}>
+            <span style={{color:C.muted}}>Saldo total de las {count} facturas: </span><span style={{fontWeight:800,color:C.navy}}>${fmt(totalSaldoSel)}</span>
+          </div>
+          <div style={{marginBottom:16}}>
+            <label style={{fontSize:12,fontWeight:700,color:C.navy,marginBottom:8,display:"block"}}>Modo de monto:</label>
+            <div style={{display:"flex",gap:10,marginBottom:12}}>
+              <button id="bulk-mode-saldo" onClick={()=>{document.getElementById("bulk-mode-saldo").style.background="#E8F0FE";document.getElementById("bulk-mode-saldo").dataset.active="true";document.getElementById("bulk-mode-fijo").style.background="#F1F5F9";document.getElementById("bulk-mode-fijo").dataset.active="false";document.getElementById("bulk-pay-monto-row").style.display="none";}}
+                data-active="true"
+                style={{padding:"8px 16px",borderRadius:8,border:`1px solid ${C.blue}`,background:"#E8F0FE",color:C.blue,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                Saldo total de cada factura
+              </button>
+              <button id="bulk-mode-fijo" onClick={()=>{document.getElementById("bulk-mode-fijo").style.background="#E8F0FE";document.getElementById("bulk-mode-fijo").dataset.active="true";document.getElementById("bulk-mode-saldo").style.background="#F1F5F9";document.getElementById("bulk-mode-saldo").dataset.active="false";document.getElementById("bulk-pay-monto-row").style.display="flex";}}
+                data-active="false"
+                style={{padding:"8px 16px",borderRadius:8,border:`1px solid ${C.border}`,background:"#F1F5F9",color:C.text,fontWeight:600,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                Monto fijo por factura
+              </button>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:20,alignItems:"flex-end"}}>
+            <div id="bulk-pay-monto-row" style={{display:"none"}}>
               <label style={{fontSize:11,fontWeight:600,color:C.muted,display:"block",marginBottom:4}}>Monto por factura</label>
               <input id="bulk-pay-monto" type="number" placeholder="0.00" style={{...inputStyle,width:160}} step="0.01"/>
             </div>
@@ -2016,11 +2048,17 @@ export default function CxpApp({ user, onLogout }) {
           <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
             <button onClick={()=>setBulkPayModal(null)} style={{...btnStyle,background:"#F1F5F9",color:C.text}}>Cancelar</button>
             <button onClick={()=>{
-              const m = document.getElementById("bulk-pay-monto").value;
+              const isSaldo = document.getElementById("bulk-mode-saldo").dataset.active === "true";
               const f = document.getElementById("bulk-pay-fecha").value;
               const n = document.getElementById("bulk-pay-notas").value;
-              if(!m||+m<=0||!f) return;
-              applyBulkPayment(tipo, m, f, n);
+              if(!f) return;
+              if(isSaldo) {
+                applyBulkPayment(tipo, "saldo", 0, f, n);
+              } else {
+                const m = document.getElementById("bulk-pay-monto").value;
+                if(!m||+m<=0) return;
+                applyBulkPayment(tipo, "fijo", m, f, n);
+              }
             }} style={{...btnStyle,background:color,color:"#fff",padding:"10px 28px"}}>
               {tipo==="programado" ? "📅 Programar" : "💰 Registrar"} {count} pago{count!==1?"s":""}
             </button>
