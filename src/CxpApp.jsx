@@ -131,7 +131,8 @@ export default function CxpApp({ user, onLogout }) {
   const [dashSelectedIds, setDashSelectedIds] = useState(new Set());
   const [dashBulkProgPago, setDashBulkProgPago] = useState("");
   const [dashBulkAutDir, setDashBulkAutDir] = useState("");
-  const [pagosDetail, setPagosDetail] = useState(null); // {proveedor, facturas}
+  const [pagosDetail, setPagosDetail] = useState(null);
+  const [pagosExpandedDates, setPagosExpandedDates] = useState(new Set()); // {proveedor, facturas}
   const [pagosSearch, setPagosSearch] = useState("");
   const [ncInput, setNcInput] = useState("");
   const [sortCol, setSortCol] = useState("");
@@ -1504,7 +1505,7 @@ export default function CxpApp({ user, onLogout }) {
               </tr></thead>
               <tbody>
                 {proveedores.map(([prov, data]) => (
-                  <tr key={prov} onClick={()=>setPagosDetail({proveedor:prov, pagos:data.pagos})}
+                  <tr key={prov} onClick={()=>{setPagosExpandedDates(new Set());setPagosDetail({proveedor:prov, pagos:data.pagos});}}
                     style={{borderTop:`1px solid ${C.border}`,cursor:"pointer",transition:"background .15s"}}
                     onMouseEnter={e=>{e.currentTarget.style.background="#F0F7FF";}}
                     onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
@@ -1831,46 +1832,96 @@ export default function CxpApp({ user, onLogout }) {
         </ModalShell>
       )}
 
-      {/* Pagos detail modal */}
+      {/* Pagos detail modal — grouped by date */}
       {pagosDetail && (()=>{
         const totalPagDetail = pagosDetail.pagos.reduce((s,p)=>s+p.monto,0);
+        // Group by fechaPago
+        const byDate = {};
+        pagosDetail.pagos.forEach(p => {
+          const d = p.fechaPago || "Sin fecha";
+          if(!byDate[d]) byDate[d] = { pagos:[], total:0, monedas:new Set() };
+          byDate[d].pagos.push(p);
+          byDate[d].total += p.monto;
+          byDate[d].monedas.add(p.moneda);
+        });
+        const sortedDates = Object.keys(byDate).sort((a,b) => b.localeCompare(a));
+        const toggleDate = (d) => setPagosExpandedDates(prev => { const n=new Set(prev); if(n.has(d)) n.delete(d); else n.add(d); return n; });
         return (
-        <ModalShell title={`Pagos a ${pagosDetail.proveedor}`} onClose={()=>setPagosDetail(null)} wide>
-          <div style={{marginBottom:14,display:"flex",gap:12,flexWrap:"wrap"}}>
-            <div style={{background:"#F8FAFC",borderRadius:8,padding:"6px 14px",fontSize:12}}>
-              <span style={{color:C.muted}}>Pagos: </span><span style={{fontWeight:700}}>{pagosDetail.pagos.length}</span>
+        <ModalShell title={`Pagos a ${pagosDetail.proveedor}`} onClose={()=>setPagosDetail(null)} extraWide>
+          {/* Summary */}
+          <div style={{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap"}}>
+            <div style={{background:"#F8FAFC",borderRadius:8,padding:"8px 14px",fontSize:13}}>
+              <span style={{color:C.muted}}>Total pagos: </span><span style={{fontWeight:700}}>{pagosDetail.pagos.length}</span>
             </div>
-            <div style={{background:"#E8F5E9",borderRadius:8,padding:"6px 14px",fontSize:12}}>
+            <div style={{background:"#F8FAFC",borderRadius:8,padding:"8px 14px",fontSize:13}}>
+              <span style={{color:C.muted}}>Fechas de pago: </span><span style={{fontWeight:700}}>{sortedDates.length}</span>
+            </div>
+            <div style={{background:"#E8F5E9",borderRadius:8,padding:"8px 14px",fontSize:13}}>
               <span style={{color:C.muted}}>Total pagado: </span><span style={{fontWeight:700,color:C.ok}}>${fmt(totalPagDetail)}</span>
             </div>
+            <button onClick={()=>{
+              if(pagosExpandedDates.size===sortedDates.length) setPagosExpandedDates(new Set());
+              else setPagosExpandedDates(new Set(sortedDates));
+            }} style={{...btnStyle,padding:"6px 14px",fontSize:12,background:"#F1F5F9",color:C.text}}>
+              {pagosExpandedDates.size===sortedDates.length ? "Colapsar todo" : "Expandir todo"}
+            </button>
           </div>
-          <div style={{overflowX:"auto"}}>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-              <thead><tr style={{background:"#F8FAFC"}}>
-                {["Fecha Pago","Tipo","Fecha Fact.","Folio","Concepto","Moneda","Importe Pagado","Notas"].map(h=>(
-                  <th key={h} style={{padding:"10px 12px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>{h}</th>
-                ))}
-              </tr></thead>
-              <tbody>
-                {pagosDetail.pagos.map(p=>(
-                  <tr key={p.id} style={{borderTop:`1px solid ${C.border}`}}>
-                    <td style={{padding:"10px 12px",whiteSpace:"nowrap",fontWeight:600}}>{p.fechaPago}</td>
-                    <td style={{padding:"10px 12px"}}>{p.tipo}</td>
-                    <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>{p.fecha}</td>
-                    <td style={{padding:"10px 12px",fontWeight:700}}>{p.folio}</td>
-                    <td style={{padding:"10px 12px",color:p.concepto?C.text:C.muted,fontStyle:p.concepto?"normal":"italic"}}>{p.concepto||"—"}</td>
-                    <td style={{padding:"10px 12px"}}><span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[p.moneda],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[p.moneda],padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{p.moneda}</span></td>
-                    <td style={{padding:"10px 12px",fontWeight:800,color:C.ok,fontSize:15}}>${fmt(p.monto)}</td>
-                    <td style={{padding:"10px 12px",color:C.muted,fontSize:12}}>{p.notas||"—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot><tr style={{borderTop:`2px solid ${C.navy}`,background:"#F8FAFC"}}>
-                <td colSpan={6} style={{padding:"10px 12px",fontWeight:800,color:C.navy}}>TOTAL</td>
-                <td style={{padding:"10px 12px",fontWeight:800,color:C.navy,fontSize:15}}>${fmt(totalPagDetail)}</td>
-                <td/>
-              </tr></tfoot>
-            </table>
+          {/* Date groups */}
+          {sortedDates.map(date => {
+            const group = byDate[date];
+            const isOpen = pagosExpandedDates.has(date);
+            return (
+              <div key={date} style={{marginBottom:10,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
+                {/* Date header — clickable */}
+                <div onClick={()=>toggleDate(date)}
+                  style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 18px",background:isOpen?"#E8F0FE":"#F8FAFC",cursor:"pointer",transition:"background .15s"}}
+                  onMouseEnter={e=>{if(!isOpen) e.currentTarget.style.background="#F0F4FF";}}
+                  onMouseLeave={e=>{if(!isOpen) e.currentTarget.style.background="#F8FAFC";}}>
+                  <div style={{display:"flex",alignItems:"center",gap:12}}>
+                    <span style={{fontSize:16}}>{isOpen?"▼":"▶"}</span>
+                    <span style={{fontWeight:800,color:C.navy,fontSize:15}}>📅 {date}</span>
+                    <span style={{fontSize:12,color:C.muted}}>{group.pagos.length} pago{group.pagos.length!==1?"s":""}</span>
+                    {[...group.monedas].map(m=><span key={m} style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[m],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[m],padding:"1px 7px",borderRadius:20,fontSize:10,fontWeight:700}}>{m}</span>)}
+                  </div>
+                  <div style={{fontWeight:800,color:C.ok,fontSize:18}}>${fmt(group.total)}</div>
+                </div>
+                {/* Expanded: invoice detail */}
+                {isOpen && (
+                  <div style={{padding:"0 8px 8px"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                      <thead><tr style={{background:"#FAFBFC"}}>
+                        {["Tipo","Fecha Fact.","Folio","Concepto","Moneda","Importe","Notas"].map(h=>(
+                          <th key={h} style={{padding:"8px 10px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>{h}</th>
+                        ))}
+                      </tr></thead>
+                      <tbody>
+                        {group.pagos.map(p=>(
+                          <tr key={p.id} style={{borderTop:`1px solid ${C.border}`}}>
+                            <td style={{padding:"8px 10px"}}>{p.tipo}</td>
+                            <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>{p.fecha}</td>
+                            <td style={{padding:"8px 10px",fontWeight:700}}>{p.folio}</td>
+                            <td style={{padding:"8px 10px",color:p.concepto?C.text:C.muted,fontStyle:p.concepto?"normal":"italic"}}>{p.concepto||"—"}</td>
+                            <td style={{padding:"8px 10px"}}><span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[p.moneda],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[p.moneda],padding:"1px 6px",borderRadius:20,fontSize:10,fontWeight:700}}>{p.moneda}</span></td>
+                            <td style={{padding:"8px 10px",fontWeight:800,color:C.ok}}>${fmt(p.monto)}</td>
+                            <td style={{padding:"8px 10px",color:C.muted,fontSize:11}}>{p.notas||"—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot><tr style={{borderTop:`2px solid ${C.border}`,background:"#FAFBFC"}}>
+                        <td colSpan={5} style={{padding:"8px 10px",fontWeight:700,color:C.navy,fontSize:11}}>Subtotal {date}</td>
+                        <td style={{padding:"8px 10px",fontWeight:800,color:C.navy}}>${fmt(group.total)}</td>
+                        <td/>
+                      </tr></tfoot>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {/* Grand total */}
+          <div style={{display:"flex",justifyContent:"space-between",padding:"14px 18px",background:C.navy,borderRadius:12,marginTop:12}}>
+            <span style={{fontWeight:800,color:"#fff",fontSize:15}}>TOTAL GENERAL</span>
+            <span style={{fontWeight:800,color:"#fff",fontSize:18}}>${fmt(totalPagDetail)}</span>
           </div>
         </ModalShell>
         );
