@@ -208,7 +208,7 @@ export async function saveClasificaciones(list) {
   if (error) console.error('saveClasificaciones:', error);
 }
 
-/* ── Payments (pagos parciales / múltiples) ──────────────────── */
+/* ── Payments (pagos programados y realizados) ───────────────── */
 export async function fetchPayments() {
   const { data, error } = await supabase.from('payments').select('*').order('fecha_pago', { ascending: false });
   if (error) { console.error('fetchPayments:', error); return []; }
@@ -218,14 +218,15 @@ export async function fetchPayments() {
     monto: +r.monto || 0,
     fechaPago: r.fecha_pago || '',
     notas: r.notas || '',
+    tipo: r.tipo || 'realizado', // 'programado' or 'realizado'
   }));
 }
 
 export async function insertPayment(p) {
-  const row = { invoice_id: p.invoiceId, monto: p.monto, fecha_pago: p.fechaPago, notas: p.notas || '' };
+  const row = { invoice_id: p.invoiceId, monto: p.monto, fecha_pago: p.fechaPago, notas: p.notas || '', tipo: p.tipo || 'realizado' };
   const { data, error } = await supabase.from('payments').insert(row).select().single();
   if (error) { console.error('insertPayment:', error); return p; }
-  return { id: data.id, invoiceId: data.invoice_id, monto: +data.monto, fechaPago: data.fecha_pago, notas: data.notas || '' };
+  return { id: data.id, invoiceId: data.invoice_id, monto: +data.monto, fechaPago: data.fecha_pago, notas: data.notas || '', tipo: data.tipo || 'realizado' };
 }
 
 export async function deletePayment(id) {
@@ -238,6 +239,7 @@ export async function updatePayment(id, fields) {
   if ('monto' in fields) dbFields.monto = fields.monto;
   if ('fechaPago' in fields) dbFields.fecha_pago = fields.fechaPago;
   if ('notas' in fields) dbFields.notas = fields.notas;
+  if ('tipo' in fields) dbFields.tipo = fields.tipo;
   const { error } = await supabase.from('payments').update(dbFields).eq('id', id);
   if (error) console.error('updatePayment:', error);
 }

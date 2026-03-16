@@ -158,27 +158,35 @@ export default function CxpApp({ user, onLogout }) {
 
   /* ── Payments helpers ───────────────────────────────────────────── */
   const paymentsFor = (invoiceId) => payments.filter(p => p.invoiceId === invoiceId);
-  const totalPaidViaPayments = (invoiceId) => paymentsFor(invoiceId).reduce((s,p) => s + p.monto, 0);
+  const realizedPayments = (invoiceId) => paymentsFor(invoiceId).filter(p => p.tipo === 'realizado');
+  const scheduledPayments = (invoiceId) => paymentsFor(invoiceId).filter(p => p.tipo === 'programado');
+  const totalPaidViaPayments = (invoiceId) => realizedPayments(invoiceId).reduce((s,p) => s + p.monto, 0);
+  const totalScheduled = (invoiceId) => scheduledPayments(invoiceId).reduce((s,p) => s + p.monto, 0);
 
-  const addPayment = async (invoiceId, monto, fechaPago, notas) => {
-    const saved = await insertPayment({ invoiceId, monto: +monto, fechaPago, notas });
+  const addPayment = async (invoiceId, monto, fechaPago, notas, tipo) => {
+    const saved = await insertPayment({ invoiceId, monto: +monto, fechaPago, notas, tipo: tipo || 'realizado' });
     setPayments(prev => [saved, ...prev]);
-    // Update invoice montoPagado and estatus
-    const allPays = [...payments.filter(p=>p.invoiceId===invoiceId), saved];
-    const totalPaid = allPays.reduce((s,p)=>s+p.monto,0);
-    syncInvoicePayment(invoiceId, totalPaid);
+    // Only sync invoice estatus/montoPagado for realized payments
+    if(tipo !== 'programado') {
+      const allRealized = [...payments.filter(p=>p.invoiceId===invoiceId && p.tipo==='realizado'), saved];
+      const totalPaid = allRealized.reduce((s,p)=>s+p.monto,0);
+      syncInvoicePayment(invoiceId, totalPaid);
+    }
   };
 
   const removePayment = async (paymentId, invoiceId) => {
+    const pay = payments.find(p=>p.id===paymentId);
     await deletePayment(paymentId);
     setPayments(prev => prev.filter(p => p.id !== paymentId));
-    const remaining = payments.filter(p => p.invoiceId === invoiceId && p.id !== paymentId);
-    const totalPaid = remaining.reduce((s,p)=>s+p.monto,0);
-    syncInvoicePayment(invoiceId, totalPaid);
+    // Only sync if it was a realized payment
+    if(!pay || pay.tipo !== 'programado') {
+      const remaining = payments.filter(p => p.invoiceId === invoiceId && p.id !== paymentId && p.tipo === 'realizado');
+      const totalPaid = remaining.reduce((s,p)=>s+p.monto,0);
+      syncInvoicePayment(invoiceId, totalPaid);
+    }
   };
 
   const syncInvoicePayment = (invoiceId, totalPaid) => {
-    // Find the invoice across all currencies and update montoPagado + estatus
     setInvoices(prev => {
       const result = {...prev};
       ["MXN","USD","EUR"].forEach(c => {
@@ -190,8 +198,6 @@ export default function CxpApp({ user, onLogout }) {
       });
       return result;
     });
-    updateInvoiceField(invoiceId, { montoPagado: totalPaid });
-    // Also update estatus in DB
     let inv = null;
     ["MXN","USD","EUR"].forEach(c => { const f = invoices[c].find(i=>i.id===invoiceId); if(f) inv=f; });
     if(inv) {
@@ -594,8 +600,8 @@ export default function CxpApp({ user, onLogout }) {
       const totalSaldo = (+inv.total||0)-(+inv.montoPagado||0);
       if(totalSaldo<=0) return;
 
-      // Get scheduled (future) payments for this invoice
-      const invPayments = payments.filter(p => p.invoiceId === inv.id && p.fechaPago);
+      // Get scheduled (programado) payments for this invoice — these go in Proyección
+      const invPayments = payments.filter(p => p.invoiceId === inv.id && p.fechaPago && p.tipo === 'programado');
       const scheduledTotal = invPayments.reduce((s,p)=>s+p.monto,0);
       const unscheduledSaldo = totalSaldo - scheduledTotal;
 
@@ -1417,8 +1423,8 @@ export default function CxpApp({ user, onLogout }) {
       ...invoices.USD.map(i=>({...i,moneda:"USD"})),
       ...invoices.EUR.map(i=>({...i,moneda:"EUR"})),
     ];
-    // Build payment records: merge payment rows with invoice data
-    const payRecords = payments.map(p => {
+    // Build payment records: merge realized payment rows with invoice data
+    const payRecords = payments.filter(p => p.tipo === 'realizado').map(p => {
       const inv = allInvs.find(i=>i.id===p.invoiceId);
       if(!inv) return null;
       return { ...p, proveedor:inv.proveedor, folio:`${inv.serie}${inv.folio}`, tipo:inv.tipo, fecha:inv.fecha, concepto:inv.concepto, moneda:inv.moneda, totalFactura:inv.total };
@@ -1870,79 +1876,98 @@ export default function CxpApp({ user, onLogout }) {
         );
       })()}
 
-      {/* Payment modal — add/view payments for an invoice */}
+      {/* Payment modal — programar y registrar pagos */}
       {payModal && (()=>{
-        const invPays = paymentsFor(payModal.invoiceId);
-        const totalPaid = invPays.reduce((s,p)=>s+p.monto,0);
+        const invPaysAll = paymentsFor(payModal.invoiceId);
+        const realized = invPaysAll.filter(p=>p.tipo==='realizado');
+        const scheduled = invPaysAll.filter(p=>p.tipo==='programado');
+        const totalPaid = realized.reduce((s,p)=>s+p.monto,0);
+        const totalSched = scheduled.reduce((s,p)=>s+p.monto,0);
         const saldoRest = (+payModal.total||0) - totalPaid;
+        const saldoSinProgramar = saldoRest - totalSched;
+        const PayTable = ({items,color,showType}) => (
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,marginBottom:8}}>
+            <thead><tr style={{background:"#F8FAFC"}}>
+              {["Fecha","Monto","Notas",""].map(h=><th key={h} style={{padding:"8px 10px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {items.map(p=>(
+                <tr key={p.id} style={{borderTop:`1px solid ${C.border}`}}>
+                  <td style={{padding:"8px 10px",fontWeight:600}}>{p.fechaPago}</td>
+                  <td style={{padding:"8px 10px",fontWeight:800,color:color}}>${fmt(p.monto)}</td>
+                  <td style={{padding:"8px 10px",color:C.muted}}>{p.notas||"—"}</td>
+                  <td style={{padding:"8px 10px",textAlign:"right"}}>
+                    <button onClick={()=>removePayment(p.id,payModal.invoiceId)} style={{background:"none",border:"none",cursor:"pointer",color:C.danger,fontSize:14}} title="Eliminar">🗑️</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        );
+        const AddForm = ({tipo,label,defaultMonto,color}) => (
+          <div style={{background:tipo==='programado'?"#FFFDE7":"#F0F7FF",border:`1px solid ${tipo==='programado'?"#FFE082":C.blue+"22"}`,borderRadius:12,padding:16,marginBottom:12}}>
+            <div style={{fontSize:13,fontWeight:700,color:C.navy,marginBottom:10}}>{label}</div>
+            <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
+              <div>
+                <label style={{fontSize:11,fontWeight:600,color:C.muted,display:"block",marginBottom:4}}>Monto</label>
+                <input id={`pay-${tipo}-monto`} type="number" defaultValue={defaultMonto>0?defaultMonto.toFixed(2):""} placeholder="0.00" style={{...inputStyle,width:140}} step="0.01"/>
+              </div>
+              <div>
+                <label style={{fontSize:11,fontWeight:600,color:C.muted,display:"block",marginBottom:4}}>Fecha</label>
+                <input id={`pay-${tipo}-fecha`} type="date" defaultValue={today()} style={{...inputStyle,width:160}}/>
+              </div>
+              <div style={{flex:1,minWidth:120}}>
+                <label style={{fontSize:11,fontWeight:600,color:C.muted,display:"block",marginBottom:4}}>Notas</label>
+                <input id={`pay-${tipo}-notas`} type="text" placeholder={tipo==='programado'?"Pago parcial, 50%…":"Transferencia, cheque…"} style={{...inputStyle,width:"100%"}}/>
+              </div>
+              <button onClick={()=>{
+                const m = +document.getElementById(`pay-${tipo}-monto`).value;
+                const f = document.getElementById(`pay-${tipo}-fecha`).value;
+                const n = document.getElementById(`pay-${tipo}-notas`).value;
+                if(!m||m<=0||!f) return;
+                addPayment(payModal.invoiceId, m, f, n, tipo);
+                document.getElementById(`pay-${tipo}-monto`).value="";
+                document.getElementById(`pay-${tipo}-notas`).value="";
+              }} style={{...btnStyle,padding:"8px 20px",fontSize:13,background:tipo==='programado'?"#F57F17":C.blue,color:"#fff"}}>+ Agregar</button>
+            </div>
+          </div>
+        );
         return (
-        <ModalShell title={`Pagos — ${payModal.folio} · ${payModal.proveedor}`} onClose={()=>setPayModal(null)} wide>
-          <div style={{display:"flex",gap:16,marginBottom:16,flexWrap:"wrap"}}>
+        <ModalShell title={`Pagos — ${payModal.folio} · ${payModal.proveedor}`} onClose={()=>setPayModal(null)} extraWide>
+          {/* Summary */}
+          <div style={{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap"}}>
             <div style={{background:"#F8FAFC",borderRadius:8,padding:"8px 14px",fontSize:13}}>
               <span style={{color:C.muted}}>Total factura: </span><span style={{fontWeight:800}}>${fmt(payModal.total)}</span>
             </div>
             <div style={{background:"#E8F5E9",borderRadius:8,padding:"8px 14px",fontSize:13}}>
               <span style={{color:C.muted}}>Pagado: </span><span style={{fontWeight:800,color:C.ok}}>${fmt(totalPaid)}</span>
             </div>
+            <div style={{background:"#FFFDE7",borderRadius:8,padding:"8px 14px",fontSize:13}}>
+              <span style={{color:C.muted}}>Programado: </span><span style={{fontWeight:800,color:"#F57F17"}}>${fmt(totalSched)}</span>
+            </div>
             <div style={{background:saldoRest>0?"#FFF3E0":"#E8F5E9",borderRadius:8,padding:"8px 14px",fontSize:13}}>
               <span style={{color:C.muted}}>Saldo pendiente: </span><span style={{fontWeight:800,color:saldoRest>0?C.warn:C.ok}}>${fmt(saldoRest)}</span>
             </div>
           </div>
-          {/* Existing payments */}
-          {invPays.length > 0 && (
-            <div style={{marginBottom:16}}>
-              <div style={{fontSize:13,fontWeight:700,color:C.navy,marginBottom:8}}>Pagos registrados:</div>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                <thead><tr style={{background:"#F8FAFC"}}>
-                  {["Fecha","Monto","Notas",""].map(h=><th key={h} style={{padding:"8px 10px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>{h}</th>)}
-                </tr></thead>
-                <tbody>
-                  {invPays.map(p=>(
-                    <tr key={p.id} style={{borderTop:`1px solid ${C.border}`}}>
-                      <td style={{padding:"8px 10px",fontWeight:600}}>{p.fechaPago}</td>
-                      <td style={{padding:"8px 10px",fontWeight:800,color:C.ok}}>${fmt(p.monto)}</td>
-                      <td style={{padding:"8px 10px",color:C.muted}}>{p.notas||"—"}</td>
-                      <td style={{padding:"8px 10px",textAlign:"right"}}>
-                        <button onClick={()=>removePayment(p.id,payModal.invoiceId)} style={{background:"none",border:"none",cursor:"pointer",color:C.danger,fontSize:14}} title="Eliminar pago">🗑️</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+            {/* LEFT: Programar pagos */}
+            <div>
+              <h3 style={{fontSize:15,fontWeight:800,color:"#F57F17",marginBottom:12,display:"flex",alignItems:"center",gap:6}}>📅 Pagos Programados <span style={{fontSize:11,fontWeight:500,color:C.muted}}>(aparecen en Proyección)</span></h3>
+              {scheduled.length > 0 && <PayTable items={scheduled} color="#F57F17"/>}
+              {saldoSinProgramar > 0 && <AddForm tipo="programado" label="Programar nuevo pago:" defaultMonto={saldoSinProgramar} color="#F57F17"/>}
+              {saldoSinProgramar <= 0 && scheduled.length > 0 && <div style={{fontSize:12,color:C.muted,textAlign:"center",padding:8}}>Todo el saldo está programado</div>}
+              {saldoRest <= 0 && <div style={{fontSize:12,color:C.ok,textAlign:"center",padding:8,fontWeight:600}}>✅ Sin saldo pendiente</div>}
             </div>
-          )}
-          {/* Add new payment form */}
-          {saldoRest > 0 && (
-            <div style={{background:"#F0F7FF",border:`1px solid ${C.blue}22`,borderRadius:12,padding:16}}>
-              <div style={{fontSize:13,fontWeight:700,color:C.navy,marginBottom:10}}>Agregar pago:</div>
-              <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
-                <div>
-                  <label style={{fontSize:11,fontWeight:600,color:C.muted,display:"block",marginBottom:4}}>Monto</label>
-                  <input id="pay-monto" type="number" defaultValue={saldoRest.toFixed(2)} style={{...inputStyle,width:140}} step="0.01"/>
-                </div>
-                <div>
-                  <label style={{fontSize:11,fontWeight:600,color:C.muted,display:"block",marginBottom:4}}>Fecha de pago</label>
-                  <input id="pay-fecha" type="date" defaultValue={today()} style={{...inputStyle,width:160}}/>
-                </div>
-                <div style={{flex:1,minWidth:120}}>
-                  <label style={{fontSize:11,fontWeight:600,color:C.muted,display:"block",marginBottom:4}}>Notas (opcional)</label>
-                  <input id="pay-notas" type="text" placeholder="Transferencia, cheque…" style={{...inputStyle,width:"100%"}}/>
-                </div>
-                <button onClick={()=>{
-                  const monto = +document.getElementById("pay-monto").value;
-                  const fecha = document.getElementById("pay-fecha").value;
-                  const notas = document.getElementById("pay-notas").value;
-                  if(!monto || monto<=0 || !fecha) return;
-                  addPayment(payModal.invoiceId, monto, fecha, notas);
-                  document.getElementById("pay-monto").value = "";
-                  document.getElementById("pay-notas").value = "";
-                }} style={{...btnStyle,padding:"8px 20px",fontSize:13}}>+ Agregar</button>
-              </div>
+
+            {/* RIGHT: Registrar pagos */}
+            <div>
+              <h3 style={{fontSize:15,fontWeight:800,color:C.ok,marginBottom:12,display:"flex",alignItems:"center",gap:6}}>💰 Pagos Realizados <span style={{fontSize:11,fontWeight:500,color:C.muted}}>(aparecen en Pagos, afectan saldo)</span></h3>
+              {realized.length > 0 && <PayTable items={realized} color={C.ok}/>}
+              {saldoRest > 0 && <AddForm tipo="realizado" label="Registrar pago realizado:" defaultMonto={saldoRest} color={C.blue}/>}
+              {saldoRest <= 0 && realized.length > 0 && <div style={{textAlign:"center",padding:12,background:"#E8F5E9",borderRadius:10,color:C.ok,fontWeight:700,fontSize:13}}>✅ Factura completamente pagada</div>}
             </div>
-          )}
-          {saldoRest <= 0 && invPays.length > 0 && (
-            <div style={{textAlign:"center",padding:16,background:"#E8F5E9",borderRadius:10,color:C.ok,fontWeight:700,fontSize:14}}>✅ Factura completamente pagada</div>
-          )}
+          </div>
         </ModalShell>
         );
       })()}
