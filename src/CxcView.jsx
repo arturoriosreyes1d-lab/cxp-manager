@@ -310,6 +310,7 @@ export default function CxcView({
     const [cobroMonto, setCobroMonto] = useState("");
     const [cobroFecha, setCobroFecha] = useState(today());
     const [cobroNotas, setCobroNotas] = useState("");
+    const [invDetail, setInvDetail] = useState(null);
 
     const ing = ingresos.find(i => i.id === detailIngreso);
     if (!ing) return null;
@@ -436,13 +437,19 @@ export default function CxcView({
               const statusBg = {Pagado:"#E8F5E9",Parcial:"#FFF3E0",Pendiente:"#EEF2FF",Vencido:"#FFEBEE"}[inv.estatus]||"#F8FAFC";
               const statusColor = {Pagado:C.ok,Parcial:C.warn,Pendiente:C.sky,Vencido:C.danger}[inv.estatus]||C.muted;
               return (
-                <div key={v.id} style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:6,background:statusBg}}>
+                <div key={v.id} onClick={()=>setInvDetail(inv)}
+                  style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:6,background:statusBg,cursor:"pointer",transition:"box-shadow .15s"}}
+                  onMouseEnter={e=>{e.currentTarget.style.boxShadow="0 2px 12px rgba(0,0,0,.12)";}}
+                  onMouseLeave={e=>{e.currentTarget.style.boxShadow="none";}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                     <div>
                       <div style={{fontWeight:700,fontSize:13}}>{inv.proveedor}</div>
                       <div style={{fontSize:11,color:C.muted}}>Folio: {inv.serie}{inv.folio} · {inv.fecha}</div>
                     </div>
-                    <span style={{color:statusColor,fontWeight:700,fontSize:11}}>{inv.estatus}</span>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{color:statusColor,fontWeight:700,fontSize:11}}>{inv.estatus}</span>
+                      <span style={{fontSize:11,color:C.muted,background:"#fff",padding:"1px 6px",borderRadius:6,border:`1px solid ${C.border}`}}>ver detalle →</span>
+                    </div>
                   </div>
                   <div style={{display:"flex",gap:12,marginTop:6,fontSize:12}}>
                     <span><span style={{color:C.muted}}>Asignado: </span><b>{inv.moneda==="EUR"?"€":"$"}{fmt(v.montoAsignado)} {inv.moneda}</b></span>
@@ -481,6 +488,106 @@ export default function CxcView({
           <button onClick={()=>{setDetailIngreso(null); setDeleteConfirm({id:ing.id,label:`${ing.cliente} — ${ing.concepto||ing.categoria}`});}} style={{...btnStyle,background:C.danger}}>🗑️ Eliminar</button>
           <button onClick={()=>setDetailIngreso(null)} style={btnStyle}>Cerrar</button>
         </div>
+
+        {/* ── Popup detalle de factura vinculada ── */}
+        {invDetail && (()=>{
+          const i = invDetail;
+          const sym2 = i.moneda==="EUR"?"€":"$";
+          const saldo = (+i.total||0)-(+i.montoPagado||0);
+          const statusColor = {Pagado:C.ok,Parcial:C.warn,Pendiente:C.sky,Vencido:C.danger}[i.estatus]||C.muted;
+          const statusBg   = {Pagado:"#E8F5E9",Parcial:"#FFF3E0",Pendiente:"#EEF2FF",Vencido:"#FFEBEE"}[i.estatus]||"#F8FAFC";
+          const monedaColor= {MXN:C.mxn,USD:C.usd,EUR:C.eur}[i.moneda]||C.navy;
+          const monedaBg   = {MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[i.moneda]||"#F8FAFC";
+          const Row = ({label,value,bold,color}) => (
+            <div style={{display:"flex",justifyContent:"space-between",padding:"9px 0",borderBottom:`1px solid ${C.border}`}}>
+              <span style={{fontSize:13,color:C.muted}}>{label}</span>
+              <span style={{fontSize:13,fontWeight:bold?700:500,color:color||C.text}}>{value||"—"}</span>
+            </div>
+          );
+          return (
+            <div style={{position:"fixed",inset:0,background:"rgba(15,45,74,.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:3000,padding:20}}
+              onClick={()=>setInvDetail(null)}>
+              <div onClick={e=>e.stopPropagation()}
+                style={{background:C.surface,borderRadius:20,padding:32,width:"100%",maxWidth:560,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}>
+                {/* Header */}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
+                  <div>
+                    <div style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Detalle de Factura</div>
+                    <div style={{fontSize:22,fontWeight:900,color:C.navy}}>{i.serie}{i.folio}</div>
+                    <div style={{fontSize:14,color:C.muted,marginTop:2}}>{i.proveedor}</div>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6}}>
+                    <span style={{background:statusBg,color:statusColor,fontWeight:800,fontSize:13,padding:"4px 14px",borderRadius:20,border:`1px solid ${statusColor}44`}}>
+                      {i.estatus}
+                    </span>
+                    <span style={{background:monedaBg,color:monedaColor,fontWeight:700,fontSize:11,padding:"3px 10px",borderRadius:20}}>
+                      {i.moneda}
+                    </span>
+                    <button onClick={()=>setInvDetail(null)}
+                      style={{background:"#F1F5F9",border:"none",borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:16,marginTop:4}}>×</button>
+                  </div>
+                </div>
+
+                {/* Importes destacados */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:20}}>
+                  {[
+                    {l:"Total",    v:`${sym2}${fmt(i.total)}`,      c:C.navy,   bg:"#F8FAFC"},
+                    {l:"Pagado",   v:`${sym2}${fmt(i.montoPagado)}`,c:C.ok,     bg:"#E8F5E9"},
+                    {l:"Saldo",    v:`${sym2}${fmt(saldo)}`,         c:saldo>0?C.warn:C.ok, bg:saldo>0?"#FFF3E0":"#E8F5E9"},
+                  ].map(k=>(
+                    <div key={k.l} style={{background:k.bg,borderRadius:10,padding:"12px 14px",textAlign:"center"}}>
+                      <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:"uppercase",marginBottom:3}}>{k.l}</div>
+                      <div style={{fontSize:18,fontWeight:800,color:k.c}}>{k.v}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Desglose */}
+                <div style={{marginBottom:16}}>
+                  <Row label="Tipo"               value={i.tipo}/>
+                  <Row label="Fecha emisión"       value={i.fecha}/>
+                  <Row label="UUID"                value={i.uuid ? i.uuid.slice(0,24)+"…" : "—"}/>
+                  <Row label="Clasificación"       value={i.clasificacion}/>
+                  {i.concepto && <Row label="Concepto" value={i.concepto}/>}
+                  <Row label="Subtotal"            value={`${sym2}${fmt(i.subtotal)}`}/>
+                  <Row label="IVA"                 value={`${sym2}${fmt(i.iva)}`}/>
+                  {(+i.retIsr||0)>0 && <Row label="Ret. ISR" value={`${sym2}${fmt(i.retIsr)}`}/>}
+                  {(+i.retIva||0)>0 && <Row label="Ret. IVA" value={`${sym2}${fmt(i.retIva)}`}/>}
+                  <Row label="Total"               value={`${sym2}${fmt(i.total)}`} bold color={C.navy}/>
+                  <Row label="Monto Pagado"        value={`${sym2}${fmt(i.montoPagado)}`} bold color={C.ok}/>
+                  <Row label="Saldo Pendiente"     value={`${sym2}${fmt(saldo)}`} bold color={saldo>0?C.warn:C.ok}/>
+                  <Row label="Vencimiento"         value={i.vencimiento}/>
+                  {i.diasCredito && <Row label="Días crédito" value={`${i.diasCredito} días`}/>}
+                  {i.fechaProgramacion && <Row label="Pago programado" value={i.fechaProgramacion}/>}
+                  {i.referencia && <Row label="Referencia" value={i.referencia}/>}
+                </div>
+
+                {/* Autorizaciones */}
+                <div style={{display:"flex",gap:10,marginBottom:20}}>
+                  <div style={{flex:1,background:i.voBo?"#E8F5E9":"#F8FAFC",borderRadius:8,padding:"8px 14px",textAlign:"center",fontSize:12}}>
+                    <div style={{color:C.muted,marginBottom:2}}>Visto Bueno</div>
+                    <div style={{fontSize:18}}>{i.voBo?"✅":"⬜"}</div>
+                  </div>
+                  <div style={{flex:1,background:i.autorizadoDireccion?"#E8F5E9":"#F8FAFC",borderRadius:8,padding:"8px 14px",textAlign:"center",fontSize:12}}>
+                    <div style={{color:C.muted,marginBottom:2}}>Aut. Dirección</div>
+                    <div style={{fontSize:18}}>{i.autorizadoDireccion?"✅":"⬜"}</div>
+                  </div>
+                </div>
+
+                {/* Notas */}
+                {i.notas && (
+                  <div style={{background:"#FFF8E1",border:"1px solid #FFE082",borderRadius:8,padding:"10px 14px",fontSize:12,color:"#856404"}}>
+                    📝 {i.notas}
+                  </div>
+                )}
+
+                <div style={{display:"flex",justifyContent:"flex-end",marginTop:20}}>
+                  <button onClick={()=>setInvDetail(null)} style={btnStyle}>Cerrar</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </ModalShell>
     );
   };
