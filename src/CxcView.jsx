@@ -137,7 +137,8 @@ export default function CxcView({
       const porCobrar = Math.max(0, ing.monto - totalCobrado);
 
       const vincs = invoiceIngresos.filter(v => v.ingresoId === ing.id);
-      let consumido = 0;   // facturas PAGADAS vinculadas
+      let consumido = 0;    // facturas PAGADAS vinculadas
+      let porPagar = 0;     // facturas PENDIENTES/PARCIALES vinculadas (comprometido no pagado)
       let comprometido = 0; // TODAS las facturas vinculadas
 
       vincs.forEach(v => {
@@ -145,19 +146,27 @@ export default function CxcView({
         if (!inv) return;
         const converted = convertToMonedaIngreso(v.montoAsignado, inv.moneda, ing);
         comprometido += converted;
-        if (inv.estatus === "Pagado") consumido += converted;
-        else if (inv.estatus === "Parcial") {
+        if (inv.estatus === "Pagado") {
+          consumido += converted;
+        } else if (inv.estatus === "Parcial") {
           const ratio = (+inv.total||0) > 0 ? (+inv.montoPagado||0)/(+inv.total||0) : 0;
           consumido += converted * ratio;
+          porPagar += converted * (1 - ratio);
+        } else {
+          // Pendiente o Vencido
+          porPagar += converted;
         }
       });
 
+      const disponible = totalCobrado - consumido;
       result[ing.id] = {
         totalCobrado,
         porCobrar,
         consumido,
+        porPagar,
         comprometido,
-        disponible: totalCobrado - consumido,
+        disponible,
+        disponibleNeto: disponible - porPagar,
         vinculaciones: vincs.length,
       };
     });
@@ -166,14 +175,21 @@ export default function CxcView({
 
   /* KPIs globales */
   const kpis = useMemo(() => {
-    const byMon = { MXN:{monto:0,cobrado:0,porCobrar:0,disponible:0}, USD:{monto:0,cobrado:0,porCobrar:0,disponible:0}, EUR:{monto:0,cobrado:0,porCobrar:0,disponible:0} };
+    const byMon = {
+      MXN:{monto:0,cobrado:0,porCobrar:0,consumido:0,porPagar:0,disponible:0,disponibleNeto:0},
+      USD:{monto:0,cobrado:0,porCobrar:0,consumido:0,porPagar:0,disponible:0,disponibleNeto:0},
+      EUR:{monto:0,cobrado:0,porCobrar:0,consumido:0,porPagar:0,disponible:0,disponibleNeto:0},
+    };
     ingresos.forEach(ing => {
       const m = metrics[ing.id] || {};
       const k = byMon[ing.moneda] || byMon.MXN;
-      k.monto += ing.monto;
-      k.cobrado += m.totalCobrado||0;
-      k.porCobrar += m.porCobrar||0;
-      k.disponible += m.disponible||0;
+      k.monto         += ing.monto;
+      k.cobrado       += m.totalCobrado||0;
+      k.porCobrar     += m.porCobrar||0;
+      k.consumido     += m.consumido||0;
+      k.porPagar      += m.porPagar||0;
+      k.disponible    += m.disponible||0;
+      k.disponibleNeto+= m.disponibleNeto||0;
     });
     return byMon;
   }, [ingresos, metrics]);
@@ -349,13 +365,15 @@ export default function CxcView({
           {/* KPI mini row */}
           <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
             {[
-              {l:"Monto Total", v:`${sym}${fmt(ing.monto)}`, c:C.navy},
-              {l:"Cobrado", v:`${sym}${fmt(m.totalCobrado)}`, c:C.ok},
-              {l:"Por Cobrar", v:`${sym}${fmt(m.porCobrar)}`, c:C.warn},
-              {l:"Consumido", v:`${sym}${fmt(m.consumido)}`, c:C.danger},
-              {l:"Disponible", v:`${sym}${fmt(m.disponible)}`, c:C.teal},
+              {l:"Monto Total",     v:`${sym}${fmt(ing.monto)}`,        c:C.navy},
+              {l:"Cobrado",         v:`${sym}${fmt(m.totalCobrado)}`,    c:C.ok},
+              {l:"Por Cobrar",      v:`${sym}${fmt(m.porCobrar)}`,       c:C.warn},
+              {l:"Consumido",       v:`${sym}${fmt(m.consumido)}`,       c:C.danger},
+              {l:"Por Pagar",       v:`${sym}${fmt(m.porPagar)}`,        c:"#E65100", bg:"#FFF3E0"},
+              {l:"Disponible",      v:`${sym}${fmt(m.disponible)}`,      c:C.teal},
+              {l:"Disponible Neto", v:`${sym}${fmt(m.disponibleNeto)}`,  c:(m.disponibleNeto||0)>=0?C.green:C.danger, bg:(m.disponibleNeto||0)>=0?"#E8F5E9":"#FFEBEE"},
             ].map(k=>(
-              <div key={k.l} style={{background:"#F8FAFC",borderRadius:10,padding:"10px 14px",textAlign:"center",minWidth:110}}>
+              <div key={k.l} style={{background:k.bg||"#F8FAFC",borderRadius:10,padding:"10px 14px",textAlign:"center",minWidth:110}}>
                 <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:"uppercase",marginBottom:2}}>{k.l}</div>
                 <div style={{fontSize:16,fontWeight:800,color:k.c}}>{k.v}</div>
               </div>
@@ -616,9 +634,22 @@ export default function CxcView({
         <td style={{padding:"12px 10px",fontWeight:600,color:C.ok,textAlign:"right"}}>{sym}{fmt(m.totalCobrado||0)}</td>
         <td style={{padding:"12px 10px",fontWeight:600,color:(m.porCobrar||0)>0?C.warn:C.ok,textAlign:"right"}}>{sym}{fmt(m.porCobrar||0)}</td>
         <td style={{padding:"12px 10px",fontWeight:600,color:C.danger,textAlign:"right"}}>{sym}{fmt(m.consumido||0)}</td>
+        {/* Por Pagar — facturas pendientes vinculadas */}
+        <td style={{padding:"12px 10px",textAlign:"right"}}>
+          <span style={{fontWeight:700,color:"#E65100",background:(m.porPagar||0)>0?"#FFF3E0":"transparent",padding:(m.porPagar||0)>0?"2px 6px":"0",borderRadius:6}}>
+            {sym}{fmt(m.porPagar||0)}
+          </span>
+        </td>
+        {/* Disponible */}
         <td style={{padding:"12px 10px",textAlign:"right"}}>
           <span style={{fontWeight:800,color:disponColor}}>{sym}{fmt(m.disponible||0)}</span>
           {ing.moneda !== "MXN" && <div style={{fontSize:9,color:C.muted}}>TC:{fmt(ing.tipoCambio)}</div>}
+        </td>
+        {/* Disponible Neto */}
+        <td style={{padding:"12px 10px",textAlign:"right"}}>
+          <span style={{fontWeight:800,color:(m.disponibleNeto||0)>=0?C.green:C.danger,background:(m.disponibleNeto||0)>=0?"#E8F5E9":"#FFEBEE",padding:"2px 7px",borderRadius:6}}>
+            {sym}{fmt(m.disponibleNeto||0)}
+          </span>
         </td>
         <td style={{padding:"12px 10px"}}>
           {/* Mini bar showing cobrado/consumido */}
@@ -727,17 +758,20 @@ export default function CxcView({
 
       {/* KPI Cards — per currency */}
       <div style={{display:"flex",gap:12,flexWrap:"wrap",margin:"20px 0"}}>
-        {Object.entries(kpis).filter(([,v])=>v.monto>0||ingresos.some(i=>i.moneda===Object.keys(kpis)[0])).map(([mon,v])=>{
+        {Object.entries(kpis).map(([mon,v])=>{
           if (v.monto === 0 && v.cobrado === 0) return null;
           const sym = monedaSym(mon);
           const flagMap = {MXN:"🇲🇽",USD:"🇺🇸",EUR:"🇪🇺"};
-          const colMap = {MXN:C.mxn,USD:C.usd,EUR:C.eur};
-          const bgMap = {MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"};
+          const colMap  = {MXN:C.mxn,USD:C.usd,EUR:C.eur};
+          const bgMap   = {MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"};
           return [
-            <KpiCard key={`${mon}-monto`} label={`${flagMap[mon]} ${mon} Total`} value={`${sym}${fmt(v.monto)}`} sub={`${ingresos.filter(i=>i.moneda===mon).length} ingresos`} color={colMap[mon]} icon="💼" bg={bgMap[mon]}/>,
-            <KpiCard key={`${mon}-cobrado`} label={`${mon} Cobrado`} value={`${sym}${fmt(v.cobrado)}`} color={C.ok} icon="✅"/>,
-            <KpiCard key={`${mon}-porCobrar`} label={`${mon} Por Cobrar`} value={`${sym}${fmt(v.porCobrar)}`} color={C.warn} icon="⏳"/>,
-            <KpiCard key={`${mon}-disponible`} label={`${mon} Disponible`} value={`${sym}${fmt(v.disponible)}`} color={C.teal} icon="💰"/>,
+            <KpiCard key={`${mon}-monto`}         label={`${flagMap[mon]} ${mon} Total`}   value={`${sym}${fmt(v.monto)}`}          sub={`${ingresos.filter(i=>i.moneda===mon).length} ingresos`} color={colMap[mon]} icon="💼" bg={bgMap[mon]}/>,
+            <KpiCard key={`${mon}-cobrado`}        label={`${mon} Cobrado`}                value={`${sym}${fmt(v.cobrado)}`}        color={C.ok}   icon="✅"/>,
+            <KpiCard key={`${mon}-porCobrar`}      label={`${mon} Por Cobrar`}             value={`${sym}${fmt(v.porCobrar)}`}      color={C.warn} icon="⏳"/>,
+            <KpiCard key={`${mon}-consumido`}      label={`${mon} Consumido`}              value={`${sym}${fmt(v.consumido)}`}      color={C.danger} icon="📤"/>,
+            <KpiCard key={`${mon}-porPagar`}       label={`${mon} Por Pagar`}              value={`${sym}${fmt(v.porPagar)}`}       color="#E65100" icon="🧾" bg="#FFF3E0"/>,
+            <KpiCard key={`${mon}-disponible`}     label={`${mon} Disponible`}             value={`${sym}${fmt(v.disponible)}`}     color={C.teal} icon="💰"/>,
+            <KpiCard key={`${mon}-disponibleNeto`} label={`${mon} Disponible Neto`}        value={`${sym}${fmt(v.disponibleNeto)}`} color={v.disponibleNeto>=0?C.green:C.danger} icon="🏦" bg={v.disponibleNeto>=0?"#E8F5E9":"#FFEBEE"}/>,
           ];
         })}
       </div>
@@ -800,8 +834,8 @@ export default function CxcView({
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:900}}>
               <thead>
                 <tr style={{background:C.navy}}>
-                  {["Cliente","Concepto","Categoría","Fecha","Monto","Cobrado","Por Cobrar","Consumido","Disponible","Consumo","Acciones"].map(h=>(
-                    <th key={h} style={{padding:"10px 10px",textAlign:h==="Monto"||h==="Cobrado"||h==="Por Cobrar"||h==="Consumido"||h==="Disponible"?"right":"left",color:"#fff",fontWeight:600,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                  {["Cliente","Concepto","Categoría","Fecha","Monto","Cobrado","Por Cobrar","Consumido","Por Pagar","Disponible","Disp. Neto","Consumo","Acciones"].map(h=>(
+                    <th key={h} style={{padding:"10px 10px",textAlign:["Monto","Cobrado","Por Cobrar","Consumido","Por Pagar","Disponible","Disp. Neto"].includes(h)?"right":"left",color:"#fff",fontWeight:600,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -817,7 +851,8 @@ export default function CxcView({
                   <td style={{padding:"10px 10px",fontWeight:800,color:C.ok,textAlign:"right",fontSize:12}}>—</td>
                   <td style={{padding:"10px 10px",fontWeight:800,color:C.warn,textAlign:"right",fontSize:12}}>—</td>
                   <td style={{padding:"10px 10px",fontWeight:800,color:C.danger,textAlign:"right",fontSize:12}}>—</td>
-                  <td colSpan={3}/>
+                  <td style={{padding:"10px 10px",fontWeight:800,color:"#E65100",textAlign:"right",fontSize:12}}>—</td>
+                  <td colSpan={4}/>
                 </tr>
               </tfoot>
             </table>
@@ -826,8 +861,9 @@ export default function CxcView({
       )}
 
       {/* ── Nota de multimoneda */}
-      <div style={{marginTop:12,padding:"8px 14px",background:"#FFFDE7",border:"1px solid #FFE082",borderRadius:8,fontSize:11,color:"#856404"}}>
-        💡 <b>Disponible</b> = Cobrado − Consumido (facturas pagadas vinculadas convertidas con el TC del ingreso).
+      <div style={{marginTop:12,padding:"10px 14px",background:"#FFFDE7",border:"1px solid #FFE082",borderRadius:8,fontSize:11,color:"#856404",lineHeight:1.6}}>
+        💡 <b>Consumido</b> = facturas pagadas vinculadas · <b>Por Pagar</b> = facturas pendientes/parciales vinculadas (no afecta Disponible) ·
+        <b> Disponible</b> = Cobrado − Consumido · <b>Disp. Neto</b> = Disponible − Por Pagar (lo que queda tras cubrir todo lo comprometido).
         Los totales no se suman entre monedas distintas.
       </div>
 
