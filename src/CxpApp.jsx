@@ -734,6 +734,19 @@ export default function CxpApp({ user, onLogout }) {
         <td style={{padding:"10px 8px",fontWeight:700}}>${fmt(inv.total)}</td>
         <td style={{padding:"10px 8px",fontWeight:600,color:pagado>0?C.ok:C.muted}}>${fmt(pagado)}</td>
         <td style={{padding:"10px 8px",fontWeight:700,color:saldo>0?(overdue?C.danger:C.warn):C.ok}}>${fmt(saldo)}</td>
+        {/* Pago/Programación — informativo desde tabla payments */}
+        <td style={{padding:"10px 8px",whiteSpace:"nowrap",fontSize:11}}>
+          {(()=>{
+            const invPays = paymentsFor(inv.id);
+            const lastRealized = invPays.filter(p=>p.tipo==='realizado').sort((a,b)=>b.fechaPago.localeCompare(a.fechaPago))[0];
+            const nextScheduled = invPays.filter(p=>p.tipo==='programado').sort((a,b)=>a.fechaPago.localeCompare(b.fechaPago))[0];
+            if(lastRealized && inv.estatus==='Pagado') return <span style={{color:C.ok,fontWeight:600}} title={`Pagado: $${fmt(lastRealized.monto)}`}>✅ {lastRealized.fechaPago}</span>;
+            if(nextScheduled && lastRealized) return <div><div style={{color:C.ok,fontWeight:600}} title={`Último pago: $${fmt(lastRealized.monto)}`}>💰 {lastRealized.fechaPago}</div><div style={{color:"#F57F17",fontWeight:600}} title={`Programado: $${fmt(nextScheduled.monto)}`}>📅 {nextScheduled.fechaPago}</div></div>;
+            if(nextScheduled) return <span style={{color:"#F57F17",fontWeight:600}} title={`Programado: $${fmt(nextScheduled.monto)}`}>📅 {nextScheduled.fechaPago}</span>;
+            if(lastRealized) return <span style={{color:C.ok,fontWeight:600}} title={`Pagado: $${fmt(lastRealized.monto)}`}>💰 {lastRealized.fechaPago}</span>;
+            return <span style={{color:C.muted}}>—</span>;
+          })()}
+        </td>
         <td style={{padding:"10px 8px",whiteSpace:"nowrap",color:overdue?C.danger:C.text}}>{inv.vencimiento||"—"}</td>
         <td style={{padding:"10px 8px",color:days<0?C.danger:days<=7?C.warn:C.ok,fontWeight:600}}>
           {days!==null?(days<0?`${Math.abs(days)}d venc.`:`${days}d`):"—"}
@@ -790,7 +803,7 @@ export default function CxpApp({ user, onLogout }) {
                 {[
                   {h:"Tipo",col:"tipo"},{h:"Fecha",col:"fecha"},{h:"Folio",col:"folio"},{h:"Proveedor",col:"proveedor"},
                   {h:"Concepto",col:"concepto"},{h:"Clasif.",col:"clasificacion"},{h:"Total",col:"total"},{h:"Pagado",col:"montoPagado"},
-                  {h:"Saldo",col:"saldo"},{h:"Vence",col:"vencimiento"},{h:"Días",col:"dias"},
+                  {h:"Saldo",col:"saldo"},{h:"Pago/Prog.",col:""},{h:"Vence",col:"vencimiento"},{h:"Días",col:"dias"},
                   {h:"Estatus",col:"estatus"},{h:"VoBo",col:""},{h:"Aut.Dir.",col:""},{h:"Acciones",col:""}
                 ].map(({h,col})=>(
                   <th key={h} onClick={col?()=>{if(sortCol===col) setSortDir(d=>d==="asc"?"desc":"asc"); else {setSortCol(col);setSortDir("asc");}}:undefined}
