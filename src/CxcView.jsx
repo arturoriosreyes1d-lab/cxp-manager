@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef } from "react";
+import * as XLSX from "xlsx";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
@@ -102,6 +103,13 @@ export default function CxcView({
   const [proyeccionView, setProyeccionView] = useState(false);
   const [calDayDetail, setCalDayDetail] = useState(null);
   const [kpiModal, setKpiModal] = useState(null); // { titulo, tipo, moneda }
+  const [vistaGrupo, setVistaGrupo] = useState("cliente"); // "ingreso" | "cliente"
+  const [clientesExpanded, setClientesExpanded] = useState(new Set());
+  const [importModal, setImportModal] = useState(false);
+  const [importPreview, setImportPreview] = useState(null); // { rows, dupes, catDefault }
+  const [importCatDefault, setImportCatDefault] = useState("");
+  const [importando, setImportando] = useState(false);
+  const importRef = useRef();
 
   /* ── Derived data ──────────────────────────────────────────── */
   const allInvoices = useMemo(() => [
@@ -224,6 +232,17 @@ export default function CxcView({
     });
   }, [ingresos, filtroSearch, filtroCliente, filtroCategoria, filtroMoneda, filtroFechaFrom, filtroFechaTo, filtroCobro, metrics]);
 
+  /* Agrupado por cliente */
+  const groupedByCliente = useMemo(() => {
+    const map = {};
+    filtered.forEach(ing => {
+      if (!map[ing.cliente]) map[ing.cliente] = [];
+      map[ing.cliente].push(ing);
+    });
+    // Sort clients alphabetically
+    return Object.entries(map).sort((a,b) => a[0].localeCompare(b[0]));
+  }, [filtered]);
+
   /* ── CRUD Handlers ─────────────────────────────────────────── */
   const saveIngreso = async (data) => {
     const saved = await upsertIngreso(data);
@@ -268,6 +287,132 @@ export default function CxcView({
     const found = categorias.find(c => c.nombre === cat);
     if (found) await deleteCategoriaIngresoDB(found.id);
     setCategorias(prev => prev.filter(c => c.nombre !== cat));
+  };
+
+  /* ── Toggle cliente expandido ──────────────────────────────── */
+  const toggleCliente = (nombre) => {
+    setClientesExpanded(prev => {
+      const n = new Set(prev);
+      if (n.has(nombre)) n.delete(nombre); else n.add(nombre);
+      return n;
+    });
+  };
+
+  /* ── Excel import handler ──────────────────────────────────── */
+  const parseExcelDate = v => {
+    if (!v) return "";
+    if (v instanceof Date) return v.toISOString().split("T")[0];
+    if (typeof v === "number") {
+      const d = new Date(Math.round((v - 25569) * 86400000));
+      return d.toISOString().split("T")[0];
+    }
+    const s = String(v);
+    // dd/mm/yyyy or dd-mm-yyyy
+    const m = s.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+    if (m) return `${m[3].length===2?"20"+m[3]:m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;
+    return s;
+  };
+
+  const handleImportFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const wb = XLSX.read(ev.target.result, { type:"array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header:1 });
+
+        // Find header row
+        let hi = rows.findIndex(r => r.some(c => String(c||"").toUpperCase().includes("RECEPTOR") || String(c||"").toUpperCase().includes("CLIENTE")));
+        if (hi < 0) hi = 0;
+        const headers = rows[hi].map(h => String(h||"").trim().toUpperCase());
+
+        const get = (row, keys) => {
+          for (const k of keys) {
+            const idx = headers.findIndex(h => h.includes(k));
+            if (idx >= 0 && row[idx] !== undefined && row[idx] !== null && row[idx] !== "") return row[idx];
+          }
+          return "";
+        };
+
+        const cleanNum = v => {
+          if (!v && v !== 0) return 0;
+          if (typeof v === "number") return v;
+          return +(String(v).replace(/[$,\s]/g, "")) || 0;
+        };
+
+        // Existing ingresos for dupe detection
+        const existingKeys = new Set(ingresos.map(i =>
+          `${(i.cliente||"").toLowerCase()}|${i.fecha}|${i.monto}`
+        ));
+
+        const newRows = [];
+        const dupeRows = [];
+
+        rows.slice(hi + 1).filter(r => r.some(c => c)).forEach(row => {
+          const cliente = String(get(row, ["RECEPTOR","CLIENTE","NOMBRE"]) || "").trim();
+          const fecha   = parseExcelDate(get(row, ["FECHA"]));
+          const monto   = cleanNum(get(row, ["TOTAL"]));
+          const moneda  = (() => {
+            const raw = String(get(row, ["MONEDA","MON","CURRENCY"]) || "MXN").trim().toUpperCase();
+            if (raw.includes("USD")||raw.includes("DOLAR")) return "USD";
+            if (raw.includes("EUR")||raw.includes("EURO"))  return "EUR";
+            return "MXN";
+          })();
+          const uuid    = String(get(row, ["UUID"]) || "");
+          const serie   = String(get(row, ["SERIE"]) || "");
+          const folio   = String(get(row, ["FOLIO"]) || "");
+          const tipo    = String(get(row, ["TIPO"]) || "Factura");
+
+          if (!cliente || !monto) return;
+
+          const key = `${cliente.toLowerCase()}|${fecha}|${monto}`;
+          if (existingKeys.has(key)) {
+            dupeRows.push({ cliente, fecha, monto, moneda });
+            return;
+          }
+          existingKeys.add(key);
+
+          newRows.push({
+            id: Math.random().toString(36).slice(2,10),
+            cliente,
+            concepto: [serie, folio].filter(Boolean).join("-") || tipo,
+            categoria: "",
+            monto,
+            moneda,
+            tipoCambio: 1,
+            fecha,
+            notas: uuid,
+          });
+        });
+
+        setImportPreview({ rows: newRows, dupes: dupeRows });
+        setImportCatDefault(catList[0] || "");
+      } catch(err) {
+        alert("Error al leer el archivo: " + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = "";
+  };
+
+  const confirmarImport = async () => {
+    if (!importPreview?.rows?.length) return;
+    setImportando(true);
+    const rowsToSave = importPreview.rows.map(r => ({
+      ...r,
+      categoria: importCatDefault || catList[0] || "Otro",
+    }));
+    const saved = [];
+    for (const row of rowsToSave) {
+      const s = await upsertIngreso(row);
+      saved.push(s);
+    }
+    setIngresos(prev => [...saved, ...prev]);
+    setImportPreview(null);
+    setImportModal(false);
+    setImportando(false);
   };
 
   /* ── Ingreso Form Modal ─────────────────────────────────────── */
@@ -1072,19 +1217,27 @@ export default function CxcView({
   return (
     <div>
       {/* Header */}
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4,flexWrap:"wrap",gap:10}}>
         <div>
           <h1 style={{fontSize:24,fontWeight:800,color:C.navy,margin:0}}>💵 Cuentas por Cobrar</h1>
           <p style={{color:C.muted,fontSize:14,margin:"4px 0 0"}}>Controla ingresos de clientes y vincúlalos a tus gastos</p>
         </div>
-        <div style={{display:"flex",gap:8}}>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
           <button onClick={()=>setProyeccionView(true)} style={{...btnStyle,background:"#E8F0FE",color:C.blue,padding:"8px 16px",fontSize:13}}>📆 Proyección</button>
           <button onClick={()=>setConfigCats(true)} style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"8px 14px",fontSize:13}}>⚙️ Categorías</button>
+          {/* Vista toggle */}
+          <div style={{display:"flex",border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+            <button onClick={()=>setVistaGrupo("cliente")} style={{padding:"8px 14px",border:"none",background:vistaGrupo==="cliente"?C.navy:"#F1F5F9",color:vistaGrupo==="cliente"?"#fff":C.text,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>👥 Por cliente</button>
+            <button onClick={()=>setVistaGrupo("ingreso")} style={{padding:"8px 14px",border:"none",background:vistaGrupo==="ingreso"?C.navy:"#F1F5F9",color:vistaGrupo==="ingreso"?"#fff":C.text,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>📋 Por ingreso</button>
+          </div>
+          <button onClick={()=>{setImportPreview(null);setImportModal(true);}} style={{...btnStyle,background:"#00897B",color:"#fff",padding:"8px 16px",fontSize:13}}>📥 Importar Excel</button>
           <button onClick={()=>setModalIngreso({id:"",cliente:"",concepto:"",categoria:catList[0]||"Circuito",monto:"",moneda:"MXN",tipoCambio:1,fecha:today(),notas:""})} style={btnStyle}>
             + Nuevo Ingreso
           </button>
         </div>
       </div>
+      {/* Hidden file input for import */}
+      <input ref={importRef} type="file" accept=".xlsx,.xls" onChange={handleImportFile} style={{display:"none"}}/>
 
       {/* KPI Cards — per currency */}
       <div style={{display:"flex",gap:12,flexWrap:"wrap",margin:"20px 0"}}>
@@ -1255,7 +1408,7 @@ export default function CxcView({
         </div>
       </div>
 
-      {/* Ingresos Table */}
+      {/* Ingresos — vista condicional */}
       {filtered.length === 0 ? (
         <div style={{textAlign:"center",padding:60,color:C.muted,background:C.surface,borderRadius:14,border:`1px solid ${C.border}`}}>
           <div style={{fontSize:48,marginBottom:12}}>💵</div>
@@ -1268,7 +1421,126 @@ export default function CxcView({
             </button>
           )}
         </div>
+      ) : vistaGrupo === "cliente" ? (
+
+        /* ── VISTA AGRUPADA POR CLIENTE ── */
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {groupedByCliente.map(([cliente, ings]) => {
+            const expanded = clientesExpanded.has(cliente);
+            // Consolidated metrics per moneda
+            const byMon = {};
+            ings.forEach(ing => {
+              const m = metrics[ing.id] || {};
+              const mon = ing.moneda;
+              if (!byMon[mon]) byMon[mon] = {monto:0,cobrado:0,porCobrar:0,disponible:0,disponibleNeto:0};
+              byMon[mon].monto         += ing.monto;
+              byMon[mon].cobrado       += m.totalCobrado||0;
+              byMon[mon].porCobrar     += m.porCobrar||0;
+              byMon[mon].disponible    += m.disponible||0;
+              byMon[mon].disponibleNeto+= m.disponibleNeto||0;
+            });
+            const monedas = Object.keys(byMon);
+            return (
+              <div key={cliente} style={{background:C.surface,border:`1px solid ${expanded?C.blue:C.border}`,borderRadius:14,overflow:"hidden",transition:"border-color .2s"}}>
+                {/* Cliente header — clickable */}
+                <div onClick={()=>toggleCliente(cliente)}
+                  style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 18px",background:expanded?"#E8F0FE":"#F8FAFC",cursor:"pointer",transition:"background .15s"}}
+                  onMouseEnter={e=>{if(!expanded)e.currentTarget.style.background="#F0F4FF";}}
+                  onMouseLeave={e=>{if(!expanded)e.currentTarget.style.background="#F8FAFC";}}>
+                  <div style={{display:"flex",alignItems:"center",gap:12}}>
+                    <span style={{fontSize:16,color:expanded?C.blue:C.muted,transition:"transform .2s",display:"inline-block",transform:expanded?"rotate(90deg)":"rotate(0deg)"}}>▶</span>
+                    <div>
+                      <div style={{fontWeight:800,fontSize:15,color:C.navy}}>{cliente}</div>
+                      <div style={{fontSize:12,color:C.muted,marginTop:2}}>{ings.length} ingreso{ings.length!==1?"s":""}</div>
+                    </div>
+                  </div>
+                  {/* KPI chips por moneda */}
+                  <div style={{display:"flex",gap:16,flexWrap:"wrap",alignItems:"center"}}>
+                    {monedas.map(mon => {
+                      const v = byMon[mon];
+                      const sym = monedaSym(mon);
+                      const monCol = {MXN:C.mxn,USD:C.usd,EUR:C.eur}[mon]||C.navy;
+                      const monBg  = {MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[mon]||"#F8FAFC";
+                      return (
+                        <div key={mon} style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+                          <span style={{background:monBg,color:monCol,fontWeight:800,fontSize:11,padding:"2px 8px",borderRadius:20}}>{mon}</span>
+                          {[
+                            {l:"Total",    v:`${sym}${fmt(v.monto)}`,         c:C.navy},
+                            {l:"Cobrado",  v:`${sym}${fmt(v.cobrado)}`,        c:C.ok},
+                            {l:"x Cobrar", v:`${sym}${fmt(v.porCobrar)}`,      c:C.warn},
+                            {l:"Disp.",    v:`${sym}${fmt(v.disponible)}`,      c:C.teal},
+                            {l:"D. Neto",  v:`${sym}${fmt(v.disponibleNeto)}`,  c:v.disponibleNeto>=0?C.green:C.danger},
+                          ].map(k=>(
+                            <div key={k.l} style={{textAlign:"center"}}>
+                              <div style={{fontSize:9,color:C.muted,fontWeight:700,textTransform:"uppercase"}}>{k.l}</div>
+                              <div style={{fontSize:13,fontWeight:800,color:k.c}}>{k.v}</div>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Ingresos expandidos */}
+                {expanded && (
+                  <div style={{borderTop:`1px solid ${C.border}`,overflowX:"auto"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:860}}>
+                      <thead>
+                        <tr style={{background:"#EEF2FF"}}>
+                          {["Concepto","Categoría","Fecha","Monto","Cobrado","Por Cobrar","Consumido","Por Pagar","Disponible","D. Neto","Acciones"].map(h=>(
+                            <th key={h} style={{padding:"8px 10px",textAlign:["Monto","Cobrado","Por Cobrar","Consumido","Por Pagar","Disponible","D. Neto"].includes(h)?"right":"left",color:C.blue,fontWeight:700,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ings.map((ing,idx) => {
+                          const m = metrics[ing.id]||{};
+                          const sym = monedaSym(ing.moneda);
+                          const catStyle = getCatStyle(ing.categoria);
+                          const disponColor = (m.disponible||0)>0?C.teal:(m.disponible||0)===0?C.muted:C.danger;
+                          return (
+                            <tr key={ing.id}
+                              style={{borderTop:`1px solid ${C.border}`,background:idx%2===0?"#FAFBFF":"#fff",cursor:"pointer"}}
+                              onClick={()=>setDetailIngreso(ing.id)}
+                              onMouseEnter={e=>{e.currentTarget.style.background="#E8F0FE";}}
+                              onMouseLeave={e=>{e.currentTarget.style.background=idx%2===0?"#FAFBFF":"#fff";}}>
+                              <td style={{padding:"9px 10px",color:ing.concepto?C.text:C.muted,fontStyle:ing.concepto?"normal":"italic",minWidth:140}}>{ing.concepto||"—"}</td>
+                              <td style={{padding:"9px 10px"}}>
+                                <span style={{background:catStyle.bg,color:catStyle.text,border:`1px solid ${catStyle.border}`,padding:"2px 7px",borderRadius:20,fontSize:10,fontWeight:700,whiteSpace:"nowrap"}}>{ing.categoria||"—"}</span>
+                              </td>
+                              <td style={{padding:"9px 10px",whiteSpace:"nowrap",fontSize:11,color:C.muted}}>{ing.fecha||"—"}</td>
+                              <td style={{padding:"9px 10px",fontWeight:700,textAlign:"right"}}>{sym}{fmt(ing.monto)}</td>
+                              <td style={{padding:"9px 10px",color:C.ok,textAlign:"right"}}>{sym}{fmt(m.totalCobrado||0)}</td>
+                              <td style={{padding:"9px 10px",color:(m.porCobrar||0)>0?C.warn:C.ok,textAlign:"right",fontWeight:600}}>{sym}{fmt(m.porCobrar||0)}</td>
+                              <td style={{padding:"9px 10px",color:C.danger,textAlign:"right"}}>{sym}{fmt(m.consumido||0)}</td>
+                              <td style={{padding:"9px 10px",textAlign:"right"}}>
+                                <span style={{color:"#E65100",background:(m.porPagar||0)>0?"#FFF3E0":"transparent",padding:(m.porPagar||0)>0?"1px 5px":"0",borderRadius:5,fontWeight:700}}>{sym}{fmt(m.porPagar||0)}</span>
+                              </td>
+                              <td style={{padding:"9px 10px",textAlign:"right"}}><span style={{fontWeight:800,color:disponColor}}>{sym}{fmt(m.disponible||0)}</span></td>
+                              <td style={{padding:"9px 10px",textAlign:"right"}}>
+                                <span style={{fontWeight:800,color:(m.disponibleNeto||0)>=0?C.green:C.danger,background:(m.disponibleNeto||0)>=0?"#E8F5E9":"#FFEBEE",padding:"2px 6px",borderRadius:5}}>{sym}{fmt(m.disponibleNeto||0)}</span>
+                              </td>
+                              <td style={{padding:"9px 8px",whiteSpace:"nowrap"}} onClick={e=>e.stopPropagation()}>
+                                <button onClick={()=>setDetailIngreso(ing.id)} style={{...iconBtn,color:C.sky,fontSize:14}} title="Detalle">🔍</button>
+                                <button onClick={()=>setModalIngreso({...ing})} style={{...iconBtn,color:C.blue,fontSize:14}} title="Editar">✏️</button>
+                                <button onClick={()=>setDeleteConfirm({id:ing.id,label:`${ing.cliente} — ${ing.concepto||ing.categoria}`})} style={{...iconBtn,color:C.danger,fontSize:14}} title="Eliminar">🗑️</button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
       ) : (
+
+        /* ── VISTA PLANA POR INGRESO (original) ── */
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden"}}>
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:900}}>
@@ -1354,6 +1626,119 @@ export default function CxcView({
           <div style={{background:"#EEF2FF",borderRadius:8,padding:"10px 14px",fontSize:12,color:C.muted}}>
             💡 Las categorías predeterminadas son: {DEFAULT_CATS.join(", ")}.
           </div>
+        </ModalShell>
+      )}
+
+      {/* Import Modal */}
+      {importModal && (
+        <ModalShell title="📥 Importar Ingresos desde Excel" onClose={()=>{setImportModal(false);setImportPreview(null);}} wide>
+          {!importPreview ? (
+            <div>
+              {/* Upload zone */}
+              <div onClick={()=>importRef.current?.click()}
+                style={{border:`2px dashed ${C.border}`,borderRadius:14,padding:40,textAlign:"center",cursor:"pointer",background:"#FAFBFC",marginBottom:20,transition:"border-color .2s"}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor=C.blue;}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;}}>
+                <div style={{fontSize:44,marginBottom:10}}>📂</div>
+                <div style={{fontSize:16,fontWeight:700,color:C.navy,marginBottom:4}}>Selecciona tu archivo Excel</div>
+                <div style={{fontSize:13,color:C.muted,marginBottom:16}}>Formatos: .xlsx · .xls</div>
+                <button style={btnStyle} onClick={e=>{e.stopPropagation();importRef.current?.click();}}>Seleccionar archivo</button>
+              </div>
+              {/* Expected format */}
+              <div style={{background:"#EEF2FF",border:"1px solid #C7D7FD",borderRadius:12,padding:16}}>
+                <div style={{fontWeight:700,color:C.navy,marginBottom:10,fontSize:13}}>📋 Columnas esperadas</div>
+                <div style={{overflowX:"auto"}}>
+                  <table style={{borderCollapse:"collapse",fontSize:12,minWidth:500}}>
+                    <thead><tr style={{background:C.navy}}>
+                      {["Tipo","Fecha Emision","Serie","Folio","UUID","Nombre Receptor","SubTotal","IVA 16%","Total","Moneda"].map(h=>(
+                        <th key={h} style={{padding:"6px 10px",color:"#fff",fontWeight:600,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                      ))}
+                    </tr></thead>
+                    <tbody><tr style={{background:"#fff"}}>
+                      {["Factura","10/03/2026","A","11439","fcd49e…","TRANSPORTES BROMELIA","6,882.33","1,101.17","7,983.50","MXN"].map((v,i)=>(
+                        <td key={i} style={{padding:"6px 10px",borderBottom:`1px solid ${C.border}`,textAlign:"center",fontSize:11}}>{v}</td>
+                      ))}
+                    </tr></tbody>
+                  </table>
+                </div>
+                <div style={{fontSize:11,color:C.muted,marginTop:10}}>
+                  💡 <b>Concepto</b> y <b>Categoría</b> se asignan después en la app. El sistema detecta duplicados automáticamente.
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div>
+              {/* Preview results */}
+              <div style={{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap"}}>
+                <div style={{background:"#E8F5E9",border:"1px solid #A5D6A7",borderRadius:10,padding:"10px 18px"}}>
+                  <div style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:"uppercase"}}>Nuevos</div>
+                  <div style={{fontSize:24,fontWeight:900,color:C.ok}}>{importPreview.rows.length}</div>
+                </div>
+                <div style={{background:"#FFF3E0",border:"1px solid #FFCC80",borderRadius:10,padding:"10px 18px"}}>
+                  <div style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:"uppercase"}}>Duplicados (omitidos)</div>
+                  <div style={{fontSize:24,fontWeight:900,color:C.warn}}>{importPreview.dupes.length}</div>
+                </div>
+              </div>
+
+              {/* Categoría default */}
+              <div style={{background:"#F8FAFC",border:`1px solid ${C.border}`,borderRadius:10,padding:14,marginBottom:16}}>
+                <div style={{fontSize:13,fontWeight:700,color:C.navy,marginBottom:8}}>Asignar categoría a todos los ingresos importados:</div>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  {catList.map(cat => {
+                    const cs = getCatStyle(cat);
+                    return (
+                      <button key={cat} onClick={()=>setImportCatDefault(cat)}
+                        style={{padding:"5px 14px",borderRadius:20,border:`2px solid ${importCatDefault===cat?cs.text:C.border}`,background:importCatDefault===cat?cs.bg:"#fff",color:importCatDefault===cat?cs.text:C.text,cursor:"pointer",fontWeight:importCatDefault===cat?700:500,fontSize:12,fontFamily:"inherit",transition:"all .15s"}}>
+                        {cat}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{fontSize:11,color:C.muted,marginTop:8}}>Podrás cambiar la categoría individualmente desde la app después de importar.</div>
+              </div>
+
+              {/* Preview table */}
+              {importPreview.rows.length > 0 && (
+                <div style={{maxHeight:280,overflowY:"auto",border:`1px solid ${C.border}`,borderRadius:10,marginBottom:16}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                    <thead style={{position:"sticky",top:0}}>
+                      <tr style={{background:C.navy}}>
+                        {["Cliente","Concepto","Fecha","Monto","Moneda"].map(h=>(
+                          <th key={h} style={{padding:"8px 10px",color:"#fff",fontWeight:600,fontSize:10,textTransform:"uppercase",textAlign:h==="Monto"?"right":"left"}}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importPreview.rows.map((r,i)=>(
+                        <tr key={i} style={{borderBottom:`1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFC"}}>
+                          <td style={{padding:"7px 10px",fontWeight:600,color:C.navy}}>{r.cliente}</td>
+                          <td style={{padding:"7px 10px",color:C.muted,fontStyle:"italic"}}>{r.concepto||"—"}</td>
+                          <td style={{padding:"7px 10px",color:C.muted,fontSize:11}}>{r.fecha||"—"}</td>
+                          <td style={{padding:"7px 10px",fontWeight:700,textAlign:"right"}}>{r.moneda==="EUR"?"€":"$"}{fmt(r.monto)}</td>
+                          <td style={{padding:"7px 10px"}}><span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[r.moneda],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[r.moneda],padding:"2px 7px",borderRadius:20,fontSize:10,fontWeight:700}}>{r.moneda}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {importPreview.rows.length === 0 && (
+                <div style={{textAlign:"center",padding:24,color:C.muted,background:"#FFF3E0",borderRadius:10,marginBottom:16}}>
+                  ⚠️ Todos los registros del archivo ya existen — no hay nada nuevo que importar.
+                </div>
+              )}
+
+              <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+                <button onClick={()=>setImportPreview(null)} style={{...btnStyle,background:"#F1F5F9",color:C.text}}>← Cambiar archivo</button>
+                <button disabled={importPreview.rows.length===0||importando||!importCatDefault}
+                  onClick={confirmarImport}
+                  style={{...btnStyle,background:C.ok,opacity:(importPreview.rows.length===0||importando||!importCatDefault)?0.5:1}}>
+                  {importando ? "Importando…" : `✅ Importar ${importPreview.rows.length} ingreso${importPreview.rows.length!==1?"s":""}`}
+                </button>
+              </div>
+            </div>
+          )}
         </ModalShell>
       )}
     </div>
