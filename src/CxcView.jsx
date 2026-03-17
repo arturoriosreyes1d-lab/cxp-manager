@@ -818,22 +818,14 @@ export default function CxcView({
 
               <div class="kpi-row">
                 ${[
-                  ["Monto Total",    `${sym}${fmt(ing.monto)}`,       "#0F2D4A", "#fff"],
-                  ["Cobrado",        `${sym}${fmt(totalCobrado)}`,    "#43A047", "#E8F5E9"],
-                  ["Por Cobrar",     `${sym}${fmt(totalPorCobrar)}`,  "#F57F17", "#FFF3E0"],
-                  ["Consumido",      `${sym}${fmt(totalConsumido)}`,  "#E53935", "#FFEBEE"],
-                  ["Disponible",     `${sym}${fmt(totalDisp)}`,       "#00897B", "#E0F2F1"],
-                  ["Disponible Neto",`${sym}${fmt(totalDispNeto)}`,   totalDispNeto>=0?"#1B5E20":"#E53935", totalDispNeto>=0?"#E8F5E9":"#FFEBEE"],
-                ].map(([l,v,c,bg])=>`<div class="kpi-box" style="background:${bg}"><div class="label">${l}</div><div class="kpi-val" style="color:${c}">${v}</div></div>`).join("")}
-              </div>
-
-              <!-- Por Pagar destacado -->
-              <div style="border:2px solid #E65100;border-radius:8px;padding:10px 16px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;background:#FFF3E0;">
-                <div>
-                  <div style="font-size:8px;color:#64748B;font-weight:700;text-transform:uppercase;letter-spacing:.4px;">Pendiente por pagar (facturas vinculadas no pagadas)</div>
-                  <div style="font-size:9px;color:#E65100;margin-top:2px;">${sortedVincs.filter(v=>v.inv.estatus!=='Pagado').length} factura${sortedVincs.filter(v=>v.inv.estatus!=='Pagado').length!==1?"s":""} pendiente${sortedVincs.filter(v=>v.inv.estatus!=='Pagado').length!==1?"s":""}</div>
-                </div>
-                <div style="font-size:20px;font-weight:900;color:#E65100;">${sym}${fmt(totalPorPagar)}</div>
+                  ["Monto Total",    `${sym}${fmt(ing.monto)}`,       "#0F2D4A", "#F8FAFC"],
+                  ["Cobrado",        `${sym}${fmt(totalCobrado)}`,    "#43A047", "#F8FAFC"],
+                  ["Por Cobrar",     `${sym}${fmt(totalPorCobrar)}`,  "#F57F17", "#F8FAFC"],
+                  ["Consumido",      `${sym}${fmt(totalConsumido)}`,  "#E53935", "#F8FAFC"],
+                  ["Por Pagar",      `${sym}${fmt(totalPorPagar)}`,   "#E65100", "#FFF3E0"],
+                  ["Disponible",     `${sym}${fmt(totalDisp)}`,       "#00897B", "#F8FAFC"],
+                  ["Disponible Neto",`${sym}${fmt(totalDispNeto)}`,   totalDispNeto>=0?"#1B5E20":"#E53935", "#F8FAFC"],
+                ].map(([l,v,c,bg])=>`<div class="kpi-box" style="background:${bg};border:1px solid #E2E8F0;border-radius:6px;padding:8px 10px;flex:1;"><div class="label" style="font-size:8px;color:#64748B;font-weight:700;text-transform:uppercase;letter-spacing:.4px;">${l}</div><div style="font-size:13px;font-weight:800;color:${c};margin-top:3px;">${v}</div></div>`).join("")}
               </div>
 
               ${ingCobros.length>0?`
