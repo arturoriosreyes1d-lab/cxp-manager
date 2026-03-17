@@ -789,7 +789,7 @@ export default function CxcView({
                 <div>
                   <div class="label">Viajes Libero · CxC — Desglose de Ingreso</div>
                   <h1>${ing.cliente}</h1>
-                  <div class="sub">${ing.concepto||""}${ing.concepto?" · ":""}${ing.categoria} · ${ing.fecha||""}</div>
+                  <div class="sub">${ing.concepto||""}${ing.concepto?" · ":""}${ing.categoria}</div>
                 </div>
                 <div style="text-align:right;">
                   <div class="label">Generado</div>
@@ -832,8 +832,8 @@ export default function CxcView({
               <div class="section-title">Facturas Vinculadas — ${sortedVincs.length} factura${sortedVincs.length!==1?"s":""} (orden por estatus)</div>
               <table>
                 <thead><tr>
-                  <th>Estatus</th><th>Proveedor</th><th>Folio</th><th>Fecha</th>
-                  <th>Clasificación</th><th>Asignado ${ing.moneda}</th>
+                  <th>Estatus</th><th>Proveedor</th><th>Concepto</th>
+                  <th>Fecha Prog. Pago</th><th>Asignado ${ing.moneda}</th>
                   <th class="right">Total Factura</th><th class="right">Saldo Fact.</th>
                 </tr></thead>
                 <tbody>
@@ -846,17 +846,16 @@ export default function CxcView({
                     return `<tr style="background:${fb}">
                       <td><span class="badge" style="background:${fb};color:${fc};border:1px solid ${fc}55">${inv.estatus}</span></td>
                       <td style="font-weight:600;">${inv.proveedor}</td>
-                      <td>${inv.serie}${inv.folio}</td>
-                      <td>${inv.fecha||"—"}</td>
-                      <td>${inv.clasificacion||"—"}</td>
+                      <td style="color:#64748B;">${inv.concepto||"—"}</td>
+                      <td>${inv.fechaProgramacion||"—"}</td>
                       <td style="font-weight:700;">${sym}${fmt(cm)}</td>
-                      <td class="right">${inv.moneda==="EUR"?"€":"$"}${fmt(inv.total)}</td>
+                      <td class="right">${inv.moneda==="EUR"?"€":"$"}${fmt(inv.total)} <span style="font-size:7px;color:#64748B;font-weight:700;">${inv.moneda}</span></td>
                       <td class="right" style="font-weight:700;color:${sf>0?"#F57F17":"#43A047"}">${inv.moneda==="EUR"?"€":"$"}${fmt(sf)}</td>
                     </tr>`;
                   }).join("")}
                 </tbody>
                 <tfoot><tr>
-                  <td colspan="5">TOTAL (${sortedVincs.length} facturas)</td>
+                  <td colspan="4">TOTAL (${sortedVincs.length} facturas)</td>
                   <td style="color:#0F2D4A;">${sym}${fmt(m.comprometido)}</td>
                   <td class="right" colspan="2" style="color:#E53935;">${sym}${fmt(m.consumido)} consumido</td>
                 </tr></tfoot>
