@@ -1471,9 +1471,9 @@ export default function CxcView({
                             {l:"Disp.",    v:`${sym}${fmt(v.disponible)}`,      c:C.teal},
                             {l:"D. Neto",  v:`${sym}${fmt(v.disponibleNeto)}`,  c:v.disponibleNeto>=0?C.green:C.danger},
                           ].map(k=>(
-                            <div key={k.l} style={{textAlign:"center"}}>
-                              <div style={{fontSize:9,color:C.muted,fontWeight:700,textTransform:"uppercase"}}>{k.l}</div>
-                              <div style={{fontSize:13,fontWeight:800,color:k.c}}>{k.v}</div>
+                            <div key={k.l} style={{textAlign:"center",minWidth:90}}>
+                              <div style={{fontSize:10,color:C.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:.3}}>{k.l}</div>
+                              <div style={{fontSize:16,fontWeight:800,color:k.c,marginTop:1}}>{k.v}</div>
                             </div>
                           ))}
                         </div>
