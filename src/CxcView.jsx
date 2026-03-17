@@ -748,13 +748,31 @@ export default function CxcView({
           <button onClick={()=>{setDetailIngreso(null); setModalIngreso({...ing});}} style={{...btnStyle,background:"#F1F5F9",color:C.text}}>✏️ Editar</button>
           <button onClick={()=>{setDetailIngreso(null); setDeleteConfirm({id:ing.id,label:`${ing.cliente} — ${ing.concepto||ing.categoria}`});}} style={{...btnStyle,background:C.danger}}>🗑️ Eliminar</button>
           <button onClick={()=>{
+            // Obtener fecha efectiva para ordenar
+            const getFechaOrden = (inv, tipo) => {
+              if (tipo === 'pagado') {
+                const r = payments.filter(p=>p.invoiceId===inv.id&&p.tipo==='realizado'&&p.fechaPago).sort((a,b)=>a.fechaPago.localeCompare(b.fechaPago));
+                return r[0]?.fechaPago || inv.fechaProgramacion || inv.vencimiento || "9999";
+              } else {
+                const p = payments.filter(p=>p.invoiceId===inv.id&&p.tipo==='programado'&&p.fechaPago).sort((a,b)=>a.fechaPago.localeCompare(b.fechaPago));
+                return inv.fechaProgramacion || p[0]?.fechaPago || inv.vencimiento || "9999";
+              }
+            };
             const sortedVincs = [...vincsWithInv].sort((a,b)=>{
-              const O = {Pagado:1,Parcial:2,Pendiente:3,Vencido:4};
-              return (O[a.inv.estatus]||5)-(O[b.inv.estatus]||5);
+              const aPagado = a.inv.estatus==='Pagado';
+              const bPagado = b.inv.estatus==='Pagado';
+              // Pagadas primero, luego pendientes
+              if(aPagado && !bPagado) return -1;
+              if(!aPagado && bPagado) return 1;
+              // Dentro de cada grupo, ordenar por fecha de más antigua a más reciente
+              const fa = getFechaOrden(a.inv, aPagado?'pagado':'pendiente');
+              const fb2 = getFechaOrden(b.inv, bPagado?'pagado':'pendiente');
+              return fa.localeCompare(fb2);
             });
             const totalCobrado  = m.totalCobrado||0;
             const totalPorCobrar= m.porCobrar||0;
             const totalConsumido= m.consumido||0;
+            const totalPorPagar = m.porPagar||0;
             const totalDisp     = m.disponible||0;
             const totalDispNeto = m.disponibleNeto||0;
             const sBg = {Pagado:"#E8F5E9",Parcial:"#FFF3E0",Pendiente:"#EEF2FF",Vencido:"#FFEBEE"};
@@ -800,13 +818,22 @@ export default function CxcView({
 
               <div class="kpi-row">
                 ${[
-                  ["Monto Total",   `${sym}${fmt(ing.monto)}`,      "#0F2D4A", "#fff"],
-                  ["Cobrado",       `${sym}${fmt(totalCobrado)}`,   "#43A047", "#E8F5E9"],
-                  ["Por Cobrar",    `${sym}${fmt(totalPorCobrar)}`, "#F57F17", "#FFF3E0"],
-                  ["Consumido",     `${sym}${fmt(totalConsumido)}`, "#E53935", "#FFEBEE"],
-                  ["Disponible",    `${sym}${fmt(totalDisp)}`,      "#00897B", "#E0F2F1"],
-                  ["Disponible Neto",`${sym}${fmt(totalDispNeto)}`, totalDispNeto>=0?"#1B5E20":"#E53935", totalDispNeto>=0?"#E8F5E9":"#FFEBEE"],
+                  ["Monto Total",    `${sym}${fmt(ing.monto)}`,       "#0F2D4A", "#fff"],
+                  ["Cobrado",        `${sym}${fmt(totalCobrado)}`,    "#43A047", "#E8F5E9"],
+                  ["Por Cobrar",     `${sym}${fmt(totalPorCobrar)}`,  "#F57F17", "#FFF3E0"],
+                  ["Consumido",      `${sym}${fmt(totalConsumido)}`,  "#E53935", "#FFEBEE"],
+                  ["Disponible",     `${sym}${fmt(totalDisp)}`,       "#00897B", "#E0F2F1"],
+                  ["Disponible Neto",`${sym}${fmt(totalDispNeto)}`,   totalDispNeto>=0?"#1B5E20":"#E53935", totalDispNeto>=0?"#E8F5E9":"#FFEBEE"],
                 ].map(([l,v,c,bg])=>`<div class="kpi-box" style="background:${bg}"><div class="label">${l}</div><div class="kpi-val" style="color:${c}">${v}</div></div>`).join("")}
+              </div>
+
+              <!-- Por Pagar destacado -->
+              <div style="border:2px solid #E65100;border-radius:8px;padding:10px 16px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;background:#FFF3E0;">
+                <div>
+                  <div style="font-size:8px;color:#64748B;font-weight:700;text-transform:uppercase;letter-spacing:.4px;">Pendiente por pagar (facturas vinculadas no pagadas)</div>
+                  <div style="font-size:9px;color:#E65100;margin-top:2px;">${sortedVincs.filter(v=>v.inv.estatus!=='Pagado').length} factura${sortedVincs.filter(v=>v.inv.estatus!=='Pagado').length!==1?"s":""} pendiente${sortedVincs.filter(v=>v.inv.estatus!=='Pagado').length!==1?"s":""}</div>
+                </div>
+                <div style="font-size:20px;font-weight:900;color:#E65100;">${sym}${fmt(totalPorPagar)}</div>
               </div>
 
               ${ingCobros.length>0?`
