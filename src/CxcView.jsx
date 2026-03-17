@@ -830,11 +830,15 @@ export default function CxcView({
 
               ${sortedVincs.length>0?`
               <div class="section-title">Facturas Vinculadas — ${sortedVincs.length} factura${sortedVincs.length!==1?"s":""} (orden por estatus)</div>
-              <table>
+              <table style="table-layout:fixed;width:100%;">
                 <thead><tr>
-                  <th>Estatus</th><th>Proveedor</th><th>Concepto</th>
-                  <th>Fecha Prog. Pago</th><th>Asignado ${ing.moneda}</th>
-                  <th class="right">Total Factura</th><th class="right">Saldo Fact.</th>
+                  <th style="width:12%">Estatus</th>
+                  <th style="width:22%">Proveedor</th>
+                  <th style="width:20%">Concepto</th>
+                  <th style="width:13%;white-space:nowrap">Fecha Prog. Pago</th>
+                  <th style="width:11%;text-align:right">Asignado ${ing.moneda}</th>
+                  <th style="width:12%;text-align:right">Total Factura</th>
+                  <th style="width:10%;text-align:right">Saldo</th>
                 </tr></thead>
                 <tbody>
                   ${sortedVincs.map(v=>{
@@ -843,21 +847,22 @@ export default function CxcView({
                     const cm=convertToMonedaIngreso(v.montoAsignado,inv.moneda,ing);
                     const fb=sBg[inv.estatus]||"#fff";
                     const fc=sCol[inv.estatus]||"#1A2332";
+                    const monSym=inv.moneda==="EUR"?"€":"$";
                     return `<tr style="background:${fb}">
                       <td><span class="badge" style="background:${fb};color:${fc};border:1px solid ${fc}55">${inv.estatus}</span></td>
-                      <td style="font-weight:600;">${inv.proveedor}</td>
-                      <td style="color:#64748B;">${inv.concepto||"—"}</td>
-                      <td>${inv.fechaProgramacion||"—"}</td>
-                      <td style="font-weight:700;">${sym}${fmt(cm)}</td>
-                      <td class="right">${inv.moneda==="EUR"?"€":"$"}${fmt(inv.total)} <span style="font-size:7px;color:#64748B;font-weight:700;">${inv.moneda}</span></td>
-                      <td class="right" style="font-weight:700;color:${sf>0?"#F57F17":"#43A047"}">${inv.moneda==="EUR"?"€":"$"}${fmt(sf)}</td>
+                      <td style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${inv.proveedor}</td>
+                      <td style="color:#64748B;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${inv.concepto||"—"}</td>
+                      <td style="white-space:nowrap;color:#1565C0;font-weight:600;">${inv.fechaProgramacion||"—"}</td>
+                      <td style="font-weight:700;text-align:right;">${sym}${fmt(cm)}</td>
+                      <td style="text-align:right;white-space:nowrap;">${monSym}${fmt(inv.total)} <b style="font-size:7px;color:#64748B;">${inv.moneda}</b></td>
+                      <td style="text-align:right;font-weight:700;white-space:nowrap;color:${sf>0?"#F57F17":"#43A047"}">${monSym}${fmt(sf)}</td>
                     </tr>`;
                   }).join("")}
                 </tbody>
                 <tfoot><tr>
                   <td colspan="4">TOTAL (${sortedVincs.length} facturas)</td>
-                  <td style="color:#0F2D4A;">${sym}${fmt(m.comprometido)}</td>
-                  <td class="right" colspan="2" style="color:#E53935;">${sym}${fmt(m.consumido)} consumido</td>
+                  <td style="color:#0F2D4A;text-align:right;">${sym}${fmt(m.comprometido)}</td>
+                  <td style="text-align:right;color:#E53935;" colspan="2">${sym}${fmt(m.consumido)} consumido</td>
                 </tr></tfoot>
               </table>`:""}
 
