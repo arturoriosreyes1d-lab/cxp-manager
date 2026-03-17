@@ -848,14 +848,19 @@ export default function CxcView({
                     const fb=sBg[inv.estatus]||"#fff";
                     const fc=sCol[inv.estatus]||"#1A2332";
                     const monSym=inv.moneda==="EUR"?"€":"$";
+                    // Fecha programada: primero en inv, luego en payments programados
+                    const nextPago = payments
+                      .filter(p=>p.invoiceId===inv.id && p.tipo==='programado' && p.fechaPago)
+                      .sort((a,b)=>a.fechaPago.localeCompare(b.fechaPago))[0];
+                    const fechaProg = inv.fechaProgramacion || nextPago?.fechaPago || "—";
                     return `<tr style="background:${fb}">
-                      <td><span class="badge" style="background:${fb};color:${fc};border:1px solid ${fc}55">${inv.estatus}</span></td>
-                      <td style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${inv.proveedor}</td>
-                      <td style="color:#64748B;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${inv.concepto||"—"}</td>
-                      <td style="white-space:nowrap;color:#1565C0;font-weight:600;">${inv.fechaProgramacion||"—"}</td>
-                      <td style="font-weight:700;text-align:right;">${sym}${fmt(cm)}</td>
-                      <td style="text-align:right;white-space:nowrap;">${monSym}${fmt(inv.total)} <b style="font-size:7px;color:#64748B;">${inv.moneda}</b></td>
-                      <td style="text-align:right;font-weight:700;white-space:nowrap;color:${sf>0?"#F57F17":"#43A047"}">${monSym}${fmt(sf)}</td>
+                      <td style="width:10%"><span class="badge" style="background:${fb};color:${fc};border:1px solid ${fc}55">${inv.estatus}</span></td>
+                      <td style="width:20%;font-weight:600;word-break:break-word;">${inv.proveedor}</td>
+                      <td style="width:22%;color:#64748B;word-break:break-word;">${inv.concepto||"—"}</td>
+                      <td style="width:13%;white-space:nowrap;color:#1565C0;font-weight:700;">${fechaProg}</td>
+                      <td style="width:11%;font-weight:700;text-align:right;">${sym}${fmt(cm)}</td>
+                      <td style="width:13%;text-align:right;white-space:nowrap;">${monSym}${fmt(inv.total)} <b style="font-size:7px;color:#64748B;">${inv.moneda}</b></td>
+                      <td style="width:11%;text-align:right;font-weight:700;white-space:nowrap;color:${sf>0?"#F57F17":"#43A047"}">${monSym}${fmt(sf)}</td>
                     </tr>`;
                   }).join("")}
                 </tbody>
