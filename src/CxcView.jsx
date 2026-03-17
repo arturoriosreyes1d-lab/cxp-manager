@@ -1432,12 +1432,14 @@ export default function CxcView({
             ings.forEach(ing => {
               const m = metrics[ing.id] || {};
               const mon = ing.moneda;
-              if (!byMon[mon]) byMon[mon] = {monto:0,cobrado:0,porCobrar:0,disponible:0,disponibleNeto:0};
-              byMon[mon].monto         += ing.monto;
-              byMon[mon].cobrado       += m.totalCobrado||0;
-              byMon[mon].porCobrar     += m.porCobrar||0;
-              byMon[mon].disponible    += m.disponible||0;
-              byMon[mon].disponibleNeto+= m.disponibleNeto||0;
+              if (!byMon[mon]) byMon[mon] = {monto:0,cobrado:0,porCobrar:0,consumido:0,porPagar:0,disponible:0,disponibleNeto:0};
+              byMon[mon].monto          += ing.monto;
+              byMon[mon].cobrado        += m.totalCobrado||0;
+              byMon[mon].porCobrar      += m.porCobrar||0;
+              byMon[mon].consumido      += m.consumido||0;
+              byMon[mon].porPagar       += m.porPagar||0;
+              byMon[mon].disponible     += m.disponible||0;
+              byMon[mon].disponibleNeto += m.disponibleNeto||0;
             });
             const monedas = Object.keys(byMon);
             return (
@@ -1465,13 +1467,15 @@ export default function CxcView({
                         <div key={mon} style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
                           <span style={{background:monBg,color:monCol,fontWeight:800,fontSize:11,padding:"2px 8px",borderRadius:20}}>{mon}</span>
                           {[
-                            {l:"Total",    v:`${sym}${fmt(v.monto)}`,         c:C.navy},
-                            {l:"Cobrado",  v:`${sym}${fmt(v.cobrado)}`,        c:C.ok},
-                            {l:"x Cobrar", v:`${sym}${fmt(v.porCobrar)}`,      c:C.warn},
-                            {l:"Disp.",    v:`${sym}${fmt(v.disponible)}`,      c:C.teal},
-                            {l:"D. Neto",  v:`${sym}${fmt(v.disponibleNeto)}`,  c:v.disponibleNeto>=0?C.green:C.danger},
+                            {l:"Monto",           v:`${sym}${fmt(v.monto)}`,          c:C.navy},
+                            {l:"Cobrado",         v:`${sym}${fmt(v.cobrado)}`,         c:C.ok},
+                            {l:"Por Cobrar",      v:`${sym}${fmt(v.porCobrar)}`,       c:C.warn},
+                            {l:"Consumido",       v:`${sym}${fmt(v.consumido||0)}`,    c:C.danger},
+                            {l:"Por Pagar",       v:`${sym}${fmt(v.porPagar||0)}`,     c:"#E65100"},
+                            {l:"Disponible",      v:`${sym}${fmt(v.disponible)}`,      c:C.teal},
+                            {l:"Disponible Neto", v:`${sym}${fmt(v.disponibleNeto)}`,  c:v.disponibleNeto>=0?C.green:C.danger},
                           ].map(k=>(
-                            <div key={k.l} style={{textAlign:"center",minWidth:90}}>
+                            <div key={k.l} style={{textAlign:"center",minWidth:100}}>
                               <div style={{fontSize:10,color:C.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:.3}}>{k.l}</div>
                               <div style={{fontSize:16,fontWeight:800,color:k.c,marginTop:1}}>{k.v}</div>
                             </div>
