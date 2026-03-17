@@ -830,15 +830,15 @@ export default function CxcView({
 
               ${sortedVincs.length>0?`
               <div class="section-title">Facturas Vinculadas — ${sortedVincs.length} factura${sortedVincs.length!==1?"s":""} (orden por estatus)</div>
-              <table style="table-layout:fixed;width:100%;">
+              <table>
                 <thead><tr>
-                  <th style="width:12%">Estatus</th>
-                  <th style="width:22%">Proveedor</th>
-                  <th style="width:20%">Concepto</th>
-                  <th style="width:13%;white-space:nowrap">Fecha Prog. Pago</th>
-                  <th style="width:11%;text-align:right">Asignado ${ing.moneda}</th>
-                  <th style="width:12%;text-align:right">Total Factura</th>
-                  <th style="width:10%;text-align:right">Saldo</th>
+                  <th style="width:10%">Estatus</th>
+                  <th style="width:20%">Proveedor</th>
+                  <th>Concepto</th>
+                  <th style="width:14%;white-space:nowrap">Fecha Pago / Prog.</th>
+                  <th style="width:10%;text-align:right">Asignado ${ing.moneda}</th>
+                  <th style="width:13%;text-align:right">Total Factura</th>
+                  <th style="width:9%;text-align:right">Saldo</th>
                 </tr></thead>
                 <tbody>
                   ${sortedVincs.map(v=>{
@@ -848,19 +848,32 @@ export default function CxcView({
                     const fb=sBg[inv.estatus]||"#fff";
                     const fc=sCol[inv.estatus]||"#1A2332";
                     const monSym=inv.moneda==="EUR"?"€":"$";
-                    // Fecha programada: primero en inv, luego en payments programados
-                    const nextPago = payments
+                    // Buscar pagos realizados y programados
+                    const realizados = payments
+                      .filter(p=>p.invoiceId===inv.id && p.tipo==='realizado' && p.fechaPago)
+                      .sort((a,b)=>b.fechaPago.localeCompare(a.fechaPago));
+                    const programados = payments
                       .filter(p=>p.invoiceId===inv.id && p.tipo==='programado' && p.fechaPago)
-                      .sort((a,b)=>a.fechaPago.localeCompare(b.fechaPago))[0];
-                    const fechaProg = inv.fechaProgramacion || nextPago?.fechaPago || "—";
+                      .sort((a,b)=>a.fechaPago.localeCompare(b.fechaPago));
+                    const esPagado = inv.estatus==='Pagado';
+                    let fechaLabel, fechaColor;
+                    if(esPagado){
+                      const fp = realizados[0]?.fechaPago || inv.fechaProgramacion || inv.vencimiento || "";
+                      fechaLabel = fp ? "✓ "+fp : "✓ Pagado";
+                      fechaColor = "#43A047";
+                    } else {
+                      const fp = inv.fechaProgramacion || programados[0]?.fechaPago || inv.vencimiento || "";
+                      fechaLabel = fp || "—";
+                      fechaColor = inv.estatus==='Vencido' ? "#E53935" : "#1565C0";
+                    }
                     return `<tr style="background:${fb}">
-                      <td style="width:10%"><span class="badge" style="background:${fb};color:${fc};border:1px solid ${fc}55">${inv.estatus}</span></td>
-                      <td style="width:20%;font-weight:600;word-break:break-word;">${inv.proveedor}</td>
-                      <td style="width:22%;color:#64748B;word-break:break-word;">${inv.concepto||"—"}</td>
-                      <td style="width:13%;white-space:nowrap;color:#1565C0;font-weight:700;">${fechaProg}</td>
-                      <td style="width:11%;font-weight:700;text-align:right;">${sym}${fmt(cm)}</td>
-                      <td style="width:13%;text-align:right;white-space:nowrap;">${monSym}${fmt(inv.total)} <b style="font-size:7px;color:#64748B;">${inv.moneda}</b></td>
-                      <td style="width:11%;text-align:right;font-weight:700;white-space:nowrap;color:${sf>0?"#F57F17":"#43A047"}">${monSym}${fmt(sf)}</td>
+                      <td><span class="badge" style="background:${fb};color:${fc};border:1px solid ${fc}55">${inv.estatus}</span></td>
+                      <td style="font-weight:600;overflow-wrap:break-word;word-break:break-word;">${inv.proveedor}</td>
+                      <td style="color:#374151;overflow-wrap:break-word;word-break:break-word;">${inv.concepto||"—"}</td>
+                      <td style="white-space:nowrap;color:${fechaColor};font-weight:700;">${fechaLabel}</td>
+                      <td style="font-weight:700;text-align:right;">${sym}${fmt(cm)}</td>
+                      <td style="text-align:right;white-space:nowrap;">${monSym}${fmt(inv.total)} <b style="font-size:7px;color:#64748B;">${inv.moneda}</b></td>
+                      <td style="text-align:right;font-weight:700;white-space:nowrap;color:${sf>0?"#F57F17":"#43A047"}">${monSym}${fmt(sf)}</td>
                     </tr>`;
                   }).join("")}
                 </tbody>
