@@ -27,12 +27,13 @@ const toApp = (row) => ({
   moneda: row.moneda || 'MXN',
   voBo: row.vo_bo || false,
   autorizadoDireccion: row.autorizado_direccion || false,
+  empresaId: row.empresa_id || null,
 });
 
 const toDB = (inv) => ({
   id: inv.id,
   tipo: inv.tipo,
-  fecha: inv.fecha,
+  fecha: inv.fecha || null,
   serie: inv.serie,
   folio: inv.folio,
   uuid: inv.uuid,
@@ -46,15 +47,16 @@ const toDB = (inv) => ({
   monto_pagado: inv.montoPagado || 0,
   concepto: inv.concepto || '',
   dias_credito: inv.diasCredito,
-  vencimiento: inv.vencimiento,
+  vencimiento: inv.vencimiento || null,
   estatus: inv.estatus,
-  fecha_programacion: inv.fechaProgramacion || '',
+  fecha_programacion: inv.fechaProgramacion || null,
   dias_ficticios: inv.diasFicticios || 0,
   referencia: inv.referencia || '',
   notas: inv.notas || '',
   moneda: inv.moneda || 'MXN',
   vo_bo: inv.voBo || false,
   autorizado_direccion: inv.autorizadoDireccion || false,
+  empresa_id: inv.empresaId || null,
 });
 
 const supToApp = (row) => ({
@@ -70,6 +72,7 @@ const supToApp = (row) => ({
   clabe: row.clabe || '',
   clasificacion: row.clasificacion || 'Otros',
   activo: row.activo !== false,
+  empresaId: row.empresa_id || null,
 });
 
 const supToDB = (sup) => ({
@@ -85,11 +88,14 @@ const supToDB = (sup) => ({
   clabe: sup.clabe || '',
   clasificacion: sup.clasificacion || 'Otros',
   activo: sup.activo !== false,
+  empresa_id: sup.empresaId || null,
 });
 
 /* ── Invoices ────────────────────────────────────────────────── */
-export async function fetchInvoices() {
-  const { data, error } = await supabase.from('invoices').select('*').order('fecha', { ascending: false });
+export async function fetchInvoices(empresaId) {
+  let q = supabase.from('invoices').select('*').order('fecha', { ascending: false });
+  if (empresaId) q = q.eq('empresa_id', empresaId);
+  const { data, error } = await q;
   if (error) { console.error('fetchInvoices:', error); return { MXN: [], USD: [], EUR: [] }; }
   const grouped = { MXN: [], USD: [], EUR: [] };
   (data || []).forEach(row => {
@@ -158,8 +164,10 @@ export async function bulkUpdateInvoices(ids, fields) {
 }
 
 /* ── Suppliers ───────────────────────────────────────────────── */
-export async function fetchSuppliers() {
-  const { data, error } = await supabase.from('suppliers').select('*').order('nombre');
+export async function fetchSuppliers(empresaId) {
+  let q = supabase.from('suppliers').select('*').order('nombre');
+  if (empresaId) q = q.eq('empresa_id', empresaId);
+  const { data, error } = await q;
   if (error) { console.error('fetchSuppliers:', error); return []; }
   return (data || []).map(supToApp);
 }
@@ -194,31 +202,44 @@ export async function upsertManySuppliers(sups) {
 }
 
 /* ── Clasificaciones ─────────────────────────────────────────── */
-export async function fetchClasificaciones() {
-  const { data, error } = await supabase.from('clasificaciones').select('nombre').order('nombre');
+export async function fetchClasificaciones(empresaId) {
+  let q = supabase.from('clasificaciones').select('nombre').order('nombre');
+  if (empresaId) q = q.eq('empresa_id', empresaId);
+  const { data, error } = await q;
   if (error) { console.error('fetchClasificaciones:', error); return []; }
   return (data || []).map(r => r.nombre);
 }
 
-export async function saveClasificaciones(list) {
-  // Delete all, re-insert
-  await supabase.from('clasificaciones').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-  const rows = list.map(nombre => ({ nombre }));
+export async function saveClasificaciones(list, empresaId) {
+  // Delete all for this empresa, re-insert
+  let q = supabase.from('clasificaciones').delete();
+  if (empresaId) q = q.eq('empresa_id', empresaId);
+  else q = q.neq('id', '00000000-0000-0000-0000-000000000000');
+  await q;
+  const rows = list.map(nombre => ({ nombre, empresa_id: empresaId || null }));
   const { error } = await supabase.from('clasificaciones').upsert(rows, { onConflict: 'nombre' });
   if (error) console.error('saveClasificaciones:', error);
 }
 
 /* ── Payments (pagos programados y realizados) ───────────────── */
-export async function fetchPayments() {
+export async function fetchPayments(empresaId) {
+  // Payments linked to invoices of this empresa
+  if (empresaId) {
+    const { data: invData } = await supabase.from('invoices').select('id').eq('empresa_id', empresaId);
+    const ids = (invData || []).map(r => r.id);
+    if (ids.length === 0) return [];
+    const { data, error } = await supabase.from('payments').select('*').in('invoice_id', ids).order('fecha_pago', { ascending: false });
+    if (error) { console.error('fetchPayments:', error); return []; }
+    return (data || []).map(r => ({
+      id: r.id, invoiceId: r.invoice_id, monto: +r.monto || 0,
+      fechaPago: r.fecha_pago || '', notas: r.notas || '', tipo: r.tipo || 'realizado',
+    }));
+  }
   const { data, error } = await supabase.from('payments').select('*').order('fecha_pago', { ascending: false });
   if (error) { console.error('fetchPayments:', error); return []; }
   return (data || []).map(r => ({
-    id: r.id,
-    invoiceId: r.invoice_id,
-    monto: +r.monto || 0,
-    fechaPago: r.fecha_pago || '',
-    notas: r.notas || '',
-    tipo: r.tipo || 'realizado', // 'programado' or 'realizado'
+    id: r.id, invoiceId: r.invoice_id, monto: +r.monto || 0,
+    fechaPago: r.fecha_pago || '', notas: r.notas || '', tipo: r.tipo || 'realizado',
   }));
 }
 
@@ -259,6 +280,13 @@ const ingresoToApp = (r) => ({
   tipoCambio: +r.tipo_cambio || 1,
   fecha: r.fecha || '',
   notas: r.notas || '',
+  empresaId: r.empresa_id || null,
+  diasCredito: +r.dias_credito || 30,
+  fechaVencimiento: r.fecha_vencimiento || '',
+  fechaFicticia: r.fecha_ficticia || '',
+  segmento: r.segmento || '',
+  fechaContable: r.fecha_contable || '',
+  folio: r.folio || '',
 });
 
 const ingresoToDB = (i) => ({
@@ -271,11 +299,20 @@ const ingresoToDB = (i) => ({
   tipo_cambio: i.tipoCambio || 1,
   fecha: i.fecha || null,
   notas: i.notas || '',
+  empresa_id: i.empresaId || null,
+  dias_credito: i.diasCredito || 30,
+  fecha_vencimiento: i.fechaVencimiento || null,
+  fecha_ficticia: i.fechaFicticia || null,
+  segmento: i.segmento || null,
+  fecha_contable: i.fechaContable || null,
+  folio: i.folio || null,
 });
 
 /* ── Ingresos ────────────────────────────────────────────────── */
-export async function fetchIngresos() {
-  const { data, error } = await supabase.from('ingresos').select('*').order('fecha', { ascending: false });
+export async function fetchIngresos(empresaId) {
+  let q = supabase.from('ingresos').select('*').order('fecha', { ascending: false });
+  if (empresaId) q = q.eq('empresa_id', empresaId);
+  const { data, error } = await q;
   if (error) { console.error('fetchIngresos:', error); return []; }
   return (data || []).map(ingresoToApp);
 }
@@ -300,18 +337,33 @@ export async function deleteIngreso(id) {
   if (error) console.error('deleteIngreso:', error);
 }
 
+export async function updateIngresoField(id, fields) {
+  const dbFields = {};
+  if ('fechaFicticia' in fields) dbFields.fecha_ficticia = fields.fechaFicticia || null;
+  if ('diasCredito' in fields) dbFields.dias_credito = fields.diasCredito;
+  if ('fechaVencimiento' in fields) dbFields.fecha_vencimiento = fields.fechaVencimiento || null;
+  if ('concepto' in fields) dbFields.concepto = fields.concepto;
+  if ('categoria' in fields) dbFields.categoria = fields.categoria;
+  if ('segmento' in fields) dbFields.segmento = fields.segmento || null;
+  if ('fechaContable' in fields) dbFields.fecha_contable = fields.fechaContable || null;
+  if ('folio' in fields) dbFields.folio = fields.folio || null;
+  const { error } = await supabase.from('ingresos').update(dbFields).eq('id', id);
+  if (error) console.error('updateIngresoField:', error);
+}
+
 /* ── Cobros ──────────────────────────────────────────────────── */
-export async function fetchCobros() {
+export async function fetchCobros(empresaId) {
+  if (empresaId) {
+    const { data: ingData } = await supabase.from('ingresos').select('id').eq('empresa_id', empresaId);
+    const ids = (ingData || []).map(r => r.id);
+    if (ids.length === 0) return [];
+    const { data, error } = await supabase.from('cobros').select('*').in('ingreso_id', ids).order('fecha_cobro', { ascending: false });
+    if (error) { console.error('fetchCobros:', error); return []; }
+    return (data || []).map(r => ({ id: r.id, ingresoId: r.ingreso_id, monto: +r.monto || 0, fechaCobro: r.fecha_cobro || '', notas: r.notas || '', tipo: r.tipo || 'realizado' }));
+  }
   const { data, error } = await supabase.from('cobros').select('*').order('fecha_cobro', { ascending: false });
   if (error) { console.error('fetchCobros:', error); return []; }
-  return (data || []).map(r => ({
-    id: r.id,
-    ingresoId: r.ingreso_id,
-    monto: +r.monto || 0,
-    fechaCobro: r.fecha_cobro || '',
-    notas: r.notas || '',
-    tipo: r.tipo || 'realizado', // 'realizado' | 'proyectado'
-  }));
+  return (data || []).map(r => ({ id: r.id, ingresoId: r.ingreso_id, monto: +r.monto || 0, fechaCobro: r.fecha_cobro || '', notas: r.notas || '', tipo: r.tipo || 'realizado' }));
 }
 
 export async function insertCobro(c) {
@@ -340,7 +392,15 @@ export async function deleteCobro(id) {
 }
 
 /* ── Invoice-Ingresos ────────────────────────────────────────── */
-export async function fetchInvoiceIngresos() {
+export async function fetchInvoiceIngresos(empresaId) {
+  if (empresaId) {
+    const { data: invData } = await supabase.from('invoices').select('id').eq('empresa_id', empresaId);
+    const ids = (invData || []).map(r => r.id);
+    if (ids.length === 0) return [];
+    const { data, error } = await supabase.from('invoice_ingresos').select('*').in('invoice_id', ids);
+    if (error) { console.error('fetchInvoiceIngresos:', error); return []; }
+    return (data || []).map(r => ({ id: r.id, invoiceId: r.invoice_id, ingresoId: r.ingreso_id, montoAsignado: +r.monto_asignado || 0 }));
+  }
   const { data, error } = await supabase.from('invoice_ingresos').select('*');
   if (error) { console.error('fetchInvoiceIngresos:', error); return []; }
   return (data || []).map(r => ({
@@ -370,8 +430,10 @@ export async function deleteInvoiceIngreso(id) {
 }
 
 /* ── Categorías Ingreso ──────────────────────────────────────── */
-export async function fetchCategoriasIngreso() {
-  const { data, error } = await supabase.from('categorias_ingreso').select('*').order('nombre');
+export async function fetchCategoriasIngreso(empresaId) {
+  let q = supabase.from('categorias_ingreso').select('*').order('nombre');
+  if (empresaId) q = q.eq('empresa_id', empresaId);
+  const { data, error } = await q;
   if (error) { console.error('fetchCategoriasIngreso:', error); return []; }
   return (data || []).map(r => ({ id: r.id, nombre: r.nombre }));
 }
@@ -385,4 +447,61 @@ export async function upsertCategoriaIngreso(nombre) {
 export async function deleteCategoriaIngreso(id) {
   const { error } = await supabase.from('categorias_ingreso').delete().eq('id', id);
   if (error) console.error('deleteCategoriaIngreso:', error);
+}
+
+/* ── Clientes ────────────────────────────────────────────────── */
+const clienteToApp = (r) => ({
+  id: r.id,
+  nombre: r.nombre || '',
+  rfc: r.rfc || '',
+  moneda: r.moneda || 'MXN',
+  diasCredito: +r.dias_credito || 30,
+  contacto: r.contacto || '',
+  telefono: r.telefono || '',
+  email: r.email || '',
+  notas: r.notas || '',
+  activo: r.activo !== false,
+  empresaId: r.empresa_id || null,
+});
+
+const clienteToDB = (c) => ({
+  id: c.id,
+  nombre: c.nombre,
+  rfc: c.rfc || '',
+  moneda: c.moneda || 'MXN',
+  dias_credito: c.diasCredito || 30,
+  contacto: c.contacto || '',
+  telefono: c.telefono || '',
+  email: c.email || '',
+  notas: c.notas || '',
+  activo: c.activo !== false,
+  empresa_id: c.empresaId || null,
+});
+
+export async function fetchClientes(empresaId) {
+  let q = supabase.from('clientes').select('*').order('nombre');
+  if (empresaId) q = q.eq('empresa_id', empresaId);
+  const { data, error } = await q;
+  if (error) { console.error('fetchClientes:', error); return []; }
+  return (data || []).map(clienteToApp);
+}
+
+export async function upsertCliente(cliente) {
+  const row = clienteToDB(cliente);
+  if (row.id && /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(row.id)) {
+    const { id, ...rest } = row;
+    const { data, error } = await supabase.from('clientes').update(rest).eq('id', id).select().single();
+    if (error) { console.error('upsertCliente:', error); return cliente; }
+    return clienteToApp(data);
+  } else {
+    const { id, ...rest } = row;
+    const { data, error } = await supabase.from('clientes').insert(rest).select().single();
+    if (error) { console.error('insertCliente:', error); return cliente; }
+    return clienteToApp(data);
+  }
+}
+
+export async function deleteCliente(id) {
+  const { error } = await supabase.from('clientes').delete().eq('id', id);
+  if (error) console.error('deleteCliente:', error);
 }
