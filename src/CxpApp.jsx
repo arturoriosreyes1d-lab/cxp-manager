@@ -732,7 +732,7 @@ export default function CxpApp({ user, onLogout }) {
         </td>
         <td style={{padding:"10px 8px",fontWeight:600,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{inv.proveedor}</td>
         {/* Concepto — editable inline */}
-        <td style={{padding:"10px 8px",minWidth:120,maxWidth:180}} onClick={()=>{if(!editingConcepto){setEditingConcepto(true);setTempConcepto(inv.concepto||"");}}}>
+        <td style={{padding:"10px 8px",minWidth:120,maxWidth:180}} onClick={()=>{if(!esConsulta&&!editingConcepto){setEditingConcepto(true);setTempConcepto(inv.concepto||"");}}}>
           {editingConcepto ? (
             <input autoFocus value={tempConcepto} onChange={e=>setTempConcepto(e.target.value)}
               onBlur={()=>{updateConcepto(inv.id,tempConcepto);setEditingConcepto(false);}}
@@ -740,7 +740,7 @@ export default function CxpApp({ user, onLogout }) {
               style={{...inputStyle,padding:"4px 8px",fontSize:12,width:"100%"}} />
           ) : (
             <span style={{cursor:"pointer",color:inv.concepto?C.text:C.muted,fontSize:12,fontStyle:inv.concepto?"normal":"italic",display:"block",minHeight:20,padding:"4px 0",borderBottom:`1px dashed ${C.border}`}}>
-              {inv.concepto || "Clic para agregar…"}
+              {inv.concepto || (esConsulta ? "—" : "Clic para agregar…")}
             </span>
           )}
         </td>
@@ -777,26 +777,26 @@ export default function CxpApp({ user, onLogout }) {
           {days!==null?(days<0?`${Math.abs(days)}d venc.`:`${days}d`):"—"}
         </td>
         <td style={{padding:"10px 8px"}}>
-          <select value={inv.estatus} onChange={e=>updateEstatus(inv.id,e.target.value)}
+          <select value={inv.estatus} onChange={e=>!esConsulta&&updateEstatus(inv.id,e.target.value)} disabled={esConsulta}
             style={{padding:"3px 8px",borderRadius:20,border:`2px solid ${statusColor(inv.estatus)}`,background:`${statusColor(inv.estatus)}22`,color:statusColor(inv.estatus),fontWeight:700,fontSize:12,cursor:"pointer"}}>
             {["Pendiente","Pagado","Vencido","Parcial"].map(s=><option key={s}>{s}</option>)}
           </select>
         </td>
         {/* Visto Bueno — toggle with click */}
         <td style={{padding:"10px 8px",textAlign:"center"}}>
-          <button onClick={e=>{e.preventDefault();e.stopPropagation();toggleVoBo(inv.id);}} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,padding:2,lineHeight:1,outline:"none"}} title={inv.voBo?"Quitar VoBo":"Dar VoBo"} tabIndex={-1}>
+          <button onClick={e=>{e.preventDefault();e.stopPropagation();if(!esConsulta)toggleVoBo(inv.id);}} style={{background:"none",border:"none",cursor:esConsulta?"default":"pointer",fontSize:18,padding:2,lineHeight:1,outline:"none",opacity:esConsulta?0.5:1}} title={inv.voBo?"Quitar VoBo":"Dar VoBo"} tabIndex={-1}>
             {inv.voBo ? "✅" : "⬜"}
           </button>
         </td>
         {/* Autorizado Dirección */}
         <td style={{padding:"10px 8px",textAlign:"center"}}>
-          <button onClick={e=>{e.preventDefault();e.stopPropagation();toggleAutorizadoDireccion(inv.id);}} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,padding:2,lineHeight:1,outline:"none"}} title={inv.autorizadoDireccion?"Quitar Aut.Dir.":"Autorizar Dir."} tabIndex={-1}>
+          <button onClick={e=>{e.preventDefault();e.stopPropagation();if(!esConsulta)toggleAutorizadoDireccion(inv.id);}} style={{background:"none",border:"none",cursor:esConsulta?"default":"pointer",fontSize:18,padding:2,lineHeight:1,outline:"none",opacity:esConsulta?0.5:1}} title={inv.autorizadoDireccion?"Quitar Aut.Dir.":"Autorizar Dir."} tabIndex={-1}>
             {inv.autorizadoDireccion ? "✅" : "⬜"}
           </button>
         </td>
         <td style={{padding:"10px 8px",whiteSpace:"nowrap"}}>
-          <button onClick={e=>{e.stopPropagation();setPayModal({invoiceId:inv.id,proveedor:inv.proveedor,folio:`${inv.serie}${inv.folio}`,total:inv.total,moneda:inv.moneda||currency});}} style={{...iconBtn,color:C.ok}} title="Pagos">💰</button>
-          <button onClick={e=>{e.stopPropagation();setVincularModal({invoiceId:inv.id,proveedor:inv.proveedor,folio:`${inv.serie}${inv.folio}`,total:inv.total,moneda:inv.moneda||currency});}} style={{...iconBtn,color:C.teal}} title="Vincular a Ingreso CxC">🔗</button>
+          {!esConsulta && <button onClick={e=>{e.stopPropagation();setPayModal({invoiceId:inv.id,proveedor:inv.proveedor,folio:`${inv.serie}${inv.folio}`,total:inv.total,moneda:inv.moneda||currency});}} style={{...iconBtn,color:C.ok}} title="Pagos">💰</button>}
+          {!esConsulta && <button onClick={e=>{e.stopPropagation();setVincularModal({invoiceId:inv.id,proveedor:inv.proveedor,folio:`${inv.serie}${inv.folio}`,total:inv.total,moneda:inv.moneda||currency});}} style={{...iconBtn,color:C.teal}} title="Vincular a Ingreso CxC">🔗</button>}
           <button onClick={()=>setModalInv({...inv,moneda:inv.moneda||currency})} style={{...iconBtn,color:C.sky}} title="Editar" hidden={esConsulta}>✏️</button>
           <button onClick={()=>setDeleteConfirm({id:inv.id,cur:currency,label:`${inv.serie}${inv.folio} - ${inv.proveedor}`})} style={{...iconBtn,color:C.danger}} title="Eliminar">🗑️</button>
         </td>
@@ -1134,7 +1134,7 @@ export default function CxpApp({ user, onLogout }) {
               <span style={{fontWeight:600,fontSize:12,color:C.navy,marginLeft:10}}>Total: ${fmt(selTotal)} · Saldo: ${fmt(selSaldo)}</span>
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",flex:1}}>
-              <select value={bulkClasif} onChange={e=>setBulkClasif(e.target.value)} style={{...selectStyle,maxWidth:160,padding:"6px 10px",fontSize:12}}>
+              <select value={bulkClasif} onChange={e=>!esConsulta&&setBulkClasif(e.target.value)} style={{...selectStyle,maxWidth:160,padding:"6px 10px",fontSize:12}}>
                 <option value="">Clasificación…</option>
                 {clases.map(c=><option key={c}>{c}</option>)}
               </select>
@@ -2024,7 +2024,7 @@ export default function CxpApp({ user, onLogout }) {
                   <td style={{padding:"8px 10px",fontWeight:800,color:color}}>${fmt(p.monto)}</td>
                   <td style={{padding:"8px 10px",color:C.muted}}>{p.notas||"—"}</td>
                   <td style={{padding:"8px 10px",textAlign:"right"}}>
-                    <button onClick={()=>removePayment(p.id,payModal.invoiceId)} style={{background:"none",border:"none",cursor:"pointer",color:C.danger,fontSize:14}} title="Eliminar">🗑️</button>
+                    {!esConsulta && <button onClick={()=>removePayment(p.id,payModal.invoiceId)} style={{background:"none",border:"none",cursor:"pointer",color:C.danger,fontSize:14}} title="Eliminar">🗑️</button>}
                   </td>
                 </tr>
               ))}
@@ -2055,7 +2055,7 @@ export default function CxpApp({ user, onLogout }) {
                 addPayment(payModal.invoiceId, m, f, n, tipo);
                 document.getElementById(`pay-${tipo}-monto`).value="";
                 document.getElementById(`pay-${tipo}-notas`).value="";
-              }} style={{...btnStyle,padding:"8px 20px",fontSize:13,background:tipo==='programado'?"#F57F17":C.blue,color:"#fff"}}>+ Agregar</button>
+              }} disabled={esConsulta} style={{...btnStyle,padding:"8px 20px",fontSize:13,background:tipo==='programado'?"#F57F17":C.blue,color:"#fff",opacity:esConsulta?0.4:1}}>+ Agregar</button>
             </div>
           </div>
         );
