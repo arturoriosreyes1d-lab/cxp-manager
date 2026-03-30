@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import * as XLSX from "xlsx";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -116,6 +116,8 @@ export default function CxpApp({ user, onLogout }) {
   const empresa = EMPRESAS.find(e => e.id === empresaId) || EMPRESAS[0];
   const [filters, setFilters] = useState({proveedor:"",clasificacion:"",estatus:"",fechaFrom:"",fechaTo:"",pagoFrom:"",pagoTo:""});
   const [search, setSearch] = useState("");
+  const [carteraTab, setCarteraTab] = useState("activas"); // "activas" | "pagadas" | "resumen"
+  const [filtroGrupo, setFiltroGrupo] = useState("");
   const [grupoPor, setGrupoPor] = useState("proveedor");
   const [grupo2, setGrupo2] = useState(""); // secondary grouping
   const [modalInv, setModalInv] = useState(null);
@@ -238,7 +240,11 @@ export default function CxpApp({ user, onLogout }) {
   const curInvoices = invoices[currency] || [];
 
   const filtered = useMemo(() => {
+    const getSupGrupo = (nombre) => suppliers.find(s=>s.nombre===nombre)?.grupo || "";
     let result = curInvoices.filter(inv => {
+      // Tab filter
+      if(carteraTab === "activas" && inv.estatus === "Pagado") return false;
+      if(carteraTab === "pagadas" && inv.estatus !== "Pagado") return false;
       if(filters.proveedor && inv.proveedor!==filters.proveedor) return false;
       if(filters.clasificacion && inv.clasificacion!==filters.clasificacion) return false;
       if(filters.estatus && inv.estatus!==filters.estatus) return false;
@@ -250,6 +256,7 @@ export default function CxpApp({ user, onLogout }) {
         if(filters.pagoFrom && fp < filters.pagoFrom) return false;
         if(filters.pagoTo && fp > filters.pagoTo) return false;
       }
+      if(filtroGrupo && getSupGrupo(inv.proveedor) !== filtroGrupo) return false;
       if(search && !JSON.stringify(inv).toLowerCase().includes(search.toLowerCase())) return false;
       return true;
     });
@@ -269,7 +276,7 @@ export default function CxpApp({ user, onLogout }) {
       });
     }
     return result;
-  }, [curInvoices, filters, search, sortCol, sortDir]);
+  }, [curInvoices, filters, search, sortCol, sortDir, carteraTab, filtroGrupo, suppliers]);
 
   const kpis = useMemo(() => {
     const allInvs = [...invoices.MXN,...invoices.USD,...invoices.EUR];
@@ -420,8 +427,15 @@ export default function CxpApp({ user, onLogout }) {
     if(field==="clasificacion") return inv.clasificacion;
     if(field==="estatus") return inv.estatus;
     if(field==="mes") return inv.fecha?.slice(0,7);
+    if(field==="grupo") return suppliers.find(s=>s.nombre===inv.proveedor)?.grupo || "Sin Grupo";
     return "—";
   };
+
+  // List of unique grupos for filter
+  const gruposList = useMemo(() => {
+    const s = new Set(suppliers.map(s=>s.grupo).filter(Boolean));
+    return [...s].sort();
+  }, [suppliers]);
 
   const grouped = useMemo(() => {
     // Returns { "GroupKey": { invoices?: [...], subgroups?: { "SubKey": [...] } } }
@@ -773,8 +787,20 @@ export default function CxpApp({ user, onLogout }) {
           })()}
         </td>
         <td style={{padding:"10px 8px",whiteSpace:"nowrap",color:overdue?C.danger:C.text}}>{inv.vencimiento||"—"}</td>
-        <td style={{padding:"10px 8px",color:days<0?C.danger:days<=7?C.warn:C.ok,fontWeight:600}}>
-          {days!==null?(days<0?`${Math.abs(days)}d venc.`:`${days}d`):"—"}
+        <td style={{padding:"10px 8px",whiteSpace:"nowrap"}}>
+          {days===null ? <span style={{color:C.muted}}>—</span> : days >= 0 ? (
+            <span style={{
+              background: days<=7?"#FFF3E0":days<=30?"#FFFDE7":"#E8F5E9",
+              color: days<=7?C.warn:days<=30?"#F57F17":C.ok,
+              fontWeight:700, fontSize:11, padding:"2px 8px", borderRadius:20, whiteSpace:"nowrap"
+            }}>{days}d</span>
+          ) : (
+            <span style={{
+              background: Math.abs(days)<=7?"#FFF5F5":Math.abs(days)<=15?"#FFEBEE":Math.abs(days)<=30?"#FFCDD2":Math.abs(days)<=60?"#EF9A9A":"#E57373",
+              color: Math.abs(days)<=7?"#E57373":Math.abs(days)<=15?C.danger:Math.abs(days)<=30?"#C62828":Math.abs(days)<=60?"#B71C1C":"#7F0000",
+              fontWeight:800, fontSize:11, padding:"2px 8px", borderRadius:20, whiteSpace:"nowrap"
+            }}>{Math.abs(days)}d venc.</span>
+          )}
         </td>
         <td style={{padding:"10px 8px"}}>
           <select value={inv.estatus} onChange={e=>!esConsulta&&updateEstatus(inv.id,e.target.value)} disabled={esConsulta}
@@ -1041,12 +1067,22 @@ export default function CxpApp({ user, onLogout }) {
   const renderCartera = () => {
     const totalFiltered = filtered.reduce((s,i)=>s+(+i.total||0),0);
     const totalPendiente = filtered.filter(i=>i.estatus!=="Pagado").reduce((s,i)=>s+((+i.total||0)-(+i.montoPagado||0)),0);
-    const groupOptions = ["proveedor","clasificacion","estatus","mes"];
+    const groupOptions = ["proveedor","clasificacion","estatus","mes","grupo"];
+
+    /* ── Tab styles ── */
+    const tabBtn = (id, label, icon) => (
+      <button key={id} onClick={()=>setCarteraTab(id)} style={{
+        padding:"10px 22px", border:"none", borderBottom: carteraTab===id?`3px solid ${C.blue}`:"3px solid transparent",
+        background:"transparent", color: carteraTab===id?C.blue:C.muted,
+        fontWeight: carteraTab===id?800:500, fontSize:14, cursor:"pointer", fontFamily:"inherit",
+        transition:"all .15s", whiteSpace:"nowrap",
+      }}>{icon} {label}</button>
+    );
 
     return (
       <div>
         {/* Currency tabs */}
-        <div style={{display:"flex",gap:8,marginBottom:20}}>
+        <div style={{display:"flex",gap:8,marginBottom:16}}>
           {["MXN","USD","EUR"].map(cur=>(
             <button key={cur} onClick={()=>setCurrency(cur)} style={{padding:"8px 24px",borderRadius:40,border:"2px solid",borderColor:currency===cur?{MXN:C.mxn,USD:C.usd,EUR:C.eur}[cur]:C.border,background:currency===cur?{MXN:C.mxn,USD:C.usd,EUR:C.eur}[cur]:C.surface,color:currency===cur?"#fff":C.text,fontWeight:700,cursor:"pointer",fontSize:14}}>
               {cur==="MXN"?"🇲🇽":cur==="USD"?"🇺🇸":"🇪🇺"} {cur}
@@ -1054,70 +1090,95 @@ export default function CxpApp({ user, onLogout }) {
             </button>
           ))}
         </div>
-        {/* Summary */}
-        <div style={{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap"}}>
-          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 18px",fontSize:13}}>
-            <span style={{color:C.muted}}>Filtradas: </span><span style={{fontWeight:700}}>{filtered.length}</span>
-          </div>
-          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 18px",fontSize:13}}>
-            <span style={{color:C.muted}}>Total: </span><span style={{fontWeight:700}}>${fmt(totalFiltered)} {currency}</span>
-          </div>
-          <div style={{background:"#FFF3E0",border:"1px solid #FFCC02",borderRadius:10,padding:"10px 18px",fontSize:13}}>
-            <span style={{color:C.muted}}>Pendiente: </span><span style={{fontWeight:700,color:C.warn}}>${fmt(totalPendiente)} {currency}</span>
-          </div>
+
+        {/* Internal tabs: Activas / Pagadas / Resumen */}
+        <div style={{display:"flex",borderBottom:`1px solid ${C.border}`,marginBottom:20,background:C.surface,borderRadius:"12px 12px 0 0",paddingLeft:8}}>
+          {tabBtn("activas","Activas","📋")}
+          {tabBtn("pagadas","Pagadas","✅")}
+          {tabBtn("resumen","Resumen","📊")}
         </div>
+
+        {/* Summary chips */}
+        {carteraTab !== "resumen" && (
+          <div style={{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap"}}>
+            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 18px",fontSize:13}}>
+              <span style={{color:C.muted}}>Filtradas: </span><span style={{fontWeight:700}}>{filtered.length}</span>
+            </div>
+            <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 18px",fontSize:13}}>
+              <span style={{color:C.muted}}>Total: </span><span style={{fontWeight:700}}>${fmt(totalFiltered)} {currency}</span>
+            </div>
+            {carteraTab==="activas" && (
+              <div style={{background:"#FFF3E0",border:"1px solid #FFCC02",borderRadius:10,padding:"10px 18px",fontSize:13}}>
+                <span style={{color:C.muted}}>Pendiente: </span><span style={{fontWeight:700,color:C.warn}}>${fmt(totalPendiente)} {currency}</span>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Duplicate folios alert */}
         {dupeCount>0 && (
           <div onClick={()=>setShowDupes(true)} style={{background:"#FFEBEE",border:"1px solid #EF9A9A",borderRadius:10,padding:"10px 16px",marginBottom:16,fontSize:13,display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}>
             <span style={{fontSize:20}}>⚠️</span>
-            <span><b>{Object.keys(duplicates).length} folio{Object.keys(duplicates).length!==1?"s":""} duplicado{Object.keys(duplicates).length!==1?"s":""}</b> ({dupeCount} facturas). Haz clic aquí para revisarlas y eliminar las duplicadas.</span>
+            <span><b>{Object.keys(duplicates).length} folio{Object.keys(duplicates).length!==1?"s":""} duplicado{Object.keys(duplicates).length!==1?"s":""}</b> ({dupeCount} facturas). Haz clic para revisarlas.</span>
           </div>
         )}
-        {/* Filters - search uses key to keep focus stable */}
+
+        {/* Filters */}
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:18,marginBottom:20}}>
           <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
             <input ref={searchRef} placeholder="🔍 Buscar…" value={search} onChange={e=>setSearch(e.target.value)} style={{...inputStyle,maxWidth:200}} />
+            {/* Filtro por Grupo */}
+            <select value={filtroGrupo} onChange={e=>setFiltroGrupo(e.target.value)}
+              style={{...selectStyle,maxWidth:180,borderColor:filtroGrupo?C.blue:C.border,color:filtroGrupo?C.blue:C.text,fontWeight:filtroGrupo?700:400}}>
+              <option value="">🏨 Grupo</option>
+              {gruposList.length===0 && <option disabled>— Sin grupos configurados —</option>}
+              {gruposList.map(g=><option key={g} value={g}>{g}</option>)}
+            </select>
             <select value={filters.proveedor} onChange={e=>setFilters(f=>({...f,proveedor:e.target.value}))} style={{...selectStyle,maxWidth:200}}>
               <option value="">Todos los proveedores</option>
-              {[...new Set(curInvoices.map(i=>i.proveedor))].map(p=><option key={p}>{p}</option>)}
+              {[...new Set(curInvoices.map(i=>i.proveedor))].sort().map(p=><option key={p}>{p}</option>)}
             </select>
             <select value={filters.clasificacion} onChange={e=>setFilters(f=>({...f,clasificacion:e.target.value}))} style={{...selectStyle,maxWidth:180}}>
               <option value="">Todas las clasificaciones</option>
               {clases.map(c=><option key={c}>{c}</option>)}
             </select>
-            <select value={filters.estatus} onChange={e=>setFilters(f=>({...f,estatus:e.target.value}))} style={{...selectStyle,maxWidth:160}}>
-              <option value="">Todos los estatus</option>
-              {["Pendiente","Pagado","Vencido","Parcial"].map(s=><option key={s}>{s}</option>)}
-            </select>
-            <input type="date" value={filters.fechaFrom} onChange={e=>setFilters(f=>({...f,fechaFrom:e.target.value}))} style={{...inputStyle,maxWidth:150}} title="Fecha emisión desde"/>
-            <input type="date" value={filters.fechaTo} onChange={e=>setFilters(f=>({...f,fechaTo:e.target.value}))} style={{...inputStyle,maxWidth:150}} title="Fecha emisión hasta"/>
-            <button onClick={()=>{setFilters({proveedor:"",clasificacion:"",estatus:"",fechaFrom:"",fechaTo:"",pagoFrom:"",pagoTo:""});setSearch("");}} style={{...btnStyle,background:"#F1F5F9",color:C.text}}>Limpiar</button>
+            {carteraTab !== "activas" && (
+              <select value={filters.estatus} onChange={e=>setFilters(f=>({...f,estatus:e.target.value}))} style={{...selectStyle,maxWidth:160}}>
+                <option value="">Todos los estatus</option>
+                {["Pendiente","Pagado","Vencido","Parcial"].map(s=><option key={s}>{s}</option>)}
+              </select>
+            )}
+            <input type="date" value={filters.fechaFrom} onChange={e=>setFilters(f=>({...f,fechaFrom:e.target.value}))} style={{...inputStyle,maxWidth:150}} title="Fecha desde"/>
+            <input type="date" value={filters.fechaTo} onChange={e=>setFilters(f=>({...f,fechaTo:e.target.value}))} style={{...inputStyle,maxWidth:150}} title="Fecha hasta"/>
+            <button onClick={()=>{setFilters({proveedor:"",clasificacion:"",estatus:"",fechaFrom:"",fechaTo:"",pagoFrom:"",pagoTo:""});setSearch("");setFiltroGrupo("");}} style={{...btnStyle,background:"#F1F5F9",color:C.text}}>Limpiar</button>
           </div>
-          {/* Fecha de pago filter */}
-          <div style={{display:"flex",gap:10,marginTop:10,alignItems:"center",flexWrap:"wrap"}}>
-            <span style={{fontSize:12,color:C.muted,fontWeight:600}}>📅 Fecha de pago programado:</span>
-            <input type="date" value={filters.pagoFrom||""} onChange={e=>setFilters(f=>({...f,pagoFrom:e.target.value}))} style={{...inputStyle,maxWidth:150}} title="Pago desde"/>
-            <span style={{color:C.muted,fontSize:12}}>a</span>
-            <input type="date" value={filters.pagoTo||""} onChange={e=>setFilters(f=>({...f,pagoTo:e.target.value}))} style={{...inputStyle,maxWidth:150}} title="Pago hasta"/>
-            {(filters.pagoFrom||filters.pagoTo) && <span style={{fontSize:11,color:C.blue,fontStyle:"italic"}}>Filtra por pagos registrados en ese rango</span>}
-          </div>
-          {/* Grouping controls */}
-          <div style={{display:"flex",gap:8,marginTop:12,alignItems:"center",flexWrap:"wrap"}}>
-            <span style={{fontSize:13,color:C.muted,fontWeight:600}}>Agrupar por:</span>
-            {groupOptions.map(g=>(
-              <button key={g} onClick={()=>{setGrupoPor(g); if(grupo2===g) setGrupo2("");}} style={{padding:"4px 12px",borderRadius:20,border:`1px solid ${grupoPor===g?C.blue:C.border}`,background:grupoPor===g?"#E8F0FE":C.surface,color:grupoPor===g?C.blue:C.text,cursor:"pointer",fontSize:12,fontWeight:600}}>
-                {g.charAt(0).toUpperCase()+g.slice(1)}
-              </button>
-            ))}
-            <span style={{fontSize:13,color:C.muted,marginLeft:12,fontWeight:600}}>y luego por:</span>
-            <button onClick={()=>setGrupo2("")} style={{padding:"4px 12px",borderRadius:20,border:`1px solid ${grupo2===""?C.blue:C.border}`,background:grupo2===""?"#E8F0FE":C.surface,color:grupo2===""?C.blue:C.text,cursor:"pointer",fontSize:12,fontWeight:600}}>Ninguno</button>
-            {groupOptions.filter(g=>g!==grupoPor).map(g=>(
-              <button key={g} onClick={()=>setGrupo2(g)} style={{padding:"4px 12px",borderRadius:20,border:`1px solid ${grupo2===g?C.teal:C.border}`,background:grupo2===g?"#E0F2F1":C.surface,color:grupo2===g?C.teal:C.text,cursor:"pointer",fontSize:12,fontWeight:600}}>
-                {g.charAt(0).toUpperCase()+g.slice(1)}
-              </button>
-            ))}
-          </div>
+          {carteraTab !== "resumen" && (
+            <>
+            <div style={{display:"flex",gap:10,marginTop:10,alignItems:"center",flexWrap:"wrap"}}>
+              <span style={{fontSize:12,color:C.muted,fontWeight:600}}>📅 Fecha pago programado:</span>
+              <input type="date" value={filters.pagoFrom||""} onChange={e=>setFilters(f=>({...f,pagoFrom:e.target.value}))} style={{...inputStyle,maxWidth:150}}/>
+              <span style={{color:C.muted,fontSize:12}}>a</span>
+              <input type="date" value={filters.pagoTo||""} onChange={e=>setFilters(f=>({...f,pagoTo:e.target.value}))} style={{...inputStyle,maxWidth:150}}/>
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:12,alignItems:"center",flexWrap:"wrap"}}>
+              <span style={{fontSize:13,color:C.muted,fontWeight:600}}>Agrupar por:</span>
+              {groupOptions.map(g=>(
+                <button key={g} onClick={()=>{setGrupoPor(g); if(grupo2===g) setGrupo2("");}} style={{padding:"4px 12px",borderRadius:20,border:`1px solid ${grupoPor===g?C.blue:C.border}`,background:grupoPor===g?"#E8F0FE":C.surface,color:grupoPor===g?C.blue:C.text,cursor:"pointer",fontSize:12,fontWeight:600}}>
+                  {g==="grupo"?"Grupo":g.charAt(0).toUpperCase()+g.slice(1)}
+                </button>
+              ))}
+              <span style={{fontSize:13,color:C.muted,marginLeft:12,fontWeight:600}}>y luego por:</span>
+              <button onClick={()=>setGrupo2("")} style={{padding:"4px 12px",borderRadius:20,border:`1px solid ${grupo2===""?C.blue:C.border}`,background:grupo2===""?"#E8F0FE":C.surface,color:grupo2===""?C.blue:C.text,cursor:"pointer",fontSize:12,fontWeight:600}}>Ninguno</button>
+              {groupOptions.filter(g=>g!==grupoPor).map(g=>(
+                <button key={g} onClick={()=>setGrupo2(g)} style={{padding:"4px 12px",borderRadius:20,border:`1px solid ${grupo2===g?C.teal:C.border}`,background:grupo2===g?"#E0F2F1":C.surface,color:grupo2===g?C.teal:C.text,cursor:"pointer",fontSize:12,fontWeight:600}}>
+                  {g==="grupo"?"Grupo":g.charAt(0).toUpperCase()+g.slice(1)}
+                </button>
+              ))}
+            </div>
+            </>
+          )}
         </div>
+
         {/* Add button */}
         <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}>
           {!esConsulta && <button onClick={()=>setModalInv({tipo:"Factura",fecha:today(),serie:"",folio:"",uuid:"",proveedor:"",clasificacion:clases[0],subtotal:"",iva:"",retIsr:0,retIva:0,total:"",montoPagado:0,concepto:"",diasCredito:30,vencimiento:"",estatus:"Pendiente",fechaProgramacion:"",diasFicticios:0,referencia:"",notas:"",moneda:currency})} style={btnStyle}>+ Nueva Factura</button>}
@@ -1155,6 +1216,25 @@ export default function CxpApp({ user, onLogout }) {
           </div>
           );
         })()}
+        {/* ── PESTAÑA RESUMEN ── */}
+        {carteraTab === "resumen" && (
+          <ResumenCartera
+            invoices={curInvoices}
+            suppliers={suppliers}
+            currency={currency}
+            filtroGrupo={filtroGrupo}
+            onVerFacturas={(proveedor) => {
+              setCarteraTab("activas");
+              setFilters(f=>({...f, proveedor}));
+            }}
+            fmt={fmt}
+            C={C}
+          />
+        )}
+
+        {/* ── PESTAÑAS ACTIVAS / PAGADAS ── */}
+        {carteraTab !== "resumen" && (
+        <>
         {/* Grouped content */}
         {Object.entries(grouped).map(([g1, data]) => (
           <div key={g1} style={{marginBottom:24}}>
@@ -1182,11 +1262,13 @@ export default function CxpApp({ user, onLogout }) {
             )}
           </div>
         ))}
-        {filtered.length===0 && (
+        {filtered.length===0 && carteraTab !== "resumen" && (
           <div style={{textAlign:"center",padding:60,color:C.muted}}>
             <div style={{fontSize:48,marginBottom:12}}>📭</div>
             <div style={{fontSize:16}}>Sin facturas que mostrar</div>
           </div>
+        )}
+        </>
         )}
       </div>
     );
@@ -1208,7 +1290,7 @@ export default function CxpApp({ user, onLogout }) {
             <h1 style={{fontSize:22,fontWeight:800,color:C.navy}}>Catálogo de Proveedores</h1>
             <p style={{color:C.muted,fontSize:14}}>{suppliers.filter(s=>s.activo).length} activos · {suppliers.length} total</p>
           </div>
-          {!esConsulta && <button onClick={()=>setModalSup({nombre:"",rfc:"",moneda:"MXN",diasCredito:30,contacto:"",telefono:"",email:"",banco:"",clabe:"",clasificacion:clases[0],activo:true})} style={btnStyle}>+ Nuevo Proveedor</button>}
+          {!esConsulta && <button onClick={()=>setModalSup({nombre:"",rfc:"",moneda:"MXN",diasCredito:30,contacto:"",telefono:"",email:"",banco:"",clabe:"",clasificacion:clases[0],activo:true,grupo:""})} style={btnStyle}>+ Nuevo Proveedor</button>}
         </div>
         {/* Alert for incomplete suppliers */}
         {incomplete>0 && (
@@ -1685,6 +1767,9 @@ export default function CxpApp({ user, onLogout }) {
           <Field label="Banco"><input value={form.banco} onChange={e=>set("banco",e.target.value)} style={inputStyle}/></Field>
           <Field label="CLABE"><input value={form.clabe} onChange={e=>set("clabe",e.target.value)} style={inputStyle}/></Field>
           <Field label="Clasificación"><select value={form.clasificacion} onChange={e=>set("clasificacion",e.target.value)} style={selectStyle}>{clases.map(c=><option key={c}>{c}</option>)}</select></Field>
+          <Field label="Grupo Empresarial">
+            <input value={form.grupo||""} onChange={e=>set("grupo",e.target.value)} style={inputStyle} placeholder="Ej. Grupo Krystal, Grupo Kavia…"/>
+          </Field>
           <Field label="Activo"><select value={form.activo?"Sí":"No"} onChange={e=>set("activo",e.target.value==="Sí")} style={selectStyle}><option>Sí</option><option>No</option></select></Field>
         </div>
         <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
@@ -2690,6 +2775,195 @@ function ClientesView({ clientes, setClientes, empresaId, esConsulta = false }) 
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ── ResumenCartera component ────────────────────────────────────────── */
+function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, onVerFacturas, fmt, C }) {
+  const sym = currency === "USD" ? "$" : currency === "EUR" ? "€" : "$";
+  const hoy = new Date().toISOString().slice(0,10);
+
+  // Compute aging buckets for a saldo given vencimiento
+  const aging = (saldo, vencimiento, estatus) => {
+    if(estatus === "Pagado" || saldo <= 0) return {corriente:0,v7:0,v15:0,v30:0,v60:0,vmas:0};
+    if(!vencimiento) return {corriente:saldo,v7:0,v15:0,v30:0,v60:0,vmas:0};
+    const dias = Math.ceil((new Date(vencimiento) - new Date(hoy)) / 864e5);
+    if(dias >= 0) return {corriente:saldo,v7:0,v15:0,v30:0,v60:0,vmas:0};
+    const d = Math.abs(dias);
+    if(d <= 7)  return {corriente:0,v7:saldo,v15:0,v30:0,v60:0,vmas:0};
+    if(d <= 15) return {corriente:0,v7:0,v15:saldo,v30:0,v60:0,vmas:0};
+    if(d <= 30) return {corriente:0,v7:0,v15:0,v30:saldo,v60:0,vmas:0};
+    if(d <= 60) return {corriente:0,v7:0,v15:0,v30:0,v60:saldo,vmas:0};
+    return {corriente:0,v7:0,v15:0,v30:0,v60:0,vmas:saldo};
+  };
+
+  const addAging = (acc, a) => {
+    acc.corriente += a.corriente; acc.v7 += a.v7; acc.v15 += a.v15;
+    acc.v30 += a.v30; acc.v60 += a.v60; acc.vmas += a.vmas;
+  };
+
+  const zeroAging = () => ({corriente:0,v7:0,v15:0,v30:0,v60:0,vmas:0});
+
+  // Build per-proveedor summary
+  const byProveedor = useMemo(() => {
+    const map = {};
+    invoices.forEach(inv => {
+      const p = inv.proveedor || "—";
+      if(!map[p]) {
+        const sup = suppliers.find(s=>s.nombre===p);
+        map[p] = { nombre:p, grupo:sup?.grupo||"", total:0, pagado:0, saldo:0, count:0, ...zeroAging() };
+      }
+      const saldo = (+inv.total||0) - (+inv.montoPagado||0);
+      map[p].total  += +inv.total||0;
+      map[p].pagado += +inv.montoPagado||0;
+      map[p].saldo  += saldo;
+      map[p].count  += 1;
+      addAging(map[p], aging(saldo, inv.vencimiento, inv.estatus));
+    });
+    return Object.values(map).filter(p=>p.total>0).sort((a,b)=>b.saldo-a.saldo);
+  }, [invoices, suppliers]);
+
+  // Group by grupo empresarial
+  const byGrupo = useMemo(() => {
+    const map = {};
+    byProveedor.forEach(p => {
+      const g = p.grupo || "Sin Grupo";
+      if(!map[g]) map[g] = { nombre:g, proveedores:[], total:0, pagado:0, saldo:0, count:0, ...zeroAging() };
+      map[g].proveedores.push(p);
+      map[g].total  += p.total;
+      map[g].pagado += p.pagado;
+      map[g].saldo  += p.saldo;
+      map[g].count  += p.count;
+      addAging(map[g], p);
+    });
+    return Object.values(map).sort((a,b)=>b.saldo-a.saldo);
+  }, [byProveedor]);
+
+  const [expandedGrupos, setExpandedGrupos] = useState(new Set());
+  const toggleGrupo = (g) => setExpandedGrupos(prev => { const n=new Set(prev); n.has(g)?n.delete(g):n.add(g); return n; });
+
+  const displayed = filtroGrupo ? byGrupo.filter(g=>g.nombre===filtroGrupo) : byGrupo;
+
+  const grand = displayed.reduce((acc,g) => {
+    acc.total+=g.total; acc.pagado+=g.pagado; acc.saldo+=g.saldo; acc.count+=g.count;
+    addAging(acc,g); return acc;
+  }, {total:0,pagado:0,saldo:0,count:0,...zeroAging()});
+
+  const vCell = (v, intense=false) => v > 0
+    ? <span style={{fontWeight:700,color:intense?"#B71C1C":C.danger}}>{sym}{fmt(v)}</span>
+    : <span style={{color:C.muted,fontSize:11}}>—</span>;
+
+  const hdr = (label, right=true, color="#fff") => (
+    <th style={{padding:"9px 10px",textAlign:right?"right":"left",color,fontWeight:700,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap",borderRight:`1px solid rgba(255,255,255,0.1)`}}>{label}</th>
+  );
+
+  return (
+    <div>
+      {/* Grand total chips */}
+      <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
+        {[
+          {l:"# Facturas",    v:grand.count,     c:C.navy,   bg:"#EEF2FF", isNum:true},
+          {l:"Total",         v:grand.total,      c:C.navy,   bg:"#EEF2FF"},
+          {l:"Pagado",        v:grand.pagado,     c:C.ok,     bg:"#E8F5E9"},
+          {l:"Saldo",         v:grand.saldo,      c:C.navy,   bg:"#E8F0FE"},
+          {l:"Corriente",     v:grand.corriente,  c:C.ok,     bg:"#E8F5E9"},
+          {l:"Venc 1-7d",     v:grand.v7,         c:"#E57373",bg:"#FFF5F5"},
+          {l:"Venc 8-15d",    v:grand.v15,        c:C.danger, bg:"#FFEBEE"},
+          {l:"Venc 16-30d",   v:grand.v30,        c:"#C62828",bg:"#FFCDD2"},
+          {l:"Venc 31-60d",   v:grand.v60,        c:"#B71C1C",bg:"#EF9A9A"},
+          {l:"Venc +60d",     v:grand.vmas,       c:"#7F0000",bg:"#E57373"},
+        ].map(k=>(
+          <div key={k.l} style={{background:k.bg,borderRadius:10,padding:"10px 16px",minWidth:110}}>
+            <div style={{fontSize:10,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:3}}>{k.l}</div>
+            <div style={{fontSize:18,fontWeight:900,color:k.c}}>
+              {k.isNum ? k.v : <>{sym}{fmt(k.v)}</>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Table */}
+      <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden"}}>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:1200}}>
+            <thead>
+              <tr style={{background:C.navy}}>
+                {hdr("Grupo / Proveedor", false)}
+                {hdr("# Fact.")}
+                {hdr("Total")}
+                {hdr("Pagado")}
+                {hdr("Saldo")}
+                <th style={{padding:"9px 10px",textAlign:"right",color:"#A5D6A7",fontWeight:700,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap"}}>Corriente</th>
+                <th style={{padding:"9px 10px",textAlign:"right",color:"#FFCDD2",fontWeight:700,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap"}}>Venc 1-7d</th>
+                <th style={{padding:"9px 10px",textAlign:"right",color:"#EF9A9A",fontWeight:700,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap"}}>Venc 8-15d</th>
+                <th style={{padding:"9px 10px",textAlign:"right",color:"#EF9A9A",fontWeight:700,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap"}}>Venc 16-30d</th>
+                <th style={{padding:"9px 10px",textAlign:"right",color:"#EF9A9A",fontWeight:700,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap"}}>Venc 31-60d</th>
+                <th style={{padding:"9px 10px",textAlign:"right",color:"#EF9A9A",fontWeight:700,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap"}}>Venc +60d</th>
+                {hdr("")}
+              </tr>
+            </thead>
+            <tbody>
+              {displayed.map(grupo => {
+                const expanded = expandedGrupos.has(grupo.nombre);
+                return (
+                  <React.Fragment key={grupo.nombre}>
+                    {/* Grupo row */}
+                    <tr style={{background:"#F0F4FF",cursor:"pointer",borderTop:`2px solid ${C.border}`}} onClick={()=>toggleGrupo(grupo.nombre)}>
+                      <td style={{padding:"12px 14px",fontWeight:800,color:C.navy,fontSize:13}}>
+                        <span style={{marginRight:8,fontSize:11,color:C.blue,display:"inline-block",transform:expanded?"rotate(90deg)":"rotate(0deg)",transition:"transform .2s"}}>▶</span>
+                        🏨 {grupo.nombre}
+                        <span style={{marginLeft:8,fontSize:11,color:C.muted,fontWeight:400}}>{grupo.proveedores.length} prov.</span>
+                      </td>
+                      <td style={{padding:"12px 10px",textAlign:"right",fontWeight:600,color:C.muted}}>{grupo.count}</td>
+                      <td style={{padding:"12px 10px",textAlign:"right",fontWeight:700}}>{sym}{fmt(grupo.total)}</td>
+                      <td style={{padding:"12px 10px",textAlign:"right",color:C.ok,fontWeight:700}}>{sym}{fmt(grupo.pagado)}</td>
+                      <td style={{padding:"12px 10px",textAlign:"right",fontWeight:900,color:C.navy,fontSize:14}}>{sym}{fmt(grupo.saldo)}</td>
+                      <td style={{padding:"12px 10px",textAlign:"right",color:C.ok,fontWeight:700}}>{grupo.corriente>0?sym+fmt(grupo.corriente):"—"}</td>
+                      <td style={{padding:"12px 10px",textAlign:"right"}}>{vCell(grupo.v7)}</td>
+                      <td style={{padding:"12px 10px",textAlign:"right"}}>{vCell(grupo.v15)}</td>
+                      <td style={{padding:"12px 10px",textAlign:"right"}}>{vCell(grupo.v30)}</td>
+                      <td style={{padding:"12px 10px",textAlign:"right"}}>{vCell(grupo.v60,true)}</td>
+                      <td style={{padding:"12px 10px",textAlign:"right"}}>{vCell(grupo.vmas,true)}</td>
+                      <td style={{padding:"12px 10px"}}/>
+                    </tr>
+                    {/* Proveedor rows */}
+                    {expanded && grupo.proveedores.map((p,i) => (
+                      <tr key={p.nombre} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#FAFBFF":"#fff"}}
+                        onMouseEnter={e=>e.currentTarget.style.background="#E8F0FE"}
+                        onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"#FAFBFF":"#fff"}>
+                        <td style={{padding:"10px 14px 10px 36px",color:C.text,fontWeight:600,fontSize:12}}>{p.nombre}</td>
+                        <td style={{padding:"10px 10px",textAlign:"right",color:C.muted,fontSize:11}}>{p.count}</td>
+                        <td style={{padding:"10px 10px",textAlign:"right",fontWeight:600}}>{sym}{fmt(p.total)}</td>
+                        <td style={{padding:"10px 10px",textAlign:"right",color:C.ok}}>{sym}{fmt(p.pagado)}</td>
+                        <td style={{padding:"10px 10px",textAlign:"right",fontWeight:800,color:p.saldo>0?C.navy:C.muted}}>{sym}{fmt(p.saldo)}</td>
+                        <td style={{padding:"10px 10px",textAlign:"right",color:C.ok,fontWeight:600}}>{p.corriente>0?sym+fmt(p.corriente):"—"}</td>
+                        <td style={{padding:"10px 10px",textAlign:"right"}}>{vCell(p.v7)}</td>
+                        <td style={{padding:"10px 10px",textAlign:"right"}}>{vCell(p.v15)}</td>
+                        <td style={{padding:"10px 10px",textAlign:"right"}}>{vCell(p.v30)}</td>
+                        <td style={{padding:"10px 10px",textAlign:"right"}}>{vCell(p.v60,true)}</td>
+                        <td style={{padding:"10px 10px",textAlign:"right"}}>{vCell(p.vmas,true)}</td>
+                        <td style={{padding:"10px 10px",textAlign:"right"}}>
+                          <button onClick={()=>onVerFacturas(p.nombre)}
+                            style={{padding:"4px 12px",borderRadius:8,border:`1px solid ${C.blue}`,background:"#E8F0FE",color:C.blue,cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                            Ver →
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {displayed.length === 0 && (
+          <div style={{textAlign:"center",padding:40,color:C.muted}}>
+            <div style={{fontSize:36,marginBottom:8}}>📊</div>
+            <div>No hay datos para mostrar</div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
