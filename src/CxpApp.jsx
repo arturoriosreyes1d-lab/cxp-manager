@@ -788,7 +788,7 @@ export default function CxpApp({ user, onLogout }) {
         </td>
         <td style={{padding:"10px 8px",whiteSpace:"nowrap",color:overdue?C.danger:C.text}}>{inv.vencimiento||"—"}</td>
         <td style={{padding:"10px 8px",whiteSpace:"nowrap"}}>
-          {days===null ? <span style={{color:C.muted}}>—</span> : days >= 0 ? (
+          {inv.estatus === "Pagado" || days===null ? <span style={{color:C.muted}}>—</span> : days >= 0 ? (
             <span style={{
               background: days<=7?"#FFF3E0":days<=30?"#FFFDE7":"#E8F5E9",
               color: days<=7?C.warn:days<=30?"#F57F17":C.ok,
@@ -2781,10 +2781,9 @@ function ClientesView({ clientes, setClientes, empresaId, esConsulta = false }) 
 
 /* ── ResumenCartera component ────────────────────────────────────────── */
 function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, onVerFacturas, fmt, C }) {
-  const sym = currency === "USD" ? "$" : currency === "EUR" ? "€" : "$";
   const hoy = new Date().toISOString().slice(0,10);
+  const [resumenSearch, setResumenSearch] = React.useState("");
 
-  // Compute aging buckets for a saldo given vencimiento
   const aging = (saldo, vencimiento, estatus) => {
     if(estatus === "Pagado" || saldo <= 0) return {corriente:0,v7:0,v15:0,v30:0,v60:0,vmas:0};
     if(!vencimiento) return {corriente:saldo,v7:0,v15:0,v30:0,v60:0,vmas:0};
@@ -2799,171 +2798,212 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, onVerFactu
   };
 
   const addAging = (acc, a) => {
-    acc.corriente += a.corriente; acc.v7 += a.v7; acc.v15 += a.v15;
-    acc.v30 += a.v30; acc.v60 += a.v60; acc.vmas += a.vmas;
+    acc.corriente+=a.corriente; acc.v7+=a.v7; acc.v15+=a.v15;
+    acc.v30+=a.v30; acc.v60+=a.v60; acc.vmas+=a.vmas;
   };
-
   const zeroAging = () => ({corriente:0,v7:0,v15:0,v30:0,v60:0,vmas:0});
 
-  // Build per-proveedor summary
-  const byProveedor = useMemo(() => {
-    const map = {};
-    invoices.forEach(inv => {
-      const p = inv.proveedor || "—";
-      if(!map[p]) {
-        const sup = suppliers.find(s=>s.nombre===p);
-        map[p] = { nombre:p, grupo:sup?.grupo||"", total:0, pagado:0, saldo:0, count:0, ...zeroAging() };
-      }
-      const saldo = (+inv.total||0) - (+inv.montoPagado||0);
-      map[p].total  += +inv.total||0;
-      map[p].pagado += +inv.montoPagado||0;
-      map[p].saldo  += saldo;
-      map[p].count  += 1;
-      addAging(map[p], aging(saldo, inv.vencimiento, inv.estatus));
+  // Only active invoices (not Pagado)
+  const activeInvoices = React.useMemo(() =>
+    invoices.filter(i => i.estatus !== "Pagado"),
+  [invoices]);
+
+  // Per currency breakdown
+  const currencies = ["MXN","USD","EUR"];
+
+  const buildData = React.useMemo(() => {
+    const result = {};
+    currencies.forEach(mon => {
+      const invs = activeInvoices.filter(i => (i.moneda||"MXN") === mon);
+      if(invs.length === 0) { result[mon] = null; return; }
+      const map = {};
+      invs.forEach(inv => {
+        const p = inv.proveedor || "—";
+        if(!map[p]) {
+          const sup = suppliers.find(s=>s.nombre===p);
+          map[p] = { nombre:p, grupo:sup?.grupo||"", total:0, pagado:0, saldo:0, count:0, ...zeroAging() };
+        }
+        const saldo = (+inv.total||0) - (+inv.montoPagado||0);
+        map[p].total  += +inv.total||0;
+        map[p].pagado += +inv.montoPagado||0;
+        map[p].saldo  += saldo;
+        map[p].count  += 1;
+        addAging(map[p], aging(saldo, inv.vencimiento, inv.estatus));
+      });
+
+      // Group by grupo
+      const gmap = {};
+      Object.values(map).forEach(p => {
+        const g = p.grupo || "Sin Grupo";
+        if(!gmap[g]) gmap[g] = { nombre:g, proveedores:[], total:0, pagado:0, saldo:0, count:0, ...zeroAging() };
+        // Apply search filter
+        if(resumenSearch && !p.nombre.toLowerCase().includes(resumenSearch.toLowerCase()) &&
+           !g.toLowerCase().includes(resumenSearch.toLowerCase())) return;
+        if(filtroGrupo && g !== filtroGrupo) return;
+        gmap[g].proveedores.push(p);
+        gmap[g].total+=p.total; gmap[g].pagado+=p.pagado; gmap[g].saldo+=p.saldo; gmap[g].count+=p.count;
+        addAging(gmap[g], p);
+      });
+
+      const grupos = Object.values(gmap).filter(g=>g.proveedores.length>0).sort((a,b)=>b.saldo-a.saldo);
+      const grand = grupos.reduce((acc,g) => {
+        acc.total+=g.total; acc.pagado+=g.pagado; acc.saldo+=g.saldo; acc.count+=g.count;
+        addAging(acc,g); return acc;
+      }, {total:0,pagado:0,saldo:0,count:0,...zeroAging()});
+
+      result[mon] = { grupos, grand };
     });
-    return Object.values(map).filter(p=>p.total>0).sort((a,b)=>b.saldo-a.saldo);
-  }, [invoices, suppliers]);
+    return result;
+  }, [activeInvoices, suppliers, filtroGrupo, resumenSearch]);
 
-  // Group by grupo empresarial
-  const byGrupo = useMemo(() => {
-    const map = {};
-    byProveedor.forEach(p => {
-      const g = p.grupo || "Sin Grupo";
-      if(!map[g]) map[g] = { nombre:g, proveedores:[], total:0, pagado:0, saldo:0, count:0, ...zeroAging() };
-      map[g].proveedores.push(p);
-      map[g].total  += p.total;
-      map[g].pagado += p.pagado;
-      map[g].saldo  += p.saldo;
-      map[g].count  += p.count;
-      addAging(map[g], p);
-    });
-    return Object.values(map).sort((a,b)=>b.saldo-a.saldo);
-  }, [byProveedor]);
+  const [expandedGrupos, setExpandedGrupos] = React.useState(new Set());
+  const toggleGrupo = (key) => setExpandedGrupos(prev => { const n=new Set(prev); n.has(key)?n.delete(key):n.add(key); return n; });
 
-  const [expandedGrupos, setExpandedGrupos] = useState(new Set());
-  const toggleGrupo = (g) => setExpandedGrupos(prev => { const n=new Set(prev); n.has(g)?n.delete(g):n.add(g); return n; });
+  const monedaSym = m => m==="EUR"?"€":"$";
+  const monedaFlag = {MXN:"🇲🇽",USD:"🇺🇸",EUR:"🇪🇺"};
+  const monedaColor = {MXN:C.mxn,USD:C.usd,EUR:C.eur};
+  const monedaBg = {MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"};
 
-  const displayed = filtroGrupo ? byGrupo.filter(g=>g.nombre===filtroGrupo) : byGrupo;
+  const vCell = (v, sym, intense=false, onClick) => v > 0
+    ? <span onClick={onClick} style={{fontWeight:700,color:intense?"#B71C1C":C.danger,cursor:onClick?"pointer":"default",textDecoration:onClick?"underline dotted":"none"}}>{sym}{fmt(v)}</span>
+    : <span style={{color:C.muted}}>—</span>;
 
-  const grand = displayed.reduce((acc,g) => {
-    acc.total+=g.total; acc.pagado+=g.pagado; acc.saldo+=g.saldo; acc.count+=g.count;
-    addAging(acc,g); return acc;
-  }, {total:0,pagado:0,saldo:0,count:0,...zeroAging()});
+  const COLS = [
+    {k:"# Facturas", right:true},
+    {k:"Total",      right:true},
+    {k:"Pagado",     right:true},
+    {k:"Saldo",      right:true},
+    {k:"Corriente",  right:true},
+    {k:"Vencido 1-7 Días",    right:true},
+    {k:"Vencido 8-15 Días",   right:true},
+    {k:"Vencido 16-30 Días",  right:true},
+    {k:"Vencido 31-60 Días",  right:true},
+    {k:"Vencido +60 Días",    right:true},
+    {k:"",           right:false},
+  ];
 
-  const vCell = (v, intense=false) => v > 0
-    ? <span style={{fontWeight:700,color:intense?"#B71C1C":C.danger}}>{sym}{fmt(v)}</span>
-    : <span style={{color:C.muted,fontSize:11}}>—</span>;
-
-  const hdr = (label, right=true, color="#fff") => (
-    <th style={{padding:"9px 10px",textAlign:right?"right":"left",color,fontWeight:700,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap",borderRight:`1px solid rgba(255,255,255,0.1)`}}>{label}</th>
-  );
+  const colColors = ["#fff","#fff","#A5D6A7","#fff","#A5D6A7","#FFCDD2","#EF9A9A","#EF9A9A","#EF9A9A","#EF9A9A","#fff"];
 
   return (
     <div>
-      {/* Grand total chips */}
-      <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
-        {[
-          {l:"# Facturas",    v:grand.count,     c:C.navy,   bg:"#EEF2FF", isNum:true},
-          {l:"Total",         v:grand.total,      c:C.navy,   bg:"#EEF2FF"},
-          {l:"Pagado",        v:grand.pagado,     c:C.ok,     bg:"#E8F5E9"},
-          {l:"Saldo",         v:grand.saldo,      c:C.navy,   bg:"#E8F0FE"},
-          {l:"Corriente",     v:grand.corriente,  c:C.ok,     bg:"#E8F5E9"},
-          {l:"Venc 1-7d",     v:grand.v7,         c:"#E57373",bg:"#FFF5F5"},
-          {l:"Venc 8-15d",    v:grand.v15,        c:C.danger, bg:"#FFEBEE"},
-          {l:"Venc 16-30d",   v:grand.v30,        c:"#C62828",bg:"#FFCDD2"},
-          {l:"Venc 31-60d",   v:grand.v60,        c:"#B71C1C",bg:"#EF9A9A"},
-          {l:"Venc +60d",     v:grand.vmas,       c:"#7F0000",bg:"#E57373"},
-        ].map(k=>(
-          <div key={k.l} style={{background:k.bg,borderRadius:10,padding:"10px 16px",minWidth:110}}>
-            <div style={{fontSize:10,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:3}}>{k.l}</div>
-            <div style={{fontSize:18,fontWeight:900,color:k.c}}>
-              {k.isNum ? k.v : <>{sym}{fmt(k.v)}</>}
-            </div>
-          </div>
-        ))}
+      {/* Search */}
+      <div style={{marginBottom:16}}>
+        <input placeholder="🔍 Buscar proveedor o grupo…" value={resumenSearch}
+          onChange={e=>setResumenSearch(e.target.value)}
+          style={{padding:"9px 14px",borderRadius:10,border:`1px solid ${C.border}`,fontSize:13,width:280,fontFamily:"inherit"}}/>
+        {resumenSearch && <button onClick={()=>setResumenSearch("")} style={{marginLeft:8,padding:"8px 12px",borderRadius:8,border:`1px solid ${C.border}`,background:"#F1F5F9",cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>✕ Limpiar</button>}
       </div>
 
-      {/* Table */}
-      <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden"}}>
-        <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:1200}}>
-            <thead>
-              <tr style={{background:C.navy}}>
-                {hdr("Grupo / Proveedor", false)}
-                {hdr("# Fact.")}
-                {hdr("Total")}
-                {hdr("Pagado")}
-                {hdr("Saldo")}
-                <th style={{padding:"9px 10px",textAlign:"right",color:"#A5D6A7",fontWeight:700,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap"}}>Corriente</th>
-                <th style={{padding:"9px 10px",textAlign:"right",color:"#FFCDD2",fontWeight:700,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap"}}>Venc 1-7d</th>
-                <th style={{padding:"9px 10px",textAlign:"right",color:"#EF9A9A",fontWeight:700,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap"}}>Venc 8-15d</th>
-                <th style={{padding:"9px 10px",textAlign:"right",color:"#EF9A9A",fontWeight:700,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap"}}>Venc 16-30d</th>
-                <th style={{padding:"9px 10px",textAlign:"right",color:"#EF9A9A",fontWeight:700,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap"}}>Venc 31-60d</th>
-                <th style={{padding:"9px 10px",textAlign:"right",color:"#EF9A9A",fontWeight:700,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap"}}>Venc +60d</th>
-                {hdr("")}
-              </tr>
-            </thead>
-            <tbody>
-              {displayed.map(grupo => {
-                const expanded = expandedGrupos.has(grupo.nombre);
-                return (
-                  <React.Fragment key={grupo.nombre}>
-                    {/* Grupo row */}
-                    <tr style={{background:"#F0F4FF",cursor:"pointer",borderTop:`2px solid ${C.border}`}} onClick={()=>toggleGrupo(grupo.nombre)}>
-                      <td style={{padding:"12px 14px",fontWeight:800,color:C.navy,fontSize:13}}>
-                        <span style={{marginRight:8,fontSize:11,color:C.blue,display:"inline-block",transform:expanded?"rotate(90deg)":"rotate(0deg)",transition:"transform .2s"}}>▶</span>
-                        🏨 {grupo.nombre}
-                        <span style={{marginLeft:8,fontSize:11,color:C.muted,fontWeight:400}}>{grupo.proveedores.length} prov.</span>
-                      </td>
-                      <td style={{padding:"12px 10px",textAlign:"right",fontWeight:600,color:C.muted}}>{grupo.count}</td>
-                      <td style={{padding:"12px 10px",textAlign:"right",fontWeight:700}}>{sym}{fmt(grupo.total)}</td>
-                      <td style={{padding:"12px 10px",textAlign:"right",color:C.ok,fontWeight:700}}>{sym}{fmt(grupo.pagado)}</td>
-                      <td style={{padding:"12px 10px",textAlign:"right",fontWeight:900,color:C.navy,fontSize:14}}>{sym}{fmt(grupo.saldo)}</td>
-                      <td style={{padding:"12px 10px",textAlign:"right",color:C.ok,fontWeight:700}}>{grupo.corriente>0?sym+fmt(grupo.corriente):"—"}</td>
-                      <td style={{padding:"12px 10px",textAlign:"right"}}>{vCell(grupo.v7)}</td>
-                      <td style={{padding:"12px 10px",textAlign:"right"}}>{vCell(grupo.v15)}</td>
-                      <td style={{padding:"12px 10px",textAlign:"right"}}>{vCell(grupo.v30)}</td>
-                      <td style={{padding:"12px 10px",textAlign:"right"}}>{vCell(grupo.v60,true)}</td>
-                      <td style={{padding:"12px 10px",textAlign:"right"}}>{vCell(grupo.vmas,true)}</td>
-                      <td style={{padding:"12px 10px"}}/>
+      {currencies.map(mon => {
+        const data = buildData[mon];
+        if(!data || data.grupos.length===0) return null;
+        const sym = monedaSym(mon);
+        const g = data.grand;
+
+        return (
+          <div key={mon} style={{marginBottom:32}}>
+            {/* Currency header */}
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+              <span style={{fontSize:20}}>{monedaFlag[mon]}</span>
+              <span style={{fontSize:18,fontWeight:900,color:monedaColor[mon]}}>{mon}</span>
+              <span style={{fontSize:13,color:C.muted}}>{g.count} facturas activas</span>
+            </div>
+
+            {/* Summary chips */}
+            <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+              {[
+                {l:"Total",          v:g.total,     c:C.navy,    bg:"#EEF2FF"},
+                {l:"Pagado parcial", v:g.pagado,    c:C.ok,      bg:"#E8F5E9"},
+                {l:"Saldo",          v:g.saldo,     c:C.navy,    bg:"#E8F0FE"},
+                {l:"Corriente",      v:g.corriente, c:C.ok,      bg:"#E8F5E9"},
+                {l:"Venc 1-7d",      v:g.v7,        c:"#E57373", bg:"#FFF5F5"},
+                {l:"Venc 8-15d",     v:g.v15,       c:C.danger,  bg:"#FFEBEE"},
+                {l:"Venc 16-30d",    v:g.v30,       c:"#C62828", bg:"#FFCDD2"},
+                {l:"Venc 31-60d",    v:g.v60,       c:"#B71C1C", bg:"#EF9A9A"},
+                {l:"Venc +60d",      v:g.vmas,      c:"#7F0000", bg:"#E57373"},
+              ].filter(k=>k.v>0).map(k=>(
+                <div key={k.l} style={{background:k.bg,borderRadius:10,padding:"10px 16px"}}>
+                  <div style={{fontSize:10,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:3}}>{k.l}</div>
+                  <div style={{fontSize:17,fontWeight:900,color:k.c}}>{sym}{fmt(k.v)}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Table */}
+            <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden"}}>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:1100}}>
+                  <thead>
+                    <tr style={{background:C.navy}}>
+                      <th style={{padding:"11px 14px",textAlign:"left",color:"#fff",fontWeight:700,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap"}}>Grupo / Proveedor</th>
+                      {COLS.map((col,ci)=>(
+                        <th key={col.k} style={{padding:"11px 10px",textAlign:col.right?"right":"left",color:colColors[ci],fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{col.k}</th>
+                      ))}
                     </tr>
-                    {/* Proveedor rows */}
-                    {expanded && grupo.proveedores.map((p,i) => (
-                      <tr key={p.nombre} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#FAFBFF":"#fff"}}
-                        onMouseEnter={e=>e.currentTarget.style.background="#E8F0FE"}
-                        onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"#FAFBFF":"#fff"}>
-                        <td style={{padding:"10px 14px 10px 36px",color:C.text,fontWeight:600,fontSize:12}}>{p.nombre}</td>
-                        <td style={{padding:"10px 10px",textAlign:"right",color:C.muted,fontSize:11}}>{p.count}</td>
-                        <td style={{padding:"10px 10px",textAlign:"right",fontWeight:600}}>{sym}{fmt(p.total)}</td>
-                        <td style={{padding:"10px 10px",textAlign:"right",color:C.ok}}>{sym}{fmt(p.pagado)}</td>
-                        <td style={{padding:"10px 10px",textAlign:"right",fontWeight:800,color:p.saldo>0?C.navy:C.muted}}>{sym}{fmt(p.saldo)}</td>
-                        <td style={{padding:"10px 10px",textAlign:"right",color:C.ok,fontWeight:600}}>{p.corriente>0?sym+fmt(p.corriente):"—"}</td>
-                        <td style={{padding:"10px 10px",textAlign:"right"}}>{vCell(p.v7)}</td>
-                        <td style={{padding:"10px 10px",textAlign:"right"}}>{vCell(p.v15)}</td>
-                        <td style={{padding:"10px 10px",textAlign:"right"}}>{vCell(p.v30)}</td>
-                        <td style={{padding:"10px 10px",textAlign:"right"}}>{vCell(p.v60,true)}</td>
-                        <td style={{padding:"10px 10px",textAlign:"right"}}>{vCell(p.vmas,true)}</td>
-                        <td style={{padding:"10px 10px",textAlign:"right"}}>
-                          <button onClick={()=>onVerFacturas(p.nombre)}
-                            style={{padding:"4px 12px",borderRadius:8,border:`1px solid ${C.blue}`,background:"#E8F0FE",color:C.blue,cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
-                            Ver →
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        {displayed.length === 0 && (
-          <div style={{textAlign:"center",padding:40,color:C.muted}}>
-            <div style={{fontSize:36,marginBottom:8}}>📊</div>
-            <div>No hay datos para mostrar</div>
+                  </thead>
+                  <tbody>
+                    {data.grupos.map(grupo => {
+                      const gKey = `${mon}-${grupo.nombre}`;
+                      const expanded = expandedGrupos.has(gKey);
+                      return (
+                        <React.Fragment key={gKey}>
+                          <tr style={{background:"#F0F4FF",cursor:"pointer",borderTop:`2px solid ${C.border}`}} onClick={()=>toggleGrupo(gKey)}>
+                            <td style={{padding:"13px 14px",fontWeight:800,color:C.navy,fontSize:14}}>
+                              <span style={{marginRight:8,fontSize:11,color:C.blue,display:"inline-block",transform:expanded?"rotate(90deg)":"rotate(0deg)",transition:"transform .2s"}}>▶</span>
+                              🏨 {grupo.nombre}
+                              <span style={{marginLeft:8,fontSize:11,color:C.muted,fontWeight:400}}>{grupo.proveedores.length} prov.</span>
+                            </td>
+                            <td style={{padding:"13px 10px",textAlign:"right",fontWeight:700,fontSize:13}}>{grupo.count}</td>
+                            <td style={{padding:"13px 10px",textAlign:"right",fontWeight:700,fontSize:13}}>{sym}{fmt(grupo.total)}</td>
+                            <td style={{padding:"13px 10px",textAlign:"right",color:C.ok,fontWeight:700,fontSize:13}}>{sym}{fmt(grupo.pagado)}</td>
+                            <td style={{padding:"13px 10px",textAlign:"right",fontWeight:900,color:C.navy,fontSize:15}}>{sym}{fmt(grupo.saldo)}</td>
+                            <td style={{padding:"13px 10px",textAlign:"right",color:C.ok,fontWeight:700,fontSize:13}}>{grupo.corriente>0?sym+fmt(grupo.corriente):"—"}</td>
+                            <td style={{padding:"13px 10px",textAlign:"right"}}>{vCell(grupo.v7,sym)}</td>
+                            <td style={{padding:"13px 10px",textAlign:"right"}}>{vCell(grupo.v15,sym)}</td>
+                            <td style={{padding:"13px 10px",textAlign:"right"}}>{vCell(grupo.v30,sym)}</td>
+                            <td style={{padding:"13px 10px",textAlign:"right"}}>{vCell(grupo.v60,sym,true)}</td>
+                            <td style={{padding:"13px 10px",textAlign:"right"}}>{vCell(grupo.vmas,sym,true)}</td>
+                            <td style={{padding:"13px 10px"}}/>
+                          </tr>
+                          {expanded && grupo.proveedores.sort((a,b)=>b.saldo-a.saldo).map((p,i) => (
+                            <tr key={p.nombre} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#FAFBFF":"#fff"}}
+                              onMouseEnter={e=>e.currentTarget.style.background="#E8F0FE"}
+                              onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"#FAFBFF":"#fff"}>
+                              <td style={{padding:"11px 14px 11px 40px",color:C.text,fontWeight:600,fontSize:13}}>{p.nombre}</td>
+                              <td style={{padding:"11px 10px",textAlign:"right",color:C.muted,fontSize:13}}>{p.count}</td>
+                              <td style={{padding:"11px 10px",textAlign:"right",fontWeight:600,fontSize:13}}>{sym}{fmt(p.total)}</td>
+                              <td style={{padding:"11px 10px",textAlign:"right",color:C.ok,fontSize:13}}>{sym}{fmt(p.pagado)}</td>
+                              <td style={{padding:"11px 10px",textAlign:"right",fontWeight:800,color:p.saldo>0?C.navy:C.muted,fontSize:14,cursor:"pointer",textDecoration:"underline dotted"}} onClick={()=>onVerFacturas(p.nombre)}>{sym}{fmt(p.saldo)}</td>
+                              <td style={{padding:"11px 10px",textAlign:"right",color:C.ok,fontWeight:600,fontSize:13,cursor:p.corriente>0?"pointer":"default"}} onClick={()=>p.corriente>0&&onVerFacturas(p.nombre)}>{p.corriente>0?sym+fmt(p.corriente):"—"}</td>
+                              <td style={{padding:"11px 10px",textAlign:"right",fontSize:13,cursor:p.v7>0?"pointer":"default"}} onClick={()=>p.v7>0&&onVerFacturas(p.nombre)}>{vCell(p.v7,sym)}</td>
+                              <td style={{padding:"11px 10px",textAlign:"right",fontSize:13,cursor:p.v15>0?"pointer":"default"}} onClick={()=>p.v15>0&&onVerFacturas(p.nombre)}>{vCell(p.v15,sym)}</td>
+                              <td style={{padding:"11px 10px",textAlign:"right",fontSize:13,cursor:p.v30>0?"pointer":"default"}} onClick={()=>p.v30>0&&onVerFacturas(p.nombre)}>{vCell(p.v30,sym)}</td>
+                              <td style={{padding:"11px 10px",textAlign:"right",fontSize:13,cursor:p.v60>0?"pointer":"default"}} onClick={()=>p.v60>0&&onVerFacturas(p.nombre)}>{vCell(p.v60,sym,true)}</td>
+                              <td style={{padding:"11px 10px",textAlign:"right",fontSize:13,cursor:p.vmas>0?"pointer":"default"}} onClick={()=>p.vmas>0&&onVerFacturas(p.nombre)}>{vCell(p.vmas,sym,true)}</td>
+                              <td style={{padding:"11px 10px",textAlign:"right"}}>
+                                <button onClick={()=>onVerFacturas(p.nombre)}
+                                  style={{padding:"5px 12px",borderRadius:8,border:`1px solid ${C.blue}`,background:"#E8F0FE",color:C.blue,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                                  Ver →
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {data.grupos.length===0 && (
+                <div style={{textAlign:"center",padding:40,color:C.muted}}>
+                  <div style={{fontSize:36,marginBottom:8}}>📊</div>
+                  <div>No hay datos para mostrar</div>
+                </div>
+              )}
+            </div>
           </div>
-        )}
-      </div>
+        );
+      })}
     </div>
   );
 }
