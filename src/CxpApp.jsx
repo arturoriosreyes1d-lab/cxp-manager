@@ -3051,18 +3051,18 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
                       onMouseEnter={e=>e.currentTarget.style.background="#E8F0FE"}
                       onMouseLeave={e=>e.currentTarget.style.background=pi%2===0?"#FAFBFF":"#fff"}>
                       <td style={{padding:"11px 14px",fontWeight:600,fontSize:14,color:C.text}}>{p.nombre}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",color:C.muted,fontSize:13}}>{p.count}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontWeight:600,fontSize:13}}>{sym}{fmt(p.total)}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",color:C.ok,fontSize:13}}>{sym}{fmt(p.pagado)}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",color:C.muted,fontSize:14}}>{p.count}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontWeight:600,fontSize:16}}>{sym}{fmt(p.total)}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",color:C.ok,fontWeight:600,fontSize:16}}>{sym}{fmt(p.pagado)}</td>
                       <td style={{padding:"11px 10px",textAlign:"right",fontSize:16,cursor:"pointer"}} onClick={()=>openDetail(`${p.nombre} — Todas`,p.invoices)}>
                         <span style={{fontWeight:900,color:p.saldo>0?C.navy:C.muted,borderBottom:`1px dotted ${C.navy}`}}>{sym}{fmt(p.saldo)}</span>
                       </td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{p.corriente>0?<span style={{color:C.ok,fontWeight:600,cursor:"pointer",borderBottom:`1px dotted ${C.ok}`}} onClick={()=>openDetail(`${p.nombre} — Corriente`,fi(d=>d!==null&&d>=0))}>{sym}{fmt(p.corriente)}</span>:<span style={{color:C.muted}}>—</span>}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{vCell(p.v7,sym,fi(d=>d!==null&&d<0&&Math.abs(d)<=7),`${p.nombre} — Venc 1-7d`)}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{vCell(p.v15,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=15),`${p.nombre} — Venc 8-15d`)}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{vCell(p.v30,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30),`${p.nombre} — Venc 16-30d`,true)}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{vCell(p.v60,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=60),`${p.nombre} — Venc 31-60d`,true)}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{vCell(p.vmas,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>60),`${p.nombre} — Venc +60d`,true)}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}}>{p.corriente>0?<span style={{color:C.ok,fontWeight:600,cursor:"pointer",borderBottom:`1px dotted ${C.ok}`}} onClick={()=>openDetail(`${p.nombre} — Corriente`,fi(d=>d!==null&&d>=0))}>{sym}{fmt(p.corriente)}</span>:<span style={{color:C.muted}}>—</span>}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}}>{vCell(p.v7,sym,fi(d=>d!==null&&d<0&&Math.abs(d)<=7),`${p.nombre} — Venc 1-7d`)}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}}>{vCell(p.v15,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=15),`${p.nombre} — Venc 8-15d`)}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}}>{vCell(p.v30,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30),`${p.nombre} — Venc 16-30d`,true)}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}}>{vCell(p.v60,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=60),`${p.nombre} — Venc 31-60d`,true)}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}}>{vCell(p.vmas,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>60),`${p.nombre} — Venc +60d`,true)}</td>
                       <td style={{padding:"11px 10px",textAlign:"right"}}>
                         <button onClick={()=>openDetail(`${p.nombre} — Todas`,p.invoices)}
                           style={{padding:"5px 12px",borderRadius:8,border:`1px solid ${C.blue}`,background:"#E8F0FE",color:C.blue,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>Ver →</button>
