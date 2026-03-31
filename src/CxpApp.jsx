@@ -240,6 +240,9 @@ export default function CxpApp({ user, onLogout }) {
   /* ── Derived ─────────────────────────────────────────────────────────── */
   const curInvoices = invoices[currency] || [];
 
+  // Serialize Set to string so useMemo detects changes
+  const filtroProveedoresKey = [...filtroProveedores].sort().join("|");
+
   const filtered = useMemo(() => {
     const getSupGrupo = (nombre) => suppliers.find(s=>s.nombre===nombre)?.grupo || "";
     let result = curInvoices.filter(inv => {
@@ -247,7 +250,7 @@ export default function CxpApp({ user, onLogout }) {
       if(carteraTab === "activas" && inv.estatus === "Pagado") return false;
       if(carteraTab === "pagadas" && inv.estatus !== "Pagado") return false;
       if(filters.proveedor && inv.proveedor!==filters.proveedor) return false;
-      if(filtroProveedores.size > 0 && !filtroProveedores.has(inv.proveedor)) return false;
+      if(filtroProveedoresKey && !filtroProveedoresKey.split("|").includes(inv.proveedor)) return false;
       if(filters.clasificacion && inv.clasificacion!==filters.clasificacion) return false;
       if(filters.estatus && inv.estatus!==filters.estatus) return false;
       if(filters.fechaFrom && inv.fecha<filters.fechaFrom) return false;
@@ -278,7 +281,7 @@ export default function CxpApp({ user, onLogout }) {
       });
     }
     return result;
-  }, [curInvoices, filters, search, sortCol, sortDir, carteraTab, filtroGrupo, filtroProveedores, suppliers]);
+  }, [curInvoices, filters, search, sortCol, sortDir, carteraTab, filtroGrupo, filtroProveedoresKey, suppliers]);
 
   const kpis = useMemo(() => {
     const allInvs = [...invoices.MXN,...invoices.USD,...invoices.EUR];
@@ -1233,6 +1236,7 @@ export default function CxpApp({ user, onLogout }) {
             filtroGrupo={filtroGrupo}
             setFiltroGrupo={setFiltroGrupo}
             gruposList={gruposList}
+            filtroProveedores={filtroProveedores}
             searchQuery={search}
             fmt={fmt}
             C={C}
@@ -2787,7 +2791,7 @@ function ClientesView({ clientes, setClientes, empresaId, esConsulta = false }) 
 }
 
 /* ── ResumenCartera component ────────────────────────────────────────── */
-function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroGrupo, gruposList, searchQuery, fmt, C }) {
+function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroGrupo, gruposList, filtroProveedores, searchQuery, fmt, C }) {
   const hoy = new Date().toISOString().slice(0,10);
   const [detailModal, setDetailModal] = React.useState(null);
   const [grupoPickerOpen, setGrupoPickerOpen] = React.useState(false);
@@ -2820,9 +2824,11 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
 
   // Build per-proveedor+moneda data
   const allProvData = React.useMemo(()=>{
+    const fpArr = filtroProveedores ? [...filtroProveedores] : [];
     const map = {};
     activeInvoices.forEach(inv=>{
       const p=inv.proveedor||"—";
+      if(fpArr.length>0 && !fpArr.includes(p)) return;
       const mon=(inv.moneda||"MXN");
       const key=`${p}||${mon}`;
       if(!map[key]){
@@ -2838,7 +2844,7 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
       addAging(map[key],aging(saldo,inv.vencimiento,inv.estatus));
     });
     return Object.values(map);
-  },[activeInvoices,suppliers]);
+  },[activeInvoices, suppliers, filtroProveedores]);
 
   // Flat proveedor list (no grouping) — filtered by search
   const provFlat = React.useMemo(()=>{
