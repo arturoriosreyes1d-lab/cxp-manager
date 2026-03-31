@@ -1139,83 +1139,13 @@ export default function CxpApp({ user, onLogout }) {
               </select>
             )}
             {/* Proveedor multi-select picker */}
-            {(()=>{
-              const [open, setOpen] = React.useState(false);
-              const [localSearch, setLocalSearch] = React.useState("");
-              const [localSel, setLocalSel] = React.useState(new Set(filtroProveedores));
-              const provList = [...new Set(curInvoices.map(i=>i.proveedor))].sort();
-              const filtered2 = localSearch ? provList.filter(p=>p.toLowerCase().includes(localSearch.toLowerCase())) : provList;
-              const handleOpen = () => { setLocalSel(new Set(filtroProveedores)); setLocalSearch(""); setOpen(true); };
-              const handleApply = () => { setFiltroProveedores(new Set(localSel)); setOpen(false); };
-              const toggleAll = () => { if(localSel.size===filtered2.length) setLocalSel(new Set()); else setLocalSel(new Set(filtered2)); };
-              const label = filtroProveedores.size===0 ? "Todos los proveedores" : filtroProveedores.size===1 ? [...filtroProveedores][0] : `${filtroProveedores.size} proveedores`;
-              return (
-                <>
-                  <button onClick={handleOpen} style={{...inputStyle,display:"flex",alignItems:"center",gap:6,cursor:"pointer",
-                    background:filtroProveedores.size>0?"#E8F0FE":C.surface,
-                    borderColor:filtroProveedores.size>0?C.blue:C.border,
-                    color:filtroProveedores.size>0?C.blue:C.muted,
-                    fontWeight:filtroProveedores.size>0?700:400,minWidth:200,justifyContent:"space-between",maxWidth:220}}>
-                    <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</span>
-                    <span style={{fontSize:10,flexShrink:0}}>▼</span>
-                  </button>
-                  {open && (
-                    <div style={{position:"fixed",inset:0,zIndex:500,background:"rgba(0,0,0,.3)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
-                      onClick={()=>setOpen(false)}>
-                      <div style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:440,maxHeight:"75vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.25)"}}
-                        onClick={e=>e.stopPropagation()}>
-                        {/* Header */}
-                        <div style={{padding:"16px 20px",background:C.navy,display:"flex",justifyContent:"space-between",alignItems:"center",borderRadius:"16px 16px 0 0"}}>
-                          <span style={{fontWeight:800,color:"#fff",fontSize:15}}>🏢 Seleccionar Proveedores</span>
-                          <button onClick={()=>setOpen(false)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:6,color:"#fff",width:28,height:28,cursor:"pointer",fontSize:16}}>×</button>
-                        </div>
-                        {/* Search */}
-                        <div style={{padding:"12px 16px",borderBottom:`1px solid ${C.border}`}}>
-                          <input autoFocus placeholder="🔍 Buscar proveedor…" value={localSearch}
-                            onChange={e=>setLocalSearch(e.target.value)}
-                            style={{...inputStyle,width:"100%",boxSizing:"border-box"}}/>
-                        </div>
-                        {/* Select all */}
-                        <div style={{padding:"8px 16px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:8,cursor:"pointer",background:"#F8FAFC"}}
-                          onClick={toggleAll}>
-                          <input type="checkbox" checked={localSel.size===filtered2.length&&filtered2.length>0} onChange={toggleAll}
-                            style={{cursor:"pointer",accentColor:C.blue,width:15,height:15}} onClick={e=>e.stopPropagation()}/>
-                          <span style={{fontSize:13,fontWeight:600,color:C.navy}}>
-                            {localSel.size===filtered2.length&&filtered2.length>0?"Deseleccionar todos":"Seleccionar todos"}
-                          </span>
-                          <span style={{fontSize:12,color:C.muted,marginLeft:"auto"}}>{filtered2.length} proveedores</span>
-                        </div>
-                        {/* List */}
-                        <div style={{overflowY:"auto",flex:1}}>
-                          {filtered2.map(p=>(
-                            <div key={p} onClick={()=>{const n=new Set(localSel);n.has(p)?n.delete(p):n.add(p);setLocalSel(n);}}
-                              style={{padding:"10px 16px",display:"flex",alignItems:"center",gap:10,cursor:"pointer",
-                                background:localSel.has(p)?"#E8F0FE":"#fff",borderBottom:`1px solid ${C.border}`}}
-                              onMouseEnter={e=>{if(!localSel.has(p))e.currentTarget.style.background="#F0F4FF";}}
-                              onMouseLeave={e=>{e.currentTarget.style.background=localSel.has(p)?"#E8F0FE":"#fff";}}>
-                              <input type="checkbox" checked={localSel.has(p)} readOnly
-                                style={{cursor:"pointer",accentColor:C.blue,width:15,height:15}}/>
-                              <span style={{fontSize:13,color:localSel.has(p)?C.blue:C.text,fontWeight:localSel.has(p)?600:400}}>{p}</span>
-                            </div>
-                          ))}
-                          {filtered2.length===0&&<div style={{padding:20,textAlign:"center",color:C.muted,fontSize:13}}>Sin resultados</div>}
-                        </div>
-                        {/* Footer */}
-                        <div style={{padding:"12px 16px",borderTop:`1px solid ${C.border}`,display:"flex",gap:8,justifyContent:"space-between",alignItems:"center",background:"#F8FAFC"}}>
-                          <span style={{fontSize:12,color:C.muted}}>{localSel.size} seleccionados</span>
-                          <div style={{display:"flex",gap:8}}>
-                            <button onClick={()=>{setLocalSel(new Set());setFiltroProveedores(new Set());setOpen(false);}}
-                              style={{padding:"8px 16px",borderRadius:8,border:`1px solid ${C.border}`,background:"#F1F5F9",color:C.text,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>Limpiar</button>
-                            <button onClick={handleApply}
-                              style={{padding:"8px 18px",borderRadius:8,border:"none",background:C.blue,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>Aplicar</button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </>
-              );
-            })()}
+            <ProveedorPicker
+              curInvoices={curInvoices}
+              filtroProveedores={filtroProveedores}
+              setFiltroProveedores={setFiltroProveedores}
+              inputStyle={inputStyle}
+              C={C}
+            />
             <select value={filters.clasificacion} onChange={e=>setFilters(f=>({...f,clasificacion:e.target.value}))} style={{...selectStyle,maxWidth:180}}>
               <option value="">Todas las clasificaciones</option>
               {clases.map(c=><option key={c}>{c}</option>)}
@@ -3193,5 +3123,131 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
         </div>
       )}
     </div>
+  );
+}
+
+/* ── ProveedorPicker component ───────────────────────────────────────── */
+function ProveedorPicker({ curInvoices, filtroProveedores, setFiltroProveedores, inputStyle, C }) {
+  const [open, setOpen] = useState(false);
+  const [localSearch, setLocalSearch] = useState("");
+  const [localSel, setLocalSel] = useState(new Set());
+
+  const provList = useMemo(() =>
+    [...new Set(curInvoices.map(i=>i.proveedor))].sort(),
+  [curInvoices]);
+
+  const filtered = localSearch
+    ? provList.filter(p=>p.toLowerCase().includes(localSearch.toLowerCase()))
+    : provList;
+
+  const handleOpen = () => {
+    setLocalSel(new Set(filtroProveedores));
+    setLocalSearch("");
+    setOpen(true);
+  };
+
+  const handleApply = () => {
+    setFiltroProveedores(new Set(localSel));
+    setOpen(false);
+  };
+
+  const handleClear = () => {
+    setLocalSel(new Set());
+    setFiltroProveedores(new Set());
+    setOpen(false);
+  };
+
+  const toggleAll = () => {
+    if(localSel.size === filtered.length) setLocalSel(new Set());
+    else setLocalSel(new Set(filtered));
+  };
+
+  const toggle = (p) => {
+    const n = new Set(localSel);
+    n.has(p) ? n.delete(p) : n.add(p);
+    setLocalSel(n);
+  };
+
+  const label = filtroProveedores.size === 0
+    ? "Todos los proveedores"
+    : filtroProveedores.size === 1
+      ? [...filtroProveedores][0]
+      : `${filtroProveedores.size} proveedores seleccionados`;
+
+  return (
+    <>
+      <button onClick={handleOpen} style={{
+        ...inputStyle, display:"flex", alignItems:"center", gap:6, cursor:"pointer",
+        background: filtroProveedores.size>0 ? "#E8F0FE" : "#fff",
+        borderColor: filtroProveedores.size>0 ? C.blue : C.border,
+        color: filtroProveedores.size>0 ? C.blue : C.muted,
+        fontWeight: filtroProveedores.size>0 ? 700 : 400,
+        minWidth: 200, maxWidth: 240, justifyContent:"space-between",
+      }}>
+        <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:13}}>{label}</span>
+        <span style={{fontSize:10,flexShrink:0}}>▼</span>
+      </button>
+
+      {open && (
+        <div style={{position:"fixed",inset:0,zIndex:500,background:"rgba(0,0,0,.35)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
+          onClick={()=>setOpen(false)}>
+          <div style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:440,maxHeight:"75vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.25)"}}
+            onClick={e=>e.stopPropagation()}>
+            {/* Header */}
+            <div style={{padding:"16px 20px",background:C.navy,borderRadius:"16px 16px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontWeight:800,color:"#fff",fontSize:15}}>🏢 Seleccionar Proveedores</span>
+              <button onClick={()=>setOpen(false)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:6,color:"#fff",width:28,height:28,cursor:"pointer",fontSize:16}}>×</button>
+            </div>
+            {/* Search */}
+            <div style={{padding:"12px 16px",borderBottom:`1px solid ${C.border}`}}>
+              <input autoFocus placeholder="🔍 Buscar proveedor…" value={localSearch}
+                onChange={e=>setLocalSearch(e.target.value)}
+                style={{padding:"8px 12px",borderRadius:8,border:`1px solid ${C.border}`,fontSize:13,width:"100%",boxSizing:"border-box",fontFamily:"inherit"}}/>
+            </div>
+            {/* Select all */}
+            <div style={{padding:"10px 16px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:10,cursor:"pointer",background:"#F8FAFC"}}
+              onClick={toggleAll}>
+              <input type="checkbox" checked={localSel.size===filtered.length&&filtered.length>0} onChange={toggleAll}
+                style={{cursor:"pointer",accentColor:C.blue,width:15,height:15}} onClick={e=>e.stopPropagation()}/>
+              <span style={{fontSize:13,fontWeight:600,color:C.navy}}>
+                {localSel.size===filtered.length&&filtered.length>0 ? "Deseleccionar todos" : "Seleccionar todos"}
+              </span>
+              <span style={{fontSize:12,color:C.muted,marginLeft:"auto"}}>{filtered.length} proveedores</span>
+            </div>
+            {/* List */}
+            <div style={{overflowY:"auto",flex:1}}>
+              {filtered.map(p=>(
+                <div key={p} onClick={()=>toggle(p)}
+                  style={{padding:"10px 16px",display:"flex",alignItems:"center",gap:10,cursor:"pointer",
+                    background:localSel.has(p)?"#E8F0FE":"#fff",borderBottom:`1px solid ${C.border}`}}
+                  onMouseEnter={e=>{if(!localSel.has(p))e.currentTarget.style.background="#F0F4FF";}}
+                  onMouseLeave={e=>{e.currentTarget.style.background=localSel.has(p)?"#E8F0FE":"#fff";}}>
+                  <input type="checkbox" checked={localSel.has(p)} readOnly
+                    style={{cursor:"pointer",accentColor:C.blue,width:15,height:15}}/>
+                  <span style={{fontSize:13,color:localSel.has(p)?C.blue:C.text,fontWeight:localSel.has(p)?600:400}}>{p}</span>
+                </div>
+              ))}
+              {filtered.length===0 && (
+                <div style={{padding:24,textAlign:"center",color:C.muted,fontSize:13}}>Sin resultados</div>
+              )}
+            </div>
+            {/* Footer */}
+            <div style={{padding:"12px 16px",borderTop:`1px solid ${C.border}`,display:"flex",gap:8,justifyContent:"space-between",alignItems:"center",background:"#F8FAFC"}}>
+              <span style={{fontSize:12,color:C.muted}}>{localSel.size} seleccionados</span>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={handleClear}
+                  style={{padding:"8px 16px",borderRadius:8,border:`1px solid ${C.border}`,background:"#F1F5F9",color:C.text,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>
+                  Limpiar
+                </button>
+                <button onClick={handleApply}
+                  style={{padding:"8px 20px",borderRadius:8,border:"none",background:C.blue,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>
+                  Aplicar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
