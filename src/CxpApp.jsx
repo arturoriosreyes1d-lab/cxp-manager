@@ -118,6 +118,7 @@ export default function CxpApp({ user, onLogout }) {
   const [search, setSearch] = useState("");
   const [carteraTab, setCarteraTab] = useState("activas"); // "activas" | "pagadas" | "resumen"
   const [filtroGrupo, setFiltroGrupo] = useState("");
+  const [filtroProveedores, setFiltroProveedores] = useState(new Set()); // multi-select
   const [grupoPor, setGrupoPor] = useState("proveedor");
   const [grupo2, setGrupo2] = useState(""); // secondary grouping
   const [modalInv, setModalInv] = useState(null);
@@ -246,6 +247,7 @@ export default function CxpApp({ user, onLogout }) {
       if(carteraTab === "activas" && inv.estatus === "Pagado") return false;
       if(carteraTab === "pagadas" && inv.estatus !== "Pagado") return false;
       if(filters.proveedor && inv.proveedor!==filters.proveedor) return false;
+      if(filtroProveedores.size > 0 && !filtroProveedores.has(inv.proveedor)) return false;
       if(filters.clasificacion && inv.clasificacion!==filters.clasificacion) return false;
       if(filters.estatus && inv.estatus!==filters.estatus) return false;
       if(filters.fechaFrom && inv.fecha<filters.fechaFrom) return false;
@@ -276,7 +278,7 @@ export default function CxpApp({ user, onLogout }) {
       });
     }
     return result;
-  }, [curInvoices, filters, search, sortCol, sortDir, carteraTab, filtroGrupo, suppliers]);
+  }, [curInvoices, filters, search, sortCol, sortDir, carteraTab, filtroGrupo, filtroProveedores, suppliers]);
 
   const kpis = useMemo(() => {
     const allInvs = [...invoices.MXN,...invoices.USD,...invoices.EUR];
@@ -1127,17 +1129,93 @@ export default function CxpApp({ user, onLogout }) {
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:18,marginBottom:20}}>
           <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
             <input ref={searchRef} placeholder="🔍 Buscar…" value={search} onChange={e=>setSearch(e.target.value)} style={{...inputStyle,maxWidth:200}} />
-            {/* Filtro por Grupo */}
-            <select value={filtroGrupo} onChange={e=>setFiltroGrupo(e.target.value)}
-              style={{...selectStyle,maxWidth:180,borderColor:filtroGrupo?C.blue:C.border,color:filtroGrupo?C.blue:C.text,fontWeight:filtroGrupo?700:400}}>
-              <option value="">🏨 Grupo</option>
-              {gruposList.length===0 && <option disabled>— Sin grupos configurados —</option>}
-              {gruposList.map(g=><option key={g} value={g}>{g}</option>)}
-            </select>
-            <select value={filters.proveedor} onChange={e=>setFilters(f=>({...f,proveedor:e.target.value}))} style={{...selectStyle,maxWidth:200}}>
-              <option value="">Todos los proveedores</option>
-              {[...new Set(curInvoices.map(i=>i.proveedor))].sort().map(p=><option key={p}>{p}</option>)}
-            </select>
+            {/* Filtro por Grupo — solo en Activas/Pagadas; en Resumen el picker está dentro */}
+            {carteraTab !== "resumen" && (
+              <select value={filtroGrupo} onChange={e=>setFiltroGrupo(e.target.value)}
+                style={{...selectStyle,maxWidth:180,borderColor:filtroGrupo?C.blue:C.border,color:filtroGrupo?C.blue:C.text,fontWeight:filtroGrupo?700:400}}>
+                <option value="">🏨 Grupo</option>
+                {gruposList.length===0 && <option disabled>— Sin grupos configurados —</option>}
+                {gruposList.map(g=><option key={g} value={g}>{g}</option>)}
+              </select>
+            )}
+            {/* Proveedor multi-select picker */}
+            {(()=>{
+              const [open, setOpen] = React.useState(false);
+              const [localSearch, setLocalSearch] = React.useState("");
+              const [localSel, setLocalSel] = React.useState(new Set(filtroProveedores));
+              const provList = [...new Set(curInvoices.map(i=>i.proveedor))].sort();
+              const filtered2 = localSearch ? provList.filter(p=>p.toLowerCase().includes(localSearch.toLowerCase())) : provList;
+              const handleOpen = () => { setLocalSel(new Set(filtroProveedores)); setLocalSearch(""); setOpen(true); };
+              const handleApply = () => { setFiltroProveedores(new Set(localSel)); setOpen(false); };
+              const toggleAll = () => { if(localSel.size===filtered2.length) setLocalSel(new Set()); else setLocalSel(new Set(filtered2)); };
+              const label = filtroProveedores.size===0 ? "Todos los proveedores" : filtroProveedores.size===1 ? [...filtroProveedores][0] : `${filtroProveedores.size} proveedores`;
+              return (
+                <>
+                  <button onClick={handleOpen} style={{...inputStyle,display:"flex",alignItems:"center",gap:6,cursor:"pointer",
+                    background:filtroProveedores.size>0?"#E8F0FE":C.surface,
+                    borderColor:filtroProveedores.size>0?C.blue:C.border,
+                    color:filtroProveedores.size>0?C.blue:C.muted,
+                    fontWeight:filtroProveedores.size>0?700:400,minWidth:200,justifyContent:"space-between",maxWidth:220}}>
+                    <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</span>
+                    <span style={{fontSize:10,flexShrink:0}}>▼</span>
+                  </button>
+                  {open && (
+                    <div style={{position:"fixed",inset:0,zIndex:500,background:"rgba(0,0,0,.3)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
+                      onClick={()=>setOpen(false)}>
+                      <div style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:440,maxHeight:"75vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.25)"}}
+                        onClick={e=>e.stopPropagation()}>
+                        {/* Header */}
+                        <div style={{padding:"16px 20px",background:C.navy,display:"flex",justifyContent:"space-between",alignItems:"center",borderRadius:"16px 16px 0 0"}}>
+                          <span style={{fontWeight:800,color:"#fff",fontSize:15}}>🏢 Seleccionar Proveedores</span>
+                          <button onClick={()=>setOpen(false)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:6,color:"#fff",width:28,height:28,cursor:"pointer",fontSize:16}}>×</button>
+                        </div>
+                        {/* Search */}
+                        <div style={{padding:"12px 16px",borderBottom:`1px solid ${C.border}`}}>
+                          <input autoFocus placeholder="🔍 Buscar proveedor…" value={localSearch}
+                            onChange={e=>setLocalSearch(e.target.value)}
+                            style={{...inputStyle,width:"100%",boxSizing:"border-box"}}/>
+                        </div>
+                        {/* Select all */}
+                        <div style={{padding:"8px 16px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:8,cursor:"pointer",background:"#F8FAFC"}}
+                          onClick={toggleAll}>
+                          <input type="checkbox" checked={localSel.size===filtered2.length&&filtered2.length>0} onChange={toggleAll}
+                            style={{cursor:"pointer",accentColor:C.blue,width:15,height:15}} onClick={e=>e.stopPropagation()}/>
+                          <span style={{fontSize:13,fontWeight:600,color:C.navy}}>
+                            {localSel.size===filtered2.length&&filtered2.length>0?"Deseleccionar todos":"Seleccionar todos"}
+                          </span>
+                          <span style={{fontSize:12,color:C.muted,marginLeft:"auto"}}>{filtered2.length} proveedores</span>
+                        </div>
+                        {/* List */}
+                        <div style={{overflowY:"auto",flex:1}}>
+                          {filtered2.map(p=>(
+                            <div key={p} onClick={()=>{const n=new Set(localSel);n.has(p)?n.delete(p):n.add(p);setLocalSel(n);}}
+                              style={{padding:"10px 16px",display:"flex",alignItems:"center",gap:10,cursor:"pointer",
+                                background:localSel.has(p)?"#E8F0FE":"#fff",borderBottom:`1px solid ${C.border}`}}
+                              onMouseEnter={e=>{if(!localSel.has(p))e.currentTarget.style.background="#F0F4FF";}}
+                              onMouseLeave={e=>{e.currentTarget.style.background=localSel.has(p)?"#E8F0FE":"#fff";}}>
+                              <input type="checkbox" checked={localSel.has(p)} readOnly
+                                style={{cursor:"pointer",accentColor:C.blue,width:15,height:15}}/>
+                              <span style={{fontSize:13,color:localSel.has(p)?C.blue:C.text,fontWeight:localSel.has(p)?600:400}}>{p}</span>
+                            </div>
+                          ))}
+                          {filtered2.length===0&&<div style={{padding:20,textAlign:"center",color:C.muted,fontSize:13}}>Sin resultados</div>}
+                        </div>
+                        {/* Footer */}
+                        <div style={{padding:"12px 16px",borderTop:`1px solid ${C.border}`,display:"flex",gap:8,justifyContent:"space-between",alignItems:"center",background:"#F8FAFC"}}>
+                          <span style={{fontSize:12,color:C.muted}}>{localSel.size} seleccionados</span>
+                          <div style={{display:"flex",gap:8}}>
+                            <button onClick={()=>{setLocalSel(new Set());setFiltroProveedores(new Set());setOpen(false);}}
+                              style={{padding:"8px 16px",borderRadius:8,border:`1px solid ${C.border}`,background:"#F1F5F9",color:C.text,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>Limpiar</button>
+                            <button onClick={handleApply}
+                              style={{padding:"8px 18px",borderRadius:8,border:"none",background:C.blue,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>Aplicar</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
             <select value={filters.clasificacion} onChange={e=>setFilters(f=>({...f,clasificacion:e.target.value}))} style={{...selectStyle,maxWidth:180}}>
               <option value="">Todas las clasificaciones</option>
               {clases.map(c=><option key={c}>{c}</option>)}
@@ -1150,7 +1228,7 @@ export default function CxpApp({ user, onLogout }) {
             )}
             <input type="date" value={filters.fechaFrom} onChange={e=>setFilters(f=>({...f,fechaFrom:e.target.value}))} style={{...inputStyle,maxWidth:150}} title="Fecha desde"/>
             <input type="date" value={filters.fechaTo} onChange={e=>setFilters(f=>({...f,fechaTo:e.target.value}))} style={{...inputStyle,maxWidth:150}} title="Fecha hasta"/>
-            <button onClick={()=>{setFilters({proveedor:"",clasificacion:"",estatus:"",fechaFrom:"",fechaTo:"",pagoFrom:"",pagoTo:""});setSearch("");setFiltroGrupo("");}} style={{...btnStyle,background:"#F1F5F9",color:C.text}}>Limpiar</button>
+            <button onClick={()=>{setFilters({proveedor:"",clasificacion:"",estatus:"",fechaFrom:"",fechaTo:"",pagoFrom:"",pagoTo:""});setSearch("");setFiltroGrupo("");setFiltroProveedores(new Set());}} style={{...btnStyle,background:"#F1F5F9",color:C.text}}>Limpiar</button>
           </div>
           {carteraTab !== "resumen" && (
             <>
@@ -1223,6 +1301,8 @@ export default function CxpApp({ user, onLogout }) {
             suppliers={suppliers}
             currency={currency}
             filtroGrupo={filtroGrupo}
+            setFiltroGrupo={setFiltroGrupo}
+            gruposList={gruposList}
             searchQuery={search}
             fmt={fmt}
             C={C}
@@ -2777,23 +2857,21 @@ function ClientesView({ clientes, setClientes, empresaId, esConsulta = false }) 
 }
 
 /* ── ResumenCartera component ────────────────────────────────────────── */
-function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, searchQuery, fmt, C }) {
+function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroGrupo, gruposList, searchQuery, fmt, C }) {
   const hoy = new Date().toISOString().slice(0,10);
   const [detailModal, setDetailModal] = React.useState(null);
-  const [expandedGrupos, setExpandedGrupos] = React.useState(new Set());
-  const [expandedGruposSummary, setExpandedGruposSummary] = React.useState(new Set());
-
-  const toggleGrupo = (key) => setExpandedGrupos(prev => { const n=new Set(prev); n.has(key)?n.delete(key):n.add(key); return n; });
-  const toggleGrupoSummary = (key) => setExpandedGruposSummary(prev => { const n=new Set(prev); n.has(key)?n.delete(key):n.add(key); return n; });
+  const [grupoPickerOpen, setGrupoPickerOpen] = React.useState(false);
+  const [expandedGruposMon, setExpandedGruposMon] = React.useState(new Set());
+  const toggleGrupoMon = (key) => setExpandedGruposMon(prev => { const n=new Set(prev); n.has(key)?n.delete(key):n.add(key); return n; });
 
   const calcDias = (venc) => venc ? Math.ceil((new Date(venc)-new Date(hoy))/864e5) : null;
 
   const aging = (saldo, vencimiento, estatus) => {
     if(estatus==="Pagado"||saldo<=0) return {corriente:0,v7:0,v15:0,v30:0,v60:0,vmas:0};
     if(!vencimiento) return {corriente:saldo,v7:0,v15:0,v30:0,v60:0,vmas:0};
-    const dias = calcDias(vencimiento);
-    if(dias>=0) return {corriente:saldo,v7:0,v15:0,v30:0,v60:0,vmas:0};
-    const d=Math.abs(dias);
+    const d2 = calcDias(vencimiento);
+    if(d2>=0) return {corriente:saldo,v7:0,v15:0,v30:0,v60:0,vmas:0};
+    const d=Math.abs(d2);
     if(d<=7)  return {corriente:0,v7:saldo,v15:0,v30:0,v60:0,vmas:0};
     if(d<=15) return {corriente:0,v7:0,v15:saldo,v30:0,v60:0,vmas:0};
     if(d<=30) return {corriente:0,v7:0,v15:0,v30:saldo,v60:0,vmas:0};
@@ -2810,13 +2888,13 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, searchQuer
   const monedaColor = {MXN:C.mxn,USD:C.usd,EUR:C.eur};
   const monedaBg = {MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"};
 
-  // Build per-proveedor data (all currencies)
+  // Build per-proveedor+moneda data
   const allProvData = React.useMemo(()=>{
     const map = {};
     activeInvoices.forEach(inv=>{
       const p=inv.proveedor||"—";
       const mon=(inv.moneda||"MXN");
-      const key=`${p}|${mon}`;
+      const key=`${p}||${mon}`;
       if(!map[key]){
         const sup=suppliers.find(s=>s.nombre===p);
         map[key]={nombre:p,grupo:sup?.grupo||"",moneda:mon,total:0,pagado:0,saldo:0,count:0,invoices:[],...zeroAging()};
@@ -2832,64 +2910,40 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, searchQuer
     return Object.values(map);
   },[activeInvoices,suppliers]);
 
-  // Group summary — all monedas per grupo
-  const grupoSummary = React.useMemo(()=>{
+  // Flat proveedor list (no grouping) — filtered by search
+  const provFlat = React.useMemo(()=>{
+    // Merge same proveedor across monedas for flat view
     const map={};
     allProvData.forEach(p=>{
-      const g=p.grupo||"Sin Grupo";
-      if(filtroGrupo&&g!==filtroGrupo) return;
-      if(searchQuery&&!p.nombre.toLowerCase().includes(searchQuery.toLowerCase())&&!g.toLowerCase().includes(searchQuery.toLowerCase())) return;
-      if(!map[g]) map[g]={nombre:g,byMon:{}};
-      const mon=p.moneda;
-      if(!map[g].byMon[mon]) map[g].byMon[mon]={total:0,pagado:0,saldo:0,count:0,...zeroAging(),proveedores:[]};
-      map[g].byMon[mon].total+=p.total;
-      map[g].byMon[mon].pagado+=p.pagado;
-      map[g].byMon[mon].saldo+=p.saldo;
-      map[g].byMon[mon].count+=p.count;
-      addAging(map[g].byMon[mon],p);
-      map[g].byMon[mon].proveedores.push(p);
+      if(searchQuery && !p.nombre.toLowerCase().includes(searchQuery.toLowerCase())) return;
+      if(!map[p.nombre]) map[p.nombre]={nombre:p.nombre,grupo:p.grupo,byMon:{}};
+      map[p.nombre].byMon[p.moneda]=p;
     });
     return Object.values(map).sort((a,b)=>{
       const sA=Object.values(a.byMon).reduce((s,v)=>s+v.saldo,0);
       const sB=Object.values(b.byMon).reduce((s,v)=>s+v.saldo,0);
       return sB-sA;
     });
-  },[allProvData,filtroGrupo,searchQuery]);
+  },[allProvData,searchQuery]);
 
-  // Per-currency data for detail tables
-  const buildData = React.useMemo(()=>{
-    const result={};
-    currencies.forEach(mon=>{
-      const invs=activeInvoices.filter(i=>(i.moneda||"MXN")===mon);
-      if(!invs.length){result[mon]=null;return;}
-      const map={};
-      invs.forEach(inv=>{
-        const p=inv.proveedor||"—";
-        if(!map[p]){const sup=suppliers.find(s=>s.nombre===p);map[p]={nombre:p,grupo:sup?.grupo||"",total:0,pagado:0,saldo:0,count:0,invoices:[],...zeroAging()};}
-        const saldo=(+inv.total||0)-(+inv.montoPagado||0);
-        map[p].total+=(+inv.total||0);map[p].pagado+=(+inv.montoPagado||0);map[p].saldo+=saldo;map[p].count+=1;map[p].invoices.push(inv);
-        addAging(map[p],aging(saldo,inv.vencimiento,inv.estatus));
-      });
-      const gmap={};
-      Object.values(map).forEach(p=>{
-        const g=p.grupo||"Sin Grupo";
-        if(searchQuery&&!p.nombre.toLowerCase().includes(searchQuery.toLowerCase())&&!g.toLowerCase().includes(searchQuery.toLowerCase())) return;
-        if(filtroGrupo&&g!==filtroGrupo) return;
-        if(!gmap[g]) gmap[g]={nombre:g,proveedores:[],total:0,pagado:0,saldo:0,count:0,...zeroAging()};
-        gmap[g].proveedores.push(p);
-        gmap[g].total+=p.total;gmap[g].pagado+=p.pagado;gmap[g].saldo+=p.saldo;gmap[g].count+=p.count;
-        addAging(gmap[g],p);
-      });
-      const grupos=Object.values(gmap).filter(g=>g.proveedores.length>0).sort((a,b)=>b.saldo-a.saldo);
-      const grand=grupos.reduce((acc,g)=>{acc.total+=g.total;acc.pagado+=g.pagado;acc.saldo+=g.saldo;acc.count+=g.count;addAging(acc,g);return acc;},{total:0,pagado:0,saldo:0,count:0,...zeroAging()});
-      result[mon]={grupos,grand,allInvs:invs};
+  // Group view — only when filtroGrupo is set
+  const grupoData = React.useMemo(()=>{
+    if(!filtroGrupo) return null;
+    const byMon={};
+    allProvData.forEach(p=>{
+      if(p.grupo !== filtroGrupo) return;
+      const mon=p.moneda;
+      if(!byMon[mon]) byMon[mon]={total:0,pagado:0,saldo:0,count:0,...zeroAging(),proveedores:[]};
+      byMon[mon].proveedores.push(p);
+      byMon[mon].total+=p.total; byMon[mon].pagado+=p.pagado; byMon[mon].saldo+=p.saldo; byMon[mon].count+=p.count;
+      addAging(byMon[mon],p);
     });
-    return result;
-  },[activeInvoices,suppliers,filtroGrupo,searchQuery]);
+    return byMon;
+  },[allProvData,filtroGrupo]);
 
-  const openDetail=(title,invList)=>{if(!invList||!invList.length) return; setDetailModal({title,invoices:invList});};
+  const openDetail=(title,invList)=>{ if(!invList||!invList.length) return; setDetailModal({title,invoices:invList}); };
 
-  const clickableVal=(v,sym,invList,label,intense=false)=>v>0?(
+  const vCell=(v,sym,invList,label,intense=false)=>v>0?(
     <span onClick={()=>openDetail(label,invList)}
       style={{fontWeight:700,color:intense?"#B71C1C":C.danger,cursor:"pointer",borderBottom:`1px dotted ${intense?"#B71C1C":C.danger}`}}>
       {sym}{fmt(v)}
@@ -2962,222 +3016,182 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, searchQuer
     );
   };
 
+  // Grupo Picker Modal
+  const GrupoPicker=()=>{
+    if(!grupoPickerOpen) return null;
+    return(
+      <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.4)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
+        onClick={()=>setGrupoPickerOpen(false)}>
+        <div style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:400,boxShadow:"0 24px 64px rgba(0,0,0,.25)",overflow:"hidden"}}
+          onClick={e=>e.stopPropagation()}>
+          <div style={{padding:"16px 20px",background:C.navy,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontWeight:800,color:"#fff",fontSize:15}}>🏨 Seleccionar Grupo</span>
+            <button onClick={()=>setGrupoPickerOpen(false)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:6,color:"#fff",width:28,height:28,cursor:"pointer",fontSize:16}}>×</button>
+          </div>
+          <div style={{padding:"8px 0"}}>
+            {/* All option */}
+            <div onClick={()=>{setFiltroGrupo("");setGrupoPickerOpen(false);}}
+              style={{padding:"12px 20px",cursor:"pointer",fontSize:14,color:!filtroGrupo?C.blue:C.text,fontWeight:!filtroGrupo?700:400,background:!filtroGrupo?"#E8F0FE":"#fff",display:"flex",alignItems:"center",gap:8}}
+              onMouseEnter={e=>e.currentTarget.style.background=!filtroGrupo?"#E8F0FE":"#F0F4FF"}
+              onMouseLeave={e=>e.currentTarget.style.background=!filtroGrupo?"#E8F0FE":"#fff"}>
+              <span>📋</span> Todos los proveedores
+              {!filtroGrupo && <span style={{marginLeft:"auto",fontSize:12,color:C.blue}}>✓ Activo</span>}
+            </div>
+            {gruposList.length===0 && (
+              <div style={{padding:"20px",textAlign:"center",color:C.muted,fontSize:13,fontStyle:"italic"}}>
+                Sin grupos configurados.<br/>Asígnalos en Proveedores → Grupo Empresarial.
+              </div>
+            )}
+            {gruposList.map(g=>(
+              <div key={g} onClick={()=>{setFiltroGrupo(g);setGrupoPickerOpen(false);}}
+                style={{padding:"12px 20px",cursor:"pointer",fontSize:14,color:filtroGrupo===g?C.blue:C.text,fontWeight:filtroGrupo===g?700:400,background:filtroGrupo===g?"#E8F0FE":"#fff",display:"flex",alignItems:"center",gap:8}}
+                onMouseEnter={e=>e.currentTarget.style.background=filtroGrupo===g?"#E8F0FE":"#F0F4FF"}
+                onMouseLeave={e=>e.currentTarget.style.background=filtroGrupo===g?"#E8F0FE":"#fff"}>
+                <span>🏨</span> {g}
+                {filtroGrupo===g && <span style={{marginLeft:"auto",fontSize:12,color:C.blue}}>✓ Activo</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const COLS = ["# Facturas","Total","Pagado","Saldo","Corriente","Vencido 1-7 Días","Vencido 8-15 Días","Vencido 16-30 Días","Vencido 31-60 Días","Vencido +60 Días",""];
+
+  // Render flat proveedor table for a given moneda
+  const ProvTable=({mon, provs})=>{
+    const sym=monedaSym(mon);
+    const grand=provs.reduce((acc,p)=>{
+      acc.total+=p.total;acc.pagado+=p.pagado;acc.saldo+=p.saldo;acc.count+=p.count;addAging(acc,p);return acc;
+    },{total:0,pagado:0,saldo:0,count:0,...zeroAging()});
+    const allInvs=provs.flatMap(p=>p.invoices);
+    const filterInvs=(fn)=>allInvs.filter(inv=>{const d=calcDias(inv.vencimiento);return fn(d);});
+
+    return(
+      <div style={{marginBottom:28}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+          <span style={{fontSize:20}}>{monedaFlag[mon]}</span>
+          <span style={{fontSize:17,fontWeight:900,color:monedaColor[mon]}}>{mon}</span>
+          <span style={{fontSize:13,color:C.muted}}>{grand.count} facturas activas · {provs.length} proveedores</span>
+        </div>
+        {/* Chips */}
+        <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+          {[
+            {l:"Saldo",v:grand.saldo,c:C.navy,bg:"#E8F0FE",inv:allInvs},
+            {l:"Corriente",v:grand.corriente,c:C.ok,bg:"#E8F5E9",inv:filterInvs(d=>d!==null&&d>=0)},
+            {l:"Venc 1-7d",v:grand.v7,c:"#E57373",bg:"#FFF5F5",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)<=7)},
+            {l:"Venc 8-15d",v:grand.v15,c:C.danger,bg:"#FFEBEE",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=15)},
+            {l:"Venc 16-30d",v:grand.v30,c:"#C62828",bg:"#FFCDD2",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30)},
+            {l:"Venc 31-60d",v:grand.v60,c:"#B71C1C",bg:"#EF9A9A",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=60)},
+            {l:"Venc +60d",v:grand.vmas,c:"#7F0000",bg:"#E57373",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>60)},
+          ].filter(k=>k.v>0).map(k=>(
+            <div key={k.l} onClick={()=>openDetail(`${mon} — ${k.l}`,k.inv)}
+              style={{background:k.bg,borderRadius:10,padding:"9px 14px",cursor:"pointer",transition:"transform .15s"}}
+              onMouseEnter={e=>e.currentTarget.style.transform="scale(1.03)"}
+              onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
+              <div style={{fontSize:10,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:2}}>{k.l}</div>
+              <div style={{fontSize:16,fontWeight:900,color:k.c}}>{sym}{fmt(k.v)}</div>
+            </div>
+          ))}
+        </div>
+        {/* Table */}
+        <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden"}}>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:1100}}>
+              <thead>
+                <tr style={{background:C.navy}}>
+                  <th style={{padding:"11px 14px",textAlign:"left",color:"#fff",fontWeight:700,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap"}}>Proveedor</th>
+                  {COLS.map((h,ci)=>(
+                    <th key={h||ci} style={{padding:"11px 10px",textAlign:h?"right":"left",color:["Corriente","# Facturas","Total","Pagado","Saldo"].includes(h)?"#A5D6A7":h.startsWith("Vencido")?"#FFCDD2":"#fff",fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {provs.sort((a,b)=>b.saldo-a.saldo).map((p,pi)=>{
+                  const fi=(fn)=>p.invoices.filter(inv=>{const d=calcDias(inv.vencimiento);return fn(d);});
+                  return(
+                    <tr key={p.nombre} style={{borderTop:`1px solid ${C.border}`,background:pi%2===0?"#FAFBFF":"#fff"}}
+                      onMouseEnter={e=>e.currentTarget.style.background="#E8F0FE"}
+                      onMouseLeave={e=>e.currentTarget.style.background=pi%2===0?"#FAFBFF":"#fff"}>
+                      <td style={{padding:"11px 14px",fontWeight:600,fontSize:13,color:C.text}}>{p.nombre}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",color:C.muted,fontSize:13}}>{p.count}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontWeight:600,fontSize:13}}>{sym}{fmt(p.total)}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",color:C.ok,fontSize:13}}>{sym}{fmt(p.pagado)}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:14,cursor:"pointer"}} onClick={()=>openDetail(`${p.nombre} — Todas`,p.invoices)}>
+                        <span style={{fontWeight:800,color:p.saldo>0?C.navy:C.muted,borderBottom:`1px dotted ${C.navy}`}}>{sym}{fmt(p.saldo)}</span>
+                      </td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{p.corriente>0?<span style={{color:C.ok,fontWeight:600,cursor:"pointer",borderBottom:`1px dotted ${C.ok}`}} onClick={()=>openDetail(`${p.nombre} — Corriente`,fi(d=>d!==null&&d>=0))}>{sym}{fmt(p.corriente)}</span>:<span style={{color:C.muted}}>—</span>}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{vCell(p.v7,sym,fi(d=>d!==null&&d<0&&Math.abs(d)<=7),`${p.nombre} — Venc 1-7d`)}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{vCell(p.v15,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=15),`${p.nombre} — Venc 8-15d`)}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{vCell(p.v30,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30),`${p.nombre} — Venc 16-30d`,true)}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{vCell(p.v60,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=60),`${p.nombre} — Venc 31-60d`,true)}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{vCell(p.vmas,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>60),`${p.nombre} — Venc +60d`,true)}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right"}}>
+                        <button onClick={()=>openDetail(`${p.nombre} — Todas`,p.invoices)}
+                          style={{padding:"5px 12px",borderRadius:8,border:`1px solid ${C.blue}`,background:"#E8F0FE",color:C.blue,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>Ver →</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return(
     <div>
       <DetailModal/>
+      <GrupoPicker/>
 
-      {/* ── SECCIÓN 1: RESUMEN POR GRUPO (multimoneda) ── */}
-      {grupoSummary.length>0&&(
-        <div style={{marginBottom:32}}>
-          <div style={{fontWeight:800,fontSize:15,color:C.navy,marginBottom:12,display:"flex",alignItems:"center",gap:8}}>
-            <span style={{fontSize:20}}>🏨</span> Resumen por Grupo Empresarial
-            <span style={{fontSize:12,color:C.muted,fontWeight:400}}>— todas las monedas consolidadas</span>
+      {/* Header with grupo picker button */}
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+        <button onClick={()=>setGrupoPickerOpen(true)}
+          style={{display:"flex",alignItems:"center",gap:8,padding:"9px 18px",borderRadius:10,
+            border:`2px solid ${filtroGrupo?C.blue:C.border}`,
+            background:filtroGrupo?"#E8F0FE":C.surface,
+            color:filtroGrupo?C.blue:C.text,
+            fontWeight:filtroGrupo?800:500,fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"all .15s"}}>
+          <span>🏨</span>
+          {filtroGrupo ? `Grupo: ${filtroGrupo}` : "Ver por Grupo"}
+          <span style={{fontSize:11,opacity:.7}}>▼</span>
+        </button>
+        {filtroGrupo && (
+          <button onClick={()=>setFiltroGrupo("")}
+            style={{padding:"8px 14px",borderRadius:10,border:`1px solid ${C.border}`,background:"#F1F5F9",color:C.text,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>
+            ✕ Ver todos
+          </button>
+        )}
+      </div>
+
+      {/* ── VISTA GRUPO SELECCIONADO ── */}
+      {filtroGrupo && grupoData && (
+        <div>
+          <div style={{fontWeight:800,fontSize:16,color:C.navy,marginBottom:16,display:"flex",alignItems:"center",gap:8}}>
+            🏨 {filtroGrupo}
+            <span style={{fontSize:13,color:C.muted,fontWeight:400}}>— deuda consolidada por moneda</span>
           </div>
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {grupoSummary.map(grupo=>{
-              const expanded=expandedGruposSummary.has(grupo.nombre);
-              const mons=Object.keys(grupo.byMon).sort();
-              return(
-                <div key={grupo.nombre} style={{background:C.surface,border:`1px solid ${expanded?C.blue:C.border}`,borderRadius:12,overflow:"hidden"}}>
-                  {/* Grupo header */}
-                  <div onClick={()=>toggleGrupoSummary(grupo.nombre)}
-                    style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 18px",background:expanded?"#E8F0FE":"#F8FAFC",cursor:"pointer"}}>
-                    <div style={{display:"flex",alignItems:"center",gap:10}}>
-                      <span style={{fontSize:13,color:C.blue,display:"inline-block",transform:expanded?"rotate(90deg)":"rotate(0deg)",transition:"transform .2s"}}>▶</span>
-                      <span style={{fontWeight:800,fontSize:15,color:C.navy}}>🏨 {grupo.nombre}</span>
-                    </div>
-                    {/* Chips por moneda */}
-                    <div style={{display:"flex",gap:16,flexWrap:"wrap",alignItems:"center"}}>
-                      {mons.map(mon=>{
-                        const v=grupo.byMon[mon];
-                        const sym=monedaSym(mon);
-                        const vencTotal=v.v7+v.v15+v.v30+v.v60+v.vmas;
-                        return(
-                          <div key={mon} style={{display:"flex",alignItems:"center",gap:10}}>
-                            <span style={{background:monedaBg[mon],color:monedaColor[mon],fontWeight:800,fontSize:11,padding:"2px 8px",borderRadius:20}}>{monedaFlag[mon]} {mon}</span>
-                            <div style={{textAlign:"right"}}>
-                              <div style={{fontSize:10,color:C.muted,fontWeight:600,textTransform:"uppercase"}}>Saldo</div>
-                              <div style={{fontSize:16,fontWeight:900,color:C.navy}}>{sym}{fmt(v.saldo)}</div>
-                            </div>
-                            {v.corriente>0&&<div style={{textAlign:"right"}}>
-                              <div style={{fontSize:10,color:C.muted,fontWeight:600,textTransform:"uppercase"}}>Corriente</div>
-                              <div style={{fontSize:14,fontWeight:700,color:C.ok}}>{sym}{fmt(v.corriente)}</div>
-                            </div>}
-                            {vencTotal>0&&<div style={{textAlign:"right"}}>
-                              <div style={{fontSize:10,color:C.muted,fontWeight:600,textTransform:"uppercase"}}>Vencido</div>
-                              <div style={{fontSize:14,fontWeight:700,color:C.danger}}>{sym}{fmt(vencTotal)}</div>
-                            </div>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  {/* Expanded: proveedor breakdown per moneda */}
-                  {expanded&&(
-                    <div style={{padding:"12px 18px",borderTop:`1px solid ${C.border}`,background:"#fff"}}>
-                      {mons.map(mon=>{
-                        const v=grupo.byMon[mon];
-                        const sym=monedaSym(mon);
-                        return(
-                          <div key={mon} style={{marginBottom:12}}>
-                            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
-                              <span style={{fontSize:14}}>{monedaFlag[mon]}</span>
-                              <span style={{fontWeight:700,color:monedaColor[mon],fontSize:13}}>{mon}</span>
-                              <span style={{fontSize:11,color:C.muted}}>· {v.count} facturas activas</span>
-                            </div>
-                            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                              <thead><tr style={{background:"#EEF2FF"}}>
-                                {["Proveedor","# Fact","Total","Pagado","Saldo","Corriente","Venc 1-7d","Venc 8-15d","Venc 16-30d","Venc 31-60d","Venc +60d",""].map(h=>(
-                                  <th key={h} style={{padding:"7px 10px",textAlign:h&&h!=="Proveedor"?"right":"left",color:C.navy,fontWeight:700,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
-                                ))}
-                              </tr></thead>
-                              <tbody>
-                                {v.proveedores.sort((a,b)=>b.saldo-a.saldo).map((p,pi)=>{
-                                  const fi=(fn)=>p.invoices.filter(inv=>{const d=calcDias(inv.vencimiento);return fn(d,inv);});
-                                  return(
-                                    <tr key={p.nombre} style={{borderTop:`1px solid ${C.border}`,background:pi%2===0?"#fff":"#FAFBFF"}}>
-                                      <td style={{padding:"8px 10px",fontWeight:600}}>{p.nombre}</td>
-                                      <td style={{padding:"8px 10px",textAlign:"right",color:C.muted}}>{p.count}</td>
-                                      <td style={{padding:"8px 10px",textAlign:"right",fontWeight:600}}>{sym}{fmt(p.total)}</td>
-                                      <td style={{padding:"8px 10px",textAlign:"right",color:C.ok}}>{sym}{fmt(p.pagado)}</td>
-                                      <td style={{padding:"8px 10px",textAlign:"right",cursor:"pointer"}} onClick={()=>openDetail(`${p.nombre} — ${mon} Todas`,p.invoices)}>
-                                        <span style={{fontWeight:800,color:C.navy,borderBottom:`1px dotted ${C.navy}`}}>{sym}{fmt(p.saldo)}</span>
-                                      </td>
-                                      <td style={{padding:"8px 10px",textAlign:"right"}}>{p.corriente>0?<span style={{color:C.ok,fontWeight:600,cursor:"pointer"}} onClick={()=>openDetail(`${p.nombre} — Corriente`,fi(d=>d!==null&&d>=0))}>{sym}{fmt(p.corriente)}</span>:<span style={{color:C.muted}}>—</span>}</td>
-                                      <td style={{padding:"8px 10px",textAlign:"right"}}>{clickableVal(p.v7,sym,fi(d=>d!==null&&d<0&&Math.abs(d)<=7),`${p.nombre} — Venc 1-7d`)}</td>
-                                      <td style={{padding:"8px 10px",textAlign:"right"}}>{clickableVal(p.v15,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=15),`${p.nombre} — Venc 8-15d`)}</td>
-                                      <td style={{padding:"8px 10px",textAlign:"right"}}>{clickableVal(p.v30,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30),`${p.nombre} — Venc 16-30d`,true)}</td>
-                                      <td style={{padding:"8px 10px",textAlign:"right"}}>{clickableVal(p.v60,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=60),`${p.nombre} — Venc 31-60d`,true)}</td>
-                                      <td style={{padding:"8px 10px",textAlign:"right"}}>{clickableVal(p.vmas,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>60),`${p.nombre} — Venc +60d`,true)}</td>
-                                      <td style={{padding:"8px 10px",textAlign:"right"}}>
-                                        <button onClick={()=>openDetail(`${p.nombre} — ${mon} Todas`,p.invoices)}
-                                          style={{padding:"3px 10px",borderRadius:8,border:`1px solid ${C.blue}`,background:"#E8F0FE",color:C.blue,cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>Ver →</button>
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          {currencies.map(mon=>{
+            const v=grupoData[mon];
+            if(!v||!v.proveedores.length) return null;
+            return <ProvTable key={mon} mon={mon} provs={v.proveedores}/>;
+          })}
         </div>
       )}
 
-      {/* ── SECCIÓN 2: TABLAS POR MONEDA ── */}
-      <div style={{fontWeight:800,fontSize:15,color:C.navy,marginBottom:12,marginTop:8,display:"flex",alignItems:"center",gap:8}}>
-        <span>📋</span> Detalle por Moneda
-      </div>
-      {currencies.map(mon=>{
-        const data=buildData[mon];
-        if(!data||data.grupos.length===0) return null;
-        const sym=monedaSym(mon);
-        const g=data.grand;
-        const allInvs=data.allInvs;
-        const filterInvsGlobal=(fn)=>allInvs.filter(inv=>{const d=calcDias(inv.vencimiento);return fn(d);});
-        return(
-          <div key={mon} style={{marginBottom:32}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
-              <span style={{fontSize:20}}>{monedaFlag[mon]}</span>
-              <span style={{fontSize:18,fontWeight:900,color:monedaColor[mon]}}>{mon}</span>
-              <span style={{fontSize:13,color:C.muted}}>{g.count} facturas activas</span>
-            </div>
-            {/* Chips */}
-            <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
-              {[
-                {l:"Total",v:g.total,c:C.navy,bg:"#EEF2FF",inv:allInvs},
-                {l:"Saldo",v:g.saldo,c:C.navy,bg:"#E8F0FE",inv:allInvs},
-                {l:"Corriente",v:g.corriente,c:C.ok,bg:"#E8F5E9",inv:filterInvsGlobal(d=>d!==null&&d>=0)},
-                {l:"Venc 1-7d",v:g.v7,c:"#E57373",bg:"#FFF5F5",inv:filterInvsGlobal(d=>d!==null&&d<0&&Math.abs(d)<=7)},
-                {l:"Venc 8-15d",v:g.v15,c:C.danger,bg:"#FFEBEE",inv:filterInvsGlobal(d=>d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=15)},
-                {l:"Venc 16-30d",v:g.v30,c:"#C62828",bg:"#FFCDD2",inv:filterInvsGlobal(d=>d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30)},
-                {l:"Venc 31-60d",v:g.v60,c:"#B71C1C",bg:"#EF9A9A",inv:filterInvsGlobal(d=>d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=60)},
-                {l:"Venc +60d",v:g.vmas,c:"#7F0000",bg:"#E57373",inv:filterInvsGlobal(d=>d!==null&&d<0&&Math.abs(d)>60)},
-              ].filter(k=>k.v>0).map(k=>(
-                <div key={k.l} onClick={()=>openDetail(`${mon} — ${k.l}`,k.inv)}
-                  style={{background:k.bg,borderRadius:10,padding:"10px 16px",cursor:"pointer",transition:"transform .15s"}}
-                  onMouseEnter={e=>e.currentTarget.style.transform="scale(1.03)"}
-                  onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
-                  <div style={{fontSize:10,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:3}}>{k.l}</div>
-                  <div style={{fontSize:17,fontWeight:900,color:k.c}}>{sym}{fmt(k.v)}</div>
-                </div>
-              ))}
-            </div>
-            {/* Table */}
-            <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden"}}>
-              <div style={{overflowX:"auto"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:1100}}>
-                  <thead>
-                    <tr style={{background:C.navy}}>
-                      <th style={{padding:"11px 14px",textAlign:"left",color:"#fff",fontWeight:700,fontSize:12,textTransform:"uppercase"}}>Grupo / Proveedor</th>
-                      {["# Facturas","Total","Pagado","Saldo","Corriente","Vencido 1-7 Días","Vencido 8-15 Días","Vencido 16-30 Días","Vencido 31-60 Días","Vencido +60 Días",""].map((h,ci)=>(
-                        <th key={h||ci} style={{padding:"11px 10px",textAlign:h?"right":"left",color:["Corriente","# Facturas","Total","Pagado","Saldo"].includes(h)?"#A5D6A7":h.startsWith("Venc")?"#FFCDD2":"#fff",fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.grupos.map(grupo=>{
-                      const gKey=`${mon}-${grupo.nombre}`;
-                      const expanded=expandedGrupos.has(gKey);
-                      return(
-                        <React.Fragment key={gKey}>
-                          <tr style={{background:"#F0F4FF",cursor:"pointer",borderTop:`2px solid ${C.border}`}} onClick={()=>toggleGrupo(gKey)}>
-                            <td style={{padding:"13px 14px",fontWeight:800,color:C.navy,fontSize:14}}>
-                              <span style={{marginRight:8,fontSize:11,color:C.blue,display:"inline-block",transform:expanded?"rotate(90deg)":"rotate(0deg)",transition:"transform .2s"}}>▶</span>
-                              🏨 {grupo.nombre}<span style={{marginLeft:8,fontSize:11,color:C.muted,fontWeight:400}}>{grupo.proveedores.length} prov.</span>
-                            </td>
-                            <td style={{padding:"13px 10px",textAlign:"right",fontWeight:700,fontSize:13}}>{grupo.count}</td>
-                            <td style={{padding:"13px 10px",textAlign:"right",fontWeight:700,fontSize:13}}>{sym}{fmt(grupo.total)}</td>
-                            <td style={{padding:"13px 10px",textAlign:"right",color:C.ok,fontWeight:700,fontSize:13}}>{sym}{fmt(grupo.pagado)}</td>
-                            <td style={{padding:"13px 10px",textAlign:"right",fontWeight:900,color:C.navy,fontSize:15}}>{sym}{fmt(grupo.saldo)}</td>
-                            <td style={{padding:"13px 10px",textAlign:"right",color:C.ok,fontWeight:700}}>{grupo.corriente>0?sym+fmt(grupo.corriente):"—"}</td>
-                            {[grupo.v7,grupo.v15,grupo.v30,grupo.v60,grupo.vmas].map((v,vi)=>(
-                              <td key={vi} style={{padding:"13px 10px",textAlign:"right"}}>{v>0?<span style={{color:vi>=2?"#B71C1C":C.danger,fontWeight:700}}>{sym}{fmt(v)}</span>:<span style={{color:C.muted}}>—</span>}</td>
-                            ))}
-                            <td style={{padding:"13px 10px"}}/>
-                          </tr>
-                          {expanded&&grupo.proveedores.sort((a,b)=>b.saldo-a.saldo).map((p,pi)=>{
-                            const fi=(fn)=>p.invoices.filter(inv=>{const d=calcDias(inv.vencimiento);return fn(d);});
-                            return(
-                              <tr key={p.nombre} style={{borderTop:`1px solid ${C.border}`,background:pi%2===0?"#FAFBFF":"#fff"}}
-                                onMouseEnter={e=>e.currentTarget.style.background="#E8F0FE"}
-                                onMouseLeave={e=>e.currentTarget.style.background=pi%2===0?"#FAFBFF":"#fff"}>
-                                <td style={{padding:"11px 14px 11px 40px",color:C.text,fontWeight:600,fontSize:13}}>{p.nombre}</td>
-                                <td style={{padding:"11px 10px",textAlign:"right",color:C.muted,fontSize:13}}>{p.count}</td>
-                                <td style={{padding:"11px 10px",textAlign:"right",fontWeight:600,fontSize:13}}>{sym}{fmt(p.total)}</td>
-                                <td style={{padding:"11px 10px",textAlign:"right",color:C.ok,fontSize:13}}>{sym}{fmt(p.pagado)}</td>
-                                <td style={{padding:"11px 10px",textAlign:"right",fontSize:14,cursor:"pointer"}} onClick={()=>openDetail(`${p.nombre} — Todas`,p.invoices)}>
-                                  <span style={{fontWeight:800,color:p.saldo>0?C.navy:C.muted,borderBottom:`1px dotted ${C.navy}`}}>{sym}{fmt(p.saldo)}</span>
-                                </td>
-                                <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{p.corriente>0?<span style={{color:C.ok,fontWeight:600,cursor:"pointer",borderBottom:`1px dotted ${C.ok}`}} onClick={()=>openDetail(`${p.nombre} — Corriente`,fi(d=>d!==null&&d>=0))}>{sym}{fmt(p.corriente)}</span>:<span style={{color:C.muted}}>—</span>}</td>
-                                <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{clickableVal(p.v7,sym,fi(d=>d!==null&&d<0&&Math.abs(d)<=7),`${p.nombre} — Venc 1-7d`)}</td>
-                                <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{clickableVal(p.v15,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=15),`${p.nombre} — Venc 8-15d`)}</td>
-                                <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{clickableVal(p.v30,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30),`${p.nombre} — Venc 16-30d`,true)}</td>
-                                <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{clickableVal(p.v60,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=60),`${p.nombre} — Venc 31-60d`,true)}</td>
-                                <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{clickableVal(p.vmas,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>60),`${p.nombre} — Venc +60d`,true)}</td>
-                                <td style={{padding:"11px 10px",textAlign:"right"}}>
-                                  <button onClick={()=>openDetail(`${p.nombre} — Todas`,p.invoices)}
-                                    style={{padding:"5px 12px",borderRadius:8,border:`1px solid ${C.blue}`,background:"#E8F0FE",color:C.blue,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>Ver →</button>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </React.Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        );
-      })}
+      {/* ── VISTA TODOS LOS PROVEEDORES ── */}
+      {!filtroGrupo && (
+        <div>
+          {currencies.map(mon=>{
+            const provs=provFlat.map(p=>p.byMon[mon]).filter(Boolean);
+            if(!provs.length) return null;
+            return <ProvTable key={mon} mon={mon} provs={provs}/>;
+          })}
+        </div>
+      )}
     </div>
   );
 }
