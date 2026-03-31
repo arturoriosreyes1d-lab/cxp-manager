@@ -3037,9 +3037,9 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:1100}}>
               <thead>
                 <tr style={{background:C.navy}}>
-                  <th style={{padding:"11px 14px",textAlign:"left",color:"#fff",fontWeight:700,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap"}}>Proveedor</th>
+                  <th style={{padding:"11px 14px",textAlign:"center",color:"#fff",fontWeight:700,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap"}}>Proveedor</th>
                   {COLS.map((h,ci)=>(
-                    <th key={h||ci} style={{padding:"11px 10px",textAlign:h?"right":"left",color:["Corriente","# Facturas","Total","Pagado","Saldo"].includes(h)?"#A5D6A7":h.startsWith("Vencido")?"#FFCDD2":"#fff",fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                    <th key={h||ci} style={{padding:"11px 10px",textAlign:"center",color:["Corriente","# Facturas","Total","Pagado","Saldo"].includes(h)?"#A5D6A7":h.startsWith("Vencido")?"#FFCDD2":"#fff",fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -3050,12 +3050,12 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
                     <tr key={p.nombre} style={{borderTop:`1px solid ${C.border}`,background:pi%2===0?"#FAFBFF":"#fff"}}
                       onMouseEnter={e=>e.currentTarget.style.background="#E8F0FE"}
                       onMouseLeave={e=>e.currentTarget.style.background=pi%2===0?"#FAFBFF":"#fff"}>
-                      <td style={{padding:"11px 14px",fontWeight:600,fontSize:13,color:C.text}}>{p.nombre}</td>
+                      <td style={{padding:"11px 14px",fontWeight:600,fontSize:14,color:C.text}}>{p.nombre}</td>
                       <td style={{padding:"11px 10px",textAlign:"right",color:C.muted,fontSize:13}}>{p.count}</td>
                       <td style={{padding:"11px 10px",textAlign:"right",fontWeight:600,fontSize:13}}>{sym}{fmt(p.total)}</td>
                       <td style={{padding:"11px 10px",textAlign:"right",color:C.ok,fontSize:13}}>{sym}{fmt(p.pagado)}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:14,cursor:"pointer"}} onClick={()=>openDetail(`${p.nombre} — Todas`,p.invoices)}>
-                        <span style={{fontWeight:800,color:p.saldo>0?C.navy:C.muted,borderBottom:`1px dotted ${C.navy}`}}>{sym}{fmt(p.saldo)}</span>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16,cursor:"pointer"}} onClick={()=>openDetail(`${p.nombre} — Todas`,p.invoices)}>
+                        <span style={{fontWeight:900,color:p.saldo>0?C.navy:C.muted,borderBottom:`1px dotted ${C.navy}`}}>{sym}{fmt(p.saldo)}</span>
                       </td>
                       <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{p.corriente>0?<span style={{color:C.ok,fontWeight:600,cursor:"pointer",borderBottom:`1px dotted ${C.ok}`}} onClick={()=>openDetail(`${p.nombre} — Corriente`,fi(d=>d!==null&&d>=0))}>{sym}{fmt(p.corriente)}</span>:<span style={{color:C.muted}}>—</span>}</td>
                       <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{vCell(p.v7,sym,fi(d=>d!==null&&d<0&&Math.abs(d)<=7),`${p.nombre} — Venc 1-7d`)}</td>
