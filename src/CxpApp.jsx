@@ -2868,22 +2868,31 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
     const fpArr = filtroProveedores ? [...filtroProveedores] : [];
     let html = `<html><head><meta charset="utf-8"><title>Resumen Cartera</title>
     <style>
-      body{font-family:'Segoe UI',sans-serif;font-size:11px;color:#1A2332;margin:20px;}
-      h1{font-size:16px;color:#0F2D4A;margin:0 0 4px}
-      h2{font-size:13px;color:#1565C0;margin:16px 0 8px}
-      .sub{font-size:11px;color:#64748B;margin:0 0 16px}
-      table{width:100%;border-collapse:collapse;margin-bottom:20px;page-break-inside:avoid}
-      th{background:#0F2D4A;color:#fff;padding:7px 10px;text-align:center;font-size:10px;text-transform:uppercase;white-space:nowrap}
-      th:first-child{text-align:left}
-      td{padding:7px 10px;border-bottom:1px solid #E2E8F0;text-align:right;white-space:nowrap}
-      td:first-child{text-align:left;font-weight:600}
-      tr:nth-child(even){background:#F8FAFC}
-      .total-row{background:#EEF2FF!important;font-weight:800}
-      .danger{color:#E53935} .ok{color:#43A047} .navy{color:#0F2D4A}
-      @media print{@page{size:landscape;margin:10mm}}
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 9px; color: #1A2332; padding: 10mm; }
+      h1 { font-size: 13px; color: #0F2D4A; margin-bottom: 2px; }
+      .sub { font-size: 8px; color: #64748B; margin-bottom: 10px; }
+      h2 { font-size: 10px; color: #1565C0; margin: 10px 0 5px; }
+      table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+      th { background: #0F2D4A; color: #fff; padding: 5px 6px; text-align: center; font-size: 8px; text-transform: uppercase; white-space: nowrap; overflow: hidden; }
+      th:first-child { text-align: left; width: 22%; }
+      td { padding: 5px 6px; border-bottom: 1px solid #E2E8F0; text-align: right; font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      td:first-child { text-align: left; font-weight: 600; }
+      td:nth-child(2) { text-align: center; width: 5%; }
+      tr:nth-child(even) { background: #F8FAFC; }
+      .total-row { background: #EEF2FF !important; font-weight: 800; border-top: 2px solid #0F2D4A; }
+      .danger { color: #E53935; font-weight: 700; }
+      .ok { color: #43A047; }
+      .navy { color: #0F2D4A; font-weight: 800; }
+      .muted { color: #94A3B8; }
+      @page { size: A4 landscape; margin: 8mm; }
+      @media print {
+        body { padding: 0; }
+        html, body { width: 100%; }
+      }
     </style></head><body>
     <h1>📋 Resumen de Cartera — ${titulo}</h1>
-    <div class="sub">Fecha: ${hoy2} · Solo facturas activas (Pendientes, Vencidas, Parciales)</div>`;
+    <div class="sub">Fecha: ${hoy2} &nbsp;·&nbsp; Solo facturas activas (Pendientes, Vencidas, Parciales)</div>`;
 
     currencies.forEach(mon=>{
       const invs = activeInvoices.filter(i=>(i.moneda||"MXN")===mon && (fpArr.length===0||fpArr.includes(i.proveedor)));
