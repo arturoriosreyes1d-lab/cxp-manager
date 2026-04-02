@@ -2822,6 +2822,122 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
   const monedaColor = {MXN:C.mxn,USD:C.usd,EUR:C.eur};
   const monedaBg = {MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"};
 
+  // ── Export to Excel ──
+  const exportExcel = () => {
+    const XLSX2 = XLSX;
+    const hoy2 = new Date().toLocaleDateString('es-MX');
+    const wb = XLSX2.utils.book_new();
+    const titulo = filtroGrupo ? `Grupo ${filtroGrupo}` : "Todos los Proveedores";
+    currencies.forEach(mon => {
+      const fpArr = filtroProveedores ? [...filtroProveedores] : [];
+      const invs = activeInvoices.filter(i=>(i.moneda||"MXN")===mon && (fpArr.length===0||fpArr.includes(i.proveedor)));
+      if(!invs.length) return;
+      const map = {};
+      invs.forEach(inv=>{
+        const p=inv.proveedor||"—";
+        if(filtroGrupo && (suppliers.find(s=>s.nombre===p)?.grupo||"")!==filtroGrupo) return;
+        if(!map[p]) map[p]={nombre:p,total:0,pagado:0,saldo:0,count:0,corriente:0,v7:0,v15:0,v30:0,v60:0,vmas:0};
+        const saldo=(+inv.total||0)-(+inv.montoPagado||0);
+        map[p].total+=(+inv.total||0); map[p].pagado+=(+inv.montoPagado||0); map[p].saldo+=saldo; map[p].count+=1;
+        const a=aging(saldo,inv.vencimiento,inv.estatus);
+        map[p].corriente+=a.corriente; map[p].v7+=a.v7; map[p].v15+=a.v15; map[p].v30+=a.v30; map[p].v60+=a.v60; map[p].vmas+=a.vmas;
+      });
+      const rows = Object.values(map).filter(p=>p.total>0).sort((a,b)=>b.saldo-a.saldo);
+      if(!rows.length) return;
+      const headers = ["Proveedor","# Facturas","Total","Pagado","Saldo","Corriente","Vencido 1-7 Días","Vencido 8-15 Días","Vencido 16-30 Días","Vencido 31-60 Días","Vencido +60 Días"];
+      const data = [
+        [`Reporte de Cartera — ${titulo} — ${mon}`, "", `Fecha: ${hoy2}`],
+        [],
+        headers,
+        ...rows.map(p=>[p.nombre,p.count,p.total,p.pagado,p.saldo,p.corriente,p.v7,p.v15,p.v30,p.v60,p.vmas]),
+        [],
+        ["TOTAL",rows.reduce((s,p)=>s+p.count,0),rows.reduce((s,p)=>s+p.total,0),rows.reduce((s,p)=>s+p.pagado,0),rows.reduce((s,p)=>s+p.saldo,0),rows.reduce((s,p)=>s+p.corriente,0),rows.reduce((s,p)=>s+p.v7,0),rows.reduce((s,p)=>s+p.v15,0),rows.reduce((s,p)=>s+p.v30,0),rows.reduce((s,p)=>s+p.v60,0),rows.reduce((s,p)=>s+p.vmas,0)],
+      ];
+      const ws = XLSX2.utils.aoa_to_sheet(data);
+      ws['!cols'] = [{wch:35},{wch:10},{wch:14},{wch:14},{wch:14},{wch:14},{wch:16},{wch:16},{wch:16},{wch:16},{wch:14}];
+      XLSX2.utils.book_append_sheet(wb, ws, mon);
+    });
+    const fecha = new Date().toISOString().slice(0,10);
+    XLSX2.writeFile(wb, `Resumen_Cartera_${fecha}.xlsx`);
+  };
+
+  // ── Print / PDF ──
+  const printResumen = () => {
+    const hoy2 = new Date().toLocaleDateString('es-MX');
+    const titulo = filtroGrupo ? `Grupo: ${filtroGrupo}` : "Todos los Proveedores";
+    const fpArr = filtroProveedores ? [...filtroProveedores] : [];
+    let html = `<html><head><meta charset="utf-8"><title>Resumen Cartera</title>
+    <style>
+      body{font-family:'Segoe UI',sans-serif;font-size:11px;color:#1A2332;margin:20px;}
+      h1{font-size:16px;color:#0F2D4A;margin:0 0 4px}
+      h2{font-size:13px;color:#1565C0;margin:16px 0 8px}
+      .sub{font-size:11px;color:#64748B;margin:0 0 16px}
+      table{width:100%;border-collapse:collapse;margin-bottom:20px;page-break-inside:avoid}
+      th{background:#0F2D4A;color:#fff;padding:7px 10px;text-align:center;font-size:10px;text-transform:uppercase;white-space:nowrap}
+      th:first-child{text-align:left}
+      td{padding:7px 10px;border-bottom:1px solid #E2E8F0;text-align:right;white-space:nowrap}
+      td:first-child{text-align:left;font-weight:600}
+      tr:nth-child(even){background:#F8FAFC}
+      .total-row{background:#EEF2FF!important;font-weight:800}
+      .danger{color:#E53935} .ok{color:#43A047} .navy{color:#0F2D4A}
+      @media print{@page{size:landscape;margin:10mm}}
+    </style></head><body>
+    <h1>📋 Resumen de Cartera — ${titulo}</h1>
+    <div class="sub">Fecha: ${hoy2} · Solo facturas activas (Pendientes, Vencidas, Parciales)</div>`;
+
+    currencies.forEach(mon=>{
+      const invs = activeInvoices.filter(i=>(i.moneda||"MXN")===mon && (fpArr.length===0||fpArr.includes(i.proveedor)));
+      if(!invs.length) return;
+      const map={};
+      invs.forEach(inv=>{
+        const p=inv.proveedor||"—";
+        if(filtroGrupo && (suppliers.find(s=>s.nombre===p)?.grupo||"")!==filtroGrupo) return;
+        if(!map[p]) map[p]={nombre:p,total:0,pagado:0,saldo:0,count:0,corriente:0,v7:0,v15:0,v30:0,v60:0,vmas:0};
+        const s=(+inv.total||0)-(+inv.montoPagado||0);
+        map[p].total+=(+inv.total||0); map[p].pagado+=(+inv.montoPagado||0); map[p].saldo+=s; map[p].count+=1;
+        const a=aging(s,inv.vencimiento,inv.estatus);
+        map[p].corriente+=a.corriente; map[p].v7+=a.v7; map[p].v15+=a.v15; map[p].v30+=a.v30; map[p].v60+=a.v60; map[p].vmas+=a.vmas;
+      });
+      const rows=Object.values(map).filter(p=>p.total>0).sort((a,b)=>b.saldo-a.saldo);
+      if(!rows.length) return;
+      const sym=monedaSym(mon);
+      const f=v=>v.toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+      const c=v=>v>0?`<span class="danger">${sym}${f(v)}</span>`:`<span style="color:#94A3B8">—</span>`;
+      const grand={total:0,pagado:0,saldo:0,count:0,corriente:0,v7:0,v15:0,v30:0,v60:0,vmas:0};
+      rows.forEach(p=>{Object.keys(grand).forEach(k=>grand[k]+=p[k]||0);});
+      html+=`<h2>${{MXN:"🇲🇽",USD:"🇺🇸",EUR:"🇪🇺"}[mon]} ${mon} — ${rows.length} proveedores · ${rows.reduce((s,p)=>s+p.count,0)} facturas</h2>
+      <table><thead><tr>
+        <th>Proveedor</th><th># Fact</th><th>Total</th><th>Pagado</th><th>Saldo</th>
+        <th>Corriente</th><th>Venc 1-7d</th><th>Venc 8-15d</th><th>Venc 16-30d</th><th>Venc 31-60d</th><th>Venc +60d</th>
+      </tr></thead><tbody>`;
+      rows.forEach(p=>{
+        html+=`<tr>
+          <td>${p.nombre}</td><td style="text-align:center">${p.count}</td>
+          <td>${sym}${f(p.total)}</td><td class="ok">${sym}${f(p.pagado)}</td>
+          <td class="navy"><strong>${sym}${f(p.saldo)}</strong></td>
+          <td class="ok">${p.corriente>0?sym+f(p.corriente):'<span style="color:#94A3B8">—</span>'}</td>
+          <td>${c(p.v7)}</td><td>${c(p.v15)}</td><td>${c(p.v30)}</td><td>${c(p.v60)}</td><td>${c(p.vmas)}</td>
+        </tr>`;
+      });
+      html+=`<tr class="total-row">
+        <td>TOTAL</td><td style="text-align:center">${grand.count}</td>
+        <td>${sym}${f(grand.total)}</td><td class="ok">${sym}${f(grand.pagado)}</td>
+        <td class="navy"><strong>${sym}${f(grand.saldo)}</strong></td>
+        <td class="ok">${grand.corriente>0?sym+f(grand.corriente):'—'}</td>
+        <td>${grand.v7>0?`<span class="danger">${sym}${f(grand.v7)}</span>`:'—'}</td>
+        <td>${grand.v15>0?`<span class="danger">${sym}${f(grand.v15)}</span>`:'—'}</td>
+        <td>${grand.v30>0?`<span class="danger">${sym}${f(grand.v30)}</span>`:'—'}</td>
+        <td>${grand.v60>0?`<span class="danger">${sym}${f(grand.v60)}</span>`:'—'}</td>
+        <td>${grand.vmas>0?`<span class="danger">${sym}${f(grand.vmas)}</span>`:'—'}</td>
+      </tr></tbody></table>`;
+    });
+    html+=`</body></html>`;
+    const w=window.open('','_blank','width=1200,height=800');
+    w.document.write(html);
+    w.document.close();
+    w.onload=()=>{ w.focus(); w.print(); };
+  };
+
   // Build per-proveedor+moneda data
   const allProvData = React.useMemo(()=>{
     const fpArr = filtroProveedores ? [...filtroProveedores] : [];
@@ -3084,7 +3200,7 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
       <GrupoPicker/>
 
       {/* Header with grupo picker button */}
-      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20,flexWrap:"wrap"}}>
         <button onClick={()=>setGrupoPickerOpen(true)}
           style={{display:"flex",alignItems:"center",gap:8,padding:"9px 18px",borderRadius:10,
             border:`2px solid ${filtroGrupo?C.blue:C.border}`,
@@ -3101,6 +3217,17 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
             ✕ Ver todos
           </button>
         )}
+        {/* Export buttons */}
+        <div style={{marginLeft:"auto",display:"flex",gap:8}}>
+          <button onClick={()=>exportExcel(allProvData,filtroGrupo,fmt)}
+            style={{display:"flex",alignItems:"center",gap:6,padding:"9px 16px",borderRadius:10,border:"1px solid #2E7D32",background:"#E8F5E9",color:"#2E7D32",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+            📊 Excel
+          </button>
+          <button onClick={()=>printResumen()}
+            style={{display:"flex",alignItems:"center",gap:6,padding:"9px 16px",borderRadius:10,border:"1px solid #1565C0",background:"#E3F2FD",color:"#1565C0",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+            🖨️ PDF / Imprimir
+          </button>
+        </div>
       </div>
 
       {/* ── VISTA GRUPO SELECCIONADO ── */}
