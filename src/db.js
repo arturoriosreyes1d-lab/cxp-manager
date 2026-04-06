@@ -339,6 +339,40 @@ export async function deleteIngreso(id) {
   if (error) console.error('deleteIngreso:', error);
 }
 
+/* ── Bulk delete ingresos TAS ─────────────────────────────── */
+// Delete ingresos with no cobros and no fecha_ficticia
+export async function deleteTASsinActividad(empresaId) {
+  // Get all ingreso ids for this empresa
+  const { data: todos } = await supabase.from('ingresos').select('id, fecha_ficticia').eq('empresa_id', empresaId);
+  if (!todos?.length) return { deleted: 0 };
+  // Get ingreso ids that have cobros
+  const ids = todos.map(r => r.id);
+  const { data: cobrosData } = await supabase.from('cobros').select('ingreso_id').in('ingreso_id', ids);
+  const conCobros = new Set((cobrosData || []).map(c => c.ingreso_id));
+  // Filter: no cobros AND no fecha_ficticia
+  const toDelete = todos.filter(r => !conCobros.has(r.id) && !r.fecha_ficticia).map(r => r.id);
+  if (!toDelete.length) return { deleted: 0 };
+  const { error } = await supabase.from('ingresos').delete().in('id', toDelete);
+  if (error) { console.error('deleteTASsinActividad:', error); return { deleted: 0 }; }
+  return { deleted: toDelete.length };
+}
+
+// Delete ALL ingresos + cobros + invoice_ingresos for this empresa
+export async function deleteTASTodo(empresaId) {
+  // 1. Get all ingreso ids
+  const { data: todos } = await supabase.from('ingresos').select('id').eq('empresa_id', empresaId);
+  if (!todos?.length) return { deleted: 0 };
+  const ids = todos.map(r => r.id);
+  // 2. Delete cobros
+  await supabase.from('cobros').delete().in('ingreso_id', ids);
+  // 3. Delete invoice_ingresos
+  await supabase.from('invoice_ingresos').delete().in('ingreso_id', ids);
+  // 4. Delete ingresos
+  const { error } = await supabase.from('ingresos').delete().in('id', ids);
+  if (error) { console.error('deleteTASTodo:', error); return { deleted: 0 }; }
+  return { deleted: ids.length };
+}
+
 export async function updateIngresoField(id, fields) {
   const dbFields = {};
   if ('fechaFicticia' in fields) dbFields.fecha_ficticia = fields.fechaFicticia || null;

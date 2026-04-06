@@ -10,6 +10,7 @@ import {
   upsertInvoiceIngreso, deleteInvoiceIngreso as deleteInvoiceIngresoDB,
   upsertCategoriaIngreso, deleteCategoriaIngreso as deleteCategoriaIngresoDB,
   updateIngresoField,
+  deleteTASsinActividad, deleteTASTodo,
 } from "./db.js";
 
 /* ── Palette (same as CxpApp) ──────────────────────────────────────────── */
@@ -124,6 +125,7 @@ export default function CxcView({
   const [sortCol, setSortCol] = useState("fecha");
   const [sortDir, setSortDir] = useState("desc");
   const [tasModal, setTasModal] = useState(false);
+  const [limpiarModal, setLimpiarModal] = useState(false);
   const [tasPreview, setTasPreview] = useState(null); // {rows, dupes}
   const [tasCatDefault, setTasCatDefault] = useState("");
   const [tasImportando, setTasImportando] = useState(false);
@@ -1639,7 +1641,10 @@ export default function CxcView({
           </div>
           {/* Importar Excel TravelAirSolutions */}
           {empresaId === "empresa_2" && !esConsulta && (
-            <button onClick={()=>{setTasPreview(null);setTasModal(true);}} style={{...btnStyle,background:"#C0392B",color:"#fff",padding:"8px 16px",fontSize:13}}>✈️ Importar TAS</button>
+            <>
+              <button onClick={()=>{setTasPreview(null);setTasModal(true);}} style={{...btnStyle,background:"#C0392B",color:"#fff",padding:"8px 16px",fontSize:13}}>✈️ Importar TAS</button>
+              <button onClick={()=>setLimpiarModal(true)} style={{...btnStyle,background:"#7F0000",color:"#fff",padding:"8px 16px",fontSize:13}}>🗑️ Limpiar Cartera</button>
+            </>
           )}
           {!esConsulta && <button onClick={()=>{setImportPreview(null);setImportModal(true);}} style={{...btnStyle,background:"#00897B",color:"#fff",padding:"8px 16px",fontSize:13}}>📥 Importar Excel</button>}
           {!esConsulta && <button onClick={()=>setModalIngreso({id:"",cliente:"",concepto:"",categoria:catList[0]||"Circuito",monto:"",moneda:"MXN",tipoCambio:1,fecha:today(),notas:""})} style={btnStyle}>
@@ -2299,8 +2304,30 @@ export default function CxcView({
         }}
       />}
 
-      {/* TAS Import Modal */}
-      {tasModal && (
+      {/* Limpiar Cartera TAS Modal */}
+      {limpiarModal && <LimpiarTASModal
+        empresaId={empresaId}
+        totalIngresos={ingresos.length}
+        conActividad={ingresos.filter(i=>cobros.some(c=>c.ingresoId===i.id)||i.fechaFicticia).length}
+        sinActividad={ingresos.filter(i=>!cobros.some(c=>c.ingresoId===i.id)&&!i.fechaFicticia).length}
+        onClose={()=>setLimpiarModal(false)}
+        onLimpiadoSin={(ids)=>{
+          setIngresos(prev=>prev.filter(i=>!ids.has(i.id)));
+          setCobros(prev=>prev.filter(c=>!ids.has(c.ingresoId)));
+          setLimpiarModal(false);
+        }}
+        onLimpiadoTodo={()=>{
+          setIngresos([]);
+          setCobros([]);
+          setInvoiceIngresos([]);
+          setLimpiarModal(false);
+        }}
+        C={C}
+        btnStyle={btnStyle}
+        inputStyle={inputStyle}
+      />}
+
+      {/* TAS Import Modal */}      {tasModal && (
         <ModalShell title="✈️ Importar Facturas TravelAirSolutions" onClose={()=>{setTasModal(false);setTasPreview(null);}} wide>
           {!tasPreview ? (
             <div>
@@ -2498,5 +2525,123 @@ function CobroMasivoModal({selectedList, onClose, onSave}) {
         </button>
       </div>
     </ModalShell>
+  );
+}
+
+/* ── LimpiarTASModal ─────────────────────────────────────────────────── */
+function LimpiarTASModal({ empresaId, totalIngresos, conActividad, sinActividad, onClose, onLimpiadoSin, onLimpiadoTodo, C, btnStyle, inputStyle }) {
+  const [clave, setClave] = useState("");
+  const [claveError, setClaveError] = useState(false);
+  const [procesando, setProcesando] = useState(false);
+  const [paso, setPaso] = useState(null); // null | "sin" | "todo"
+  const CLAVE = "Solecito";
+
+  const handleLimpiarSin = async () => {
+    setProcesando(true);
+    const result = await deleteTASsinActividad(empresaId);
+    // Build set of deleted ids — we don't have them back, so reload via parent
+    // Pass empty Set — parent will just reload
+    onLimpiadoSin(new Set());
+    setProcesando(false);
+  };
+
+  const handleLimpiarTodo = async () => {
+    if(clave !== CLAVE) { setClaveError(true); return; }
+    setClaveError(false);
+    setProcesando(true);
+    await deleteTASTodo(empresaId);
+    onLimpiadoTodo();
+    setProcesando(false);
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
+      onClick={onClose}>
+      <div style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:520,boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
+        onClick={e=>e.stopPropagation()}>
+        {/* Header */}
+        <div style={{padding:"18px 24px",background:"#7F0000",borderRadius:"16px 16px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontWeight:800,color:"#fff",fontSize:16}}>🗑️ Limpiar Cartera TravelAirSolutions</div>
+            <div style={{fontSize:12,color:"#FFCDD2",marginTop:3}}>Solo afecta CxC de TAS — no toca CxP ni Viajes Libero</div>
+          </div>
+          <button onClick={onClose} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",width:32,height:32,cursor:"pointer",fontSize:18}}>×</button>
+        </div>
+
+        <div style={{padding:"20px 24px"}}>
+          {/* Stats */}
+          <div style={{display:"flex",gap:10,marginBottom:20}}>
+            <div style={{flex:1,background:"#F8FAFC",borderRadius:10,padding:"12px 16px",textAlign:"center"}}>
+              <div style={{fontSize:11,color:"#64748B",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Total Ingresos</div>
+              <div style={{fontSize:22,fontWeight:900,color:"#0F2D4A"}}>{totalIngresos}</div>
+            </div>
+            <div style={{flex:1,background:"#FFF3E0",borderRadius:10,padding:"12px 16px",textAlign:"center"}}>
+              <div style={{fontSize:11,color:"#64748B",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Con actividad</div>
+              <div style={{fontSize:22,fontWeight:900,color:"#E65100"}}>{conActividad}</div>
+              <div style={{fontSize:10,color:"#94A3B8"}}>cobros o fecha ficticia</div>
+            </div>
+            <div style={{flex:1,background:"#E8F5E9",borderRadius:10,padding:"12px 16px",textAlign:"center"}}>
+              <div style={{fontSize:11,color:"#64748B",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Sin actividad</div>
+              <div style={{fontSize:22,fontWeight:900,color:"#2E7D32"}}>{sinActividad}</div>
+              <div style={{fontSize:10,color:"#94A3B8"}}>se pueden eliminar</div>
+            </div>
+          </div>
+
+          {/* Opción 1 */}
+          <div style={{background:"#F0FFF4",border:"1px solid #A5D6A7",borderRadius:12,padding:"16px",marginBottom:12}}>
+            <div style={{fontWeight:700,color:"#2E7D32",fontSize:14,marginBottom:4}}>Opción 1 — Limpiar sin actividad</div>
+            <div style={{fontSize:12,color:"#64748B",marginBottom:12}}>
+              Elimina <b>{sinActividad} ingresos</b> sin cobros ni fechas ficticias. Conserva los {conActividad} que ya tienen trabajo registrado.
+            </div>
+            {paso === "sin" ? (
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                <span style={{fontSize:13,color:"#C62828"}}>¿Confirmas eliminar {sinActividad} ingresos sin actividad?</span>
+                <button onClick={handleLimpiarSin} disabled={procesando}
+                  style={{...btnStyle,background:"#2E7D32",padding:"6px 16px",fontSize:13,opacity:procesando?0.6:1}}>
+                  {procesando?"Eliminando…":"Sí, eliminar"}
+                </button>
+                <button onClick={()=>setPaso(null)} style={{...btnStyle,background:"#F1F5F9",color:"#1A2332",padding:"6px 12px",fontSize:13}}>Cancelar</button>
+              </div>
+            ) : (
+              <button onClick={()=>setPaso("sin")} disabled={sinActividad===0}
+                style={{...btnStyle,background:"#2E7D32",padding:"7px 18px",fontSize:13,opacity:sinActividad===0?0.4:1}}>
+                🗑️ Limpiar sin actividad ({sinActividad})
+              </button>
+            )}
+          </div>
+
+          {/* Opción 2 */}
+          <div style={{background:"#FFF5F5",border:"1px solid #FFCDD2",borderRadius:12,padding:"16px"}}>
+            <div style={{fontWeight:700,color:"#C62828",fontSize:14,marginBottom:4}}>Opción 2 — Eliminar todo</div>
+            <div style={{fontSize:12,color:"#64748B",marginBottom:12}}>
+              Elimina <b>todos los {totalIngresos} ingresos</b>, incluyendo cobros registrados y vinculaciones. Esta acción no se puede deshacer.
+            </div>
+            {paso === "todo" ? (
+              <div>
+                <div style={{fontSize:12,color:"#C62828",marginBottom:8,fontWeight:600}}>Escribe la contraseña para confirmar:</div>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <input type="password" value={clave} onChange={e=>{setClave(e.target.value);setClaveError(false);}}
+                    placeholder="Contraseña…" autoFocus
+                    style={{...inputStyle,borderColor:claveError?"#E53935":"#E2E8F0",flex:1}}
+                    onKeyDown={e=>e.key==="Enter"&&handleLimpiarTodo()}/>
+                  <button onClick={handleLimpiarTodo} disabled={procesando}
+                    style={{...btnStyle,background:"#C62828",padding:"6px 16px",fontSize:13,opacity:procesando?0.6:1}}>
+                    {procesando?"Eliminando…":"Eliminar todo"}
+                  </button>
+                  <button onClick={()=>{setPaso(null);setClave("");setClaveError(false);}}
+                    style={{...btnStyle,background:"#F1F5F9",color:"#1A2332",padding:"6px 12px",fontSize:13}}>Cancelar</button>
+                </div>
+                {claveError && <div style={{fontSize:12,color:"#E53935",marginTop:6}}>⚠️ Contraseña incorrecta</div>}
+              </div>
+            ) : (
+              <button onClick={()=>setPaso("todo")}
+                style={{...btnStyle,background:"#C62828",padding:"7px 18px",fontSize:13}}>
+                ⚠️ Eliminar todo ({totalIngresos})
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
