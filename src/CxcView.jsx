@@ -129,6 +129,7 @@ export default function CxcView({
   const [tasPreview, setTasPreview] = useState(null); // {rows, dupes}
   const [tasCatDefault, setTasCatDefault] = useState("");
   const [tasImportando, setTasImportando] = useState(false);
+  const [cxcTab, setCxcTab] = useState("activas"); // "activas" | "resumen" | "cobros"
 
   /* ── Derived data ──────────────────────────────────────────── */
   const allInvoices = useMemo(() => [
@@ -401,8 +402,8 @@ export default function CxcView({
     if (detailIngreso === deleteConfirm.id) setDetailIngreso(null);
   };
 
-  const addCobro = async (ingresoId, monto, fechaCobro, notas, tipo = 'realizado') => {
-    const saved = await insertCobro({ ingresoId, monto:+monto, fechaCobro, notas, tipo });
+  const addCobro = async (ingresoId, monto, fechaCobro, notas, tipo = 'realizado', banco = '') => {
+    const saved = await insertCobro({ ingresoId, monto:+monto, fechaCobro, notas, tipo, banco });
     setCobros(prev => [saved, ...prev]);
   };
 
@@ -775,6 +776,7 @@ export default function CxcView({
     const [cobroMonto, setCobroMonto] = useState("");
     const [cobroFecha, setCobroFecha] = useState(today());
     const [cobroNotas, setCobroNotas] = useState("");
+    const [cobroBanco, setCobroBanco] = useState("Banamex");
     const [invDetail, setInvDetail] = useState(null);
     const [sortFacturas, setSortFacturas] = useState("estatus"); // "estatus"|"proveedor"|"monto"|"fecha"
 
@@ -865,11 +867,18 @@ export default function CxcView({
                   <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}>Fecha</div>
                   <input type="date" value={cobroFecha} onChange={e=>setCobroFecha(e.target.value)} style={{...inputStyle,width:140}}/>
                 </div>
+                <div>
+                  <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}>Banco</div>
+                  <select value={cobroBanco} onChange={e=>setCobroBanco(e.target.value)} style={{...inputStyle,width:120}}>
+                    <option>Banamex</option>
+                    <option>Banorte</option>
+                  </select>
+                </div>
                 <div style={{flex:1,minWidth:80}}>
                   <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}>Notas</div>
                   <input value={cobroNotas} onChange={e=>setCobroNotas(e.target.value)} placeholder="Anticipo, liq…" style={{...inputStyle}}/>
                 </div>
-                <button onClick={()=>{if(!cobroMonto||+cobroMonto<=0||!cobroFecha) return; addCobro(ing.id,cobroMonto,cobroFecha,cobroNotas,'realizado'); setCobroMonto(""); setCobroNotas("");}}
+                <button onClick={()=>{if(!cobroMonto||+cobroMonto<=0||!cobroFecha) return; addCobro(ing.id,cobroMonto,cobroFecha,cobroNotas,'realizado',cobroBanco); setCobroMonto(""); setCobroNotas("");}}
                   style={{...btnStyle,padding:"7px 14px",fontSize:12,background:C.ok}}>+ Agregar</button>
               </div>
               </>}
@@ -881,7 +890,7 @@ export default function CxcView({
                 <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 11px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:5,background:C.surface}}>
                   <div>
                     <div style={{fontWeight:700,color:C.ok,fontSize:13}}>{sym}{fmt(c.monto)}</div>
-                    <div style={{fontSize:11,color:C.muted}}>📅 {c.fechaCobro||"—"}</div>
+                    <div style={{fontSize:11,color:C.muted}}>📅 {c.fechaCobro||"—"}{c.banco ? ` · 🏦 ${c.banco}` : ""}</div>
                     {c.notas && <div style={{fontSize:10,color:C.muted,fontStyle:"italic"}}>{c.notas}</div>}
                   </div>
                   <button onClick={()=>removeCobro(c.id)} style={{...iconBtn,color:C.danger}}>🗑️</button>
@@ -1656,7 +1665,50 @@ export default function CxcView({
       <input ref={importRef} type="file" accept=".xlsx,.xls" onChange={handleImportFile} style={{display:"none"}}/>
       <input ref={tasImportRef} type="file" accept=".xlsx,.xls" onChange={handleTasImport} style={{display:"none"}}/>
 
-      {/* KPI Cards — per currency */}
+      {/* Main tabs: Activas / Resumen / Cobros */}
+      <div style={{display:"flex",borderBottom:`1px solid ${C.border}`,marginBottom:20,background:C.surface,borderRadius:"12px 12px 0 0",paddingLeft:8,marginTop:12}}>
+        {[
+          {id:"activas", label:"📋 Activas"},
+          {id:"resumen", label:"📊 Resumen"},
+          {id:"cobros",  label:"✅ Cobros"},
+        ].map(t=>(
+          <button key={t.id} onClick={()=>setCxcTab(t.id)} style={{
+            padding:"10px 22px",border:"none",
+            borderBottom:cxcTab===t.id?`3px solid ${C.blue}`:"3px solid transparent",
+            background:"transparent",color:cxcTab===t.id?C.blue:C.muted,
+            fontWeight:cxcTab===t.id?800:500,fontSize:14,cursor:"pointer",fontFamily:"inherit",
+            transition:"all .15s",whiteSpace:"nowrap",
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* ── PESTAÑA RESUMEN ── */}
+      {cxcTab === "resumen" && (
+        <ResumenCxC
+          ingresos={ingresos}
+          cobros={cobros}
+          metrics={metrics}
+          empresaId={empresaId}
+          fmt={fmt}
+          C={C}
+          XLSX={XLSX}
+        />
+      )}
+
+      {/* ── PESTAÑA COBROS ── */}
+      {cxcTab === "cobros" && (
+        <CobrosCxC
+          cobros={cobros.filter(c=>c.tipo==="realizado")}
+          ingresos={ingresos}
+          fmt={fmt}
+          C={C}
+          monedaSym={monedaSym}
+          MESES_NOMBRES={MESES_NOMBRES}
+        />
+      )}
+
+      {/* ── PESTAÑA ACTIVAS ── */}
+      {cxcTab === "activas" && (<>
       {(filtroSearch||filtroCliente||filtroCategoria||filtroMoneda||filtroFechaFrom||filtroFechaTo||filtroCobro||filtroMesContable||filtroSegmento) && (
         <div style={{background:"#E8F0FE",border:`1px solid ${C.blue}`,borderRadius:8,padding:"6px 14px",marginBottom:8,fontSize:12,color:C.blue,fontWeight:600}}>
           🔍 Mostrando totales de <b>{filtered.length}</b> ingreso{filtered.length!==1?"s":""} filtrados
@@ -2126,6 +2178,7 @@ export default function CxcView({
         <b> Disponible</b> = Cobrado − Consumido · <b>Disp. Neto</b> = Disponible − Por Pagar (lo que queda tras cubrir todo lo comprometido).
         Los totales no se suman entre monedas distintas.
       </div>
+      </>)}
 
       {/* ── Modals ── */}
       {modalIngreso && <IngresoModal/>}
@@ -2642,6 +2695,608 @@ function LimpiarTASModal({ empresaId, totalIngresos, conActividad, sinActividad,
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ── ResumenCxC ──────────────────────────────────────────────────────── */
+function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
+  const hoy = new Date().toISOString().slice(0,10);
+  const [detailModal, setDetailModal] = React.useState(null);
+  const [vistaResumen, setVistaResumen] = React.useState("cliente"); // "cliente" | "mes"
+  const [searchCliente, setSearchCliente] = React.useState("");
+
+  const monedaSym = m => m==="EUR"?"€":"$";
+  const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+
+  const calcDias = venc => venc ? Math.ceil((new Date(venc)-new Date(hoy))/864e5) : null;
+
+  const agingBuckets = (saldo, vencimiento) => {
+    if(saldo<=0||!vencimiento) return {corriente:saldo>0?saldo:0,v7:0,v30:0,v45:0,v60:0,vmas:0};
+    const d2=calcDias(vencimiento);
+    if(d2===null||d2>=0) return {corriente:saldo,v7:0,v30:0,v45:0,v60:0,vmas:0};
+    const d=Math.abs(d2);
+    if(d<=7)  return {corriente:0,v7:saldo,v30:0,v45:0,v60:0,vmas:0};
+    if(d<=30) return {corriente:0,v7:0,v30:saldo,v45:0,v60:0,vmas:0};
+    if(d<=45) return {corriente:0,v7:0,v30:0,v45:saldo,v60:0,vmas:0};
+    if(d<=60) return {corriente:0,v7:0,v30:0,v45:0,v60:saldo,vmas:0};
+    return {corriente:0,v7:0,v30:0,v45:0,v60:0,vmas:saldo};
+  };
+  const addA=(acc,a)=>{acc.corriente+=a.corriente;acc.v7+=a.v7;acc.v30+=a.v30;acc.v45+=a.v45;acc.v60+=a.v60;acc.vmas+=a.vmas;};
+  const zeroA=()=>({corriente:0,v7:0,v30:0,v45:0,v60:0,vmas:0});
+
+  const currencies = ["MXN","USD","EUR"];
+
+  // Build por-cliente data
+  const byClienteData = React.useMemo(()=>{
+    const result={};
+    currencies.forEach(mon=>{
+      const invs=ingresos.filter(i=>(i.moneda||"MXN")===mon);
+      if(!invs.length){result[mon]=null;return;}
+      const map={};
+      invs.forEach(ing=>{
+        const cli=ing.cliente||"—";
+        if(searchCliente && !cli.toLowerCase().includes(searchCliente.toLowerCase())) return;
+        if(!map[cli]) map[cli]={nombre:cli,total:0,cobrado:0,porCobrar:0,count:0,ingresos:[],...zeroA()};
+        const m=metrics[ing.id]||{};
+        const pc=m.porCobrar||0;
+        map[cli].total+=ing.monto; map[cli].cobrado+=(m.totalCobrado||0);
+        map[cli].porCobrar+=pc; map[cli].count+=1; map[cli].ingresos.push(ing);
+        addA(map[cli], agingBuckets(pc, ing.fechaVencimiento));
+      });
+      const clientes=Object.values(map).sort((a,b)=>b.porCobrar-a.porCobrar);
+      const grand=clientes.reduce((acc,c)=>{acc.total+=c.total;acc.cobrado+=c.cobrado;acc.porCobrar+=c.porCobrar;acc.count+=c.count;addA(acc,c);return acc;},{total:0,cobrado:0,porCobrar:0,count:0,...zeroA()});
+      result[mon]={clientes,grand};
+    });
+    return result;
+  },[ingresos,metrics,searchCliente]);
+
+  // Build por-mes data (Fecha Contable)
+  const byMesData = React.useMemo(()=>{
+    const result={};
+    currencies.forEach(mon=>{
+      const invs=ingresos.filter(i=>(i.moneda||"MXN")===mon);
+      if(!invs.length){result[mon]=null;return;}
+      const map={};
+      invs.forEach(ing=>{
+        const mes=ing.fechaContable?ing.fechaContable.slice(0,7):"Sin fecha";
+        if(!map[mes]) map[mes]={mes,total:0,cobrado:0,porCobrar:0,count:0,ingresos:[]};
+        const m=metrics[ing.id]||{};
+        map[mes].total+=ing.monto; map[mes].cobrado+=(m.totalCobrado||0);
+        map[mes].porCobrar+=(m.porCobrar||0); map[mes].count+=1; map[mes].ingresos.push(ing);
+      });
+      const meses=Object.values(map).sort((a,b)=>b.mes.localeCompare(a.mes));
+      result[mon]={meses};
+    });
+    return result;
+  },[ingresos,metrics]);
+
+  const openDetail=(title,invList)=>{if(!invList?.length) return; setDetailModal({title,invoices:invList});};
+
+  const vCell=(v,sym,invList,label,color=C.danger)=>v>0?(
+    <span onClick={()=>openDetail(label,invList)} style={{fontWeight:700,color,cursor:"pointer",borderBottom:`1px dotted ${color}`}}>{sym}{fmt(v)}</span>
+  ):<span style={{color:C.muted}}>—</span>;
+
+  // Export Excel
+  const exportExcel=()=>{
+    const wb=XLSX.utils.book_new();
+    currencies.forEach(mon=>{
+      const data=byClienteData[mon]; if(!data) return;
+      const sym=monedaSym(mon);
+      const rows=[
+        [`Resumen CxC — ${mon} — ${new Date().toLocaleDateString('es-MX')}`],
+        [],
+        ["Cliente","# Facturas","Total","Cobrado","Por Cobrar","Corriente","Venc 1-7d","Venc 8-30d","Venc 31-45d","Venc 46-60d","Venc +60d"],
+        ...data.clientes.map(c=>[c.nombre,c.count,c.total,c.cobrado,c.porCobrar,c.corriente,c.v7,c.v30,c.v45,c.v60,c.vmas]),
+        [],
+        ["TOTAL",data.grand.count,data.grand.total,data.grand.cobrado,data.grand.porCobrar,data.grand.corriente,data.grand.v7,data.grand.v30,data.grand.v45,data.grand.v60,data.grand.vmas],
+      ];
+      const ws=XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols']=[{wch:35},{wch:8},{wch:14},{wch:14},{wch:14},{wch:14},{wch:12},{wch:12},{wch:12},{wch:12},{wch:12}];
+      XLSX.utils.book_append_sheet(wb,ws,mon);
+    });
+    XLSX.writeFile(wb,`Resumen_CxC_${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
+
+  // Print PDF
+  const printPDF=()=>{
+    const fecha=new Date().toLocaleDateString('es-MX');
+    let html=`<html><head><meta charset="utf-8"><title>Resumen CxC</title>
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:'Segoe UI',Arial,sans-serif;font-size:9px;color:#1A2332;padding:10mm}
+      h1{font-size:14px;color:#0F2D4A;margin-bottom:2px}
+      .sub{font-size:8px;color:#64748B;margin-bottom:10px}
+      h2{font-size:11px;color:#1565C0;margin:12px 0 6px}
+      table{width:100%;border-collapse:collapse;margin-bottom:16px}
+      th{background:#0F2D4A;color:#fff;padding:6px 8px;text-align:center;font-size:8px;text-transform:uppercase;white-space:nowrap}
+      th:first-child{text-align:left}
+      td{padding:5px 8px;border-bottom:1px solid #E2E8F0;text-align:right;font-size:9px}
+      td:first-child{text-align:left;font-weight:600}
+      tr:nth-child(even){background:#F8FAFC}
+      .total-row{background:#EEF2FF!important;font-weight:800;border-top:2px solid #0F2D4A}
+      .danger{color:#E53935;font-weight:700} .ok{color:#43A047} .navy{color:#0F2D4A;font-weight:800}
+      @page{size:A4 landscape;margin:8mm}
+    </style></head><body>
+    <h1>💵 Resumen Cuentas por Cobrar</h1>
+    <div class="sub">Fecha: ${fecha}</div>`;
+    currencies.forEach(mon=>{
+      const data=byClienteData[mon]; if(!data||!data.clientes.length) return;
+      const sym=monedaSym(mon);
+      const f=v=>v.toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+      const g=data.grand;
+      html+=`<h2>${{MXN:"🇲🇽",USD:"🇺🇸",EUR:"🇪🇺"}[mon]} ${mon} — ${data.clientes.length} clientes</h2>
+      <table><thead><tr>
+        <th>Cliente</th><th># Fact</th><th>Total</th><th>Cobrado</th><th>Por Cobrar</th>
+        <th>Corriente</th><th>Venc 1-7d</th><th>Venc 8-30d</th><th>Venc 31-45d</th><th>Venc 46-60d</th><th>Venc +60d</th>
+      </tr></thead><tbody>`;
+      data.clientes.forEach(c=>{
+        const vc=v=>v>0?`<span class="danger">${sym}${f(v)}</span>`:`<span style="color:#94A3B8">—</span>`;
+        html+=`<tr><td>${c.nombre}</td><td style="text-align:center">${c.count}</td>
+          <td>${sym}${f(c.total)}</td><td class="ok">${sym}${f(c.cobrado)}</td>
+          <td class="navy">${sym}${f(c.porCobrar)}</td>
+          <td class="ok">${c.corriente>0?sym+f(c.corriente):'<span style="color:#94A3B8">—</span>'}</td>
+          <td>${vc(c.v7)}</td><td>${vc(c.v30)}</td><td>${vc(c.v45)}</td><td>${vc(c.v60)}</td><td>${vc(c.vmas)}</td>
+        </tr>`;
+      });
+      const vc=v=>v>0?`<span class="danger">${sym}${f(v)}</span>`:'—';
+      html+=`<tr class="total-row"><td>TOTAL</td><td style="text-align:center">${g.count}</td>
+        <td>${sym}${f(g.total)}</td><td class="ok">${sym}${f(g.cobrado)}</td>
+        <td class="navy">${sym}${f(g.porCobrar)}</td>
+        <td class="ok">${g.corriente>0?sym+f(g.corriente):'—'}</td>
+        <td>${vc(g.v7)}</td><td>${vc(g.v30)}</td><td>${vc(g.v45)}</td><td>${vc(g.v60)}</td><td>${vc(g.vmas)}</td>
+      </tr></tbody></table>`;
+    });
+    html+=`</body></html>`;
+    const w=window.open('','_blank','width=1200,height=800');
+    w.document.write(html); w.document.close();
+    w.onload=()=>{w.focus();w.print();};
+  };
+
+  const COLS=["# Facturas","Total","Cobrado","Por Cobrar","Corriente","Venc 1-7 Días","Venc 8-30 Días","Venc 31-45 Días","Venc 46-60 Días","Venc +60 Días",""];
+
+  const ClienteTable=({mon,data})=>{
+    const sym=monedaSym(mon);
+    const g=data.grand;
+    return(
+      <div style={{marginBottom:28}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+          <span style={{fontSize:18}}>{{MXN:"🇲🇽",USD:"🇺🇸",EUR:"🇪🇺"}[mon]}</span>
+          <span style={{fontSize:16,fontWeight:900,color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[mon]}}>{mon}</span>
+          <span style={{fontSize:12,color:C.muted}}>{g.count} facturas · {data.clientes.length} clientes</span>
+        </div>
+        {/* Chips */}
+        <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+          {[
+            {l:"Por Cobrar",  v:g.porCobrar, c:C.warn,    bg:"#FFF3E0"},
+            {l:"Corriente",   v:g.corriente, c:C.ok,      bg:"#E8F5E9"},
+            {l:"Venc 1-7d",   v:g.v7,        c:"#E57373", bg:"#FFF5F5"},
+            {l:"Venc 8-30d",  v:g.v30,       c:C.danger,  bg:"#FFEBEE"},
+            {l:"Venc 31-45d", v:g.v45,       c:"#C62828", bg:"#FFCDD2"},
+            {l:"Venc 46-60d", v:g.v60,       c:"#B71C1C", bg:"#EF9A9A"},
+            {l:"Venc +60d",   v:g.vmas,      c:"#7F0000", bg:"#E57373"},
+          ].filter(k=>k.v>0).map(k=>(
+            <div key={k.l} style={{background:k.bg,borderRadius:10,padding:"9px 14px",cursor:"pointer"}}
+              onClick={()=>openDetail(`${mon} — ${k.l}`, data.clientes.flatMap(c=>c.ingresos))}>
+              <div style={{fontSize:10,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:2}}>{k.l}</div>
+              <div style={{fontSize:16,fontWeight:900,color:k.c}}>{sym}{fmt(k.v)}</div>
+            </div>
+          ))}
+        </div>
+        {/* Table */}
+        <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden"}}>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:1000}}>
+              <thead>
+                <tr style={{background:C.navy}}>
+                  <th style={{padding:"11px 14px",textAlign:"center",color:"#fff",fontWeight:700,fontSize:12,textTransform:"uppercase"}}>Cliente</th>
+                  {COLS.map((h,ci)=>(
+                    <th key={h||ci} style={{padding:"11px 10px",textAlign:"center",color:["# Facturas","Total","Cobrado","Por Cobrar","Corriente"].includes(h)?"#A5D6A7":h.startsWith("Venc")?"#FFCDD2":"#fff",fontWeight:700,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                  ))}
+                </tr>
+                {/* Totals row */}
+                <tr style={{background:"#EEF2FF",borderBottom:`2px solid ${C.blue}`}}>
+                  <td style={{padding:"8px 14px",fontWeight:800,color:C.navy,fontSize:12}}>TOTAL ({data.clientes.length} clientes)</td>
+                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:800,color:C.muted}}>{g.count}</td>
+                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:800}}>{sym}{fmt(g.total)}</td>
+                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:800,color:C.ok}}>{sym}{fmt(g.cobrado)}</td>
+                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:900,color:C.warn,fontSize:14}}>{sym}{fmt(g.porCobrar)}</td>
+                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:800,color:C.ok}}>{g.corriente>0?sym+fmt(g.corriente):"—"}</td>
+                  {[g.v7,g.v30,g.v45,g.v60,g.vmas].map((v,vi)=>(
+                    <td key={vi} style={{padding:"8px 10px",textAlign:"right",fontWeight:800,color:v>0?C.danger:C.muted}}>{v>0?sym+fmt(v):"—"}</td>
+                  ))}
+                  <td/>
+                </tr>
+              </thead>
+              <tbody>
+                {data.clientes.map((cli,pi)=>(
+                  <tr key={cli.nombre} style={{borderTop:`1px solid ${C.border}`,background:pi%2===0?"#FAFBFF":"#fff"}}
+                    onMouseEnter={e=>e.currentTarget.style.background="#E8F0FE"}
+                    onMouseLeave={e=>e.currentTarget.style.background=pi%2===0?"#FAFBFF":"#fff"}>
+                    <td style={{padding:"11px 14px",fontWeight:600,fontSize:13}}>{cli.nombre}</td>
+                    <td style={{padding:"11px 10px",textAlign:"right",color:C.muted,fontSize:13}}>{cli.count}</td>
+                    <td style={{padding:"11px 10px",textAlign:"right",fontWeight:600,fontSize:13}}>{sym}{fmt(cli.total)}</td>
+                    <td style={{padding:"11px 10px",textAlign:"right",color:C.ok,fontSize:13}}>{sym}{fmt(cli.cobrado)}</td>
+                    <td style={{padding:"11px 10px",textAlign:"right",fontSize:14,cursor:"pointer"}} onClick={()=>openDetail(`${cli.nombre} — Todas`,cli.ingresos)}>
+                      <span style={{fontWeight:800,color:cli.porCobrar>0?C.warn:C.muted,borderBottom:`1px dotted ${C.warn}`}}>{sym}{fmt(cli.porCobrar)}</span>
+                    </td>
+                    <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{cli.corriente>0?<span style={{color:C.ok,fontWeight:600}}>{sym}{fmt(cli.corriente)}</span>:<span style={{color:C.muted}}>—</span>}</td>
+                    <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{vCell(cli.v7,sym,cli.ingresos,`${cli.nombre} — Venc 1-7d`)}</td>
+                    <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{vCell(cli.v30,sym,cli.ingresos,`${cli.nombre} — Venc 8-30d`)}</td>
+                    <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{vCell(cli.v45,sym,cli.ingresos,`${cli.nombre} — Venc 31-45d`,"#C62828")}</td>
+                    <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{vCell(cli.v60,sym,cli.ingresos,`${cli.nombre} — Venc 46-60d`,"#B71C1C")}</td>
+                    <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{vCell(cli.vmas,sym,cli.ingresos,`${cli.nombre} — Venc +60d`,"#7F0000")}</td>
+                    <td style={{padding:"11px 10px",textAlign:"right"}}>
+                      <button onClick={()=>openDetail(`${cli.nombre} — Todas`,cli.ingresos)}
+                        style={{padding:"5px 12px",borderRadius:8,border:`1px solid ${C.blue}`,background:"#E8F0FE",color:C.blue,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>Ver →</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const MesTable=({mon,data})=>{
+    const sym=monedaSym(mon);
+    return(
+      <div style={{marginBottom:28}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+          <span style={{fontSize:18}}>{{MXN:"🇲🇽",USD:"🇺🇸",EUR:"🇪🇺"}[mon]}</span>
+          <span style={{fontSize:16,fontWeight:900,color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[mon]}}>{mon}</span>
+        </div>
+        <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+            <thead>
+              <tr style={{background:C.navy}}>
+                <th style={{padding:"11px 14px",textAlign:"left",color:"#fff",fontWeight:700,fontSize:12,textTransform:"uppercase"}}>Mes de Venta</th>
+                <th style={{padding:"11px 10px",textAlign:"center",color:"#A5D6A7",fontWeight:700,fontSize:11,textTransform:"uppercase"}}># Facturas</th>
+                <th style={{padding:"11px 10px",textAlign:"right",color:"#A5D6A7",fontWeight:700,fontSize:11,textTransform:"uppercase"}}>Total</th>
+                <th style={{padding:"11px 10px",textAlign:"right",color:"#A5D6A7",fontWeight:700,fontSize:11,textTransform:"uppercase"}}>Cobrado</th>
+                <th style={{padding:"11px 10px",textAlign:"right",color:"#FFCDD2",fontWeight:700,fontSize:11,textTransform:"uppercase"}}>Por Cobrar</th>
+                <th style={{padding:"11px 10px",textAlign:"right",color:"#fff",fontWeight:700,fontSize:11,textTransform:"uppercase"}}>% Cobrado</th>
+                <th style={{padding:"11px 10px",textAlign:"right",color:"#fff",fontWeight:700,fontSize:11,textTransform:"uppercase"}}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.meses.map((mes,i)=>{
+                const pct=mes.total>0?Math.round(mes.cobrado/mes.total*100):0;
+                const label=mes.mes==="Sin fecha"?"Sin fecha contable":`${MESES[+mes.mes.slice(5)-1]} ${mes.mes.slice(0,4)}`;
+                return(
+                  <tr key={mes.mes} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#FAFBFF":"#fff"}}
+                    onMouseEnter={e=>e.currentTarget.style.background="#E8F0FE"}
+                    onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"#FAFBFF":"#fff"}>
+                    <td style={{padding:"11px 14px",fontWeight:700,fontSize:13,color:C.navy}}>{label}</td>
+                    <td style={{padding:"11px 10px",textAlign:"center",color:C.muted}}>{mes.count}</td>
+                    <td style={{padding:"11px 10px",textAlign:"right",fontWeight:600}}>{sym}{fmt(mes.total)}</td>
+                    <td style={{padding:"11px 10px",textAlign:"right",color:C.ok,fontWeight:600}}>{sym}{fmt(mes.cobrado)}</td>
+                    <td style={{padding:"11px 10px",textAlign:"right",fontWeight:800,color:mes.porCobrar>0?C.warn:C.ok,fontSize:14}}>{sym}{fmt(mes.porCobrar)}</td>
+                    <td style={{padding:"11px 10px",textAlign:"right"}}>
+                      <span style={{background:pct>=100?"#E8F5E9":pct>=50?"#FFF3E0":"#FFEBEE",color:pct>=100?C.ok:pct>=50?C.warn:C.danger,fontWeight:700,padding:"2px 8px",borderRadius:20,fontSize:12}}>{pct}%</span>
+                    </td>
+                    <td style={{padding:"11px 10px",textAlign:"right"}}>
+                      <button onClick={()=>openDetail(`${label}`,mes.ingresos)}
+                        style={{padding:"5px 12px",borderRadius:8,border:`1px solid ${C.blue}`,background:"#E8F0FE",color:C.blue,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>Ver →</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
+  // Detail Modal
+  const DetailModal=()=>{
+    if(!detailModal) return null;
+    const invs=detailModal.invoices;
+    const total=invs.reduce((s,i)=>s+i.monto,0);
+    const porCobrar=invs.reduce((s,i)=>s+(metrics[i.id]?.porCobrar||0),0);
+    const mon=(invs[0]?.moneda||"MXN");
+    const sym=monedaSym(mon);
+    return(
+      <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
+        onClick={()=>setDetailModal(null)}>
+        <div style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:1100,maxHeight:"85vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
+          onClick={e=>e.stopPropagation()}>
+          <div style={{padding:"16px 24px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{fontWeight:800,fontSize:16,color:C.navy}}>{detailModal.title}</div>
+              <div style={{fontSize:12,color:C.muted,marginTop:2}}>{invs.length} facturas · Por cobrar: <b style={{color:C.warn}}>{sym}{fmt(porCobrar)}</b></div>
+            </div>
+            <button onClick={()=>setDetailModal(null)} style={{background:"#F1F5F9",border:"none",borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:18}}>×</button>
+          </div>
+          <div style={{overflowY:"auto",flex:1}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+              <thead style={{position:"sticky",top:0}}>
+                <tr style={{background:C.navy}}>
+                  {["Cliente","Folio","Concepto","Segmento","F.Contable","Fecha","Vencimiento","Días","Total","Cobrado","Por Cobrar"].map(h=>(
+                    <th key={h} style={{padding:"10px 12px",textAlign:["Total","Cobrado","Por Cobrar"].includes(h)?"right":"left",color:"#fff",fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {invs.sort((a,b)=>(a.fechaVencimiento||"").localeCompare(b.fechaVencimiento||"")).map((ing,i)=>{
+                  const m=metrics[ing.id]||{};
+                  const dias=calcDias(ing.fechaVencimiento);
+                  return(
+                    <tr key={ing.id} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFC"}}>
+                      <td style={{padding:"9px 12px",fontWeight:600,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.cliente}</td>
+                      <td style={{padding:"9px 12px",color:C.blue,fontWeight:600,whiteSpace:"nowrap"}}>{ing.folio||"—"}</td>
+                      <td style={{padding:"9px 12px",color:C.muted,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:12}}>{ing.concepto||"—"}</td>
+                      <td style={{padding:"9px 12px",fontSize:11}}>{ing.segmento||"—"}</td>
+                      <td style={{padding:"9px 12px",fontSize:11,color:C.teal,whiteSpace:"nowrap"}}>{ing.fechaContable||"—"}</td>
+                      <td style={{padding:"9px 12px",fontSize:11,color:C.muted,whiteSpace:"nowrap"}}>{ing.fecha||"—"}</td>
+                      <td style={{padding:"9px 12px",fontSize:11,whiteSpace:"nowrap",color:dias!==null&&dias<0?C.danger:C.text}}>{ing.fechaVencimiento||"—"}</td>
+                      <td style={{padding:"9px 12px",textAlign:"center"}}>
+                        {dias===null?<span style={{color:C.muted}}>—</span>:dias<0?(
+                          <span style={{background:"#FFEBEE",color:C.danger,fontWeight:800,fontSize:10,padding:"2px 6px",borderRadius:20}}>{Math.abs(dias)}d venc.</span>
+                        ):<span style={{background:"#E8F5E9",color:C.ok,fontWeight:700,fontSize:10,padding:"2px 6px",borderRadius:20}}>{dias}d</span>}
+                      </td>
+                      <td style={{padding:"9px 12px",textAlign:"right",fontWeight:600}}>{sym}{fmt(ing.monto)}</td>
+                      <td style={{padding:"9px 12px",textAlign:"right",color:C.ok}}>{sym}{fmt(m.totalCobrado||0)}</td>
+                      <td style={{padding:"9px 12px",textAlign:"right",fontWeight:700,color:(m.porCobrar||0)>0?C.warn:C.ok}}>{sym}{fmt(m.porCobrar||0)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div style={{padding:"12px 24px",borderTop:`1px solid ${C.border}`,display:"flex",gap:20,background:"#F8FAFC"}}>
+            <span style={{fontSize:13,color:C.muted}}>Total: <b style={{color:C.navy}}>{sym}{fmt(total)}</b></span>
+            <span style={{fontSize:13,color:C.muted}}>Por Cobrar: <b style={{color:C.warn}}>{sym}{fmt(porCobrar)}</b></span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return(
+    <div>
+      <DetailModal/>
+      {/* Controls */}
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20,flexWrap:"wrap"}}>
+        {/* Vista toggle */}
+        <div style={{display:"flex",border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+          <button onClick={()=>setVistaResumen("cliente")} style={{padding:"8px 16px",border:"none",background:vistaResumen==="cliente"?C.navy:"#F1F5F9",color:vistaResumen==="cliente"?"#fff":C.text,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>👥 Por Cliente</button>
+          <button onClick={()=>setVistaResumen("mes")} style={{padding:"8px 16px",border:"none",background:vistaResumen==="mes"?C.navy:"#F1F5F9",color:vistaResumen==="mes"?"#fff":C.text,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>📅 Por Mes de Venta</button>
+        </div>
+        {vistaResumen==="cliente" && (
+          <input placeholder="🔍 Buscar cliente…" value={searchCliente} onChange={e=>setSearchCliente(e.target.value)}
+            style={{padding:"8px 14px",borderRadius:10,border:`1px solid ${C.border}`,fontSize:13,width:220,fontFamily:"inherit"}}/>
+        )}
+        <div style={{marginLeft:"auto",display:"flex",gap:8}}>
+          <button onClick={exportExcel} style={{display:"flex",alignItems:"center",gap:6,padding:"9px 16px",borderRadius:10,border:"1px solid #2E7D32",background:"#E8F5E9",color:"#2E7D32",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>📊 Excel</button>
+          <button onClick={printPDF} style={{display:"flex",alignItems:"center",gap:6,padding:"9px 16px",borderRadius:10,border:"1px solid #1565C0",background:"#E3F2FD",color:"#1565C0",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>🖨️ PDF</button>
+        </div>
+      </div>
+
+      {vistaResumen==="cliente" && currencies.map(mon=>{
+        const data=byClienteData[mon];
+        if(!data||!data.clientes.length) return null;
+        return <ClienteTable key={mon} mon={mon} data={data}/>;
+      })}
+
+      {vistaResumen==="mes" && currencies.map(mon=>{
+        const data=byMesData[mon];
+        if(!data||!data.meses.length) return null;
+        return <MesTable key={mon} mon={mon} data={data}/>;
+      })}
+    </div>
+  );
+}
+
+/* ── CobrosCxC ───────────────────────────────────────────────────────── */
+function CobrosCxC({ cobros, ingresos, fmt, C, monedaSym, MESES_NOMBRES }) {
+  const [filtroBanco, setFiltroBanco] = React.useState("");
+  const [filtroMonedaC, setFiltroMonedaC] = React.useState("");
+  const [filtroDesde, setFiltroDesde] = React.useState("");
+  const [filtroHasta, setFiltroHasta] = React.useState("");
+  const [filtroMesRapido, setFiltroMesRapido] = React.useState("");
+  const [expandedMeses, setExpandedMeses] = React.useState(new Set());
+  const toggleMes = k => setExpandedMeses(prev=>{const n=new Set(prev);n.has(k)?n.delete(k):n.add(k);return n;});
+
+  // Get ingreso info
+  const ingresoMap = React.useMemo(()=>{
+    const m={};
+    ingresos.forEach(i=>m[i.id]=i);
+    return m;
+  },[ingresos]);
+
+  // Meses with cobros for quick selector
+  const mesesDisponibles = React.useMemo(()=>{
+    const s=new Set();
+    cobros.forEach(c=>{ if(c.fechaCobro) s.add(c.fechaCobro.slice(0,7)); });
+    return [...s].sort().reverse();
+  },[cobros]);
+
+  // Apply quick month
+  const handleMesRapido = (mes) => {
+    setFiltroMesRapido(mes);
+    if(mes){
+      setFiltroDesde(`${mes}-01`);
+      const [y,m]=mes.split("-").map(Number);
+      const lastDay=new Date(y,m,0).getDate();
+      setFiltroHasta(`${mes}-${String(lastDay).padStart(2,"0")}`);
+    } else {
+      setFiltroDesde(""); setFiltroHasta("");
+    }
+  };
+
+  // Filtered cobros
+  const filtered = React.useMemo(()=>{
+    return cobros.filter(c=>{
+      const ing=ingresoMap[c.ingresoId];
+      const mon=ing?.moneda||"MXN";
+      if(filtroBanco && c.banco!==filtroBanco) return false;
+      if(filtroMonedaC && mon!==filtroMonedaC) return false;
+      if(filtroDesde && c.fechaCobro<filtroDesde) return false;
+      if(filtroHasta && c.fechaCobro>filtroHasta) return false;
+      return true;
+    });
+  },[cobros,ingresoMap,filtroBanco,filtroMonedaC,filtroDesde,filtroHasta]);
+
+  // Group by mes + banco
+  const grouped = React.useMemo(()=>{
+    const map={};
+    filtered.forEach(c=>{
+      const mes=c.fechaCobro?c.fechaCobro.slice(0,7):"Sin fecha";
+      const ing=ingresoMap[c.ingresoId];
+      const mon=ing?.moneda||"MXN";
+      const banco=c.banco||"Sin banco";
+      const key=mes;
+      if(!map[key]) map[key]={mes,cobros:[],byBancoMon:{}};
+      map[key].cobros.push({...c,ing,moneda:mon});
+      const bk=`${banco}|${mon}`;
+      if(!map[key].byBancoMon[bk]) map[key].byBancoMon[bk]={banco,moneda:mon,total:0};
+      map[key].byBancoMon[bk].total+=c.monto;
+    });
+    return Object.values(map).sort((a,b)=>b.mes.localeCompare(a.mes));
+  },[filtered,ingresoMap]);
+
+  // Grand totals by banco+moneda
+  const grandTotals = React.useMemo(()=>{
+    const map={};
+    filtered.forEach(c=>{
+      const ing=ingresoMap[c.ingresoId];
+      const mon=ing?.moneda||"MXN";
+      const banco=c.banco||"Sin banco";
+      const k=`${banco}|${mon}`;
+      if(!map[k]) map[k]={banco,moneda:mon,total:0};
+      map[k].total+=c.monto;
+    });
+    return Object.values(map).sort((a,b)=>a.banco.localeCompare(b.banco));
+  },[filtered,ingresoMap]);
+
+  const inputStyle2={padding:"8px 12px",borderRadius:8,border:`1px solid ${C.border}`,fontSize:13,fontFamily:"inherit",background:"#fff"};
+
+  return(
+    <div>
+      {/* Filters */}
+      <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:14,padding:16,marginBottom:20}}>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+          <select value={filtroBanco} onChange={e=>setFiltroBanco(e.target.value)} style={{...inputStyle2,maxWidth:150}}>
+            <option value="">🏦 Todos los bancos</option>
+            <option>Banamex</option>
+            <option>Banorte</option>
+          </select>
+          <select value={filtroMonedaC} onChange={e=>setFiltroMonedaC(e.target.value)} style={{...inputStyle2,maxWidth:130}}>
+            <option value="">💵 Todas las monedas</option>
+            <option value="MXN">🇲🇽 MXN</option>
+            <option value="USD">🇺🇸 USD</option>
+          </select>
+          <select value={filtroMesRapido} onChange={e=>handleMesRapido(e.target.value)} style={{...inputStyle2,maxWidth:180}}>
+            <option value="">📆 Mes rápido</option>
+            {mesesDisponibles.map(m=>{
+              const [y,mo]=m.split("-");
+              return <option key={m} value={m}>{MESES_NOMBRES[+mo-1]} {y}</option>;
+            })}
+          </select>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <span style={{fontSize:12,color:C.muted,fontWeight:600}}>Desde</span>
+            <input type="date" value={filtroDesde} onChange={e=>{setFiltroDesde(e.target.value);setFiltroMesRapido("");}} style={{...inputStyle2,maxWidth:150}}/>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <span style={{fontSize:12,color:C.muted,fontWeight:600}}>Hasta</span>
+            <input type="date" value={filtroHasta} onChange={e=>{setFiltroHasta(e.target.value);setFiltroMesRapido("");}} style={{...inputStyle2,maxWidth:150}}/>
+          </div>
+          {(filtroBanco||filtroMonedaC||filtroDesde||filtroHasta) && (
+            <button onClick={()=>{setFiltroBanco("");setFiltroMonedaC("");setFiltroDesde("");setFiltroHasta("");setFiltroMesRapido("");}}
+              style={{padding:"8px 14px",borderRadius:8,border:`1px solid ${C.border}`,background:"#F1F5F9",color:C.text,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>✕ Limpiar</button>
+          )}
+        </div>
+      </div>
+
+      {/* Grand totals chips */}
+      {grandTotals.length>0 && (
+        <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
+          {grandTotals.map(t=>(
+            <div key={`${t.banco}-${t.moneda}`} style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9"}[t.moneda]||"#F8FAFC",borderRadius:12,padding:"12px 18px"}}>
+              <div style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>🏦 {t.banco} · {t.moneda}</div>
+              <div style={{fontSize:20,fontWeight:900,color:{MXN:C.mxn,USD:C.usd}[t.moneda]||C.navy}}>{monedaSym(t.moneda)}{fmt(t.total)}</div>
+            </div>
+          ))}
+          <div style={{background:"#EEF2FF",borderRadius:12,padding:"12px 18px"}}>
+            <div style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>📋 Total cobros</div>
+            <div style={{fontSize:20,fontWeight:900,color:C.navy}}>{filtered.length}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Grouped by mes */}
+      {grouped.length===0 && (
+        <div style={{textAlign:"center",padding:60,color:C.muted,background:"#fff",borderRadius:14,border:`1px solid ${C.border}`}}>
+          <div style={{fontSize:48,marginBottom:12}}>💰</div>
+          <div style={{fontSize:16}}>Sin cobros en este periodo</div>
+        </div>
+      )}
+      {grouped.map(g=>{
+        const [y,mo]=g.mes.split("-");
+        const label=g.mes==="Sin fecha"?"Sin fecha":` ${MESES_NOMBRES[+mo-1]} ${y}`;
+        const expanded=expandedMeses.has(g.mes);
+        const totalMes=g.cobros.reduce((s,c)=>s+c.monto,0);
+        return(
+          <div key={g.mes} style={{background:"#fff",border:`1px solid ${expanded?C.blue:C.border}`,borderRadius:14,overflow:"hidden",marginBottom:10}}>
+            {/* Mes header */}
+            <div onClick={()=>toggleMes(g.mes)}
+              style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 18px",background:expanded?"#E8F0FE":"#F8FAFC",cursor:"pointer"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{fontSize:13,color:C.blue,display:"inline-block",transform:expanded?"rotate(90deg)":"rotate(0deg)",transition:"transform .2s"}}>▶</span>
+                <span style={{fontWeight:800,fontSize:15,color:C.navy}}>📅 {label}</span>
+                <span style={{fontSize:12,color:C.muted}}>{g.cobros.length} cobro{g.cobros.length!==1?"s":""}</span>
+              </div>
+              {/* Totals by banco */}
+              <div style={{display:"flex",gap:16,flexWrap:"wrap",alignItems:"center"}}>
+                {Object.values(g.byBancoMon).map(bm=>(
+                  <div key={`${bm.banco}-${bm.moneda}`} style={{textAlign:"right"}}>
+                    <div style={{fontSize:10,color:C.muted,fontWeight:600}}>🏦 {bm.banco} · {bm.moneda}</div>
+                    <div style={{fontSize:16,fontWeight:800,color:{MXN:C.mxn,USD:C.usd}[bm.moneda]||C.navy}}>{monedaSym(bm.moneda)}{fmt(bm.total)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {/* Cobros detail */}
+            {expanded && (
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                  <thead>
+                    <tr style={{background:"#EEF2FF"}}>
+                      {["Fecha","Cliente","Folio","Concepto","Banco","Moneda","Monto","Notas"].map(h=>(
+                        <th key={h} style={{padding:"9px 12px",textAlign:h==="Monto"?"right":"left",color:C.navy,fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {g.cobros.sort((a,b)=>(a.fechaCobro||"").localeCompare(b.fechaCobro||"")).map((c,ci)=>(
+                      <tr key={c.id} style={{borderTop:`1px solid ${C.border}`,background:ci%2===0?"#fff":"#FAFBFF"}}>
+                        <td style={{padding:"9px 12px",whiteSpace:"nowrap",color:C.muted,fontSize:12}}>{c.fechaCobro||"—"}</td>
+                        <td style={{padding:"9px 12px",fontWeight:600}}>{c.ing?.cliente||"—"}</td>
+                        <td style={{padding:"9px 12px",color:C.blue,fontWeight:600}}>{c.ing?.folio||"—"}</td>
+                        <td style={{padding:"9px 12px",color:C.muted,fontSize:12,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.ing?.concepto||"—"}</td>
+                        <td style={{padding:"9px 12px"}}>
+                          <span style={{background:c.banco==="Banamex"?"#E3F2FD":"#E8F5E9",color:c.banco==="Banamex"?C.mxn:C.usd,padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>
+                            🏦 {c.banco||"—"}
+                          </span>
+                        </td>
+                        <td style={{padding:"9px 12px"}}>
+                          <span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9"}[c.moneda]||"#F8FAFC",color:{MXN:C.mxn,USD:C.usd}[c.moneda]||C.navy,padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{c.moneda}</span>
+                        </td>
+                        <td style={{padding:"9px 12px",textAlign:"right",fontWeight:700,color:C.ok,fontSize:14}}>{monedaSym(c.moneda)}{fmt(c.monto)}</td>
+                        <td style={{padding:"9px 12px",color:C.muted,fontSize:12}}>{c.notas||"—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

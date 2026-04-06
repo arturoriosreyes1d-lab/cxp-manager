@@ -395,11 +395,11 @@ export async function fetchCobros(empresaId) {
     if (ids.length === 0) return [];
     const { data, error } = await supabase.from('cobros').select('*').in('ingreso_id', ids).order('fecha_cobro', { ascending: false });
     if (error) { console.error('fetchCobros:', error); return []; }
-    return (data || []).map(r => ({ id: r.id, ingresoId: r.ingreso_id, monto: +r.monto || 0, fechaCobro: r.fecha_cobro || '', notas: r.notas || '', tipo: r.tipo || 'realizado' }));
+    return (data || []).map(r => ({ id: r.id, ingresoId: r.ingreso_id, monto: +r.monto || 0, fechaCobro: r.fecha_cobro || '', notas: r.notas || '', tipo: r.tipo || 'realizado', banco: r.banco || '' }));
   }
   const { data, error } = await supabase.from('cobros').select('*').order('fecha_cobro', { ascending: false });
   if (error) { console.error('fetchCobros:', error); return []; }
-  return (data || []).map(r => ({ id: r.id, ingresoId: r.ingreso_id, monto: +r.monto || 0, fechaCobro: r.fecha_cobro || '', notas: r.notas || '', tipo: r.tipo || 'realizado' }));
+  return (data || []).map(r => ({ id: r.id, ingresoId: r.ingreso_id, monto: +r.monto || 0, fechaCobro: r.fecha_cobro || '', notas: r.notas || '', tipo: r.tipo || 'realizado', banco: r.banco || '' }));
 }
 
 export async function insertCobro(c) {
@@ -409,6 +409,7 @@ export async function insertCobro(c) {
     fecha_cobro: c.fechaCobro || null,
     notas: c.notas || '',
     tipo: c.tipo || 'realizado',
+    banco: c.banco || null,
   };
   const { data, error } = await supabase.from('cobros').insert(row).select().single();
   if (error) { console.error('insertCobro:', error); return c; }
@@ -419,6 +420,7 @@ export async function insertCobro(c) {
     fechaCobro: data.fecha_cobro || '',
     notas: data.notas || '',
     tipo: data.tipo || 'realizado',
+    banco: data.banco || '',
   };
 }
 
