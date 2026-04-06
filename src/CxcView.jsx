@@ -2816,12 +2816,12 @@ export default function CxcView({
       {cobroMasivoModal && <CobroMasivoModal
         selectedList={filtered.filter(i=>selectedIngresos.has(i.id))}
         onClose={()=>setCobroMasivoModal(false)}
-        onSave={async(fecha,notas)=>{
+        onSave={async(fecha,notas,banco)=>{
           const list = filtered.filter(i=>selectedIngresos.has(i.id));
           for(const ing of list){
             const porCobrar = (metrics[ing.id]?.porCobrar)||0;
             if(porCobrar<=0) continue;
-            const saved = await insertCobro({ingresoId:ing.id,monto:porCobrar,fechaCobro:fecha,notas,tipo:'realizado'});
+            const saved = await insertCobro({ingresoId:ing.id,monto:porCobrar,fechaCobro:fecha,notas,tipo:'realizado',banco:banco||''});
             setCobros(prev=>[saved,...prev]);
           }
           setSelectedIngresos(new Set());
@@ -2866,9 +2866,9 @@ function BulkFechaModal({selectedList, onClose, onSave}) {
 function CobroMasivoModal({selectedList, onClose, onSave}) {
   const [fecha, setFecha] = useState(new Date().toISOString().split("T")[0]);
   const [notas, setNotas] = useState("");
+  const [banco, setBanco] = useState("Banamex");
   const [saving, setSaving] = useState(false);
-  const total = selectedList.reduce((s,i)=>s+i.monto,0);
-  const handleSave = async() => { if(!fecha) return; setSaving(true); await onSave(fecha,notas); setSaving(false); };
+  const handleSave = async() => { if(!fecha) return; setSaving(true); await onSave(fecha,notas,banco); setSaving(false); };
   return (
     <ModalShell title="💰 Cobro Masivo" onClose={onClose}>
       <div style={{background:"#E8F5E9",border:"1px solid #A5D6A7",borderRadius:10,padding:14,marginBottom:16}}>
@@ -2879,10 +2879,17 @@ function CobroMasivoModal({selectedList, onClose, onSave}) {
           ))}
         </div>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:16}}>
         <div>
           <label style={{display:"block",fontSize:12,fontWeight:700,color:"#64748B",textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>Fecha de Cobro *</label>
           <input type="date" value={fecha} onChange={e=>setFecha(e.target.value)} style={{padding:"10px 14px",borderRadius:10,border:"2px solid #E2E8F0",fontSize:14,width:"100%",boxSizing:"border-box",fontFamily:"inherit"}}/>
+        </div>
+        <div>
+          <label style={{display:"block",fontSize:12,fontWeight:700,color:"#64748B",textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>Banco</label>
+          <select value={banco} onChange={e=>setBanco(e.target.value)} style={{padding:"10px 14px",borderRadius:10,border:"2px solid #E2E8F0",fontSize:14,width:"100%",boxSizing:"border-box",fontFamily:"inherit",background:"#fff"}}>
+            <option>Banamex</option>
+            <option>Banorte</option>
+          </select>
         </div>
         <div>
           <label style={{display:"block",fontSize:12,fontWeight:700,color:"#64748B",textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>Notas</label>
