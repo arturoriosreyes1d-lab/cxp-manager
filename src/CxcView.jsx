@@ -3223,21 +3223,21 @@ function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
                         {cli.nombre}
                       </td>
                       <td style={{padding:"12px 10px",textAlign:"right",color:C.muted,fontSize:13}}>{cli.count}</td>
-                      <td style={{padding:"12px 10px",textAlign:"right",fontWeight:600,fontSize:13,cursor:"pointer"}} onClick={e=>{e.stopPropagation();openDetail(`${cli.nombre} — Todas`,cli.ingresos);}}>
+                      <td style={{padding:"12px 10px",textAlign:"right",fontWeight:700,fontSize:15,cursor:"pointer"}} onClick={e=>{e.stopPropagation();openDetail(`${cli.nombre} — Todas`,cli.ingresos);}}>
                         <span style={{borderBottom:`1px dotted ${C.navy}`,color:C.navy}}>{sym}{fmt(cli.total)}</span>
                       </td>
-                      <td style={{padding:"12px 10px",textAlign:"right",color:C.ok,fontSize:13}}>{sym}{fmt(cli.cobrado)}</td>
+                      <td style={{padding:"12px 10px",textAlign:"right",color:C.ok,fontWeight:700,fontSize:15}}>{sym}{fmt(cli.cobrado)}</td>
                       <td style={{padding:"12px 10px",textAlign:"right",fontSize:15,fontWeight:800,cursor:"pointer"}} onClick={e=>{e.stopPropagation();openDetail(`${cli.nombre} — Por Cobrar`,cli.ingresos.filter(i=>(metrics[i.id]?.porCobrar||0)>0));}}>
                         <span style={{color:cli.porCobrar>0?C.warn:C.ok,borderBottom:`1px dotted ${cli.porCobrar>0?C.warn:C.ok}`}}>{sym}{fmt(cli.porCobrar)}</span>
                       </td>
-                      <td style={{padding:"12px 10px",textAlign:"right",fontSize:13,cursor:cli.corriente>0?"pointer":"default"}} onClick={e=>{e.stopPropagation();if(cli.corriente>0)openDetail(`${cli.nombre} — Corriente`,cli.ingresos.filter(i=>{const d=calcDias(i.fechaVencimiento);return d===null||d>=0;}));}}>
-                        {cli.corriente>0?<span style={{color:C.ok,fontWeight:600,borderBottom:`1px dotted ${C.ok}`}}>{sym}{fmt(cli.corriente)}</span>:<span style={{color:C.muted}}>—</span>}
+                      <td style={{padding:"12px 10px",textAlign:"right",fontSize:15,fontWeight:700,cursor:cli.corriente>0?"pointer":"default"}} onClick={e=>{e.stopPropagation();if(cli.corriente>0)openDetail(`${cli.nombre} — Corriente`,cli.ingresos.filter(i=>{const d=calcDias(i.fechaVencimiento);return d===null||d>=0;}));}}>
+                        {cli.corriente>0?<span style={{color:C.ok,borderBottom:`1px dotted ${C.ok}`}}>{sym}{fmt(cli.corriente)}</span>:<span style={{color:C.muted,fontSize:14}}>—</span>}
                       </td>
-                      <td style={{padding:"12px 10px",textAlign:"right",fontSize:13}}>{vCell(cli.v7,sym,cli.ingresos.filter(i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)<=7;}),`${cli.nombre} — Venc 1-7d`)}</td>
-                      <td style={{padding:"12px 10px",textAlign:"right",fontSize:13}}>{vCell(cli.v30,sym,cli.ingresos.filter(i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=30;}),`${cli.nombre} — Venc 8-30d`)}</td>
-                      <td style={{padding:"12px 10px",textAlign:"right",fontSize:13}}>{vCell(cli.v45,sym,cli.ingresos.filter(i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=45;}),`${cli.nombre} — Venc 31-45d`,"#C62828")}</td>
-                      <td style={{padding:"12px 10px",textAlign:"right",fontSize:13}}>{vCell(cli.v60,sym,cli.ingresos.filter(i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)>45&&Math.abs(d)<=60;}),`${cli.nombre} — Venc 46-60d`,"#B71C1C")}</td>
-                      <td style={{padding:"12px 10px",textAlign:"right",fontSize:13}}>{vCell(cli.vmas,sym,cli.ingresos.filter(i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)>60;}),`${cli.nombre} — Venc +60d`,"#7F0000")}</td>
+                      <td style={{padding:"12px 10px",textAlign:"right",fontSize:15}}>{vCell(cli.v7,sym,cli.ingresos.filter(i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)<=7;}),`${cli.nombre} — Venc 1-7d`)}</td>
+                      <td style={{padding:"12px 10px",textAlign:"right",fontSize:15}}>{vCell(cli.v30,sym,cli.ingresos.filter(i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=30;}),`${cli.nombre} — Venc 8-30d`)}</td>
+                      <td style={{padding:"12px 10px",textAlign:"right",fontSize:15}}>{vCell(cli.v45,sym,cli.ingresos.filter(i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=45;}),`${cli.nombre} — Venc 31-45d`,"#C62828")}</td>
+                      <td style={{padding:"12px 10px",textAlign:"right",fontSize:15}}>{vCell(cli.v60,sym,cli.ingresos.filter(i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)>45&&Math.abs(d)<=60;}),`${cli.nombre} — Venc 46-60d`,"#B71C1C")}</td>
+                      <td style={{padding:"12px 10px",textAlign:"right",fontSize:15}}>{vCell(cli.vmas,sym,cli.ingresos.filter(i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)>60;}),`${cli.nombre} — Venc +60d`,"#7F0000")}</td>
                       <td style={{padding:"12px 10px",textAlign:"right"}} onClick={e=>e.stopPropagation()}>
                         <button onClick={()=>openDetail(`${cli.nombre} — Todas`,cli.ingresos)}
                           style={{padding:"5px 12px",borderRadius:8,border:`1px solid ${C.blue}`,background:"#E8F0FE",color:C.blue,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>Ver →</button>
@@ -3346,43 +3346,51 @@ function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
                           style={{padding:"5px 12px",borderRadius:8,border:`1px solid ${C.blue}`,background:"#E8F0FE",color:C.blue,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>Ver →</button>
                       </td>
                     </tr>
-                    {/* Accordion: facturas del mes */}
+                    {/* Accordion: facturas del mes agrupadas por cliente */}
                     {expanded && (
                       <tr>
                         <td colSpan={7} style={{padding:0,borderTop:`1px solid ${C.border}`}}>
                           <div style={{overflowX:"auto"}}>
-                            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                              <thead>
-                                <tr style={{background:"#EEF2FF"}}>
-                                  {["Cliente","Folio","Concepto","Segmento","Vencimiento","Días","Monto","Cobrado","Por Cobrar"].map(h=>(
-                                    <th key={h} style={{padding:"8px 12px",textAlign:["Monto","Cobrado","Por Cobrar"].includes(h)?"right":"left",color:C.navy,fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {mes.ingresos.sort((a,b)=>(a.cliente||"").localeCompare(b.cliente||"")).map((ing,ii)=>{
-                                  const m=metrics[ing.id]||{};
-                                  const dias=calcD(ing.fechaVencimiento);
-                                  return(
-                                    <tr key={ing.id} style={{borderTop:`1px solid ${C.border}`,background:ii%2===0?"#fff":"#FAFBFF"}}>
-                                      <td style={{padding:"8px 12px",fontWeight:600,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.cliente}</td>
-                                      <td style={{padding:"8px 12px",color:C.blue,fontWeight:600,whiteSpace:"nowrap"}}>{ing.folio||"—"}</td>
-                                      <td style={{padding:"8px 12px",color:C.muted,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.concepto||"—"}</td>
-                                      <td style={{padding:"8px 12px",fontSize:11}}>{ing.segmento||"—"}</td>
-                                      <td style={{padding:"8px 12px",fontSize:11,whiteSpace:"nowrap",color:dias!==null&&dias<0?C.danger:C.text}}>{ing.fechaVencimiento||"—"}</td>
-                                      <td style={{padding:"8px 12px",textAlign:"center"}}>
-                                        {dias===null?<span style={{color:C.muted}}>—</span>:dias<0?
-                                          <span style={{background:"#FFEBEE",color:C.danger,fontWeight:800,fontSize:10,padding:"2px 6px",borderRadius:20}}>{Math.abs(dias)}d venc.</span>:
-                                          <span style={{background:"#E8F5E9",color:C.ok,fontWeight:700,fontSize:10,padding:"2px 6px",borderRadius:20}}>{dias}d</span>}
-                                      </td>
-                                      <td style={{padding:"8px 12px",textAlign:"right",fontWeight:600}}>{sym}{fmt(ing.monto)}</td>
-                                      <td style={{padding:"8px 12px",textAlign:"right",color:C.ok}}>{sym}{fmt(m.totalCobrado||0)}</td>
-                                      <td style={{padding:"8px 12px",textAlign:"right",fontWeight:700,color:(m.porCobrar||0)>0?C.warn:C.ok}}>{sym}{fmt(m.porCobrar||0)}</td>
+                            {Object.entries(mes.ingresos.reduce((acc,i)=>{const c=i.cliente||"—";if(!acc[c])acc[c]=[];acc[c].push(i);return acc;},{})).sort((a,b)=>a[0].localeCompare(b[0])).map(([cliente,cIngs],ci)=>(
+                              <div key={cliente}>
+                                {/* Client subheader */}
+                                <div style={{background:"#EEF2FF",padding:"8px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:ci>0?`1px solid #C5CAE9`:`1px solid ${C.border}`}}>
+                                  <span style={{fontWeight:700,fontSize:13,color:C.navy}}>👤 {cliente}</span>
+                                  <span style={{fontSize:12,color:C.muted}}>{cIngs.length} factura{cIngs.length!==1?"s":""} · Por cobrar: <b style={{color:C.warn}}>{sym}{fmt(cIngs.reduce((s,i)=>s+(metrics[i.id]?.porCobrar||0),0))}</b></span>
+                                </div>
+                                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                                  <thead>
+                                    <tr style={{background:"#F3F4F6"}}>
+                                      {["Folio","Concepto","Segmento","Vencimiento","Días","Monto","Cobrado","Por Cobrar"].map(h=>(
+                                        <th key={h} style={{padding:"7px 12px",textAlign:["Monto","Cobrado","Por Cobrar"].includes(h)?"right":"left",color:C.navy,fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                                      ))}
                                     </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
+                                  </thead>
+                                  <tbody>
+                                    {cIngs.sort((a,b)=>(a.fechaVencimiento||"").localeCompare(b.fechaVencimiento||"")).map((ing,ii)=>{
+                                      const m=metrics[ing.id]||{};
+                                      const dias=calcD(ing.fechaVencimiento);
+                                      return(
+                                        <tr key={ing.id} style={{borderTop:`1px solid ${C.border}`,background:ii%2===0?"#fff":"#FAFBFF"}}>
+                                          <td style={{padding:"8px 12px",color:C.blue,fontWeight:600,whiteSpace:"nowrap"}}>{ing.folio||"—"}</td>
+                                          <td style={{padding:"8px 12px",color:C.muted,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.concepto||"—"}</td>
+                                          <td style={{padding:"8px 12px",fontSize:11}}>{ing.segmento||"—"}</td>
+                                          <td style={{padding:"8px 12px",fontSize:11,whiteSpace:"nowrap",color:dias!==null&&dias<0?C.danger:C.text}}>{ing.fechaVencimiento||"—"}</td>
+                                          <td style={{padding:"8px 12px",textAlign:"center"}}>
+                                            {dias===null?<span style={{color:C.muted}}>—</span>:dias<0?
+                                              <span style={{background:"#FFEBEE",color:C.danger,fontWeight:800,fontSize:10,padding:"2px 6px",borderRadius:20}}>{Math.abs(dias)}d venc.</span>:
+                                              <span style={{background:"#E8F5E9",color:C.ok,fontWeight:700,fontSize:10,padding:"2px 6px",borderRadius:20}}>{dias}d</span>}
+                                          </td>
+                                          <td style={{padding:"8px 12px",textAlign:"right",fontWeight:600}}>{sym}{fmt(ing.monto)}</td>
+                                          <td style={{padding:"8px 12px",textAlign:"right",color:C.ok}}>{sym}{fmt(m.totalCobrado||0)}</td>
+                                          <td style={{padding:"8px 12px",textAlign:"right",fontWeight:700,color:(m.porCobrar||0)>0?C.warn:C.ok}}>{sym}{fmt(m.porCobrar||0)}</td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            ))}
                           </div>
                         </td>
                       </tr>
