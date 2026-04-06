@@ -256,14 +256,14 @@ export default function CxcView({
     return result;
   }, [ingresos, cobros, invoiceIngresos, allInvoices]);
 
-  /* KPIs globales */
+  /* KPIs globales — excluye facturas ocultas */
   const kpis = useMemo(() => {
     const byMon = {
       MXN:{monto:0,cobrado:0,porCobrar:0,consumido:0,porPagar:0,disponible:0,disponibleNeto:0},
       USD:{monto:0,cobrado:0,porCobrar:0,consumido:0,porPagar:0,disponible:0,disponibleNeto:0},
       EUR:{monto:0,cobrado:0,porCobrar:0,consumido:0,porPagar:0,disponible:0,disponibleNeto:0},
     };
-    ingresos.forEach(ing => {
+    ingresos.filter(ing => !ing.oculta).forEach(ing => {
       const m = metrics[ing.id] || {};
       const k = byMon[ing.moneda] || byMon.MXN;
       k.monto         += ing.monto;
@@ -1742,6 +1742,16 @@ export default function CxcView({
           🔍 Mostrando totales de <b>{filtered.length}</b> ingreso{filtered.length!==1?"s":""} filtrados
         </div>
       )}
+      {/* Ocultas counter chip */}
+      {ingresos.filter(i=>i.oculta).length > 0 && (
+        <div style={{marginBottom:8}}>
+          <span onClick={()=>setMostrarOcultas(p=>!p)}
+            style={{display:"inline-flex",alignItems:"center",gap:6,background:mostrarOcultas?"#FFF3E0":"#F1F5F9",border:`1px solid ${mostrarOcultas?"#E65100":C.border}`,borderRadius:20,padding:"5px 14px",cursor:"pointer",fontSize:12,color:mostrarOcultas?"#E65100":C.muted,fontWeight:600}}>
+            🙈 {ingresos.filter(i=>i.oculta).length} factura{ingresos.filter(i=>i.oculta).length!==1?"s":""} oculta{ingresos.filter(i=>i.oculta).length!==1?"s":""}
+            <span style={{fontSize:11,opacity:.7,marginLeft:2}}>{mostrarOcultas?"· clic para ocultar":"· clic para ver"}</span>
+          </span>
+        </div>
+      )}
       <div style={{display:"flex",gap:12,flexWrap:"wrap",margin:"20px 0"}}>
         {Object.entries(kpisFiltered).map(([mon,v])=>{
           if (v.monto === 0 && v.cobrado === 0) return null;
@@ -3061,24 +3071,24 @@ function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
           <span style={{fontSize:12,color:C.muted}}>{g.count} facturas · {data.clientes.length} clientes</span>
         </div>
         {/* Chips */}
-        <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
           {[
-            {l:"Por Cobrar",  v:g.porCobrar, c:C.warn,    bg:"#FFF3E0", fn: i=>true},
-            {l:"Corriente",   v:g.corriente, c:C.ok,      bg:"#E8F5E9", fn: i=>{const d=calcDias(i.fechaVencimiento);return d===null||d>=0;}},
-            {l:"Venc 1-7d",   v:g.v7,        c:"#E57373", bg:"#FFF5F5", fn: i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)<=7;}},
-            {l:"Venc 8-30d",  v:g.v30,       c:C.danger,  bg:"#FFEBEE", fn: i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=30;}},
-            {l:"Venc 31-45d", v:g.v45,       c:"#C62828", bg:"#FFCDD2", fn: i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=45;}},
-            {l:"Venc 46-60d", v:g.v60,       c:"#B71C1C", bg:"#EF9A9A", fn: i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)>45&&Math.abs(d)<=60;}},
-            {l:"Venc +60d",   v:g.vmas,      c:"#7F0000", bg:"#E57373", fn: i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)>60;}},
+            {l:"Por Cobrar",  v:g.porCobrar, c:"#fff",    bg:"#0F2D4A",  border:"#0F2D4A",  fn: i=>true},
+            {l:"Corriente",   v:g.corriente, c:"#1B5E20", bg:"#E8F5E9",  border:"#A5D6A7",  fn: i=>{const d=calcDias(i.fechaVencimiento);return d===null||d>=0;}},
+            {l:"Venc 1-7d",   v:g.v7,        c:"#E65100", bg:"#FFF3E0",  border:"#FFCC80",  fn: i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)<=7;}},
+            {l:"Venc 8-30d",  v:g.v30,       c:"#BF360C", bg:"#FBE9E7",  border:"#FF8A65",  fn: i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=30;}},
+            {l:"Venc 31-45d", v:g.v45,       c:"#fff",    bg:"#E53935",  border:"#E53935",  fn: i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=45;}},
+            {l:"Venc 46-60d", v:g.v60,       c:"#fff",    bg:"#B71C1C",  border:"#B71C1C",  fn: i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)>45&&Math.abs(d)<=60;}},
+            {l:"Venc +60d",   v:g.vmas,      c:"#fff",    bg:"#4A0000",  border:"#4A0000",  fn: i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)>60;}},
           ].filter(k=>k.v>0).map(k=>{
             const filtInvs = data.clientes.flatMap(c=>c.ingresos.filter(k.fn));
             return(
-              <div key={k.l} style={{background:k.bg,borderRadius:10,padding:"9px 14px",cursor:"pointer",transition:"transform .15s"}}
+              <div key={k.l} style={{background:k.bg,border:`2px solid ${k.border}`,borderRadius:14,padding:"14px 20px",cursor:"pointer",transition:"transform .15s, box-shadow .15s",minWidth:130,boxShadow:"0 2px 6px rgba(0,0,0,.08)"}}
                 onClick={()=>openDetail(`${mon} — ${k.l}`, filtInvs, true)}
-                onMouseEnter={e=>e.currentTarget.style.transform="scale(1.03)"}
-                onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
-                <div style={{fontSize:10,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:2}}>{k.l}</div>
-                <div style={{fontSize:16,fontWeight:900,color:k.c}}>{sym}{fmt(k.v)}</div>
+                onMouseEnter={e=>{e.currentTarget.style.transform="scale(1.04)";e.currentTarget.style.boxShadow="0 6px 18px rgba(0,0,0,.15)";}}
+                onMouseLeave={e=>{e.currentTarget.style.transform="scale(1)";e.currentTarget.style.boxShadow="0 2px 6px rgba(0,0,0,.08)";}}>
+                <div style={{fontSize:11,color:k.c,fontWeight:700,textTransform:"uppercase",opacity:.85,marginBottom:4,letterSpacing:.5}}>{k.l}</div>
+                <div style={{fontSize:20,fontWeight:900,color:k.c}}>{sym}{fmt(k.v)}</div>
               </div>
             );
           })}
