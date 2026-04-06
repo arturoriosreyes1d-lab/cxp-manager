@@ -289,6 +289,7 @@ const ingresoToApp = (r) => ({
   segmento: r.segmento || '',
   fechaContable: r.fecha_contable || '',
   folio: r.folio || '',
+  oculta: r.oculta || false,
 });
 
 const ingresoToDB = (i) => ({
@@ -383,6 +384,7 @@ export async function updateIngresoField(id, fields) {
   if ('segmento' in fields) dbFields.segmento = fields.segmento || null;
   if ('fechaContable' in fields) dbFields.fecha_contable = fields.fechaContable || null;
   if ('folio' in fields) dbFields.folio = fields.folio || null;
+  if ('oculta' in fields) dbFields.oculta = fields.oculta;
   const { error } = await supabase.from('ingresos').update(dbFields).eq('id', id);
   if (error) console.error('updateIngresoField:', error);
 }
