@@ -12,6 +12,7 @@ import {
   fetchIngresos, fetchCobros, fetchInvoiceIngresos, fetchCategoriasIngreso,
   upsertInvoiceIngreso, deleteInvoiceIngreso,
   fetchClientes, upsertCliente, deleteCliente,
+  fetchPorFacturar, insertPorFacturar, updatePorFacturar, deletePorFacturar, bulkInsertPorFacturar,
 } from "./db.js";
 import CxcView from "./CxcView.jsx";
 import { EMPRESAS } from "./empresas.js";
@@ -163,16 +164,17 @@ export default function CxpApp({ user, onLogout }) {
   const [invoiceIngresos, setInvoiceIngresos] = useState([]);
   const [categoriasIngreso, setCategoriasIngreso] = useState([]);
   const [clientes, setClientes] = useState([]);
+  const [porFacturar, setPorFacturar] = useState([]);
   const [vincularModal, setVincularModal] = useState(null); // {invoiceId, proveedor, folio, total, moneda}
 
   /* ── Load data from Supabase ────────────────────────────────────── */
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const [inv, sup, cls, pays, ings, cbs, invIngs, cats, clts] = await Promise.all([
+      const [inv, sup, cls, pays, ings, cbs, invIngs, cats, clts, pf] = await Promise.all([
         fetchInvoices(empresaId), fetchSuppliers(empresaId), fetchClasificaciones(empresaId), fetchPayments(empresaId),
         fetchIngresos(empresaId), fetchCobros(empresaId), fetchInvoiceIngresos(empresaId), fetchCategoriasIngreso(empresaId),
-        fetchClientes(empresaId),
+        fetchClientes(empresaId), fetchPorFacturar(empresaId),
       ]);
       setInvoices(inv);
       setSuppliers(sup.length > 0 ? sup : []);
@@ -183,6 +185,7 @@ export default function CxpApp({ user, onLogout }) {
       setInvoiceIngresos(invIngs);
       setCategoriasIngreso(cats);
       setClientes(clts);
+      setPorFacturar(pf);
       setLoading(false);
     })();
   }, [empresaId]);
@@ -1901,6 +1904,12 @@ export default function CxpApp({ user, onLogout }) {
             empresaId={empresaId}
             clientes={clientes}
             esConsulta={esConsulta}
+            porFacturar={porFacturar}
+            setPorFacturar={setPorFacturar}
+            insertPorFacturar={insertPorFacturar}
+            updatePorFacturar={updatePorFacturar}
+            deletePorFacturar={deletePorFacturar}
+            bulkInsertPorFacturar={bulkInsertPorFacturar}
           />
         )}
 

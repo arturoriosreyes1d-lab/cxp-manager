@@ -90,6 +90,8 @@ export default function CxcView({
   empresaId,
   clientes = [],
   esConsulta = false,
+  porFacturar = [], setPorFacturar,
+  insertPorFacturar, updatePorFacturar, deletePorFacturar, bulkInsertPorFacturar,
 }) {
   /* ── Filters ───────────────────────────────────────────────── */
   const [filtroCliente, setFiltroCliente] = useState("");
@@ -130,6 +132,8 @@ export default function CxcView({
   const [tasCatDefault, setTasCatDefault] = useState("");
   const [tasImportando, setTasImportando] = useState(false);
   const [cxcTab, setCxcTab] = useState("activas"); // "activas" | "resumen" | "cobros"
+  const [porFacturarModal, setPorFacturarModal] = useState(false);
+  const porFacturarRef = useRef();
 
   /* ── Derived data ──────────────────────────────────────────── */
   const allInvoices = useMemo(() => [
@@ -1653,6 +1657,7 @@ export default function CxcView({
             <>
               <button onClick={()=>{setTasPreview(null);setTasModal(true);}} style={{...btnStyle,background:"#C0392B",color:"#fff",padding:"8px 16px",fontSize:13}}>✈️ Importar TAS</button>
               <button onClick={()=>setLimpiarModal(true)} style={{...btnStyle,background:"#7F0000",color:"#fff",padding:"8px 16px",fontSize:13}}>🗑️ Limpiar Cartera</button>
+              <button onClick={()=>setPorFacturarModal(true)} style={{...btnStyle,background:"#6A1B9A",color:"#fff",padding:"8px 16px",fontSize:13}}>📋 Por Facturar</button>
             </>
           )}
           {!esConsulta && <button onClick={()=>{setImportPreview(null);setImportModal(true);}} style={{...btnStyle,background:"#00897B",color:"#fff",padding:"8px 16px",fontSize:13}}>📥 Importar Excel</button>}
@@ -1747,6 +1752,44 @@ export default function CxcView({
           ];
         })}
       </div>
+
+      {/* ── Por Facturar + Total CxC chips (solo empresa_2) ── */}
+      {empresaId === "empresa_2" && porFacturar.length > 0 && (()=>{
+        const mones = ["MXN","USD"];
+        return(
+          <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16}}>
+            {mones.map(mon=>{
+              const sym = monedaSym(mon);
+              const pfTotal = porFacturar.filter(r=>r.moneda===mon).reduce((s,r)=>s+r.importe,0);
+              const porCobrar = Object.values(kpisFiltered).reduce((s,v)=>s+(v.porCobrar||0),0);
+              // Per-moneda porCobrar
+              const pcMon = kpisFiltered[mon]?.porCobrar || 0;
+              const totalCxC = pcMon + pfTotal;
+              if(pfTotal===0 && pcMon===0) return null;
+              return(
+                <React.Fragment key={mon}>
+                  {pfTotal>0 && (
+                    <div onClick={()=>setPorFacturarModal(true)} style={{background:"#F3E5F5",borderRadius:16,padding:"14px 20px",border:"1px solid #CE93D8",cursor:"pointer",transition:"transform .15s"}}
+                      onMouseEnter={e=>e.currentTarget.style.transform="scale(1.03)"}
+                      onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
+                      <div style={{fontSize:11,color:"#7B1FA2",fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>📋 Por Facturar {mon}</div>
+                      <div style={{fontSize:22,fontWeight:800,color:"#6A1B9A",marginTop:4}}>{sym}{fmt(pfTotal)}</div>
+                      <div style={{fontSize:10,color:"#9C27B0",marginTop:2}}>{porFacturar.filter(r=>r.moneda===mon).length} registros</div>
+                    </div>
+                  )}
+                  {totalCxC>0 && (
+                    <div style={{background:"#EEF2FF",borderRadius:16,padding:"14px 20px",border:`1px solid ${C.blue}`}}>
+                      <div style={{fontSize:11,color:C.navy,fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>📊 Total CxC {mon}</div>
+                      <div style={{fontSize:22,fontWeight:800,color:C.navy,marginTop:4}}>{sym}{fmt(totalCxC)}</div>
+                      <div style={{fontSize:10,color:C.muted,marginTop:2}}>Por Cobrar + Por Facturar</div>
+                    </div>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {/* ── KPI Desglose Modal ── */}
       {kpiModal && (()=>{
@@ -2379,6 +2422,95 @@ export default function CxcView({
         btnStyle={btnStyle}
         inputStyle={inputStyle}
       />}
+
+      {/* Por Facturar Modal */}
+      {porFacturarModal && (
+        <PorFacturarModal
+          empresaId={empresaId}
+          porFacturar={porFacturar}
+          setPorFacturar={setPorFacturar}
+          ingresos={ingresos}
+          insertPorFacturar={insertPorFacturar}
+          updatePorFacturar={updatePorFacturar}
+          deletePorFacturar={deletePorFacturar}
+          bulkInsertPorFacturar={bulkInsertPorFacturar}
+          onClose={()=>setPorFacturarModal(false)}
+          esConsulta={esConsulta}
+          fmt={fmt}
+          C={C}
+          btnStyle={btnStyle}
+          inputStyle={inputStyle}
+          XLSX={XLSX}
+          porFacturarRef={porFacturarRef}
+        />
+      )}
+      <input ref={porFacturarRef} type="file" accept=".xlsx,.xls" style={{display:"none"}}
+        onChange={async(e)=>{
+          const file=e.target.files[0]; if(!file) return;
+          // Read Excel and filter sin folio
+          const reader=new FileReader();
+          reader.onload=async(ev)=>{
+            const data=new Uint8Array(ev.target.result);
+            const wb=XLSX.read(data,{type:"array",cellDates:true});
+            const ws=wb.Sheets[wb.SheetNames[0]];
+            const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+            // Find header row (row with SEGMENTO, OS, AEROLINEA)
+            let headerIdx=-1;
+            for(let i=0;i<rows.length;i++){
+              const r=rows[i];
+              if(r && r.some(c=>String(c||"").toUpperCase().includes("SEGMENTO")) &&
+                 r.some(c=>String(c||"").toUpperCase().includes("AEROLINEA"))) {
+                headerIdx=i; break;
+              }
+            }
+            if(headerIdx===-1){ alert("No se encontró el encabezado esperado (SEGMENTO, OS, AEROLINEA)"); return; }
+            const headers=rows[headerIdx].map(h=>String(h||"").toUpperCase().trim());
+            const colIdx=(name)=>headers.findIndex(h=>h.includes(name));
+            const iSeg=colIdx("SEGMENTO"), iOs=colIdx("OS"), iAero=colIdx("AEROLINEA");
+            const iDest=colIdx("DESTINO"), iFechaVenta=colIdx("FECHA VENTA");
+            const iImporte=colIdx("IMPORTE"), iMes=colIdx("MES"), iFolio=colIdx("FOLIO");
+            // Filter rows sin folio, con importe
+            const sinFolio=[];
+            for(let i=headerIdx+1;i<rows.length;i++){
+              const r=rows[i];
+              if(!r) continue;
+              const folio=r[iFolio];
+              const importe=r[iImporte];
+              const aero=r[iAero];
+              if(!aero||!importe||+importe<=0) continue;
+              if(folio&&String(folio).trim()!=="") continue; // tiene folio, skip
+              const fechaRaw=r[iFechaVenta];
+              let fechaVenta="";
+              if(fechaRaw instanceof Date) fechaVenta=fechaRaw.toISOString().slice(0,10);
+              else if(typeof fechaRaw==="string"&&fechaRaw.trim()) fechaVenta=fechaRaw.trim().slice(0,10);
+              sinFolio.push({
+                empresaId:empresaId,
+                cliente:String(aero).trim(),
+                concepto:String(r[iSeg]||"").trim(),
+                importe:+importe,
+                moneda:"MXN",
+                notas:`Destino:${r[iDest]||""} Mes:${r[iMes]||""}`,
+                numOs:String(r[iOs]||"").trim(),
+                fechaVenta,
+              });
+            }
+            if(!sinFolio.length){ alert("No se encontraron registros sin folio en el archivo."); return; }
+            // Show preview via window confirm
+            const preview=sinFolio.slice(0,5).map(r=>`${r.cliente} OS:${r.numOs} $${r.importe.toLocaleString()}`).join("\n");
+            if(!window.confirm(`Se encontraron ${sinFolio.length} registros sin folio:\n\n${preview}\n${sinFolio.length>5?"...y más":""}.\n\n¿Importar?`)) return;
+            const result=await bulkInsertPorFacturar(sinFolio);
+            // Reload
+            const fresh=await (async()=>{
+              const {data}=await import("./supabase.js").then(m=>m.supabase.from("por_facturar").select("*").eq("empresa_id",empresaId).order("created_at",{ascending:false}));
+              return (data||[]).map(r=>({id:r.id,empresaId:r.empresa_id,cliente:r.cliente||"",concepto:r.concepto||"",importe:+r.importe||0,moneda:r.moneda||"MXN",notas:r.notas||"",numOs:r.num_os||"",fechaVenta:r.fecha_venta||"",createdAt:r.created_at||""}));
+            })();
+            setPorFacturar(fresh);
+            alert(`✅ ${result.inserted} registros nuevos importados. ${sinFolio.length-result.inserted} ya existían.`);
+            e.target.value="";
+          };
+          reader.readAsArrayBuffer(file);
+        }}
+      />
 
       {/* TAS Import Modal */}      {tasModal && (
         <ModalShell title="✈️ Importar Facturas TravelAirSolutions" onClose={()=>{setTasModal(false);setTasPreview(null);}} wide>
@@ -3376,6 +3508,216 @@ function CobrosCxC({ cobros, ingresos, fmt, C, monedaSym, MESES_NOMBRES }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/* ── PorFacturarModal ────────────────────────────────────────────────── */
+function PorFacturarModal({ empresaId, porFacturar, setPorFacturar, ingresos, insertPorFacturar, updatePorFacturar, deletePorFacturar, bulkInsertPorFacturar, onClose, esConsulta, fmt, C, btnStyle, inputStyle, XLSX, porFacturarRef }) {
+  const [form, setForm] = React.useState(null); // null | {cliente,concepto,importe,moneda,notas,numOs,fechaVenta} | {id,...}
+  const [editId, setEditId] = React.useState(null);
+  const [deleteId, setDeleteId] = React.useState(null);
+  const [guardando, setGuardando] = React.useState(false);
+
+  // Unique clients from ingresos
+  const clientesExistentes = React.useMemo(()=>[...new Set(ingresos.map(i=>i.cliente).filter(Boolean))].sort(),[ingresos]);
+
+  const monedaSym = m => m==="EUR"?"€":"$";
+
+  // Totals by moneda
+  const totales = React.useMemo(()=>{
+    const map={};
+    porFacturar.forEach(r=>{
+      if(!map[r.moneda]) map[r.moneda]=0;
+      map[r.moneda]+=r.importe;
+    });
+    return map;
+  },[porFacturar]);
+
+  const emptyForm = () => ({cliente:"",concepto:"",importe:"",moneda:"MXN",notas:"",numOs:"",fechaVenta:""});
+
+  const handleSave = async() => {
+    if(!form.cliente||!form.importe||+form.importe<=0) return;
+    setGuardando(true);
+    if(editId) {
+      await updatePorFacturar(editId, {...form, importe:+form.importe});
+      setPorFacturar(prev=>prev.map(r=>r.id===editId?{...r,...form,importe:+form.importe}:r));
+      setEditId(null);
+    } else {
+      const saved = await insertPorFacturar({...form, importe:+form.importe, empresaId});
+      if(saved) setPorFacturar(prev=>[saved,...prev]);
+    }
+    setForm(null);
+    setGuardando(false);
+  };
+
+  const handleDelete = async(id) => {
+    await deletePorFacturar(id);
+    setPorFacturar(prev=>prev.filter(r=>r.id!==id));
+    setDeleteId(null);
+  };
+
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
+      onClick={onClose}>
+      <div style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:1000,maxHeight:"90vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
+        onClick={e=>e.stopPropagation()}>
+
+        {/* Header */}
+        <div style={{padding:"18px 24px",background:"#6A1B9A",borderRadius:"16px 16px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontWeight:800,color:"#fff",fontSize:17}}>📋 Pendiente por Facturar — TravelAirSolutions</div>
+            <div style={{fontSize:12,color:"#E1BEE7",marginTop:3}}>Importes pendientes de autorización del cliente · No afecta proyección ni KPIs de CxC</div>
+          </div>
+          <button onClick={onClose} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",width:34,height:34,cursor:"pointer",fontSize:20}}>×</button>
+        </div>
+
+        {/* Totals chips */}
+        {Object.keys(totales).length>0 && (
+          <div style={{padding:"12px 24px",borderBottom:`1px solid #E8EAF6`,display:"flex",gap:12,flexWrap:"wrap",background:"#F3E5F5"}}>
+            {Object.entries(totales).map(([mon,total])=>(
+              <div key={mon} style={{background:"#fff",borderRadius:10,padding:"8px 16px",border:"1px solid #CE93D8"}}>
+                <div style={{fontSize:10,color:"#7B1FA2",fontWeight:700,textTransform:"uppercase"}}>{mon==="MXN"?"🇲🇽":"🇺🇸"} {mon}</div>
+                <div style={{fontSize:18,fontWeight:900,color:"#6A1B9A"}}>{monedaSym(mon)}{fmt(total)}</div>
+                <div style={{fontSize:10,color:"#9C27B0"}}>{porFacturar.filter(r=>r.moneda===mon).length} registros</div>
+              </div>
+            ))}
+            <div style={{background:"#EDE7F6",borderRadius:10,padding:"8px 16px",border:"1px solid #9575CD"}}>
+              <div style={{fontSize:10,color:"#4527A0",fontWeight:700,textTransform:"uppercase"}}>📋 Total registros</div>
+              <div style={{fontSize:18,fontWeight:900,color:"#4527A0"}}>{porFacturar.length}</div>
+            </div>
+          </div>
+        )}
+
+        {/* Action buttons */}
+        {!esConsulta && (
+          <div style={{padding:"12px 24px",borderBottom:`1px solid ${C.border}`,display:"flex",gap:8}}>
+            <button onClick={()=>{setForm(emptyForm());setEditId(null);}}
+              style={{...btnStyle,background:"#6A1B9A",padding:"8px 16px",fontSize:13}}>
+              + Agregar manual
+            </button>
+            <button onClick={()=>porFacturarRef.current?.click()}
+              style={{...btnStyle,background:"#E65100",color:"#fff",padding:"8px 16px",fontSize:13}}>
+              📥 Importar Excel
+            </button>
+          </div>
+        )}
+
+        {/* Add/Edit form */}
+        {form && (
+          <div style={{padding:"16px 24px",background:"#F3E5F5",borderBottom:`1px solid #CE93D8`}}>
+            <div style={{fontSize:13,fontWeight:700,color:"#6A1B9A",marginBottom:10}}>{editId?"✏️ Editar registro":"+ Nuevo registro"}</div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end"}}>
+              <div>
+                <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}>Cliente *</div>
+                <select value={form.cliente} onChange={e=>setForm(f=>({...f,cliente:e.target.value}))}
+                  style={{...inputStyle,minWidth:160}}>
+                  <option value="">Seleccionar...</option>
+                  {clientesExistentes.map(c=><option key={c} value={c}>{c}</option>)}
+                  <option value="__otro__">✏️ Otro...</option>
+                </select>
+                {form.cliente==="__otro__" && (
+                  <input value={form._clienteOtro||""} onChange={e=>setForm(f=>({...f,cliente:e.target.value,_clienteOtro:e.target.value}))}
+                    placeholder="Nombre del cliente" style={{...inputStyle,marginTop:4,minWidth:160}}/>
+                )}
+              </div>
+              <div>
+                <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}>Concepto / Segmento</div>
+                <input value={form.concepto} onChange={e=>setForm(f=>({...f,concepto:e.target.value}))}
+                  placeholder="TAS, TRF..." style={{...inputStyle,minWidth:120}}/>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}>Importe *</div>
+                <input type="number" value={form.importe} onChange={e=>setForm(f=>({...f,importe:e.target.value}))}
+                  placeholder="0.00" style={{...inputStyle,width:110}} step="0.01"/>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}>Moneda</div>
+                <select value={form.moneda} onChange={e=>setForm(f=>({...f,moneda:e.target.value}))} style={{...inputStyle,width:80}}>
+                  <option>MXN</option>
+                  <option>USD</option>
+                </select>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}># OS</div>
+                <input value={form.numOs} onChange={e=>setForm(f=>({...f,numOs:e.target.value}))}
+                  placeholder="1234" style={{...inputStyle,width:80}}/>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}>Fecha Venta</div>
+                <input type="date" value={form.fechaVenta} onChange={e=>setForm(f=>({...f,fechaVenta:e.target.value}))}
+                  style={{...inputStyle,width:140}}/>
+              </div>
+              <div style={{flex:1,minWidth:100}}>
+                <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}>Notas</div>
+                <input value={form.notas} onChange={e=>setForm(f=>({...f,notas:e.target.value}))}
+                  placeholder="Destino, observaciones..." style={{...inputStyle,width:"100%"}}/>
+              </div>
+              <button onClick={handleSave} disabled={guardando||!form.cliente||!form.importe||+form.importe<=0}
+                style={{...btnStyle,background:"#6A1B9A",padding:"8px 16px",fontSize:13,opacity:(!form.cliente||!form.importe)?0.5:1}}>
+                {guardando?"Guardando...":"✓ Guardar"}
+              </button>
+              <button onClick={()=>{setForm(null);setEditId(null);}}
+                style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"8px 14px",fontSize:13}}>Cancelar</button>
+            </div>
+          </div>
+        )}
+
+        {/* Delete confirm */}
+        {deleteId && (
+          <div style={{padding:"12px 24px",background:"#FFEBEE",borderBottom:`1px solid #FFCDD2`,display:"flex",alignItems:"center",gap:12}}>
+            <span style={{fontSize:13,color:C.danger,fontWeight:600}}>⚠️ ¿Eliminar este registro? Esta acción no se puede deshacer.</span>
+            <button onClick={()=>handleDelete(deleteId)} style={{...btnStyle,background:C.danger,padding:"6px 16px",fontSize:13}}>Sí, eliminar</button>
+            <button onClick={()=>setDeleteId(null)} style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"6px 12px",fontSize:13}}>Cancelar</button>
+          </div>
+        )}
+
+        {/* Table */}
+        <div style={{overflowY:"auto",flex:1}}>
+          {porFacturar.length===0 ? (
+            <div style={{textAlign:"center",padding:60,color:C.muted}}>
+              <div style={{fontSize:48,marginBottom:12}}>📋</div>
+              <div style={{fontSize:16}}>Sin registros pendientes por facturar</div>
+              <div style={{fontSize:13,marginTop:6}}>Agrega manualmente o importa desde Excel</div>
+            </div>
+          ) : (
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+              <thead style={{position:"sticky",top:0}}>
+                <tr style={{background:C.navy}}>
+                  {["Cliente","Concepto","# OS","Fecha Venta","Moneda","Importe","Notas","Acciones"].map(h=>(
+                    <th key={h} style={{padding:"10px 14px",textAlign:h==="Importe"?"right":"left",color:"#fff",fontWeight:700,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {porFacturar.map((r,i)=>(
+                  <tr key={r.id} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFF"}}>
+                    <td style={{padding:"10px 14px",fontWeight:700,color:"#6A1B9A"}}>{r.cliente}</td>
+                    <td style={{padding:"10px 14px",color:C.muted,fontSize:12}}>{r.concepto||"—"}</td>
+                    <td style={{padding:"10px 14px",color:C.blue,fontWeight:600}}>{r.numOs||"—"}</td>
+                    <td style={{padding:"10px 14px",color:C.muted,fontSize:12,whiteSpace:"nowrap"}}>{r.fechaVenta||"—"}</td>
+                    <td style={{padding:"10px 14px"}}>
+                      <span style={{background:r.moneda==="MXN"?"#E3F2FD":"#E8F5E9",color:r.moneda==="MXN"?"#1565C0":"#2E7D32",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{r.moneda}</span>
+                    </td>
+                    <td style={{padding:"10px 14px",textAlign:"right",fontWeight:800,fontSize:15,color:"#6A1B9A"}}>{r.moneda==="EUR"?"€":"$"}{fmt(r.importe)}</td>
+                    <td style={{padding:"10px 14px",color:C.muted,fontSize:12,maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.notas||"—"}</td>
+                    <td style={{padding:"10px 14px",textAlign:"right"}}>
+                      {!esConsulta && (
+                        <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                          <button onClick={()=>{setForm({...r,importe:String(r.importe)});setEditId(r.id);}}
+                            style={{padding:"4px 10px",borderRadius:6,border:`1px solid ${C.blue}`,background:"#E8F0FE",color:C.blue,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>✏️</button>
+                          <button onClick={()=>setDeleteId(r.id)}
+                            style={{padding:"4px 10px",borderRadius:6,border:`1px solid ${C.danger}`,background:"#FFEBEE",color:C.danger,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>🗑️</button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

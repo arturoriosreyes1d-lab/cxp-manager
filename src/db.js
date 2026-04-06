@@ -543,3 +543,76 @@ export async function deleteCliente(id) {
   const { error } = await supabase.from('clientes').delete().eq('id', id);
   if (error) console.error('deleteCliente:', error);
 }
+
+/* ── Por Facturar ────────────────────────────────────────────────────── */
+export async function fetchPorFacturar(empresaId) {
+  const { data, error } = await supabase.from('por_facturar')
+    .select('*').eq('empresa_id', empresaId).order('created_at', { ascending: false });
+  if (error) { console.error('fetchPorFacturar:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id,
+    empresaId: r.empresa_id,
+    cliente: r.cliente || '',
+    concepto: r.concepto || '',
+    importe: +r.importe || 0,
+    moneda: r.moneda || 'MXN',
+    notas: r.notas || '',
+    numOs: r.num_os || '',
+    fechaVenta: r.fecha_venta || '',
+    createdAt: r.created_at || '',
+  }));
+}
+
+export async function insertPorFacturar(r) {
+  const row = {
+    empresa_id: r.empresaId,
+    cliente: r.cliente,
+    concepto: r.concepto || '',
+    importe: +r.importe || 0,
+    moneda: r.moneda || 'MXN',
+    notas: r.notas || '',
+    num_os: r.numOs || null,
+    fecha_venta: r.fechaVenta || null,
+  };
+  const { data, error } = await supabase.from('por_facturar').insert(row).select().single();
+  if (error) { console.error('insertPorFacturar:', error); return null; }
+  return { id: data.id, ...r };
+}
+
+export async function updatePorFacturar(id, fields) {
+  const row = {};
+  if ('cliente'    in fields) row.cliente     = fields.cliente;
+  if ('concepto'   in fields) row.concepto    = fields.concepto;
+  if ('importe'    in fields) row.importe     = +fields.importe;
+  if ('moneda'     in fields) row.moneda      = fields.moneda;
+  if ('notas'      in fields) row.notas       = fields.notas;
+  if ('numOs'      in fields) row.num_os      = fields.numOs || null;
+  if ('fechaVenta' in fields) row.fecha_venta = fields.fechaVenta || null;
+  const { error } = await supabase.from('por_facturar').update(row).eq('id', id);
+  if (error) console.error('updatePorFacturar:', error);
+}
+
+export async function deletePorFacturar(id) {
+  const { error } = await supabase.from('por_facturar').delete().eq('id', id);
+  if (error) console.error('deletePorFacturar:', error);
+}
+
+export async function bulkInsertPorFacturar(rows) {
+  // rows = array of {empresaId, cliente, concepto, importe, moneda, notas, numOs, fechaVenta}
+  // Deduplicate against existing using unique key: empresa_id, num_os, cliente, fecha_venta
+  const dbRows = rows.map(r => ({
+    empresa_id: r.empresaId,
+    cliente: r.cliente,
+    concepto: r.concepto || '',
+    importe: +r.importe || 0,
+    moneda: r.moneda || 'MXN',
+    notas: r.notas || '',
+    num_os: r.numOs || null,
+    fecha_venta: r.fechaVenta || null,
+  }));
+  const { data, error } = await supabase.from('por_facturar')
+    .upsert(dbRows, { onConflict: 'empresa_id,num_os,cliente,fecha_venta', ignoreDuplicates: true })
+    .select();
+  if (error) { console.error('bulkInsertPorFacturar:', error); return { inserted: 0, error }; }
+  return { inserted: (data || []).length };
+}
