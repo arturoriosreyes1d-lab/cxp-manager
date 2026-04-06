@@ -1808,7 +1808,11 @@ export default function CxcView({
           <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16}}>
             {mones.map(mon=>{
               const sym = monedaSym(mon);
-              const pfFiltradoChip = porFacturar.filter(r=>r.moneda===mon && (!filtroDestino || r.destino===filtroDestino));
+              const pfFiltradoChip = porFacturar.filter(r=>r.moneda===mon
+                && (!filtroDestino || r.destino===filtroDestino)
+                && (!filtroCliente || r.cliente===filtroCliente)
+                && (!filtroSearch || r.cliente.toLowerCase().includes(filtroSearch.toLowerCase()) || (r.concepto||"").toLowerCase().includes(filtroSearch.toLowerCase()))
+              );
               const pfTotal = pfFiltradoChip.reduce((s,r)=>s+r.importe,0);
               const pcMon = kpisFiltered[mon]?.porCobrar || 0;
               const totalCxC = pcMon + pfTotal;
@@ -2641,6 +2645,13 @@ export default function CxcView({
             const iSeg=colIdx("SEGMENTO"), iOs=colIdx("OS"), iAero=colIdx("AEROLINEA");
             const iDest=colIdx("DESTINO"), iFechaVenta=colIdx("FECHA VENTA");
             const iImporte=colIdx("IMPORTE"), iMes=colIdx("MES"), iFolio=colIdx("FOLIO");
+            const AERO_MAP = {
+              "AA": "AMERICAN AIRLINES INC",
+              "DL": "DELTA AIR LINES INC",
+              "SW": "SOUTHWEST AIRLINES CO.",
+              "JB": "JETBLUE AIRWAYS CORPORATION",
+              "UA": "UNITED AIRLINES, INC",
+            };
             // Filter rows sin folio, con importe
             const sinFolio=[];
             for(let i=headerIdx+1;i<rows.length;i++){
@@ -2655,9 +2666,11 @@ export default function CxcView({
               let fechaVenta="";
               if(fechaRaw instanceof Date) fechaVenta=fechaRaw.toISOString().slice(0,10);
               else if(typeof fechaRaw==="string"&&fechaRaw.trim()) fechaVenta=fechaRaw.trim().slice(0,10);
+              const aeroRaw = String(aero).trim();
+              const clienteNombre = AERO_MAP[aeroRaw.toUpperCase()] || aeroRaw;
               sinFolio.push({
                 empresaId:empresaId,
-                cliente:String(aero).trim(),
+                cliente:clienteNombre,
                 concepto:String(r[iSeg]||"").trim(),
                 importe:+importe,
                 moneda:"MXN",
