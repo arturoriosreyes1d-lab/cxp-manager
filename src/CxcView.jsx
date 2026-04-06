@@ -1534,30 +1534,32 @@ export default function CxcView({
         </div>
 
         {Object.keys(monthTotals).length > 0 && (
-          <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
-            <span style={{fontSize:12,color:C.muted,alignSelf:"center"}}>Este mes:</span>
+          <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+            <span style={{fontSize:12,color:"#7B1FA2",fontWeight:700,alignSelf:"center"}}>Este mes:</span>
             {Object.entries(monthTotals).map(([mon,val])=>(
-              <div key={mon} style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[mon]||"#F8FAFC",border:"1px solid",borderColor:{MXN:"#90CAF9",USD:"#A5D6A7",EUR:"#CE93D8"}[mon]||"#E0E0E0",borderRadius:20,padding:"5px 14px",fontSize:13,fontWeight:700,color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[mon]||C.navy}}>
+              <div key={mon} style={{background:"#EDE7F6",border:"2px solid #9C27B0",borderRadius:20,padding:"6px 16px",fontSize:13,fontWeight:800,color:"#6A1B9A"}}>
                 {mon==="EUR"?"€":"$"}{fmt(val)} {mon}
               </div>
             ))}
           </div>
         )}
 
-        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:16,overflow:"hidden",boxShadow:"0 2px 12px rgba(0,0,0,.06)"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 20px",background:C.navy}}>
-            <button onClick={prevMonth} style={{background:"rgba(255,255,255,.15)",border:"none",color:"#fff",borderRadius:8,width:34,height:34,cursor:"pointer",fontSize:16,fontWeight:700}}>‹</button>
+        <div style={{background:"#FAF5FF",border:"1px solid #E1BEE7",borderRadius:16,overflow:"hidden",boxShadow:"0 2px 12px rgba(106,27,154,.1)"}}>
+          {/* Calendar header — morado degradado */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 20px",background:"linear-gradient(135deg,#6A1B9A,#9C27B0)"}}>
+            <button onClick={prevMonth} style={{background:"rgba(255,255,255,.2)",border:"none",color:"#fff",borderRadius:8,width:34,height:34,cursor:"pointer",fontSize:16,fontWeight:700}}>‹</button>
             <span style={{fontWeight:800,fontSize:17,color:"#fff"}}>{MESES[calMonth]} {calYear}</span>
-            <button onClick={nextMonth} style={{background:"rgba(255,255,255,.15)",border:"none",color:"#fff",borderRadius:8,width:34,height:34,cursor:"pointer",fontSize:16,fontWeight:700}}>›</button>
+            <button onClick={nextMonth} style={{background:"rgba(255,255,255,.2)",border:"none",color:"#fff",borderRadius:8,width:34,height:34,cursor:"pointer",fontSize:16,fontWeight:700}}>›</button>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",background:"#F8FAFC",borderBottom:`1px solid ${C.border}`}}>
+          {/* Day headers — lila */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",background:"#EDE7F6",borderBottom:"1px solid #D1C4E9"}}>
             {DIAS.map(d=>(
-              <div key={d} style={{padding:"8px 4px",textAlign:"center",fontSize:11,fontWeight:700,color:C.muted,textTransform:"uppercase"}}>{d}</div>
+              <div key={d} style={{padding:"8px 4px",textAlign:"center",fontSize:11,fontWeight:700,color:"#6A1B9A",textTransform:"uppercase"}}>{d}</div>
             ))}
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)"}}>
             {Array.from({length:firstDay}).map((_,i)=>(
-              <div key={`e${i}`} style={{minHeight:110,background:"#FAFBFC",borderRight:`1px solid ${C.border}`,borderBottom:`1px solid ${C.border}`}}/>
+              <div key={`e${i}`} style={{minHeight:110,background:"#F3E5F5",borderRight:"1px solid #E1BEE7",borderBottom:"1px solid #E1BEE7"}}/>
             ))}
             {Array.from({length:daysInMonth}).map((_,i)=>{
               const day = i + 1;
@@ -1567,24 +1569,24 @@ export default function CxcView({
               const hasCobros = entries.length > 0;
               const byMon = {};
               entries.forEach(({ing,cobro})=>{ byMon[ing.moneda]=(byMon[ing.moneda]||0)+cobro.monto; });
-              // Color by dominant type
               const tipos = entries.map(e=>e.tipo);
-              const bgCell = !hasCobros ? (isToday?"#E8F0FE":C.surface) :
-                tipos.includes('proyectado') ? "#F3E5F5" :
-                tipos.includes('ficticia')   ? "#E8F5E9" : "#FFF3E0";
-              const textCol = !hasCobros ? C.text :
-                tipos.includes('proyectado') ? "#7B1FA2" :
-                tipos.includes('ficticia')   ? "#2E7D32" : "#E65100";
+              // Purple-based cell colors
+              const bgCell = !hasCobros ? (isToday?"#EDE7F6":"#FAF5FF") :
+                tipos.includes('proyectado') ? "#EDE7F6" :
+                tipos.includes('ficticia')   ? "#F3E5F5" : "#E8D5F5";
+              const textCol = !hasCobros ? "#4A148C" :
+                tipos.includes('proyectado') ? "#6A1B9A" :
+                tipos.includes('ficticia')   ? "#7B1FA2" : "#4A148C";
 
               return (
                 <div key={day}
                   onClick={hasCobros ? ()=>setCalDayDetailLocal({fecha:dateStr,entries}) : undefined}
-                  style={{minHeight:110,padding:"8px 8px 6px",borderRight:`1px solid ${C.border}`,borderBottom:`1px solid ${C.border}`,background:bgCell,cursor:hasCobros?"pointer":"default",transition:"background .15s"}}
-                  onMouseEnter={e=>{if(hasCobros)e.currentTarget.style.opacity=".85";}}
-                  onMouseLeave={e=>{if(hasCobros)e.currentTarget.style.opacity="1";}}>
-                  <div style={{width:28,height:28,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:isToday?C.navy:"transparent",color:isToday?"#fff":hasCobros?textCol:C.text,fontWeight:isToday||hasCobros?800:400,fontSize:14,marginBottom:6}}>{day}</div>
+                  style={{minHeight:110,padding:"8px 8px 6px",borderRight:"1px solid #E1BEE7",borderBottom:"1px solid #E1BEE7",background:bgCell,cursor:hasCobros?"pointer":"default",transition:"all .15s"}}
+                  onMouseEnter={e=>{if(hasCobros){e.currentTarget.style.background="#D1C4E9";e.currentTarget.style.boxShadow="inset 0 0 0 2px #9C27B0";}}}
+                  onMouseLeave={e=>{if(hasCobros){e.currentTarget.style.background=bgCell;e.currentTarget.style.boxShadow="none";}}}>
+                  <div style={{width:28,height:28,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:isToday?"#6A1B9A":"transparent",color:isToday?"#fff":hasCobros?textCol:"#9E9E9E",fontWeight:isToday||hasCobros?800:400,fontSize:14,marginBottom:6}}>{day}</div>
                   {Object.entries(byMon).map(([mon,val])=>(
-                    <div key={mon} style={{background:{MXN:"#1976D2",USD:"#2E7D32",EUR:"#6A1B9A"}[mon]||"#546E7A",color:"#fff",borderRadius:7,padding:"4px 7px",fontSize:13,fontWeight:800,marginBottom:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",letterSpacing:"-0.3px"}}>
+                    <div key={mon} style={{background:{MXN:"#7B1FA2",USD:"#4A148C",EUR:"#880E4F"}[mon]||"#6A1B9A",color:"#fff",borderRadius:7,padding:"4px 7px",fontSize:13,fontWeight:800,marginBottom:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",letterSpacing:"-0.3px"}}>
                       {mon==="EUR"?"€":"$"}{fmt(val)}
                       <span style={{fontSize:10,fontWeight:600,opacity:.85,marginLeft:3}}>{mon}</span>
                     </div>
@@ -1601,10 +1603,10 @@ export default function CxcView({
         </div>
 
         <div style={{display:"flex",gap:16,marginTop:12,fontSize:11,color:C.muted,flexWrap:"wrap"}}>
-          <span style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:14,height:14,borderRadius:3,background:"#F3E5F5",border:"1px solid #CE93D8",display:"inline-block"}}/>📆 Cobro proyectado manual</span>
-          <span style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:14,height:14,borderRadius:3,background:"#E8F5E9",border:"1px solid #A5D6A7",display:"inline-block"}}/>📅 Fecha ficticia de cobro</span>
-          <span style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:14,height:14,borderRadius:3,background:"#FFF3E0",border:"1px solid #FFCC80",display:"inline-block"}}/>⏰ Fecha de vencimiento</span>
-          <span style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:14,height:14,borderRadius:"50%",background:C.navy,display:"inline-block"}}/>Hoy</span>
+          <span style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:14,height:14,borderRadius:3,background:"#EDE7F6",border:"1px solid #9C27B0",display:"inline-block"}}/>📆 Cobro proyectado manual</span>
+          <span style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:14,height:14,borderRadius:3,background:"#F3E5F5",border:"1px solid #CE93D8",display:"inline-block"}}/>📅 Fecha ficticia de cobro</span>
+          <span style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:14,height:14,borderRadius:3,background:"#E8D5F5",border:"1px solid #AB47BC",display:"inline-block"}}/>⏰ Fecha de vencimiento</span>
+          <span style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:14,height:14,borderRadius:"50%",background:"#6A1B9A",display:"inline-block"}}/>Hoy</span>
         </div>
 
         {/* Day detail popup */}
