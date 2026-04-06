@@ -180,6 +180,22 @@ export default function CxcView({
 
   // Meses únicos de fechaContable para filtro "Mes de Venta"
   const MESES_NOMBRES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+
+  // Homologar destino desde texto libre
+  const homologarDestino = (texto) => {
+    const t = String(texto||"").toUpperCase();
+    if(/CUN|CANCUN|CANCÚN/.test(t)) return "Cancún";
+    if(/TQO|TULUM/.test(t)) return "Tulum";
+    if(/SJD|LOS CABOS|CABOS/.test(t)) return "Los Cabos";
+    if(/CZM|COZUMEL/.test(t)) return "Cozumel";
+    if(/MID|MERIDA|MÉRIDA/.test(t)) return "Mérida";
+    if(/HUX|HUATULCO/.test(t)) return "Huatulco";
+    if(/PVR|VALLARTA/.test(t)) return "Puerto Vallarta";
+    if(/MZT|MAZATLAN|MAZATLÁN/.test(t)) return "Mazatlán";
+    return texto || "";
+  };
+
+  const DESTINOS_LIST = ["Cancún","Tulum","Los Cabos","Cozumel","Mérida","Huatulco","Puerto Vallarta","Mazatlán"];
   const mesesContableList = useMemo(() => {
     const s = new Set();
     ingresos.forEach(i => {
@@ -1792,9 +1808,8 @@ export default function CxcView({
           <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16}}>
             {mones.map(mon=>{
               const sym = monedaSym(mon);
-              const pfTotal = porFacturar.filter(r=>r.moneda===mon).reduce((s,r)=>s+r.importe,0);
-              const porCobrar = Object.values(kpisFiltered).reduce((s,v)=>s+(v.porCobrar||0),0);
-              // Per-moneda porCobrar
+              const pfFiltradoChip = porFacturar.filter(r=>r.moneda===mon && (!filtroDestino || r.destino===filtroDestino));
+              const pfTotal = pfFiltradoChip.reduce((s,r)=>s+r.importe,0);
               const pcMon = kpisFiltered[mon]?.porCobrar || 0;
               const totalCxC = pcMon + pfTotal;
               if(pfTotal===0 && pcMon===0) return null;
@@ -1806,7 +1821,7 @@ export default function CxcView({
                       onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
                       <div style={{fontSize:11,color:"#7B1FA2",fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>📋 Por Facturar {mon}</div>
                       <div style={{fontSize:22,fontWeight:800,color:"#6A1B9A",marginTop:4}}>{sym}{fmt(pfTotal)}</div>
-                      <div style={{fontSize:10,color:"#9C27B0",marginTop:2}}>{porFacturar.filter(r=>r.moneda===mon).length} registros</div>
+                      <div style={{fontSize:10,color:"#9C27B0",marginTop:2}}>{pfFiltradoChip.length} registros{filtroDestino?` · ${filtroDestino}`:""}</div>
                     </div>
                   )}
                   {totalCxC>0 && (
@@ -2646,9 +2661,10 @@ export default function CxcView({
                 concepto:String(r[iSeg]||"").trim(),
                 importe:+importe,
                 moneda:"MXN",
-                notas:`Destino:${r[iDest]||""} Mes:${r[iMes]||""}`,
+                notas:`Mes:${r[iMes]||""}`,
                 numOs:String(r[iOs]||"").trim(),
                 fechaVenta,
+                destino: homologarDestino(String(r[iDest]||"").trim()),
               });
             }
             if(!sinFolio.length){ alert("No se encontraron registros sin folio en el archivo."); return; }
@@ -2659,7 +2675,7 @@ export default function CxcView({
             // Reload
             const fresh=await (async()=>{
               const {data}=await import("./supabase.js").then(m=>m.supabase.from("por_facturar").select("*").eq("empresa_id",empresaId).order("created_at",{ascending:false}));
-              return (data||[]).map(r=>({id:r.id,empresaId:r.empresa_id,cliente:r.cliente||"",concepto:r.concepto||"",importe:+r.importe||0,moneda:r.moneda||"MXN",notas:r.notas||"",numOs:r.num_os||"",fechaVenta:r.fecha_venta||"",createdAt:r.created_at||""}));
+              return (data||[]).map(r=>({id:r.id,empresaId:r.empresa_id,cliente:r.cliente||"",concepto:r.concepto||"",importe:+r.importe||0,moneda:r.moneda||"MXN",notas:r.notas||"",numOs:r.num_os||"",fechaVenta:r.fecha_venta||"",destino:r.destino||"",createdAt:r.created_at||""}));
             })();
             setPorFacturar(fresh);
             alert(`✅ ${result.inserted} registros nuevos importados. ${sinFolio.length-result.inserted} ya existían.`);
@@ -2995,6 +3011,9 @@ function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
   const [vistaResumen, setVistaResumen] = React.useState("cliente");
   const [searchCliente, setSearchCliente] = React.useState("");
   const [filtroMonedaResumen, setFiltroMonedaResumen] = React.useState("");
+  const [filtroDestinoResumen, setFiltroDestinoResumen] = React.useState("");
+
+  const DESTINOS_R = ["Cancún","Tulum","Los Cabos","Cozumel","Mérida","Huatulco","Puerto Vallarta","Mazatlán"];
   const [expandedClientes, setExpandedClientes] = React.useState(new Set());
   const toggleCliente = (key) => setExpandedClientes(prev => { const n=new Set(prev); n.has(key)?n.delete(key):n.add(key); return n; });
 
@@ -3023,7 +3042,7 @@ function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
   const byClienteData = React.useMemo(()=>{
     const result={};
     currencies.forEach(mon=>{
-      const invs=ingresos.filter(i=>(i.moneda||"MXN")===mon && !i.oculta);
+      const invs=ingresos.filter(i=>(i.moneda||"MXN")===mon && !i.oculta && (!filtroDestinoResumen || detectarDestino(i.concepto)===filtroDestinoResumen));
       if(!invs.length){result[mon]=null;return;}
       const map={};
       invs.forEach(ing=>{
@@ -3047,7 +3066,7 @@ function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
   const byMesData = React.useMemo(()=>{
     const result={};
     currencies.forEach(mon=>{
-      const invs=ingresos.filter(i=>(i.moneda||"MXN")===mon && !i.oculta);
+      const invs=ingresos.filter(i=>(i.moneda||"MXN")===mon && !i.oculta && (!filtroDestinoResumen || detectarDestino(i.concepto)===filtroDestinoResumen));
       if(!invs.length){result[mon]=null;return;}
       const map={};
       invs.forEach(ing=>{
@@ -3541,6 +3560,12 @@ function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
           <input placeholder="🔍 Buscar cliente…" value={searchCliente} onChange={e=>setSearchCliente(e.target.value)}
             style={{padding:"8px 14px",borderRadius:10,border:`1px solid ${C.border}`,fontSize:13,width:220,fontFamily:"inherit"}}/>
         )}
+        {/* Destino filter */}
+        <select value={filtroDestinoResumen} onChange={e=>setFiltroDestinoResumen(e.target.value)}
+          style={{padding:"8px 14px",borderRadius:10,border:`1px solid ${filtroDestinoResumen?"#3949AB":C.border}`,fontSize:13,fontFamily:"inherit",background:"#fff",color:filtroDestinoResumen?"#3949AB":C.muted,fontWeight:filtroDestinoResumen?700:400}}>
+          <option value="">🗺️ Todos los destinos</option>
+          {DESTINOS_R.map(d=><option key={d} value={d}>{d}</option>)}
+        </select>
         <div style={{marginLeft:"auto",display:"flex",gap:8}}>
           <button onClick={exportExcel} style={{display:"flex",alignItems:"center",gap:6,padding:"9px 16px",borderRadius:10,border:"1px solid #2E7D32",background:"#E8F5E9",color:"#2E7D32",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>📊 Excel</button>
           <button onClick={printPDF} style={{display:"flex",alignItems:"center",gap:6,padding:"9px 16px",borderRadius:10,border:"1px solid #1565C0",background:"#E3F2FD",color:"#1565C0",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>🖨️ PDF</button>
@@ -3776,27 +3801,32 @@ function CobrosCxC({ cobros, ingresos, fmt, C, monedaSym, MESES_NOMBRES }) {
 
 /* ── PorFacturarModal ────────────────────────────────────────────────── */
 function PorFacturarModal({ empresaId, porFacturar, setPorFacturar, ingresos, insertPorFacturar, updatePorFacturar, deletePorFacturar, bulkInsertPorFacturar, onClose, esConsulta, fmt, C, btnStyle, inputStyle, XLSX, porFacturarRef }) {
-  const [form, setForm] = React.useState(null); // null | {cliente,concepto,importe,moneda,notas,numOs,fechaVenta} | {id,...}
+  const [form, setForm] = React.useState(null);
   const [editId, setEditId] = React.useState(null);
   const [deleteId, setDeleteId] = React.useState(null);
   const [guardando, setGuardando] = React.useState(false);
+  const [vistaPF, setVistaPF] = React.useState("cliente"); // "cliente" | "destino" | "lista"
+  const [filtroDestinoPF, setFiltroDestinoPF] = React.useState("");
 
-  // Unique clients from ingresos
+  const DESTINOS = ["Cancún","Tulum","Los Cabos","Cozumel","Mérida","Huatulco","Puerto Vallarta","Mazatlán"];
+
   const clientesExistentes = React.useMemo(()=>[...new Set(ingresos.map(i=>i.cliente).filter(Boolean))].sort(),[ingresos]);
-
   const monedaSym = m => m==="EUR"?"€":"$";
 
-  // Totals by moneda
+  const pfFiltrado = React.useMemo(()=>
+    filtroDestinoPF ? porFacturar.filter(r=>r.destino===filtroDestinoPF) : porFacturar
+  ,[porFacturar, filtroDestinoPF]);
+
   const totales = React.useMemo(()=>{
     const map={};
-    porFacturar.forEach(r=>{
+    pfFiltrado.forEach(r=>{
       if(!map[r.moneda]) map[r.moneda]=0;
       map[r.moneda]+=r.importe;
     });
     return map;
-  },[porFacturar]);
+  },[pfFiltrado]);
 
-  const emptyForm = () => ({cliente:"",concepto:"",importe:"",moneda:"MXN",notas:"",numOs:"",fechaVenta:""});
+  const emptyForm = () => ({cliente:"",concepto:"",importe:"",moneda:"MXN",notas:"",numOs:"",fechaVenta:"",destino:""});
 
   const handleSave = async() => {
     if(!form.cliente||!form.importe||+form.importe<=0) return;
@@ -3906,6 +3936,14 @@ function PorFacturarModal({ empresaId, porFacturar, setPorFacturar, ingresos, in
                   placeholder="1234" style={{...inputStyle,width:80}}/>
               </div>
               <div>
+                <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}>Destino</div>
+                <select value={form.destino||""} onChange={e=>setForm(f=>({...f,destino:e.target.value}))}
+                  style={{...inputStyle,width:140}}>
+                  <option value="">— Sin destino —</option>
+                  {DESTINOS.map(d=><option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div>
                 <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}>Fecha Venta</div>
                 <input type="date" value={form.fechaVenta} onChange={e=>setForm(f=>({...f,fechaVenta:e.target.value}))}
                   style={{...inputStyle,width:140}}/>
@@ -3913,7 +3951,7 @@ function PorFacturarModal({ empresaId, porFacturar, setPorFacturar, ingresos, in
               <div style={{flex:1,minWidth:100}}>
                 <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}>Notas</div>
                 <input value={form.notas} onChange={e=>setForm(f=>({...f,notas:e.target.value}))}
-                  placeholder="Destino, observaciones..." style={{...inputStyle,width:"100%"}}/>
+                  placeholder="Observaciones..." style={{...inputStyle,width:"100%"}}/>
               </div>
               <button onClick={handleSave} disabled={guardando||!form.cliente||!form.importe||+form.importe<=0}
                 style={{...btnStyle,background:"#6A1B9A",padding:"8px 16px",fontSize:13,opacity:(!form.cliente||!form.importe)?0.5:1}}>
@@ -3934,6 +3972,24 @@ function PorFacturarModal({ empresaId, porFacturar, setPorFacturar, ingresos, in
           </div>
         )}
 
+        {/* Vista controls */}
+        <div style={{padding:"10px 20px",borderBottom:`1px solid ${C.border}`,display:"flex",gap:10,alignItems:"center",background:"#FAFAFA",flexWrap:"wrap"}}>
+          <div style={{display:"flex",border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden"}}>
+            {[{id:"lista",l:"📋 Lista"},{id:"cliente",l:"👤 Por Cliente"},{id:"destino",l:"🗺️ Por Destino"}].map(v=>(
+              <button key={v.id} onClick={()=>setVistaPF(v.id)}
+                style={{padding:"6px 14px",border:"none",background:vistaPF===v.id?"#6A1B9A":"#fff",color:vistaPF===v.id?"#fff":C.text,fontWeight:vistaPF===v.id?700:400,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+                {v.l}
+              </button>
+            ))}
+          </div>
+          <select value={filtroDestinoPF} onChange={e=>setFiltroDestinoPF(e.target.value)}
+            style={{...inputStyle,maxWidth:160,fontSize:12,borderColor:filtroDestinoPF?"#6A1B9A":C.border,color:filtroDestinoPF?"#6A1B9A":C.text}}>
+            <option value="">🗺️ Todos los destinos</option>
+            {DESTINOS.map(d=><option key={d} value={d}>{d}</option>)}
+          </select>
+          {filtroDestinoPF && <button onClick={()=>setFiltroDestinoPF("")} style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"5px 10px",fontSize:12}}>✕</button>}
+          <span style={{fontSize:12,color:C.muted,marginLeft:"auto"}}>{pfFiltrado.length} registros</span>
+        </div>
         {/* Table */}
         <div style={{overflowY:"auto",flex:1}}>
           {porFacturar.length===0 ? (
@@ -3942,42 +3998,78 @@ function PorFacturarModal({ empresaId, porFacturar, setPorFacturar, ingresos, in
               <div style={{fontSize:16}}>Sin registros pendientes por facturar</div>
               <div style={{fontSize:13,marginTop:6}}>Agrega manualmente o importa desde Excel</div>
             </div>
-          ) : (
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          ) : (()=>{
+            const PFRow=({r,i})=>(
+              <tr key={r.id} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFF"}}>
+                <td style={{padding:"10px 12px",fontWeight:700,color:"#6A1B9A",fontSize:13}}>{r.cliente}</td>
+                <td style={{padding:"10px 12px",color:C.muted,fontSize:12}}>{r.concepto||"—"}</td>
+                <td style={{padding:"10px 12px",fontSize:12}}>
+                  {r.destino?<span style={{background:"#E8EAF6",color:"#3949AB",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{r.destino}</span>:<span style={{color:C.muted}}>—</span>}
+                </td>
+                <td style={{padding:"10px 12px",color:C.blue,fontWeight:600,fontSize:12}}>{r.numOs||"—"}</td>
+                <td style={{padding:"10px 12px",color:C.muted,fontSize:12,whiteSpace:"nowrap"}}>{r.fechaVenta||"—"}</td>
+                <td style={{padding:"10px 12px"}}>
+                  <span style={{background:r.moneda==="MXN"?"#E3F2FD":"#E8F5E9",color:r.moneda==="MXN"?"#1565C0":"#2E7D32",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{r.moneda}</span>
+                </td>
+                <td style={{padding:"10px 12px",textAlign:"right",fontWeight:800,fontSize:15,color:"#6A1B9A"}}>{r.moneda==="EUR"?"€":"$"}{fmt(r.importe)}</td>
+                <td style={{padding:"10px 12px",textAlign:"right"}}>
+                  {!esConsulta && (
+                    <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                      <button onClick={()=>{setForm({...r,importe:String(r.importe)});setEditId(r.id);}}
+                        style={{padding:"4px 10px",borderRadius:6,border:`1px solid ${C.blue}`,background:"#E8F0FE",color:C.blue,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>✏️</button>
+                      <button onClick={()=>setDeleteId(r.id)}
+                        style={{padding:"4px 10px",borderRadius:6,border:`1px solid ${C.danger}`,background:"#FFEBEE",color:C.danger,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>🗑️</button>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            );
+            const COLS=["Cliente","Concepto","Destino","# OS","Fecha Venta","Moneda","Importe","Acciones"];
+            const thead=(
               <thead style={{position:"sticky",top:0}}>
                 <tr style={{background:C.navy}}>
-                  {["Cliente","Concepto","# OS","Fecha Venta","Moneda","Importe","Notas","Acciones"].map(h=>(
-                    <th key={h} style={{padding:"10px 14px",textAlign:h==="Importe"?"right":"left",color:"#fff",fontWeight:700,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                  {COLS.map(h=>(
+                    <th key={h} style={{padding:"10px 12px",textAlign:h==="Importe"?"right":"left",color:"#fff",fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody>
-                {porFacturar.map((r,i)=>(
-                  <tr key={r.id} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFF"}}>
-                    <td style={{padding:"10px 14px",fontWeight:700,color:"#6A1B9A"}}>{r.cliente}</td>
-                    <td style={{padding:"10px 14px",color:C.muted,fontSize:12}}>{r.concepto||"—"}</td>
-                    <td style={{padding:"10px 14px",color:C.blue,fontWeight:600}}>{r.numOs||"—"}</td>
-                    <td style={{padding:"10px 14px",color:C.muted,fontSize:12,whiteSpace:"nowrap"}}>{r.fechaVenta||"—"}</td>
-                    <td style={{padding:"10px 14px"}}>
-                      <span style={{background:r.moneda==="MXN"?"#E3F2FD":"#E8F5E9",color:r.moneda==="MXN"?"#1565C0":"#2E7D32",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{r.moneda}</span>
-                    </td>
-                    <td style={{padding:"10px 14px",textAlign:"right",fontWeight:800,fontSize:15,color:"#6A1B9A"}}>{r.moneda==="EUR"?"€":"$"}{fmt(r.importe)}</td>
-                    <td style={{padding:"10px 14px",color:C.muted,fontSize:12,maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.notas||"—"}</td>
-                    <td style={{padding:"10px 14px",textAlign:"right"}}>
-                      {!esConsulta && (
-                        <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
-                          <button onClick={()=>{setForm({...r,importe:String(r.importe)});setEditId(r.id);}}
-                            style={{padding:"4px 10px",borderRadius:6,border:`1px solid ${C.blue}`,background:"#E8F0FE",color:C.blue,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>✏️</button>
-                          <button onClick={()=>setDeleteId(r.id)}
-                            style={{padding:"4px 10px",borderRadius:6,border:`1px solid ${C.danger}`,background:"#FFEBEE",color:C.danger,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>🗑️</button>
+            );
+            const groupBy=(arr,fn)=>arr.reduce((acc,r)=>{const k=fn(r)||"—";if(!acc[k])acc[k]=[];acc[k].push(r);return acc;},{});
+            const groupTotal=(arr)=>arr.reduce((s,r)=>s+r.importe,0);
+            if(vistaPF==="lista") return(
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                {thead}<tbody>{pfFiltrado.map((r,i)=><PFRow key={r.id} r={r} i={i}/>)}</tbody>
+              </table>
+            );
+            const grupos=vistaPF==="cliente"
+              ? Object.entries(groupBy(pfFiltrado,r=>r.cliente)).sort((a,b)=>groupTotal(b[1])-groupTotal(a[1]))
+              : Object.entries(groupBy(pfFiltrado,r=>r.destino||"Sin destino")).sort((a,b)=>groupTotal(b[1])-groupTotal(a[1]));
+            return(
+              <div>
+                {grupos.map(([grupo,regs])=>{
+                  const porMon=regs.reduce((acc,r)=>{if(!acc[r.moneda])acc[r.moneda]=0;acc[r.moneda]+=r.importe;return acc;},{});
+                  return(
+                    <div key={grupo}>
+                      <div style={{background:"#EDE7F6",padding:"10px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:"2px solid #9575CD",position:"sticky",top:0,zIndex:2}}>
+                        <span style={{fontWeight:800,fontSize:14,color:"#4527A0"}}>{vistaPF==="cliente"?"👤":"🗺️"} {grupo}</span>
+                        <div style={{display:"flex",gap:16,alignItems:"center"}}>
+                          {Object.entries(porMon).map(([mon,t])=>(
+                            <span key={mon} style={{fontSize:13,color:"#4527A0",fontWeight:700}}>
+                              {mon==="MXN"?"🇲🇽":"🇺🇸"} {mon==="EUR"?"€":"$"}{fmt(t)}
+                            </span>
+                          ))}
+                          <span style={{fontSize:12,color:"#7E57C2"}}>{regs.length} registros</span>
                         </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+                      </div>
+                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                        {thead}<tbody>{regs.map((r,i)=><PFRow key={r.id} r={r} i={i}/>)}</tbody>
+                      </table>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
       </div>
     </div>

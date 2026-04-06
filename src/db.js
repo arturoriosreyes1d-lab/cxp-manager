@@ -561,6 +561,7 @@ export async function fetchPorFacturar(empresaId) {
     notas: r.notas || '',
     numOs: r.num_os || '',
     fechaVenta: r.fecha_venta || '',
+    destino: r.destino || '',
     createdAt: r.created_at || '',
   }));
 }
@@ -575,6 +576,7 @@ export async function insertPorFacturar(r) {
     notas: r.notas || '',
     num_os: r.numOs || null,
     fecha_venta: r.fechaVenta || null,
+    destino: r.destino || null,
   };
   const { data, error } = await supabase.from('por_facturar').insert(row).select().single();
   if (error) { console.error('insertPorFacturar:', error); return null; }
@@ -590,6 +592,7 @@ export async function updatePorFacturar(id, fields) {
   if ('notas'      in fields) row.notas       = fields.notas;
   if ('numOs'      in fields) row.num_os      = fields.numOs || null;
   if ('fechaVenta' in fields) row.fecha_venta = fields.fechaVenta || null;
+  if ('destino'    in fields) row.destino     = fields.destino || null;
   const { error } = await supabase.from('por_facturar').update(row).eq('id', id);
   if (error) console.error('updatePorFacturar:', error);
 }
@@ -600,8 +603,6 @@ export async function deletePorFacturar(id) {
 }
 
 export async function bulkInsertPorFacturar(rows) {
-  // rows = array of {empresaId, cliente, concepto, importe, moneda, notas, numOs, fechaVenta}
-  // Deduplicate against existing using unique key: empresa_id, num_os, cliente, fecha_venta
   const dbRows = rows.map(r => ({
     empresa_id: r.empresaId,
     cliente: r.cliente,
@@ -611,9 +612,11 @@ export async function bulkInsertPorFacturar(rows) {
     notas: r.notas || '',
     num_os: r.numOs || null,
     fecha_venta: r.fechaVenta || null,
+    destino: r.destino || null,
   }));
+  // Use upsert with merge so existing records get destino updated
   const { data, error } = await supabase.from('por_facturar')
-    .upsert(dbRows, { onConflict: 'empresa_id,num_os,cliente,fecha_venta', ignoreDuplicates: true })
+    .upsert(dbRows, { onConflict: 'empresa_id,num_os,cliente,fecha_venta', ignoreDuplicates: false })
     .select();
   if (error) { console.error('bulkInsertPorFacturar:', error); return { inserted: 0, error }; }
   return { inserted: (data || []).length };
