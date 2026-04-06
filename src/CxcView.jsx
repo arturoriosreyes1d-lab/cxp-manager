@@ -3019,11 +3019,11 @@ function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
 
   const currencies = ["MXN","USD","EUR"];
 
-  // Build por-cliente data
+  // Build por-cliente data — excluye ocultas
   const byClienteData = React.useMemo(()=>{
     const result={};
     currencies.forEach(mon=>{
-      const invs=ingresos.filter(i=>(i.moneda||"MXN")===mon);
+      const invs=ingresos.filter(i=>(i.moneda||"MXN")===mon && !i.oculta);
       if(!invs.length){result[mon]=null;return;}
       const map={};
       invs.forEach(ing=>{
@@ -3043,11 +3043,11 @@ function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
     return result;
   },[ingresos,metrics,searchCliente]);
 
-  // Build por-mes data (Fecha Contable)
+  // Build por-mes data — excluye ocultas
   const byMesData = React.useMemo(()=>{
     const result={};
     currencies.forEach(mon=>{
-      const invs=ingresos.filter(i=>(i.moneda||"MXN")===mon);
+      const invs=ingresos.filter(i=>(i.moneda||"MXN")===mon && !i.oculta);
       if(!invs.length){result[mon]=null;return;}
       const map={};
       invs.forEach(ing=>{
