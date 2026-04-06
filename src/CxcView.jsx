@@ -104,6 +104,7 @@ export default function CxcView({
   const [filtroMesContable, setFiltroMesContable] = useState("");
   const [filtroSegmento, setFiltroSegmento] = useState(""); // "" | "cobrado" | "porCobrar"
   const [mostrarOcultas, setMostrarOcultas] = useState(false);
+  const [ocultasModal, setOcultasModal] = useState(false);
   const [filtroDestino, setFiltroDestino] = useState("");
 
   /* ── Modals ────────────────────────────────────────────────── */
@@ -1743,10 +1744,10 @@ export default function CxcView({
       {/* Ocultas counter chip */}
       {ingresos.filter(i=>i.oculta).length > 0 && (
         <div style={{marginBottom:8}}>
-          <span onClick={()=>setMostrarOcultas(p=>!p)}
-            style={{display:"inline-flex",alignItems:"center",gap:6,background:mostrarOcultas?"#FFF3E0":"#F1F5F9",border:`1px solid ${mostrarOcultas?"#E65100":C.border}`,borderRadius:20,padding:"5px 14px",cursor:"pointer",fontSize:12,color:mostrarOcultas?"#E65100":C.muted,fontWeight:600}}>
+          <span onClick={()=>setOcultasModal(true)}
+            style={{display:"inline-flex",alignItems:"center",gap:6,background:"#FFF3E0",border:"1px solid #FFB74D",borderRadius:20,padding:"5px 14px",cursor:"pointer",fontSize:12,color:"#E65100",fontWeight:600}}>
             🙈 {ingresos.filter(i=>i.oculta).length} factura{ingresos.filter(i=>i.oculta).length!==1?"s":""} oculta{ingresos.filter(i=>i.oculta).length!==1?"s":""}
-            <span style={{fontSize:11,opacity:.7,marginLeft:2}}>{mostrarOcultas?"· clic para ocultar":"· clic para ver"}</span>
+            <span style={{fontSize:11,opacity:.7,marginLeft:2}}>· clic para gestionar</span>
           </span>
         </div>
       )}
@@ -2555,6 +2556,29 @@ export default function CxcView({
         btnStyle={btnStyle}
         inputStyle={inputStyle}
       />}
+
+      {/* Ocultas Modal */}
+      {ocultasModal && (
+        <OcultasModal
+          ingresos={ingresos.filter(i=>i.oculta)}
+          metrics={metrics}
+          onRestore={async(id)=>{
+            setIngresos(prev=>prev.map(i=>i.id===id?{...i,oculta:false}:i));
+            await updateIngresoField(id,{oculta:false});
+          }}
+          onRestoreAll={async()=>{
+            const ids=ingresos.filter(i=>i.oculta).map(i=>i.id);
+            setIngresos(prev=>prev.map(i=>ids.includes(i.id)?{...i,oculta:false}:i));
+            await Promise.all(ids.map(id=>updateIngresoField(id,{oculta:false})));
+          }}
+          onClose={()=>setOcultasModal(false)}
+          fmt={fmt}
+          monedaSym={monedaSym}
+          C={C}
+          btnStyle={btnStyle}
+          diasDiff={diasDiff}
+        />
+      )}
 
       {/* Por Facturar Modal */}
       {porFacturarModal && (
@@ -3946,6 +3970,131 @@ function PorFacturarModal({ empresaId, porFacturar, setPorFacturar, ingresos, in
               </tbody>
             </table>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── OcultasModal ────────────────────────────────────────────────────── */
+function OcultasModal({ ingresos, metrics, onRestore, onRestoreAll, onClose, fmt, monedaSym, C, btnStyle, diasDiff }) {
+  const [restoring, setRestoring] = React.useState(new Set());
+
+  const handleRestore = async (id) => {
+    setRestoring(prev => new Set([...prev, id]));
+    await onRestore(id);
+    setRestoring(prev => { const n = new Set(prev); n.delete(id); return n; });
+  };
+
+  const handleRestoreAll = async () => {
+    await onRestoreAll();
+    onClose();
+  };
+
+  // Group by cliente
+  const byCliente = ingresos.reduce((acc, i) => {
+    const c = i.cliente || "—";
+    if (!acc[c]) acc[c] = [];
+    acc[c].push(i);
+    return acc;
+  }, {});
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
+      onClick={onClose}>
+      <div style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:1100,maxHeight:"85vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
+        onClick={e=>e.stopPropagation()}>
+
+        {/* Header */}
+        <div style={{padding:"18px 24px",background:"#E65100",borderRadius:"16px 16px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontWeight:800,color:"#fff",fontSize:17}}>🙈 Facturas Ocultas</div>
+            <div style={{fontSize:12,color:"#FFCC80",marginTop:3}}>{ingresos.length} factura{ingresos.length!==1?"s":""}  · No aparecen en KPIs ni totales</div>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            {ingresos.length > 0 && (
+              <button onClick={handleRestoreAll}
+                style={{...btnStyle,background:"rgba(255,255,255,.2)",color:"#fff",border:"1px solid rgba(255,255,255,.4)",padding:"7px 16px",fontSize:13}}>
+                👁️ Restaurar todas
+              </button>
+            )}
+            <button onClick={onClose} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",width:34,height:34,cursor:"pointer",fontSize:20}}>×</button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div style={{overflowY:"auto",flex:1}}>
+          {ingresos.length === 0 ? (
+            <div style={{textAlign:"center",padding:60,color:C.muted}}>
+              <div style={{fontSize:40,marginBottom:12}}>✅</div>
+              <div style={{fontSize:15}}>No hay facturas ocultas</div>
+            </div>
+          ) : (
+            Object.entries(byCliente).map(([cliente, ings], ci) => (
+              <div key={cliente}>
+                {/* Client header */}
+                <div style={{background:"#FFF3E0",padding:"10px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:ci>0?`2px solid #FFE0B2`:"none",position:"sticky",top:0,zIndex:2}}>
+                  <span style={{fontWeight:800,fontSize:14,color:"#E65100"}}>👤 {cliente}</span>
+                  <span style={{fontSize:12,color:"#BF360C"}}>{ings.length} factura{ings.length!==1?"s":""}</span>
+                </div>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                  <thead>
+                    <tr style={{background:"#FBE9E7"}}>
+                      {["Folio","Concepto","Segmento","Fecha","Vencimiento","Días","Moneda","Monto","Por Cobrar","Restaurar"].map(h=>(
+                        <th key={h} style={{padding:"8px 12px",textAlign:["Monto","Por Cobrar"].includes(h)?"right":"left",color:"#BF360C",fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ings.map((ing, ii) => {
+                      const m = metrics[ing.id] || {};
+                      const sym = monedaSym(ing.moneda);
+                      const dias = diasDiff(ing.fechaVencimiento);
+                      return (
+                        <tr key={ing.id} style={{borderTop:`1px solid #FFE0B2`,background:ii%2===0?"#fff":"#FFF8F5"}}>
+                          <td style={{padding:"10px 12px",color:C.blue,fontWeight:600,whiteSpace:"nowrap"}}>{ing.folio||"—"}</td>
+                          <td style={{padding:"10px 12px",color:C.muted,maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.concepto||"—"}</td>
+                          <td style={{padding:"10px 12px",fontSize:12}}>{ing.segmento||"—"}</td>
+                          <td style={{padding:"10px 12px",fontSize:12,color:C.muted,whiteSpace:"nowrap"}}>{ing.fecha||"—"}</td>
+                          <td style={{padding:"10px 12px",fontSize:12,whiteSpace:"nowrap",color:dias!==null&&dias<0?C.danger:C.text}}>{ing.fechaVencimiento||"—"}</td>
+                          <td style={{padding:"10px 12px",textAlign:"center"}}>
+                            {dias===null?<span style={{color:C.muted}}>—</span>:dias<0?
+                              <span style={{background:"#FFEBEE",color:C.danger,fontWeight:800,fontSize:11,padding:"2px 6px",borderRadius:20}}>{Math.abs(dias)}d venc.</span>:
+                              <span style={{background:"#E8F5E9",color:C.ok,fontWeight:700,fontSize:11,padding:"2px 6px",borderRadius:20}}>{dias}d</span>}
+                          </td>
+                          <td style={{padding:"10px 12px"}}>
+                            <span style={{background:ing.moneda==="MXN"?"#E3F2FD":"#E8F5E9",color:ing.moneda==="MXN"?"#1565C0":"#2E7D32",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{ing.moneda}</span>
+                          </td>
+                          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:600}}>{sym}{fmt(ing.monto)}</td>
+                          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:(m.porCobrar||0)>0?C.warn:C.ok}}>{sym}{fmt(m.porCobrar||0)}</td>
+                          <td style={{padding:"10px 12px"}}>
+                            <button onClick={()=>handleRestore(ing.id)} disabled={restoring.has(ing.id)}
+                              style={{padding:"5px 14px",borderRadius:8,border:"1px solid #4CAF50",background:"#E8F5E9",color:"#2E7D32",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",opacity:restoring.has(ing.id)?0.5:1}}>
+                              {restoring.has(ing.id)?"...":"👁️ Restaurar"}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{padding:"12px 24px",borderTop:`1px solid ${C.border}`,background:"#FFF3E0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span style={{fontSize:13,color:"#BF360C",fontWeight:600}}>
+            Total oculto: {ingresos.length} factura{ingresos.length!==1?"s":""}
+            {" · "}
+            Por cobrar oculto: <b>{Object.keys(ingresos.reduce((a,i)=>({...a,[i.moneda||"MXN"]:true}),{})).map(mon=>{
+              const sym=monedaSym(mon);
+              const t=ingresos.filter(i=>(i.moneda||"MXN")===mon).reduce((s,i)=>s+(metrics[i.id]?.porCobrar||0),0);
+              return t>0?`${sym}${fmt(t)} ${mon}`:null;
+            }).filter(Boolean).join(" · ")}</b>
+          </span>
+          <button onClick={onClose} style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"8px 20px"}}>Cerrar</button>
         </div>
       </div>
     </div>
