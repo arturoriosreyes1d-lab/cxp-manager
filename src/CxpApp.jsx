@@ -2796,6 +2796,8 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
   const [detailModal, setDetailModal] = React.useState(null);
   const [grupoPickerOpen, setGrupoPickerOpen] = React.useState(false);
   const [expandedGruposMon, setExpandedGruposMon] = React.useState(new Set());
+  const [expandedProveedores, setExpandedProveedores] = React.useState(new Set());
+  const toggleProv = (key) => setExpandedProveedores(prev => { const n=new Set(prev); n.has(key)?n.delete(key):n.add(key); return n; });
   const toggleGrupoMon = (key) => setExpandedGruposMon(prev => { const n=new Set(prev); n.has(key)?n.delete(key):n.add(key); return n; });
 
   const calcDias = (venc) => venc ? Math.ceil((new Date(venc)-new Date(hoy))/864e5) : null;
@@ -3122,8 +3124,9 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
 
   // Render flat proveedor table for a given moneda
   const ProvTable=({mon, provs})=>{
-    const sym=monedaSym(mon);
-    const grand=provs.reduce((acc,p)=>{
+    const [expandedProveedores, setExpandedProveedores] = React.useState(new Set());
+    const toggleProv = (key) => setExpandedProveedores(prev => { const n=new Set(prev); n.has(key)?n.delete(key):n.add(key); return n; });
+    const sym=monedaSym(mon);    const grand=provs.reduce((acc,p)=>{
       acc.total+=p.total;acc.pagado+=p.pagado;acc.saldo+=p.saldo;acc.count+=p.count;addAging(acc,p);return acc;
     },{total:0,pagado:0,saldo:0,count:0,...zeroAging()});
     const allInvs=provs.flatMap(p=>p.invoices);
@@ -3171,28 +3174,78 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
               <tbody>
                 {provs.sort((a,b)=>b.saldo-a.saldo).map((p,pi)=>{
                   const fi=(fn)=>p.invoices.filter(inv=>{const d=calcDias(inv.vencimiento);return fn(d);});
+                  const provKey=`${mon}-${p.nombre}`;
+                  const expanded=expandedProveedores.has(provKey);
                   return(
-                    <tr key={p.nombre} style={{borderTop:`1px solid ${C.border}`,background:pi%2===0?"#FAFBFF":"#fff"}}
-                      onMouseEnter={e=>e.currentTarget.style.background="#E8F0FE"}
-                      onMouseLeave={e=>e.currentTarget.style.background=pi%2===0?"#FAFBFF":"#fff"}>
-                      <td style={{padding:"11px 14px",fontWeight:600,fontSize:14,color:C.text}}>{p.nombre}</td>
+                    <React.Fragment key={p.nombre}>
+                    <tr style={{borderTop:`1px solid ${C.border}`,background:expanded?"#E8F0FE":pi%2===0?"#FAFBFF":"#fff",cursor:"pointer"}}
+                      onClick={()=>toggleProv(provKey)}
+                      onMouseEnter={e=>{if(!expanded)e.currentTarget.style.background="#F0F7FF";}}
+                      onMouseLeave={e=>{e.currentTarget.style.background=expanded?"#E8F0FE":pi%2===0?"#FAFBFF":"#fff";}}>
+                      <td style={{padding:"11px 14px",fontWeight:700,fontSize:14,color:C.navy}}>
+                        <span style={{marginRight:8,fontSize:11,color:C.blue,display:"inline-block",transform:expanded?"rotate(90deg)":"rotate(0deg)",transition:"transform .2s"}}>▶</span>
+                        {p.nombre}
+                      </td>
                       <td style={{padding:"11px 10px",textAlign:"right",color:C.muted,fontSize:14}}>{p.count}</td>
                       <td style={{padding:"11px 10px",textAlign:"right",fontWeight:600,fontSize:16}}>{sym}{fmt(p.total)}</td>
                       <td style={{padding:"11px 10px",textAlign:"right",color:C.ok,fontWeight:600,fontSize:16}}>{sym}{fmt(p.pagado)}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16,cursor:"pointer"}} onClick={()=>openDetail(`${p.nombre} — Todas`,p.invoices)}>
-                        <span style={{fontWeight:900,color:p.saldo>0?C.navy:C.muted,borderBottom:`1px dotted ${C.navy}`}}>{sym}{fmt(p.saldo)}</span>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>
+                        <span onClick={()=>openDetail(`${p.nombre} — Todas`,p.invoices)} style={{fontWeight:900,color:p.saldo>0?C.navy:C.muted,borderBottom:`1px dotted ${C.navy}`,cursor:"pointer"}}>{sym}{fmt(p.saldo)}</span>
                       </td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}}>{p.corriente>0?<span style={{color:C.ok,fontWeight:600,cursor:"pointer",borderBottom:`1px dotted ${C.ok}`}} onClick={()=>openDetail(`${p.nombre} — Corriente`,fi(d=>d!==null&&d>=0))}>{sym}{fmt(p.corriente)}</span>:<span style={{color:C.muted}}>—</span>}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}}>{vCell(p.v7,sym,fi(d=>d!==null&&d<0&&Math.abs(d)<=7),`${p.nombre} — Venc 1-7d`)}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}}>{vCell(p.v15,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=15),`${p.nombre} — Venc 8-15d`)}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}}>{vCell(p.v30,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30),`${p.nombre} — Venc 16-30d`,true)}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}}>{vCell(p.v60,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=60),`${p.nombre} — Venc 31-60d`,true)}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}}>{vCell(p.vmas,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>60),`${p.nombre} — Venc +60d`,true)}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right"}}>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>{p.corriente>0?<span style={{color:C.ok,fontWeight:600,cursor:"pointer",borderBottom:`1px dotted ${C.ok}`}} onClick={()=>openDetail(`${p.nombre} — Corriente`,fi(d=>d!==null&&d>=0))}>{sym}{fmt(p.corriente)}</span>:<span style={{color:C.muted}}>—</span>}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>{vCell(p.v7,sym,fi(d=>d!==null&&d<0&&Math.abs(d)<=7),`${p.nombre} — Venc 1-7d`)}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>{vCell(p.v15,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=15),`${p.nombre} — Venc 8-15d`)}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>{vCell(p.v30,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30),`${p.nombre} — Venc 16-30d`,true)}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>{vCell(p.v60,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=60),`${p.nombre} — Venc 31-60d`,true)}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>{vCell(p.vmas,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>60),`${p.nombre} — Venc +60d`,true)}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right"}} onClick={e=>e.stopPropagation()}>
                         <button onClick={()=>openDetail(`${p.nombre} — Todas`,p.invoices)}
                           style={{padding:"5px 12px",borderRadius:8,border:`1px solid ${C.blue}`,background:"#E8F0FE",color:C.blue,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>Ver →</button>
                       </td>
                     </tr>
+                    {/* Accordion: facturas del proveedor */}
+                    {expanded && (
+                      <tr style={{background:"#F8FAFC"}}>
+                        <td colSpan={12} style={{padding:0}}>
+                          <div style={{overflowX:"auto",borderTop:`1px solid ${C.border}`}}>
+                            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                              <thead>
+                                <tr style={{background:"#EEF2FF"}}>
+                                  {["Fecha","Folio","Concepto","Clasif.","Vencimiento","Días","Total","Pagado","Saldo","Estatus"].map(h=>(
+                                    <th key={h} style={{padding:"7px 12px",textAlign:["Total","Pagado","Saldo"].includes(h)?"right":"left",color:C.navy,fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {p.invoices.filter(i=>i.estatus!=="Pagado").sort((a,b)=>(a.vencimiento||"").localeCompare(b.vencimiento||"")).map((inv,ii)=>{
+                                  const saldoInv=(+inv.total||0)-(+inv.montoPagado||0);
+                                  const dias=calcDias(inv.vencimiento);
+                                  return(
+                                    <tr key={inv.id} style={{borderTop:`1px solid ${C.border}`,background:ii%2===0?"#fff":"#F8FAFC"}}>
+                                      <td style={{padding:"7px 12px",fontSize:11,color:C.muted,whiteSpace:"nowrap"}}>{inv.fecha||"—"}</td>
+                                      <td style={{padding:"7px 12px",color:C.blue,fontWeight:600,whiteSpace:"nowrap"}}>{inv.serie}{inv.folio}</td>
+                                      <td style={{padding:"7px 12px",color:C.muted,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{inv.concepto||"—"}</td>
+                                      <td style={{padding:"7px 12px"}}><span style={{background:"#EEF2FF",color:C.blue,padding:"2px 6px",borderRadius:20,fontSize:10,fontWeight:700}}>{inv.clasificacion}</span></td>
+                                      <td style={{padding:"7px 12px",fontSize:11,whiteSpace:"nowrap",color:dias!==null&&dias<0?C.danger:C.text}}>{inv.vencimiento||"—"}</td>
+                                      <td style={{padding:"7px 12px",textAlign:"center"}}>
+                                        {dias===null?<span style={{color:C.muted}}>—</span>:dias<0?
+                                          <span style={{background:"#FFEBEE",color:C.danger,fontWeight:800,fontSize:10,padding:"2px 6px",borderRadius:20}}>{Math.abs(dias)}d venc.</span>:
+                                          <span style={{background:"#E8F5E9",color:C.ok,fontWeight:700,fontSize:10,padding:"2px 6px",borderRadius:20}}>{dias}d</span>}
+                                      </td>
+                                      <td style={{padding:"7px 12px",textAlign:"right",fontWeight:600}}>{sym}{fmt(+inv.total||0)}</td>
+                                      <td style={{padding:"7px 12px",textAlign:"right",color:C.ok}}>{sym}{fmt(+inv.montoPagado||0)}</td>
+                                      <td style={{padding:"7px 12px",textAlign:"right",fontWeight:800,color:saldoInv>0?C.danger:C.ok}}>{sym}{fmt(saldoInv)}</td>
+                                      <td style={{padding:"7px 12px"}}><span style={{background:`${statusColor(inv.estatus)}22`,color:statusColor(inv.estatus),border:`1px solid ${statusColor(inv.estatus)}`,padding:"2px 7px",borderRadius:20,fontSize:10,fontWeight:700}}>{inv.estatus}</span></td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   );
                 })}
               </tbody>

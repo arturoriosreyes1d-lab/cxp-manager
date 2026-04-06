@@ -1378,7 +1378,7 @@ export default function CxcView({
           }
         </td>
         {/* Fecha Factura */}
-        <td style={{padding:"10px 10px",whiteSpace:"nowrap",fontSize:11,color:C.muted}}>{ing.fecha||"—"}</td>
+        <td style={{padding:"10px 10px",whiteSpace:"nowrap",fontSize:13,color:C.muted}}>{ing.fecha||"—"}</td>
         {/* Vencimiento */}
         <td style={{padding:"10px 10px",whiteSpace:"nowrap",fontSize:11,color:venceProx?C.danger:ing.fechaVencimiento?C.text:C.muted,fontWeight:ing.fechaVencimiento?600:400}}>
           {ing.fechaVencimiento||"—"}
@@ -2057,8 +2057,8 @@ export default function CxcView({
                                   : <input type="date" value={ing.fechaContable||""} onChange={e=>{const v=e.target.value;setIngresos(prev=>prev.map(i=>i.id===ing.id?{...i,fechaContable:v}:i));updateIngresoField(ing.id,{fechaContable:v});}} style={{padding:"2px 5px",fontSize:10,border:`1px solid ${ing.fechaContable?C.teal:C.border}`,borderRadius:5,color:ing.fechaContable?C.teal:C.text,width:112,fontFamily:"inherit"}}/>
                                 }
                               </td>
-                              <td style={{padding:"9px 8px",whiteSpace:"nowrap",fontSize:11,color:C.muted}}>{ing.fecha||"—"}</td>
-                              <td style={{padding:"9px 8px",whiteSpace:"nowrap",fontSize:11,color:venceProx?C.danger:C.text,fontWeight:ing.fechaVencimiento?600:400}}>{ing.fechaVencimiento||"—"}</td>
+                              <td style={{padding:"9px 8px",whiteSpace:"nowrap",fontSize:13,color:C.muted}}>{ing.fecha||"—"}</td>
+                              <td style={{padding:"9px 8px",whiteSpace:"nowrap",fontSize:13,color:venceProx?C.danger:C.text,fontWeight:ing.fechaVencimiento?600:400}}>{ing.fechaVencimiento||"—"}</td>
                               {/* Días Vencidos */}
                               <td style={{padding:"9px 6px",textAlign:"center"}}>{(() => { const d=diasDiff(ing.fechaVencimiento); return d!==null&&d<0?<span style={{background:"#FFEBEE",color:C.danger,fontWeight:800,fontSize:10,padding:"2px 6px",borderRadius:20}}>{Math.abs(d)}d</span>:<span style={{color:C.muted,fontSize:10}}>—</span>; })()}</td>
                               {/* Por Vencer */}
@@ -2703,8 +2703,11 @@ function LimpiarTASModal({ empresaId, totalIngresos, conActividad, sinActividad,
 function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
   const hoy = new Date().toISOString().slice(0,10);
   const [detailModal, setDetailModal] = React.useState(null);
-  const [vistaResumen, setVistaResumen] = React.useState("cliente"); // "cliente" | "mes"
+  const [vistaResumen, setVistaResumen] = React.useState("cliente");
   const [searchCliente, setSearchCliente] = React.useState("");
+  const [filtroMonedaResumen, setFiltroMonedaResumen] = React.useState("");
+  const [expandedClientes, setExpandedClientes] = React.useState(new Set());
+  const toggleCliente = (key) => setExpandedClientes(prev => { const n=new Set(prev); n.has(key)?n.delete(key):n.add(key); return n; });
 
   const monedaSym = m => m==="EUR"?"€":"$";
   const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
@@ -2855,7 +2858,9 @@ function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
 
   const COLS=["# Facturas","Total","Cobrado","Por Cobrar","Corriente","Venc 1-7 Días","Venc 8-30 Días","Venc 31-45 Días","Venc 46-60 Días","Venc +60 Días",""];
 
-  const ClienteTable=({mon,data})=>{
+  const ClienteTable=({mon, data, ingresos, metrics, calcDias, monedaSym, fmt, C, openDetail})=>{
+    const [expandedClientes, setExpandedClientes] = React.useState(new Set());
+    const toggleCliente = (key) => setExpandedClientes(prev => { const n=new Set(prev); n.has(key)?n.delete(key):n.add(key); return n; });
     const sym=monedaSym(mon);
     const g=data.grand;
     return(
@@ -2889,49 +2894,101 @@ function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:1000}}>
               <thead>
                 <tr style={{background:C.navy}}>
-                  <th style={{padding:"11px 14px",textAlign:"center",color:"#fff",fontWeight:700,fontSize:12,textTransform:"uppercase"}}>Cliente</th>
+                  <th style={{padding:"11px 14px",textAlign:"center",color:"#fff",fontWeight:700,fontSize:13,textTransform:"uppercase"}}>Cliente</th>
                   {COLS.map((h,ci)=>(
-                    <th key={h||ci} style={{padding:"11px 10px",textAlign:"center",color:["# Facturas","Total","Cobrado","Por Cobrar","Corriente"].includes(h)?"#A5D6A7":h.startsWith("Venc")?"#FFCDD2":"#fff",fontWeight:700,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                    <th key={h||ci} style={{padding:"11px 10px",textAlign:"center",color:["# Facturas","Total","Cobrado","Por Cobrar","Corriente"].includes(h)?"#A5D6A7":h.startsWith("Venc")?"#FFCDD2":"#fff",fontWeight:700,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                   ))}
                 </tr>
                 {/* Totals row */}
                 <tr style={{background:"#EEF2FF",borderBottom:`2px solid ${C.blue}`}}>
-                  <td style={{padding:"8px 14px",fontWeight:800,color:C.navy,fontSize:12}}>TOTAL ({data.clientes.length} clientes)</td>
+                  <td style={{padding:"8px 14px",fontWeight:800,color:C.navy,fontSize:13}}>TOTAL ({data.clientes.length} clientes)</td>
                   <td style={{padding:"8px 10px",textAlign:"right",fontWeight:800,color:C.muted}}>{g.count}</td>
-                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:800}}>{sym}{fmt(g.total)}</td>
-                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:800,color:C.ok}}>{sym}{fmt(g.cobrado)}</td>
-                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:900,color:C.warn,fontSize:14}}>{sym}{fmt(g.porCobrar)}</td>
-                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:800,color:C.ok}}>{g.corriente>0?sym+fmt(g.corriente):"—"}</td>
+                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:800,fontSize:13}}>{sym}{fmt(g.total)}</td>
+                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:800,color:C.ok,fontSize:13}}>{sym}{fmt(g.cobrado)}</td>
+                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:900,color:C.warn,fontSize:15}}>{sym}{fmt(g.porCobrar)}</td>
+                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:800,color:C.ok,fontSize:13}}>{g.corriente>0?sym+fmt(g.corriente):"—"}</td>
                   {[g.v7,g.v30,g.v45,g.v60,g.vmas].map((v,vi)=>(
-                    <td key={vi} style={{padding:"8px 10px",textAlign:"right",fontWeight:800,color:v>0?C.danger:C.muted}}>{v>0?sym+fmt(v):"—"}</td>
+                    <td key={vi} style={{padding:"8px 10px",textAlign:"right",fontWeight:800,color:v>0?C.danger:C.muted,fontSize:13}}>{v>0?sym+fmt(v):"—"}</td>
                   ))}
                   <td/>
                 </tr>
               </thead>
               <tbody>
-                {data.clientes.map((cli,pi)=>(
-                  <tr key={cli.nombre} style={{borderTop:`1px solid ${C.border}`,background:pi%2===0?"#FAFBFF":"#fff"}}
-                    onMouseEnter={e=>e.currentTarget.style.background="#E8F0FE"}
-                    onMouseLeave={e=>e.currentTarget.style.background=pi%2===0?"#FAFBFF":"#fff"}>
-                    <td style={{padding:"11px 14px",fontWeight:600,fontSize:13}}>{cli.nombre}</td>
-                    <td style={{padding:"11px 10px",textAlign:"right",color:C.muted,fontSize:13}}>{cli.count}</td>
-                    <td style={{padding:"11px 10px",textAlign:"right",fontWeight:600,fontSize:13}}>{sym}{fmt(cli.total)}</td>
-                    <td style={{padding:"11px 10px",textAlign:"right",color:C.ok,fontSize:13}}>{sym}{fmt(cli.cobrado)}</td>
-                    <td style={{padding:"11px 10px",textAlign:"right",fontSize:14,cursor:"pointer"}} onClick={()=>openDetail(`${cli.nombre} — Todas`,cli.ingresos)}>
-                      <span style={{fontWeight:800,color:cli.porCobrar>0?C.warn:C.muted,borderBottom:`1px dotted ${C.warn}`}}>{sym}{fmt(cli.porCobrar)}</span>
-                    </td>
-                    <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{cli.corriente>0?<span style={{color:C.ok,fontWeight:600}}>{sym}{fmt(cli.corriente)}</span>:<span style={{color:C.muted}}>—</span>}</td>
-                    <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{vCell(cli.v7,sym,cli.ingresos,`${cli.nombre} — Venc 1-7d`)}</td>
-                    <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{vCell(cli.v30,sym,cli.ingresos,`${cli.nombre} — Venc 8-30d`)}</td>
-                    <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{vCell(cli.v45,sym,cli.ingresos,`${cli.nombre} — Venc 31-45d`,"#C62828")}</td>
-                    <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{vCell(cli.v60,sym,cli.ingresos,`${cli.nombre} — Venc 46-60d`,"#B71C1C")}</td>
-                    <td style={{padding:"11px 10px",textAlign:"right",fontSize:13}}>{vCell(cli.vmas,sym,cli.ingresos,`${cli.nombre} — Venc +60d`,"#7F0000")}</td>
-                    <td style={{padding:"11px 10px",textAlign:"right"}}>
-                      <button onClick={()=>openDetail(`${cli.nombre} — Todas`,cli.ingresos)}
-                        style={{padding:"5px 12px",borderRadius:8,border:`1px solid ${C.blue}`,background:"#E8F0FE",color:C.blue,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>Ver →</button>
-                    </td>
-                  </tr>
-                ))}
+                {data.clientes.map((cli,pi)=>{
+                  const cliKey=`${mon}-${cli.nombre}`;
+                  const expanded=expandedClientes.has(cliKey);
+                  const cliIngresos=ingresos.filter(i=>i.cliente===cli.nombre&&(i.moneda||"MXN")===mon);
+                  return(
+                    <React.Fragment key={cli.nombre}>
+                    <tr style={{borderTop:`1px solid ${C.border}`,background:expanded?"#E8F0FE":pi%2===0?"#FAFBFF":"#fff",cursor:"pointer"}}
+                      onClick={()=>toggleCliente(cliKey)}
+                      onMouseEnter={e=>{if(!expanded)e.currentTarget.style.background="#F0F7FF";}}
+                      onMouseLeave={e=>{e.currentTarget.style.background=expanded?"#E8F0FE":pi%2===0?"#FAFBFF":"#fff";}}>
+                      <td style={{padding:"12px 14px",fontWeight:700,fontSize:14,color:C.navy}}>
+                        <span style={{marginRight:8,fontSize:11,color:C.blue,display:"inline-block",transform:expanded?"rotate(90deg)":"rotate(0deg)",transition:"transform .2s"}}>▶</span>
+                        {cli.nombre}
+                      </td>
+                      <td style={{padding:"12px 10px",textAlign:"right",color:C.muted,fontSize:13}}>{cli.count}</td>
+                      <td style={{padding:"12px 10px",textAlign:"right",fontWeight:600,fontSize:13}}>{sym}{fmt(cli.total)}</td>
+                      <td style={{padding:"12px 10px",textAlign:"right",color:C.ok,fontSize:13}}>{sym}{fmt(cli.cobrado)}</td>
+                      <td style={{padding:"12px 10px",textAlign:"right",fontSize:15,fontWeight:800,color:cli.porCobrar>0?C.warn:C.ok}}>
+                        {sym}{fmt(cli.porCobrar)}
+                      </td>
+                      <td style={{padding:"12px 10px",textAlign:"right",fontSize:13}}>{cli.corriente>0?<span style={{color:C.ok,fontWeight:600}}>{sym}{fmt(cli.corriente)}</span>:<span style={{color:C.muted}}>—</span>}</td>
+                      <td style={{padding:"12px 10px",textAlign:"right",fontSize:13}}>{vCell(cli.v7,sym,cli.ingresos,`${cli.nombre} — Venc 1-7d`)}</td>
+                      <td style={{padding:"12px 10px",textAlign:"right",fontSize:13}}>{vCell(cli.v30,sym,cli.ingresos,`${cli.nombre} — Venc 8-30d`)}</td>
+                      <td style={{padding:"12px 10px",textAlign:"right",fontSize:13}}>{vCell(cli.v45,sym,cli.ingresos,`${cli.nombre} — Venc 31-45d`,"#C62828")}</td>
+                      <td style={{padding:"12px 10px",textAlign:"right",fontSize:13}}>{vCell(cli.v60,sym,cli.ingresos,`${cli.nombre} — Venc 46-60d`,"#B71C1C")}</td>
+                      <td style={{padding:"12px 10px",textAlign:"right",fontSize:13}}>{vCell(cli.vmas,sym,cli.ingresos,`${cli.nombre} — Venc +60d`,"#7F0000")}</td>
+                      <td style={{padding:"12px 10px",textAlign:"right"}} onClick={e=>e.stopPropagation()}>
+                        <button onClick={()=>openDetail(`${cli.nombre} — Todas`,cli.ingresos)}
+                          style={{padding:"5px 12px",borderRadius:8,border:`1px solid ${C.blue}`,background:"#E8F0FE",color:C.blue,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>Ver →</button>
+                      </td>
+                    </tr>
+                    {/* Accordion: facturas del cliente */}
+                    {expanded && (
+                      <tr style={{background:"#F8FAFC"}}>
+                        <td colSpan={12} style={{padding:0}}>
+                          <div style={{overflowX:"auto",borderTop:`1px solid ${C.border}`}}>
+                            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                              <thead>
+                                <tr style={{background:"#EEF2FF"}}>
+                                  {["Folio","Concepto","Segmento","F.Contable","Vencimiento","Días","Total","Cobrado","Por Cobrar"].map(h=>(
+                                    <th key={h} style={{padding:"7px 12px",textAlign:["Total","Cobrado","Por Cobrar"].includes(h)?"right":"left",color:C.navy,fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {cliIngresos.sort((a,b)=>(a.fechaVencimiento||"").localeCompare(b.fechaVencimiento||"")).map((ing,ii)=>{
+                                  const m=metrics[ing.id]||{};
+                                  const dias=calcDias(ing.fechaVencimiento);
+                                  return(
+                                    <tr key={ing.id} style={{borderTop:`1px solid ${C.border}`,background:ii%2===0?"#fff":"#F8FAFC"}}>
+                                      <td style={{padding:"8px 12px",color:C.blue,fontWeight:600,whiteSpace:"nowrap"}}>{ing.folio||"—"}</td>
+                                      <td style={{padding:"8px 12px",color:C.muted,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.concepto||"—"}</td>
+                                      <td style={{padding:"8px 12px"}}>{ing.segmento||"—"}</td>
+                                      <td style={{padding:"8px 12px",color:C.teal,whiteSpace:"nowrap"}}>{ing.fechaContable||"—"}</td>
+                                      <td style={{padding:"8px 12px",whiteSpace:"nowrap",color:dias!==null&&dias<0?C.danger:C.text}}>{ing.fechaVencimiento||"—"}</td>
+                                      <td style={{padding:"8px 12px",textAlign:"center"}}>
+                                        {dias===null?<span style={{color:C.muted}}>—</span>:dias<0?
+                                          <span style={{background:"#FFEBEE",color:C.danger,fontWeight:800,fontSize:10,padding:"2px 6px",borderRadius:20}}>{Math.abs(dias)}d venc.</span>:
+                                          <span style={{background:"#E8F5E9",color:C.ok,fontWeight:700,fontSize:10,padding:"2px 6px",borderRadius:20}}>{dias}d</span>}
+                                      </td>
+                                      <td style={{padding:"8px 12px",textAlign:"right",fontWeight:600}}>{sym}{fmt(ing.monto)}</td>
+                                      <td style={{padding:"8px 12px",textAlign:"right",color:C.ok}}>{sym}{fmt(m.totalCobrado||0)}</td>
+                                      <td style={{padding:"8px 12px",textAlign:"right",fontWeight:700,color:(m.porCobrar||0)>0?C.warn:C.ok}}>{sym}{fmt(m.porCobrar||0)}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -2940,7 +2997,7 @@ function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
     );
   };
 
-  const MesTable=({mon,data})=>{
+  const MesTable=({mon, data, monedaSym, fmt, C, MESES, openDetail})=>{
     const sym=monedaSym(mon);
     return(
       <div style={{marginBottom:28}}>
@@ -3061,6 +3118,26 @@ function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
       <DetailModal/>
       {/* Controls */}
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20,flexWrap:"wrap"}}>
+        {/* Moneda buttons */}
+        <div style={{display:"flex",gap:8}}>
+          {["","MXN","USD","EUR"].map(mon=>{
+            const labels={"":"Todas","MXN":"🇲🇽 MXN","USD":"🇺🇸 USD","EUR":"🇪🇺 EUR"};
+            const colors={"MXN":C.mxn,"USD":C.usd,"EUR":C.eur,"":"#64748B"};
+            const bgs={"MXN":"#E3F2FD","USD":"#E8F5E9","EUR":"#F3E5F5","":"#EEF2FF"};
+            const active=filtroMonedaResumen===mon;
+            const cnt=mon?ingresos.filter(i=>(i.moneda||"MXN")===mon).length:ingresos.length;
+            return(
+              <button key={mon} onClick={()=>setFiltroMonedaResumen(mon)}
+                style={{padding:"8px 20px",borderRadius:40,border:"2px solid",
+                  borderColor:active?(colors[mon]||C.blue):C.border,
+                  background:active?(colors[mon]||C.blue):"#fff",
+                  color:active?"#fff":(colors[mon]||C.text),
+                  fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
+                {labels[mon]} <span style={{fontSize:12,opacity:.8}}>({cnt})</span>
+              </button>
+            );
+          })}
+        </div>
         {/* Vista toggle */}
         <div style={{display:"flex",border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
           <button onClick={()=>setVistaResumen("cliente")} style={{padding:"8px 16px",border:"none",background:vistaResumen==="cliente"?C.navy:"#F1F5F9",color:vistaResumen==="cliente"?"#fff":C.text,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>👥 Por Cliente</button>
@@ -3077,15 +3154,17 @@ function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
       </div>
 
       {vistaResumen==="cliente" && currencies.map(mon=>{
+        if(filtroMonedaResumen && mon!==filtroMonedaResumen) return null;
         const data=byClienteData[mon];
         if(!data||!data.clientes.length) return null;
-        return <ClienteTable key={mon} mon={mon} data={data}/>;
+        return <ClienteTable key={mon} mon={mon} data={data} ingresos={ingresos} metrics={metrics} calcDias={calcDias} monedaSym={monedaSym} fmt={fmt} C={C} openDetail={openDetail}/>;
       })}
 
       {vistaResumen==="mes" && currencies.map(mon=>{
+        if(filtroMonedaResumen && mon!==filtroMonedaResumen) return null;
         const data=byMesData[mon];
         if(!data||!data.meses.length) return null;
-        return <MesTable key={mon} mon={mon} data={data}/>;
+        return <MesTable key={mon} mon={mon} data={data} monedaSym={monedaSym} fmt={fmt} C={C} MESES={MESES} openDetail={openDetail}/>;
       })}
     </div>
   );
