@@ -307,10 +307,8 @@ export default function CxcView({
       USD:{monto:0,cobrado:0,porCobrar:0,consumido:0,porPagar:0,disponible:0,disponibleNeto:0},
       EUR:{monto:0,cobrado:0,porCobrar:0,consumido:0,porPagar:0,disponible:0,disponibleNeto:0},
     };
-    // Use filtered if any filter is active, otherwise use all ingresos (kpis)
-    const hayFiltro = filtroSearch||filtroCliente||filtroCategoria||filtroMoneda||filtroFechaFrom||filtroFechaTo||filtroCobro||filtroMesContable||filtroSegmento;
-    const source = hayFiltro ? filtered : ingresos;
-    source.forEach(ing => {
+    // Always use filtered — it already excludes ocultas and applies all active filters
+    filtered.forEach(ing => {
       const m = metrics[ing.id] || {};
       const k = byMon[ing.moneda] || byMon.MXN;
       k.monto         += ing.monto;
@@ -322,7 +320,7 @@ export default function CxcView({
       k.disponibleNeto+= m.disponibleNeto||0;
     });
     return byMon;
-  }, [filtered, ingresos, metrics, filtroSearch, filtroCliente, filtroCategoria, filtroMoneda, filtroFechaFrom, filtroFechaTo, filtroCobro, filtroMesContable, filtroSegmento]);
+  }, [filtered, metrics]);
 
   /* Agrupado por cliente */
   const groupedByCliente = useMemo(() => {
@@ -1826,7 +1824,68 @@ export default function CxcView({
 
       {/* ── KPI Desglose Modal ── */}
       {kpiModal && (()=>{
-        const { titulo, tipo, moneda } = kpiModal;
+        const { titulo, tipo, moneda, ingresos: modalIngresos } = kpiModal;
+
+        // Special: lista de facturas de un cliente
+        if(tipo === "_lista") {
+          const ings = modalIngresos || [];
+          return(
+            <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
+              onClick={()=>setKpiModal(null)}>
+              <div style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:1200,maxHeight:"85vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
+                onClick={e=>e.stopPropagation()}>
+                <div style={{padding:"16px 24px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",background:C.navy,borderRadius:"16px 16px 0 0"}}>
+                  <div>
+                    <div style={{fontWeight:800,fontSize:16,color:"#fff"}}>{titulo}</div>
+                    <div style={{fontSize:12,color:"#A5D6A7",marginTop:2}}>{ings.length} factura{ings.length!==1?"s":""}</div>
+                  </div>
+                  <button onClick={()=>setKpiModal(null)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",width:32,height:32,cursor:"pointer",fontSize:18}}>×</button>
+                </div>
+                <div style={{overflowY:"auto",flex:1}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                    <thead style={{position:"sticky",top:0}}>
+                      <tr style={{background:"#EEF2FF"}}>
+                        {["Folio","Concepto","Segmento","F.Contable","Fecha","Vencimiento","Días","Monto","Cobrado","Por Cobrar"].map(h=>(
+                          <th key={h} style={{padding:"10px 12px",textAlign:["Monto","Cobrado","Por Cobrar"].includes(h)?"right":"left",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ings.sort((a,b)=>(a.fechaVencimiento||"").localeCompare(b.fechaVencimiento||"")).map((ing,i)=>{
+                        const m=metrics[ing.id]||{};
+                        const sym2=monedaSym(ing.moneda);
+                        const dias=diasDiff(ing.fechaVencimiento);
+                        return(
+                          <tr key={ing.id} style={{borderTop:`1px solid ${C.border}`,background:ing.oculta?"#FFF8E1":i%2===0?"#fff":"#FAFBFC",opacity:ing.oculta?0.6:1}}>
+                            <td style={{padding:"10px 12px",color:C.blue,fontWeight:600,whiteSpace:"nowrap"}}>{ing.folio||"—"}</td>
+                            <td style={{padding:"10px 12px",color:C.muted,maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.concepto||"—"}</td>
+                            <td style={{padding:"10px 12px",fontSize:12}}>{ing.segmento||"—"}</td>
+                            <td style={{padding:"10px 12px",fontSize:12,color:C.teal,whiteSpace:"nowrap"}}>{ing.fechaContable||"—"}</td>
+                            <td style={{padding:"10px 12px",fontSize:12,color:C.muted,whiteSpace:"nowrap"}}>{ing.fecha||"—"}</td>
+                            <td style={{padding:"10px 12px",fontSize:12,whiteSpace:"nowrap",color:dias!==null&&dias<0?C.danger:C.text}}>{ing.fechaVencimiento||"—"}</td>
+                            <td style={{padding:"10px 12px",textAlign:"center"}}>
+                              {dias===null?<span style={{color:C.muted}}>—</span>:dias<0?
+                                <span style={{background:"#FFEBEE",color:C.danger,fontWeight:800,fontSize:11,padding:"2px 6px",borderRadius:20}}>{Math.abs(dias)}d venc.</span>:
+                                <span style={{background:"#E8F5E9",color:C.ok,fontWeight:700,fontSize:11,padding:"2px 6px",borderRadius:20}}>{dias}d</span>}
+                            </td>
+                            <td style={{padding:"10px 12px",textAlign:"right",fontWeight:600}}>{sym2}{fmt(ing.monto)}</td>
+                            <td style={{padding:"10px 12px",textAlign:"right",color:C.ok}}>{sym2}{fmt(m.totalCobrado||0)}</td>
+                            <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,color:(m.porCobrar||0)>0?C.warn:C.ok}}>{sym2}{fmt(m.porCobrar||0)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{padding:"12px 24px",borderTop:`1px solid ${C.border}`,display:"flex",gap:20,background:"#F8FAFC"}}>
+                  <span style={{fontSize:13,color:C.muted}}>Total: <b style={{color:C.navy}}>{monedaSym(ings[0]?.moneda||"MXN")}{fmt(ings.reduce((s,i)=>s+i.monto,0))}</b></span>
+                  <span style={{fontSize:13,color:C.muted}}>Por Cobrar: <b style={{color:C.warn}}>{monedaSym(ings[0]?.moneda||"MXN")}{fmt(ings.reduce((s,i)=>s+(metrics[i.id]?.porCobrar||0),0))}</b></span>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
         const sym = monedaSym(moneda);
 
         // Filtra los ingresos de esa moneda según el tipo de KPI
@@ -2066,7 +2125,13 @@ export default function CxcView({
                     <span style={{fontSize:16,color:expanded?C.blue:C.muted,transition:"transform .2s",display:"inline-block",transform:expanded?"rotate(90deg)":"rotate(0deg)"}}>▶</span>
                     <div>
                       <div style={{fontWeight:800,fontSize:15,color:C.navy}}>{cliente}</div>
-                      <div style={{fontSize:12,color:C.muted,marginTop:2}}>{ings.length} ingreso{ings.length!==1?"s":""}</div>
+                      <div style={{fontSize:12,color:C.blue,marginTop:2,cursor:"pointer",textDecoration:"underline",textDecorationStyle:"dotted"}}
+                        onClick={e=>{e.stopPropagation();setDetailIngreso(ings[0]?.id);/* open list modal */;
+                          // Show a quick modal with all invoices of this client
+                          setKpiModal({titulo:`${cliente} — Todas las facturas`,tipo:"_lista",moneda:null,ingresos:ings});
+                        }}>
+                        {ings.length} ingreso{ings.length!==1?"s":""}
+                      </div>
                     </div>
                   </div>
                   {/* KPI chips por moneda — grid para alineación perfecta */}
