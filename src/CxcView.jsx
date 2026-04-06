@@ -1609,53 +1609,109 @@ export default function CxcView({
 
         {/* Day detail popup */}
         {calDayDetailLocal && (
-          <div style={{position:"fixed",inset:0,background:"rgba(15,45,74,.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:3000,padding:20}}
+          <div style={{position:"fixed",inset:0,background:"rgba(15,45,74,.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:3000,padding:20}}
             onClick={()=>setCalDayDetailLocal(null)}>
             <div onClick={e=>e.stopPropagation()}
-              style={{background:C.surface,borderRadius:20,padding:28,width:"100%",maxWidth:540,maxHeight:"80vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
+              style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:960,maxHeight:"88vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(74,0,130,.25)"}}>
+
+              {/* Header */}
+              <div style={{background:"linear-gradient(135deg,#6A1B9A,#9C27B0)",borderRadius:"20px 20px 0 0",padding:"20px 28px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div>
-                  <div style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:"uppercase"}}>Cobros proyectados</div>
-                  <div style={{fontSize:20,fontWeight:900,color:"#7B1FA2"}}>📅 {calDayDetailLocal.fecha}</div>
+                  <div style={{fontSize:11,color:"#E1BEE7",fontWeight:700,textTransform:"uppercase",letterSpacing:.8}}>Cobros Proyectados</div>
+                  <div style={{fontSize:22,fontWeight:900,color:"#fff",marginTop:2}}>📅 {calDayDetailLocal.fecha}</div>
                 </div>
-                <button onClick={()=>setCalDayDetailLocal(null)} style={{background:"#F1F5F9",border:"none",borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:16}}>×</button>
+                <button onClick={()=>setCalDayDetailLocal(null)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:10,width:36,height:36,cursor:"pointer",fontSize:20,color:"#fff"}}>×</button>
               </div>
+
+              {/* Summary chips */}
               {(()=>{
-                const dt = {};
-                calDayDetailLocal.entries.forEach(({ing,cobro})=>{ dt[ing.moneda]=(dt[ing.moneda]||0)+cobro.monto; });
-                return (
-                  <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+                const dt={};
+                const clientes=new Set();
+                calDayDetailLocal.entries.forEach(({ing,cobro})=>{
+                  dt[ing.moneda]=(dt[ing.moneda]||0)+cobro.monto;
+                  clientes.add(ing.cliente);
+                });
+                return(
+                  <div style={{display:"flex",gap:10,padding:"14px 24px",background:"#F3E5F5",borderBottom:"1px solid #E1BEE7",flexWrap:"wrap",alignItems:"center"}}>
                     {Object.entries(dt).map(([mon,val])=>(
-                      <div key={mon} style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[mon],border:"1px solid",borderColor:{MXN:"#90CAF9",USD:"#A5D6A7",EUR:"#CE93D8"}[mon],borderRadius:10,padding:"10px 16px",textAlign:"center"}}>
-                        <div style={{fontSize:10,color:C.muted,fontWeight:700,textTransform:"uppercase"}}>{mon}</div>
-                        <div style={{fontSize:20,fontWeight:800,color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[mon]}}>{mon==="EUR"?"€":"$"}{fmt(val)}</div>
+                      <div key={mon} style={{background:"#fff",border:"2px solid #9C27B0",borderRadius:12,padding:"10px 18px",textAlign:"center"}}>
+                        <div style={{fontSize:10,color:"#7B1FA2",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>{mon==="MXN"?"🇲🇽":"🇺🇸"} {mon}</div>
+                        <div style={{fontSize:20,fontWeight:900,color:"#6A1B9A"}}>{mon==="EUR"?"€":"$"}{fmt(val)}</div>
                       </div>
                     ))}
-                  </div>
-                );
-              })()}
-              {calDayDetailLocal.entries.map(({ing,cobro})=>{
-                const sym = monedaSym(ing.moneda);
-                const catStyle = getCatStyle(ing.categoria);
-                return (
-                  <div key={cobro.id}
-                    style={{padding:"12px 14px",borderRadius:10,border:"1px solid #CE93D8",background:"#FAF0FF",marginBottom:8,cursor:"pointer"}}
-                    onClick={()=>{setCalDayDetailLocal(null); setProyeccionView(false); setDetailIngreso(ing.id);}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                      <div>
-                        <div style={{fontWeight:800,color:C.navy,fontSize:14}}>{ing.cliente}</div>
-                        <div style={{fontSize:12,color:C.muted,marginTop:2}}>{ing.concepto||ing.categoria}</div>
-                        <span style={{background:catStyle.bg,color:catStyle.text,border:`1px solid ${catStyle.border}`,padding:"1px 8px",borderRadius:20,fontSize:10,fontWeight:700,marginTop:4,display:"inline-block"}}>{ing.categoria}</span>
-                      </div>
-                      <div style={{textAlign:"right"}}>
-                        <div style={{fontWeight:900,fontSize:16,color:"#7B1FA2"}}>{sym}{fmt(cobro.monto)} {ing.moneda}</div>
-                        {cobro.notas && <div style={{fontSize:11,color:C.muted,fontStyle:"italic",marginTop:2}}>{cobro.notas}</div>}
-                        <div style={{fontSize:10,color:C.muted,marginTop:4}}>Clic para ver detalle →</div>
-                      </div>
+                    <div style={{background:"#fff",border:"1px solid #CE93D8",borderRadius:12,padding:"10px 18px",textAlign:"center"}}>
+                      <div style={{fontSize:10,color:"#7B1FA2",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Facturas</div>
+                      <div style={{fontSize:20,fontWeight:900,color:"#6A1B9A"}}>{calDayDetailLocal.entries.length}</div>
+                    </div>
+                    <div style={{background:"#fff",border:"1px solid #CE93D8",borderRadius:12,padding:"10px 18px",textAlign:"center"}}>
+                      <div style={{fontSize:10,color:"#7B1FA2",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Clientes</div>
+                      <div style={{fontSize:20,fontWeight:900,color:"#6A1B9A"}}>{clientes.size}</div>
                     </div>
                   </div>
                 );
-              })}
+              })()}
+
+              {/* Grouped by client */}
+              <div style={{overflowY:"auto",flex:1,padding:"8px 0"}}>
+                {(()=>{
+                  // Group by client
+                  const byCliente={};
+                  calDayDetailLocal.entries.forEach(({ing,cobro})=>{
+                    if(!byCliente[ing.cliente]) byCliente[ing.cliente]={entries:[],total:0,moneda:ing.moneda};
+                    byCliente[ing.cliente].entries.push({ing,cobro});
+                    byCliente[ing.cliente].total+=cobro.monto;
+                  });
+                  return Object.entries(byCliente)
+                    .sort((a,b)=>b[1].total-a[1].total)
+                    .map(([cliente,{entries,total,moneda}])=>{
+                      const sym=monedaSym(moneda);
+                      return(
+                        <div key={cliente} style={{marginBottom:4}}>
+                          {/* Client header */}
+                          <div style={{background:"#EDE7F6",padding:"10px 24px",display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:"2px solid #CE93D8"}}>
+                            <span style={{fontWeight:800,fontSize:14,color:"#4527A0"}}>👤 {cliente}</span>
+                            <div style={{display:"flex",gap:16,alignItems:"center"}}>
+                              <span style={{fontSize:13,color:"#6A1B9A",fontWeight:700}}>{sym}{fmt(total)} {moneda}</span>
+                              <span style={{fontSize:12,color:"#9C27B0"}}>{entries.length} factura{entries.length!==1?"s":""}</span>
+                            </div>
+                          </div>
+                          {/* Rows */}
+                          {entries.sort((a,b)=>b.cobro.monto-a.cobro.monto).map(({ing,cobro})=>{
+                            const catStyle=getCatStyle(ing.categoria);
+                            const dias=diasDiff(ing.fechaVencimiento);
+                            return(
+                              <div key={cobro.id} style={{padding:"12px 24px",borderBottom:"1px solid #F3E5F5",background:"#fff",cursor:"pointer",transition:"background .1s"}}
+                                onClick={()=>{setCalDayDetailLocal(null);setProyeccionView(false);setDetailIngreso(ing.id);}}
+                                onMouseEnter={e=>e.currentTarget.style.background="#FAF0FF"}
+                                onMouseLeave={e=>e.currentTarget.style.background="#fff"}>
+                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
+                                  <div style={{flex:1,minWidth:0}}>
+                                    <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:3}}>
+                                      {ing.folio && <span style={{color:"#7B1FA2",fontWeight:700,fontSize:13}}>{ing.folio}</span>}
+                                      <span style={{background:catStyle.bg,color:catStyle.text,border:`1px solid ${catStyle.border}`,padding:"1px 8px",borderRadius:20,fontSize:10,fontWeight:700}}>{ing.categoria}</span>
+                                      {ing.segmento && <span style={{background:"#E8EAF6",color:"#3949AB",padding:"1px 8px",borderRadius:20,fontSize:10,fontWeight:700}}>{ing.segmento}</span>}
+                                    </div>
+                                    <div style={{fontSize:13,color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.concepto||"—"}</div>
+                                    {ing.fechaVencimiento && (
+                                      <div style={{fontSize:11,color:dias!==null&&dias<0?C.danger:C.muted,marginTop:2}}>
+                                        Vence: {ing.fechaVencimiento}
+                                        {dias!==null && <span style={{marginLeft:6,background:dias<0?"#FFEBEE":"#E8F5E9",color:dias<0?C.danger:C.ok,fontWeight:700,padding:"1px 6px",borderRadius:10,fontSize:10}}>{dias<0?`${Math.abs(dias)}d venc.`:`${dias}d`}</span>}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div style={{textAlign:"right",flexShrink:0}}>
+                                    <div style={{fontWeight:900,fontSize:17,color:"#6A1B9A"}}>{sym}{fmt(cobro.monto)}</div>
+                                    <div style={{fontSize:11,color:C.muted,marginTop:3}}>Ver detalle →</div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    });
+                })()}
+              </div>
             </div>
           </div>
         )}
