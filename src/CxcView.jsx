@@ -1880,7 +1880,7 @@ export default function CxcView({
             </div>
           );
           return [
-            mk(`${mon}-monto`,    `${flagMap[mon]} ${mon} Total`,  `${sym}${fmt(v.monto)}`,         colMap[mon],    "💼", bgMap[mon],    "total"),
+            mk(`${mon}-monto`,    `${flagMap[mon]} ${mon} Total`,  `${sym}${fmt(empresaId==="empresa_2"?v.porCobrar:v.monto)}`, colMap[mon], "💼", bgMap[mon], empresaId==="empresa_2"?"porCobrar":"total"),
             mk(`${mon}-cobrado`,  `${mon} Cobrado`,                `${sym}${fmt(v.cobrado)}`,        C.ok,           "✅", null,          "cobrado"),
             mk(`${mon}-porCobrar`,`${mon} Por Cobrar`,             `${sym}${fmt(v.porCobrar)}`,      C.warn,         "⏳", null,          "porCobrar"),
             mk(`${mon}-consumido`,`${mon} Consumido`,              `${sym}${fmt(v.consumido)}`,      C.danger,       "📤", null,          "consumido"),
@@ -2244,13 +2244,55 @@ export default function CxcView({
                       </div>
                     </div>
                   </div>
-                  {/* KPI chips por moneda — grid para alineación perfecta */}
+                  {/* KPI chips por moneda — aging para TAS, columnas estándar para otros */}
                   <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end"}}>
                     {monedas.map(mon => {
                       const v = byMon[mon];
                       const sym = monedaSym(mon);
                       const monCol = {MXN:C.mxn,USD:C.usd,EUR:C.eur}[mon]||C.navy;
                       const monBg  = {MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[mon]||"#F8FAFC";
+                      if (empresaId === "empresa_2") {
+                        // Calcular aging por cada ingreso del cliente en esta moneda
+                        const ingsMon = ings.filter(i => i.moneda === mon);
+                        const ag = {corriente:0, v7:0, v15:0, v30:0, v60:0, vmas:0};
+                        ingsMon.forEach(ing => {
+                          const saldo = metrics[ing.id]?.porCobrar || 0;
+                          if (saldo <= 0) return;
+                          const d = diasDiff(ing.fechaVencimiento);
+                          if (d === null || d >= 0) ag.corriente += saldo;
+                          else if (Math.abs(d) <= 7)  ag.v7   += saldo;
+                          else if (Math.abs(d) <= 15) ag.v15  += saldo;
+                          else if (Math.abs(d) <= 30) ag.v30  += saldo;
+                          else if (Math.abs(d) <= 60) ag.v60  += saldo;
+                          else                        ag.vmas += saldo;
+                        });
+                        const agCols = [
+                          {l:"Corriente",          v:ag.corriente, c:"#1B5E20", hc:"#A5D6A7", bg:"#E8F5E9"},
+                          {l:"Venc 1-7 Días",      v:ag.v7,        c:"#E65100", hc:"#FFCC80", bg:"#FFF3E0"},
+                          {l:"Venc 8-15 Días",     v:ag.v15,       c:"#BF360C", hc:"#FF8A65", bg:"#FBE9E7"},
+                          {l:"Venc 16-30 Días",    v:ag.v30,       c:"#fff",    hc:"#EF9A9A", bg:"#E53935"},
+                          {l:"Venc 31-60 Días",    v:ag.v60,       c:"#fff",    hc:"#EF9A9A", bg:"#B71C1C"},
+                          {l:"Venc +60 Días",      v:ag.vmas,      c:"#fff",    hc:"#FFCDD2", bg:"#4A0000"},
+                        ];
+                        return (
+                          <div key={mon} style={{display:"grid",gridTemplateColumns:`50px repeat(${agCols.length},110px)`,alignItems:"center",gap:0}}>
+                            <span style={{background:monBg,color:monCol,fontWeight:800,fontSize:11,padding:"2px 8px",borderRadius:20,textAlign:"center"}}>{mon}</span>
+                            {agCols.map(k=>(
+                              <div key={k.l} style={{textAlign:"right",padding:"0 8px"}}>
+                                <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:.3,whiteSpace:"nowrap",
+                                  color: k.v > 0 ? (["#E53935","#B71C1C","#4A0000"].includes(k.bg) ? k.hc : k.c) : C.muted}}>
+                                  {k.l}
+                                </div>
+                                <div style={{fontSize:14,fontWeight:800,marginTop:1,whiteSpace:"nowrap",
+                                  color: k.v > 0 ? (["#E53935","#B71C1C","#4A0000"].includes(k.bg) ? k.bg : k.c) : C.muted}}>
+                                  {k.v > 0 ? `${sym}${fmt(k.v)}` : "—"}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      }
+                      // Vista estándar para empresa_1
                       return (
                         <div key={mon} style={{display:"grid",gridTemplateColumns:"50px 120px 120px 120px 120px 120px 120px 120px",alignItems:"center",gap:0}}>
                           <span style={{background:monBg,color:monCol,fontWeight:800,fontSize:11,padding:"2px 8px",borderRadius:20,textAlign:"center"}}>{mon}</span>
