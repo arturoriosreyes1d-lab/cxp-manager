@@ -931,204 +931,248 @@ export default function CxpApp({ user, onLogout }) {
     const saldoOf = i => (+i.total||0)-(+i.montoPagado||0);
     const daysOf = i => daysUntil(i.vencimiento);
     const pendByCur = cur => pendAll.filter(i=>i.moneda===cur);
-    const vigByCur = cur => pendByCur(cur).filter(i=>!isOverdue(i.vencimiento,i.estatus));
-    const vencByCur = cur => pendByCur(cur).filter(i=>isOverdue(i.vencimiento,i.estatus));
     const sumSaldo = arr => arr.reduce((s,i)=>s+saldoOf(i),0);
-    const claseData = Object.entries(
-      [...invoices.MXN,...invoices.USD,...invoices.EUR].filter(i=>i.estatus!=="Pagado")
-        .reduce((acc,inv)=>{ acc[inv.clasificacion]=(acc[inv.clasificacion]||0)+((+inv.total||0)-(+inv.montoPagado||0)); return acc; },{})
-    ).map(([name,value])=>({name,value})).filter(d=>d.value>0).sort((a,b)=>b.value-a.value);
-    const pieData = [{name:"MXN",value:kpis.totalMXN,color:C.mxn},{name:"USD",value:kpis.totalUSD,color:C.usd},{name:"EUR",value:kpis.totalEUR,color:C.eur}].filter(d=>d.value>0);
 
-    // Modal grouped by proveedor
     const openDetailGrouped = (title, items) => {
       setDashSearch(""); setDashFilterProv(""); setDashFilterClasif(""); setDashFilterEstatus(""); setDashGroupBy(""); setDashSelectedIds(new Set()); setDashBulkAutDir("");
       setDashDetail({title, type:"invoices", items, grouped:true});
     };
 
-    const corriente7 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d>=0 && d<=7; });
-    const corriente15 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d>7 && d<=15; });
-    const corriente30 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d>15 && d<=30; });
-    const corrienteMas30 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d>30; });
-    const vencido7 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d<0 && d>=-7; });
-    const vencido15 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d<-15 && d>=-7; });
-    const vencido30 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d<-15 && d>=-30; });
-    const vencido60 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d<-30 && d>=-60; });
-    const vencidoMas60 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d<-60; });
+    // Aging buckets
+    const corriente   = pendAll.filter(i=>{ const d=daysOf(i); return d===null||d>=0; });
+    const vencido7    = pendAll.filter(i=>{ const d=daysOf(i); return d!==null&&d<0&&d>=-7; });
+    const vencido15   = pendAll.filter(i=>{ const d=daysOf(i); return d!==null&&d<-7&&d>=-15; });
+    const vencido30   = pendAll.filter(i=>{ const d=daysOf(i); return d!==null&&d<-15&&d>=-30; });
+    const vencido60   = pendAll.filter(i=>{ const d=daysOf(i); return d!==null&&d<-30&&d>=-60; });
+    const vencidoMas60= pendAll.filter(i=>{ const d=daysOf(i); return d!==null&&d<-60; });
 
-    // Semáforo de salud
+    // Semáforo
     const totalPend = sumSaldo(pendAll);
     const totalVenc = sumSaldo(pendAll.filter(i=>isOverdue(i.vencimiento,i.estatus)));
-    const pctVenc = totalPend>0 ? (totalVenc/totalPend)*100 : 0;
+    const pctVenc = totalPend>0?(totalVenc/totalPend)*100:0;
     const saludColor = pctVenc<20?"#2E7D32":pctVenc<50?"#F57F17":"#C62828";
-    const saludBg = pctVenc<20?"#E8F5E9":pctVenc<50?"#FFF8E1":"#FFEBEE";
-    const saludIcon = pctVenc<20?"🟢":pctVenc<50?"🟡":"🔴";
+    const saludBg    = pctVenc<20?"#E8F5E9":pctVenc<50?"#FFF8E1":"#FFEBEE";
+    const saludIcon  = pctVenc<20?"🟢":pctVenc<50?"🟡":"🔴";
     const saludLabel = pctVenc<20?"Saludable":pctVenc<50?"Moderado":"Atención";
 
-    // Top 5 proveedores
-    const top5 = Object.entries(
-      pendAll.reduce((acc,i)=>{acc[i.proveedor]=(acc[i.proveedor]||0)+saldoOf(i);return acc;},{})
-    ).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    // CxP por Clasificación
+    const clasifData = Object.entries(
+      pendAll.reduce((acc,i)=>{ const c=i.clasificacion||"Sin clasificar"; acc[c]=(acc[c]||{sum:0,items:[]}); acc[c].sum+=saldoOf(i); acc[c].items.push(i); return acc; },{})
+    ).sort((a,b)=>b[1].sum-a[1].sum);
+    const clasifMax = clasifData[0]?.[1]?.sum||1;
+    const clasifColors = ["#1565C0","#0288D1","#00838F","#2E7D32","#F57F17","#E65100","#6A1B9A","#880E4F","#37474F","#4E342E"];
+
+    // Por Mes × Clasificación (MXN only — most relevant)
+    const MESES_ORDER = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+    const pendMXN = pendAll.filter(i=>i.moneda==="MXN");
+    const mesClasiMap = {};
+    pendMXN.forEach(i=>{
+      const mes = detectarMesCxP(i.concepto);
+      if(!mes) return;
+      const clas = i.clasificacion||"Otros";
+      if(!mesClasiMap[mes]) mesClasiMap[mes]={};
+      if(!mesClasiMap[mes][clas]) mesClasiMap[mes][clas]={sum:0,items:[]};
+      mesClasiMap[mes][clas].sum+=saldoOf(i);
+      mesClasiMap[mes][clas].items.push(i);
+    });
+    const mesesPresentes = MESES_ORDER.filter(m=>mesClasiMap[m]);
+    const clasifPresentes = [...new Set(pendMXN.filter(i=>detectarMesCxP(i.concepto)).map(i=>i.clasificacion||"Otros"))];
 
     return (
       <div>
-        {/* Title + semáforo */}
+        {/* ── Header + Semáforo ── */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20,flexWrap:"wrap",gap:12}}>
           <div>
             <h1 style={{fontSize:24,fontWeight:800,color:C.navy,margin:0}}>Dashboard General</h1>
             <p style={{color:C.muted,marginTop:4,fontSize:14}}>Haz clic en cualquier tarjeta para ver el detalle</p>
           </div>
-          {/* Semáforo */}
           <div style={{background:saludBg,border:`2px solid ${saludColor}`,borderRadius:14,padding:"12px 20px",display:"flex",alignItems:"center",gap:10}}>
             <span style={{fontSize:24}}>{saludIcon}</span>
             <div>
-              <div style={{fontWeight:800,fontSize:15,color:saludColor}}>Salud de Cartera: {saludLabel}</div>
-              <div style={{fontSize:12,color:saludColor,opacity:.8}}>{pctVenc.toFixed(1)}% del saldo está vencido</div>
+              <div style={{fontWeight:800,fontSize:15,color:saludColor}}>Salud: {saludLabel}</div>
+              <div style={{fontSize:12,color:saludColor,opacity:.8}}>{pctVenc.toFixed(1)}% del saldo vencido</div>
             </div>
           </div>
         </div>
 
-        {/* KPI Cards */}
-        <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:20}}>
-          <KpiCard label="Saldo MXN" value={`$${fmt(kpis.totalMXN)}`} sub="Pendiente de pago" color={C.mxn} icon="🇲🇽"
-            onClick={()=>openDetailGrouped("Saldo Pendiente MXN",pendByCur("MXN"))}/>
-          <KpiCard label="Saldo USD" value={`$${fmt(kpis.totalUSD)}`} sub="Pendiente de pago" color={C.usd} icon="🇺🇸"
-            onClick={()=>openDetailGrouped("Saldo Pendiente USD",pendByCur("USD"))}/>
-          <KpiCard label="Saldo EUR" value={`€${fmt(kpis.totalEUR)}`} sub="Pendiente de pago" color={C.eur} icon="🇪🇺"
-            onClick={()=>openDetailGrouped("Saldo Pendiente EUR",pendByCur("EUR"))}/>
-          <KpiCard label="Facturas Vencidas" value={kpis.vencidas} sub="Requieren atención" color={C.danger} icon="⚠️"
-            onClick={()=>openDetailGrouped("Facturas Vencidas",pendAll.filter(i=>isOverdue(i.vencimiento,i.estatus)))}/>
-          <KpiCard label="Total Facturas" value={kpis.facturas} color={C.sky} icon="🧾"
-            onClick={()=>openDetailGrouped("Todas las Facturas",allInvs)}/>
-          <KpiCard label="Proveedores" value={kpis.proveedores} sub="Activos" color={C.teal} icon="🏢"
-            onClick={()=>{setDashSearch("");setDashFilterProv("");setDashFilterClasif("");setDashFilterEstatus("");setDashGroupBy("");setDashDetail({title:"Proveedores Activos",type:"suppliers",items:suppliers.filter(s=>s.activo)});}}/>
+        {/* ── KPI Cards ── */}
+        <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:24}}>
+          <KpiCard label="Saldo MXN" value={`$${fmt(kpis.totalMXN)}`} sub="Pendiente de pago" color={C.mxn} icon="🇲🇽" onClick={()=>openDetailGrouped("Saldo Pendiente MXN",pendByCur("MXN"))}/>
+          <KpiCard label="Saldo USD" value={`$${fmt(kpis.totalUSD)}`} sub="Pendiente de pago" color={C.usd} icon="🇺🇸" onClick={()=>openDetailGrouped("Saldo Pendiente USD",pendByCur("USD"))}/>
+          <KpiCard label="Saldo EUR" value={`€${fmt(kpis.totalEUR)}`} sub="Pendiente de pago" color={C.eur} icon="🇪🇺" onClick={()=>openDetailGrouped("Saldo Pendiente EUR",pendByCur("EUR"))}/>
+          <KpiCard label="Facturas Vencidas" value={kpis.vencidas} sub="Requieren atención" color={C.danger} icon="⚠️" onClick={()=>openDetailGrouped("Facturas Vencidas",pendAll.filter(i=>isOverdue(i.vencimiento,i.estatus)))}/>
+          <KpiCard label="Total Facturas" value={kpis.facturas} color={C.sky} icon="🧾" onClick={()=>openDetailGrouped("Todas las Facturas",allInvs)}/>
+          <KpiCard label="Proveedores" value={kpis.proveedores} sub="Activos" color={C.teal} icon="🏢" onClick={()=>{setDashSearch("");setDashFilterProv("");setDashFilterClasif("");setDashFilterEstatus("");setDashGroupBy("");setDashDetail({title:"Proveedores Activos",type:"suppliers",items:suppliers.filter(s=>s.activo)});}}/>
         </div>
 
-        {/* Barra de progreso Vigente vs Vencido */}
-        {["MXN","USD"].map(cur=>{
-          const vig=vigByCur(cur); const ven=vencByCur(cur);
-          const vigSum=sumSaldo(vig); const venSum=sumSaldo(ven);
-          if(vigSum===0&&venSum===0) return null;
-          const total=vigSum+venSum;
-          const pctVig=total>0?(vigSum/total)*100:0;
-          const pctVen=total>0?(venSum/total)*100:0;
-          const sym=cur==="EUR"?"€":"$"; const flag={MXN:"🇲🇽",USD:"🇺🇸",EUR:"🇪🇺"}[cur];
-          return(
-            <div key={cur} style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:14,padding:18,marginBottom:12}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                <span style={{fontWeight:700,fontSize:14,color:C.navy}}>{flag} {cur} — Vigente vs Vencido</span>
-                <span style={{fontSize:12,color:C.muted}}>Total: {sym}{fmt(total)}</span>
-              </div>
-              <div style={{height:28,borderRadius:8,overflow:"hidden",display:"flex",marginBottom:8}}>
-                <div onClick={()=>openDetailGrouped(`${cur} Vigente`,vig)} style={{width:`${pctVig}%`,background:"#43A047",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"opacity .15s",minWidth:pctVig>5?0:0}}
-                  onMouseEnter={e=>e.currentTarget.style.opacity=".85"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                  {pctVig>8&&<span style={{color:"#fff",fontSize:11,fontWeight:700}}>{pctVig.toFixed(0)}%</span>}
-                </div>
-                <div onClick={()=>openDetailGrouped(`${cur} Vencido`,ven)} style={{width:`${pctVen}%`,background:pctVen>50?"#C62828":"#E53935",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"opacity .15s"}}
-                  onMouseEnter={e=>e.currentTarget.style.opacity=".85"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                  {pctVen>8&&<span style={{color:"#fff",fontSize:11,fontWeight:700}}>{pctVen.toFixed(0)}%</span>}
-                </div>
-              </div>
-              <div style={{display:"flex",gap:20}}>
-                <span style={{fontSize:12,display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:"#43A047",display:"inline-block"}}/><b style={{color:"#2E7D32"}}>Vigente:</b> {sym}{fmt(vigSum)} ({vig.length} fact.)</span>
-                <span style={{fontSize:12,display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:"#E53935",display:"inline-block"}}/><b style={{color:C.danger}}>Vencido:</b> {sym}{fmt(venSum)} ({ven.length} fact.)</span>
-              </div>
-            </div>
-          );
-        })}
-
-        {/* Top 5 + Antigüedad side by side */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:16,marginBottom:20,marginTop:8}}>
-          {/* Top 5 */}
-          <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:14,padding:18}}>
-            <h3 style={{fontSize:14,fontWeight:800,color:C.navy,marginBottom:14,margin:"0 0 14px"}}>🏆 Top 5 Proveedores</h3>
-            {top5.map(([prov,saldo],idx)=>{
-              const maxSaldo=top5[0][1];
-              const pct=maxSaldo>0?(saldo/maxSaldo)*100:0;
-              const colors=["#1565C0","#1976D2","#1E88E5","#42A5F5","#90CAF9"];
-              return(
-                <div key={prov} style={{marginBottom:10,cursor:"pointer"}}
-                  onClick={()=>openDetailGrouped(`${prov} — Facturas`,pendAll.filter(i=>i.proveedor===prov))}>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                    <span style={{fontSize:12,fontWeight:700,color:C.navy,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{idx+1}. {prov}</span>
-                    <span style={{fontSize:12,fontWeight:800,color:colors[idx]}}>${fmt(saldo)}</span>
+        {/* ── Antigüedad de Saldos ── */}
+        <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:18,padding:24,marginBottom:24,boxShadow:"0 2px 12px rgba(0,0,0,.05)"}}>
+          <h2 style={{fontSize:17,fontWeight:800,color:C.navy,marginBottom:20,margin:"0 0 20px",display:"flex",alignItems:"center",gap:8}}>
+            📊 Antigüedad de Saldos
+          </h2>
+          {["MXN","USD","EUR"].map(cur=>{
+            const curItems = pendAll.filter(i=>i.moneda===cur);
+            if(!curItems.length) return null;
+            const sym = cur==="EUR"?"€":"$";
+            const flag = {MXN:"🇲🇽",USD:"🇺🇸",EUR:"🇪🇺"}[cur];
+            const curColor = {MXN:C.mxn,USD:C.usd,EUR:C.eur}[cur];
+            const filterCur = arr=>arr.filter(i=>i.moneda===cur);
+            const totalCur = sumSaldo(curItems);
+            const agingChips = [
+              {l:"Corriente",         v:sumSaldo(filterCur(corriente)),    c:"#fff", bg:"#1B5E20", border:"#2E7D32", items:filterCur(corriente)},
+              {l:"Vencido 1-7 Días",  v:sumSaldo(filterCur(vencido7)),    c:"#fff", bg:"#E65100", border:"#BF360C", items:filterCur(vencido7)},
+              {l:"Vencido 8-15 Días", v:sumSaldo(filterCur(vencido15)),   c:"#fff", bg:"#BF360C", border:"#870000", items:filterCur(vencido15)},
+              {l:"Vencido 16-30 Días",v:sumSaldo(filterCur(vencido30)),   c:"#fff", bg:"#E53935", border:"#B71C1C", items:filterCur(vencido30)},
+              {l:"Vencido 31-60 Días",v:sumSaldo(filterCur(vencido60)),   c:"#fff", bg:"#B71C1C", border:"#7F0000", items:filterCur(vencido60)},
+              {l:"Vencido +60 Días",  v:sumSaldo(filterCur(vencidoMas60)),c:"#fff", bg:"#4A0000", border:"#1A0000", items:filterCur(vencidoMas60)},
+            ].filter(ch=>ch.v>0);
+            return(
+              <div key={cur} style={{marginBottom:cur!=="EUR"?20:0}}>
+                {/* Moneda header */}
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+                  <span style={{fontSize:18}}>{flag}</span>
+                  <span style={{fontSize:16,fontWeight:900,color:curColor}}>{cur}</span>
+                  <span style={{fontSize:13,color:C.muted}}>· Saldo total: {sym}{fmt(totalCur)} · {curItems.length} facturas</span>
+                  {/* Progress bar inline */}
+                  <div style={{flex:1,height:8,borderRadius:4,background:"#EEF2FF",overflow:"hidden",maxWidth:300,marginLeft:8}}>
+                    <div style={{height:"100%",width:`${totalCur>0?(sumSaldo(filterCur(corriente))/totalCur)*100:0}%`,background:"#43A047",borderRadius:4,transition:"width .5s"}}/>
                   </div>
-                  <div style={{height:6,borderRadius:4,background:"#EEF2FF",overflow:"hidden"}}>
-                    <div style={{height:"100%",width:`${pct}%`,background:colors[idx],borderRadius:4,transition:"width .5s"}}/>
-                  </div>
+                  <span style={{fontSize:11,color:C.muted}}>{totalCur>0?((sumSaldo(filterCur(corriente))/totalCur)*100).toFixed(0):0}% corriente</span>
                 </div>
-              );
-            })}
-          </div>
-
-          {/* Aging */}
-          <div>
-            <h3 style={{fontSize:14,fontWeight:800,color:C.navy,marginBottom:14}}>📊 Antigüedad de Saldos</h3>
-            {["MXN","USD","EUR"].map(cur => {
-              const curItems = pendAll.filter(i=>i.moneda===cur);
-              if(curItems.length===0) return null;
-              const sym = cur==="EUR"?"€":"$";
-              const flag = {MXN:"🇲🇽",USD:"🇺🇸",EUR:"🇪🇺"}[cur];
-              const curColor = {MXN:C.mxn,USD:C.usd,EUR:C.eur}[cur];
-              const filterCur = arr => arr.filter(i=>i.moneda===cur);
-              const chips = [
-                {l:"Corriente",    v:sumSaldo(filterCur(vigByCur(cur))),    c:"#fff",    bg:"#1B5E20", items:filterCur(vigByCur(cur))},
-                {l:"Vencido 1-7 Días",    v:sumSaldo(filterCur(vencido7)),         c:"#fff",    bg:"#E65100", items:filterCur(vencido7)},
-                {l:"Vencido 8-15 Días",   v:sumSaldo(filterCur(vencido15)),        c:"#fff",    bg:"#BF360C", items:filterCur(vencido15)},
-                {l:"Vencido 16-30 Días",  v:sumSaldo(filterCur(vencido30)),        c:"#fff",    bg:"#E53935", items:filterCur(vencido30)},
-                {l:"Vencido 31-60 Días",  v:sumSaldo(filterCur(vencido60)),        c:"#fff",    bg:"#B71C1C", items:filterCur(vencido60)},
-                {l:"Vencido +60 Días",    v:sumSaldo(filterCur(vencidoMas60)),     c:"#fff",    bg:"#4A0000", items:filterCur(vencidoMas60)},
-              ].filter(ch=>ch.v>0);
-              return(
-                <div key={cur} style={{background:"#F8FAFC",border:`1px solid ${C.border}`,borderRadius:12,padding:14,marginBottom:10}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-                    <span style={{fontSize:16}}>{flag}</span>
-                    <span style={{fontSize:14,fontWeight:800,color:curColor}}>{cur}</span>
-                    <span style={{fontSize:12,color:C.muted}}>· {sym}{fmt(sumSaldo(curItems))} · {curItems.length} fact.</span>
-                  </div>
-                  <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                    {chips.map(ch=>(
-                      <div key={ch.l} onClick={()=>openDetailGrouped(`${cur} — ${ch.l}`,ch.items)}
-                        style={{background:ch.bg,borderRadius:12,padding:"12px 16px",cursor:"pointer",minWidth:120,transition:"all .15s",boxShadow:"0 2px 6px rgba(0,0,0,.1)"}}
-                        onMouseEnter={e=>{e.currentTarget.style.transform="scale(1.04)";e.currentTarget.style.boxShadow="0 6px 18px rgba(0,0,0,.2)";}}
-                        onMouseLeave={e=>{e.currentTarget.style.transform="scale(1)";e.currentTarget.style.boxShadow="0 2px 6px rgba(0,0,0,.1)";}}>
-                        <div style={{fontSize:10,color:ch.c,fontWeight:700,textTransform:"uppercase",opacity:.85,marginBottom:3,letterSpacing:.5}}>{ch.l}</div>
-                        <div style={{fontSize:18,fontWeight:900,color:ch.c}}>{sym}{fmt(ch.v)}</div>
-                        <div style={{fontSize:10,color:ch.c,opacity:.75,marginTop:2}}>{ch.items.length} fact.</div>
+                {/* Chips grandes */}
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:12}}>
+                  {agingChips.map(ch=>(
+                    <div key={ch.l} onClick={()=>openDetailGrouped(`${cur} — ${ch.l}`,ch.items)}
+                      style={{background:ch.bg,border:`2px solid ${ch.border}`,borderRadius:16,padding:"18px 20px",cursor:"pointer",transition:"all .15s",boxShadow:"0 3px 10px rgba(0,0,0,.1)",position:"relative",overflow:"hidden"}}
+                      onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow="0 8px 24px rgba(0,0,0,.18)";}}
+                      onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 3px 10px rgba(0,0,0,.1)";}}>
+                      {/* Background accent */}
+                      <div style={{position:"absolute",top:-10,right:-10,width:60,height:60,borderRadius:"50%",background:"rgba(255,255,255,.08)"}}/>
+                      <div style={{fontSize:10,color:ch.c,fontWeight:700,textTransform:"uppercase",opacity:.8,marginBottom:6,letterSpacing:.8}}>{ch.l}</div>
+                      <div style={{fontSize:22,fontWeight:900,color:ch.c,lineHeight:1}}>{sym}{fmt(ch.v)}</div>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:8}}>
+                        <span style={{fontSize:11,color:ch.c,opacity:.75}}>{ch.items.length} factura{ch.items.length!==1?"s":""}</span>
+                        <span style={{fontSize:11,color:ch.c,opacity:.75}}>{totalCur>0?((ch.v/totalCur)*100).toFixed(0):0}% del total</span>
                       </div>
-                    ))}
-                  </div>
+                      {/* Mini bar */}
+                      <div style={{height:3,borderRadius:2,background:"rgba(255,255,255,.2)",marginTop:10,overflow:"hidden"}}>
+                        <div style={{height:"100%",width:`${totalCur>0?(ch.v/totalCur)*100:0}%`,background:"rgba(255,255,255,.6)",borderRadius:2}}/>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              );
-            })}
-          </div>
+              </div>
+            );
+          })}
         </div>
 
-        {/* Charts */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
-          <div style={{background:C.surface,borderRadius:16,padding:24,border:`1px solid ${C.border}`}}>
-            <h3 style={{fontSize:15,fontWeight:700,marginBottom:16,color:C.navy}}>Distribución por Moneda</h3>
-            {pieData.length>0?(
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart><Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({name,percent})=>`${name} ${(percent*100).toFixed(0)}%`}>
-                  {pieData.map((d,i)=><Cell key={i} fill={d.color}/>)}
-                </Pie><Tooltip formatter={v=>fmt(v)}/></PieChart>
-              </ResponsiveContainer>
-            ):<div style={{textAlign:"center",color:C.muted,padding:40}}>Sin datos</div>}
-          </div>
-          <div style={{background:C.surface,borderRadius:16,padding:24,border:`1px solid ${C.border}`}}>
-            <h3 style={{fontSize:15,fontWeight:700,marginBottom:16,color:C.navy}}>Saldo por Clasificación</h3>
-            {claseData.length>0?(
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={claseData} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3"/><XAxis type="number" tickFormatter={v=>fmt(v)} fontSize={10}/>
-                  <YAxis type="category" dataKey="name" fontSize={11} width={90}/><Tooltip formatter={v=>fmt(v)}/>
-                  <Bar dataKey="value" fill={C.sky} radius={[0,4,4,0]}/>
-                </BarChart>
-              </ResponsiveContainer>
-            ):<div style={{textAlign:"center",color:C.muted,padding:40}}>Sin datos</div>}
-          </div>
+        {/* ── CxP por Clasificación ── */}
+        <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:18,padding:24,marginBottom:24,boxShadow:"0 2px 12px rgba(0,0,0,.05)"}}>
+          <h2 style={{fontSize:17,fontWeight:800,color:C.navy,margin:"0 0 20px",display:"flex",alignItems:"center",gap:8}}>
+            🗂️ Saldo por Clasificación
+          </h2>
+          {clasifData.length===0 ? (
+            <div style={{textAlign:"center",color:C.muted,padding:40}}>Sin datos</div>
+          ) : (
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              {clasifData.map(([clas,{sum,items}],idx)=>{
+                const pct = clasifMax>0?(sum/clasifMax)*100:0;
+                const pctTotal = totalPend>0?(sum/totalPend)*100:0;
+                const color = clasifColors[idx%clasifColors.length];
+                return(
+                  <div key={clas} onClick={()=>openDetailGrouped(`${clas}`,items)}
+                    style={{cursor:"pointer",padding:"12px 16px",borderRadius:12,border:`1px solid ${C.border}`,background:"#FAFBFC",transition:"all .15s"}}
+                    onMouseEnter={e=>{e.currentTarget.style.background="#F0F7FF";e.currentTarget.style.borderColor=color;e.currentTarget.style.transform="translateX(4px)";}}
+                    onMouseLeave={e=>{e.currentTarget.style.background="#FAFBFC";e.currentTarget.style.borderColor=C.border;e.currentTarget.style.transform="translateX(0)";}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <div style={{width:12,height:12,borderRadius:3,background:color,flexShrink:0}}/>
+                        <span style={{fontWeight:700,fontSize:15,color:C.navy}}>{clas}</span>
+                        <span style={{fontSize:12,color:C.muted}}>{items.length} factura{items.length!==1?"s":""}</span>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:16}}>
+                        <span style={{fontSize:11,color:C.muted,background:"#EEF2FF",padding:"2px 8px",borderRadius:20,fontWeight:600}}>{pctTotal.toFixed(1)}% del total</span>
+                        <span style={{fontWeight:900,fontSize:18,color}}>${fmt(sum)}</span>
+                      </div>
+                    </div>
+                    <div style={{height:10,borderRadius:6,background:"#EEF2FF",overflow:"hidden"}}>
+                      <div style={{height:"100%",width:`${pct}%`,background:color,borderRadius:6,transition:"width .6s ease"}}/>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
+
+        {/* ── Por Mes × Clasificación ── */}
+        {mesesPresentes.length>0 && (
+          <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:18,padding:24,marginBottom:24,boxShadow:"0 2px 12px rgba(0,0,0,.05)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"0 0 20px"}}>
+              <h2 style={{fontSize:17,fontWeight:800,color:C.navy,margin:0,display:"flex",alignItems:"center",gap:8}}>
+                📅 Por Mes × Clasificación <span style={{fontSize:13,color:C.muted,fontWeight:400}}>(MXN · facturas activas)</span>
+              </h2>
+            </div>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                <thead>
+                  <tr style={{background:C.navy}}>
+                    <th style={{padding:"12px 16px",textAlign:"left",color:"#fff",fontWeight:700,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap",minWidth:120}}>Mes</th>
+                    {clasifPresentes.map((c,ci)=>(
+                      <th key={c} style={{padding:"12px 12px",textAlign:"right",color:"#A5D6A7",fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:4}}>
+                          <div style={{width:8,height:8,borderRadius:2,background:clasifColors[clasifData.findIndex(([n])=>n===c)%clasifColors.length]}}/>
+                          {c}
+                        </div>
+                      </th>
+                    ))}
+                    <th style={{padding:"12px 12px",textAlign:"right",color:"#fff",fontWeight:800,fontSize:12,whiteSpace:"nowrap"}}>Total Mes</th>
+                  </tr>
+                  {/* Sub-header */}
+                  <tr style={{background:"#EEF2FF",borderBottom:`2px solid ${C.blue}`}}>
+                    <td style={{padding:"7px 16px",fontWeight:700,color:C.navy,fontSize:12}}>TOTAL</td>
+                    {clasifPresentes.map(c=>{
+                      const totalClasif = mesesPresentes.reduce((s,m)=>s+(mesClasiMap[m]?.[c]?.sum||0),0);
+                      return <td key={c} style={{padding:"7px 12px",textAlign:"right",fontWeight:700,color:C.danger,fontSize:13}}>{totalClasif>0?`$${fmt(totalClasif)}`:""}</td>;
+                    })}
+                    <td style={{padding:"7px 12px",textAlign:"right",fontWeight:800,color:C.navy,fontSize:14}}>
+                      ${fmt(mesesPresentes.reduce((s,m)=>s+clasifPresentes.reduce((ss,c)=>ss+(mesClasiMap[m]?.[c]?.sum||0),0),0))}
+                    </td>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mesesPresentes.map((mes,mi)=>{
+                    const totalMes = clasifPresentes.reduce((s,c)=>s+(mesClasiMap[mes]?.[c]?.sum||0),0);
+                    return(
+                      <tr key={mes} style={{borderTop:`1px solid ${C.border}`,background:mi%2===0?"#FAFBFF":"#fff"}}
+                        onMouseEnter={e=>e.currentTarget.style.background="#E8F0FE"}
+                        onMouseLeave={e=>e.currentTarget.style.background=mi%2===0?"#FAFBFF":"#fff"}>
+                        <td style={{padding:"12px 16px",fontWeight:700,color:C.navy,fontSize:13}}>{mes}</td>
+                        {clasifPresentes.map(c=>{
+                          const cell = mesClasiMap[mes]?.[c];
+                          return(
+                            <td key={c} style={{padding:"12px 12px",textAlign:"right"}}>
+                              {cell && cell.sum>0 ? (
+                                <span onClick={()=>openDetailGrouped(`${mes} · ${c}`,cell.items)}
+                                  style={{color:C.danger,fontWeight:700,cursor:"pointer",fontSize:13,borderBottom:`1px dotted ${C.danger}`}}>
+                                  ${fmt(cell.sum)}
+                                  <div style={{fontSize:10,color:C.muted,fontWeight:400}}>{cell.items.length} fact.</div>
+                                </span>
+                              ) : <span style={{color:"#E2E8F0"}}>—</span>}
+                            </td>
+                          );
+                        })}
+                        <td style={{padding:"12px 12px",textAlign:"right",fontWeight:800,color:C.navy,fontSize:14,borderLeft:`2px solid ${C.border}`}}>
+                          {totalMes>0?`$${fmt(totalMes)}`:"—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
