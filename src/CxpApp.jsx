@@ -140,6 +140,7 @@ export default function CxpApp({ user, onLogout }) {
   const [expandedGroups, setExpandedGroups] = useState(new Set());
   const [grupoPickerOpenMain, setGrupoPickerOpenMain] = useState(false);
   const grupoPickerBtnRef = React.useRef(null);
+  const [dashMesMoneda, setDashMesMoneda] = useState("MXN");
   const [carteraTab, setCarteraTab] = useState("activas"); // "activas" | "pagadas" | "resumen"
   const [filtroGrupo, setFiltroGrupo] = useState("");
   const [filtroProveedores, setFiltroProveedores] = useState(new Set()); // multi-select
@@ -955,18 +956,19 @@ export default function CxpApp({ user, onLogout }) {
     const saludIcon  = pctVenc<20?"🟢":pctVenc<50?"🟡":"🔴";
     const saludLabel = pctVenc<20?"Saludable":pctVenc<50?"Moderado":"Atención";
 
-    // CxP por Clasificación
-    const clasifData = Object.entries(
-      pendAll.reduce((acc,i)=>{ const c=i.clasificacion||"Sin clasificar"; acc[c]=(acc[c]||{sum:0,items:[]}); acc[c].sum+=saldoOf(i); acc[c].items.push(i); return acc; },{})
+    // CxP por Clasificación — por moneda
+    const clasifByCur = (cur) => Object.entries(
+      pendAll.filter(i=>i.moneda===cur).reduce((acc,i)=>{ const c=i.clasificacion||"Sin clasificar"; acc[c]=(acc[c]||{sum:0,items:[]}); acc[c].sum+=saldoOf(i); acc[c].items.push(i); return acc; },{})
     ).sort((a,b)=>b[1].sum-a[1].sum);
-    const clasifMax = clasifData[0]?.[1]?.sum||1;
+    const clasifDataMXN = clasifByCur("MXN");
+    const clasifDataUSD = clasifByCur("USD");
     const clasifColors = ["#1565C0","#0288D1","#00838F","#2E7D32","#F57F17","#E65100","#6A1B9A","#880E4F","#37474F","#4E342E"];
 
-    // Por Mes × Clasificación (MXN only — most relevant)
+    // Por Mes × Clasificación — usa dashMesMoneda
     const MESES_ORDER = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-    const pendMXN = pendAll.filter(i=>i.moneda==="MXN");
+    const pendMesMoneda = pendAll.filter(i=>i.moneda===dashMesMoneda);
     const mesClasiMap = {};
-    pendMXN.forEach(i=>{
+    pendMesMoneda.forEach(i=>{
       const mes = detectarMesCxP(i.concepto);
       if(!mes) return;
       const clas = i.clasificacion||"Otros";
@@ -976,7 +978,7 @@ export default function CxpApp({ user, onLogout }) {
       mesClasiMap[mes][clas].items.push(i);
     });
     const mesesPresentes = MESES_ORDER.filter(m=>mesClasiMap[m]);
-    const clasifPresentes = [...new Set(pendMXN.filter(i=>detectarMesCxP(i.concepto)).map(i=>i.clasificacion||"Otros"))];
+    const clasifPresentes = [...new Set(pendMesMoneda.filter(i=>detectarMesCxP(i.concepto)).map(i=>i.clasificacion||"Otros"))];
 
     return (
       <div>
@@ -1071,38 +1073,49 @@ export default function CxpApp({ user, onLogout }) {
           <h2 style={{fontSize:17,fontWeight:800,color:C.navy,margin:"0 0 20px",display:"flex",alignItems:"center",gap:8}}>
             🗂️ Saldo por Clasificación
           </h2>
-          {clasifData.length===0 ? (
-            <div style={{textAlign:"center",color:C.muted,padding:40}}>Sin datos</div>
-          ) : (
-            <div style={{display:"flex",flexDirection:"column",gap:12}}>
-              {clasifData.map(([clas,{sum,items}],idx)=>{
-                const pct = clasifMax>0?(sum/clasifMax)*100:0;
-                const pctTotal = totalPend>0?(sum/totalPend)*100:0;
-                const color = clasifColors[idx%clasifColors.length];
-                return(
-                  <div key={clas} onClick={()=>openDetailGrouped(`${clas}`,items)}
-                    style={{cursor:"pointer",padding:"12px 16px",borderRadius:12,border:`1px solid ${C.border}`,background:"#FAFBFC",transition:"all .15s"}}
-                    onMouseEnter={e=>{e.currentTarget.style.background="#F0F7FF";e.currentTarget.style.borderColor=color;e.currentTarget.style.transform="translateX(4px)";}}
-                    onMouseLeave={e=>{e.currentTarget.style.background="#FAFBFC";e.currentTarget.style.borderColor=C.border;e.currentTarget.style.transform="translateX(0)";}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                      <div style={{display:"flex",alignItems:"center",gap:10}}>
-                        <div style={{width:12,height:12,borderRadius:3,background:color,flexShrink:0}}/>
-                        <span style={{fontWeight:700,fontSize:15,color:C.navy}}>{clas}</span>
-                        <span style={{fontSize:12,color:C.muted}}>{items.length} factura{items.length!==1?"s":""}</span>
+          {[{cur:"MXN",flag:"🇲🇽",data:clasifDataMXN,sym:"$"},{cur:"USD",flag:"🇺🇸",data:clasifDataUSD,sym:"$"}].map(({cur,flag,data,sym})=>{
+            if(!data.length) return null;
+            const maxVal = data[0]?.[1]?.sum||1;
+            const totalCur = data.reduce((s,[,{sum}])=>s+sum,0);
+            return(
+              <div key={cur} style={{marginBottom:24}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+                  <span style={{fontSize:16}}>{flag}</span>
+                  <span style={{fontSize:14,fontWeight:800,color:{MXN:C.mxn,USD:C.usd}[cur]}}>{cur}</span>
+                  <span style={{fontSize:12,color:C.muted}}>· Total: {sym}{fmt(totalCur)}</span>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                  {data.map(([clas,{sum,items}],idx)=>{
+                    const pct = maxVal>0?(sum/maxVal)*100:0;
+                    const pctTotal = totalCur>0?(sum/totalCur)*100:0;
+                    const color = clasifColors[idx%clasifColors.length];
+                    return(
+                      <div key={clas} onClick={()=>openDetailGrouped(`${clas} (${cur})`,items)}
+                        style={{cursor:"pointer",padding:"12px 16px",borderRadius:12,border:`1px solid ${C.border}`,background:"#FAFBFC",transition:"all .15s"}}
+                        onMouseEnter={e=>{e.currentTarget.style.background="#F0F7FF";e.currentTarget.style.borderColor=color;e.currentTarget.style.transform="translateX(4px)";}}
+                        onMouseLeave={e=>{e.currentTarget.style.background="#FAFBFC";e.currentTarget.style.borderColor=C.border;e.currentTarget.style.transform="translateX(0)";}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                          <div style={{display:"flex",alignItems:"center",gap:10}}>
+                            <div style={{width:12,height:12,borderRadius:3,background:color,flexShrink:0}}/>
+                            <span style={{fontWeight:700,fontSize:15,color:C.navy}}>{clas}</span>
+                            <span style={{fontSize:12,color:C.muted}}>{items.length} factura{items.length!==1?"s":""}</span>
+                          </div>
+                          <div style={{display:"flex",alignItems:"center",gap:12}}>
+                            <span style={{fontSize:11,color:C.muted,background:"#EEF2FF",padding:"2px 8px",borderRadius:20,fontWeight:600}}>{pctTotal.toFixed(1)}% del total</span>
+                            <span style={{fontWeight:900,fontSize:18,color}}>{sym}{fmt(sum)}</span>
+                            <span style={{fontSize:11,background:{MXN:"#E3F2FD",USD:"#E8F5E9"}[cur],color:{MXN:"#1565C0",USD:"#2E7D32"}[cur],padding:"2px 8px",borderRadius:20,fontWeight:700}}>{flag} {cur}</span>
+                          </div>
+                        </div>
+                        <div style={{height:10,borderRadius:6,background:"#EEF2FF",overflow:"hidden"}}>
+                          <div style={{height:"100%",width:`${pct}%`,background:color,borderRadius:6,transition:"width .6s ease"}}/>
+                        </div>
                       </div>
-                      <div style={{display:"flex",alignItems:"center",gap:16}}>
-                        <span style={{fontSize:11,color:C.muted,background:"#EEF2FF",padding:"2px 8px",borderRadius:20,fontWeight:600}}>{pctTotal.toFixed(1)}% del total</span>
-                        <span style={{fontWeight:900,fontSize:18,color}}>${fmt(sum)}</span>
-                      </div>
-                    </div>
-                    <div style={{height:10,borderRadius:6,background:"#EEF2FF",overflow:"hidden"}}>
-                      <div style={{height:"100%",width:`${pct}%`,background:color,borderRadius:6,transition:"width .6s ease"}}/>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         {/* ── Por Mes × Clasificación ── */}
@@ -1110,8 +1123,17 @@ export default function CxpApp({ user, onLogout }) {
           <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:18,padding:24,marginBottom:24,boxShadow:"0 2px 12px rgba(0,0,0,.05)"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"0 0 20px"}}>
               <h2 style={{fontSize:17,fontWeight:800,color:C.navy,margin:0,display:"flex",alignItems:"center",gap:8}}>
-                📅 Por Mes × Clasificación <span style={{fontSize:13,color:C.muted,fontWeight:400}}>(MXN · facturas activas)</span>
+                📅 Por Mes × Clasificación
               </h2>
+              {/* Currency toggle */}
+              <div style={{display:"flex",gap:4,background:"#F1F5F9",borderRadius:10,padding:3}}>
+                {[{cur:"MXN",flag:"🇲🇽"},{cur:"USD",flag:"🇺🇸"}].map(({cur,flag})=>(
+                  <button key={cur} onClick={()=>setDashMesMoneda(cur)}
+                    style={{padding:"5px 14px",borderRadius:8,border:"none",background:dashMesMoneda===cur?"#fff":"transparent",color:dashMesMoneda===cur?{MXN:C.mxn,USD:C.usd}[cur]:C.muted,fontWeight:dashMesMoneda===cur?700:400,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:dashMesMoneda===cur?"0 1px 4px rgba(0,0,0,.1)":"none",transition:"all .15s"}}>
+                    {flag} {cur}
+                  </button>
+                ))}
+              </div>
             </div>
             <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
