@@ -139,6 +139,7 @@ export default function CxpApp({ user, onLogout }) {
   const [filtroMesConcepto, setFiltroMesConcepto] = useState("");
   const [expandedGroups, setExpandedGroups] = useState(new Set());
   const [grupoPickerOpenMain, setGrupoPickerOpenMain] = useState(false);
+  const grupoPickerBtnRef = React.useRef(null);
   const [carteraTab, setCarteraTab] = useState("activas"); // "activas" | "pagadas" | "resumen"
   const [filtroGrupo, setFiltroGrupo] = useState("");
   const [filtroProveedores, setFiltroProveedores] = useState(new Set()); // multi-select
@@ -1285,7 +1286,7 @@ export default function CxpApp({ user, onLogout }) {
               </>
             ) : (
               <>
-                <button onClick={()=>setGrupoPickerOpenMain(p=>!p)}
+                <button ref={grupoPickerBtnRef} onClick={()=>setGrupoPickerOpenMain(p=>!p)}
                   style={{display:"flex",alignItems:"center",gap:6,padding:"6px 14px",border:`1px solid ${filtroGrupo?C.blue:C.border}`,borderRadius:10,background:filtroGrupo?"#E8F0FE":"#fff",color:filtroGrupo?C.blue:C.text,cursor:"pointer",fontSize:13,fontWeight:filtroGrupo?700:500,fontFamily:"inherit",whiteSpace:"nowrap"}}>
                   🏨 {filtroGrupo||"Ver por Grupo"} ▾
                 </button>
@@ -1306,26 +1307,31 @@ export default function CxpApp({ user, onLogout }) {
         </div>
 
         {/* Grupo picker dropdown for Resumen */}
-        {carteraTab==="resumen" && grupoPickerOpenMain && (
-          <div style={{position:"fixed",inset:0,zIndex:500,display:"flex",alignItems:"center",justifyContent:"flex-start",paddingLeft:40,paddingTop:200}} onClick={()=>setGrupoPickerOpenMain(false)}>
-            <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:12,boxShadow:"0 8px 24px rgba(0,0,0,.2)",minWidth:240,overflow:"hidden"}}
-              onClick={e=>e.stopPropagation()}>
-              <div style={{padding:"10px 16px",background:C.navy,color:"#fff",fontWeight:700,fontSize:13}}>🏨 Seleccionar Grupo</div>
-              <div onClick={()=>{setFiltroGrupo("");setGrupoPickerOpenMain(false);}}
-                style={{padding:"10px 16px",cursor:"pointer",fontSize:13,color:!filtroGrupo?C.blue:C.text,fontWeight:!filtroGrupo?700:400,background:!filtroGrupo?"#E8F0FE":"#fff",borderBottom:`1px solid ${C.border}`}}>
-                Todos los grupos
-              </div>
-              {gruposList.map(g=>(
-                <div key={g} onClick={()=>{setFiltroGrupo(g);setGrupoPickerOpenMain(false);}}
-                  style={{padding:"10px 16px",cursor:"pointer",fontSize:13,color:filtroGrupo===g?C.blue:C.text,fontWeight:filtroGrupo===g?700:400,background:filtroGrupo===g?"#E8F0FE":"#fff",borderBottom:`1px solid ${C.border}`}}
-                  onMouseEnter={e=>{if(filtroGrupo!==g)e.currentTarget.style.background="#F8FAFC";}}
-                  onMouseLeave={e=>{e.currentTarget.style.background=filtroGrupo===g?"#E8F0FE":"#fff";}}>
-                  {g}
+        {carteraTab==="resumen" && grupoPickerOpenMain && (()=>{
+          const rect = grupoPickerBtnRef.current?.getBoundingClientRect();
+          const top = rect ? rect.bottom + 6 : 300;
+          const left = rect ? rect.left : 200;
+          return(
+            <div style={{position:"fixed",inset:0,zIndex:500}} onClick={()=>setGrupoPickerOpenMain(false)}>
+              <div style={{position:"fixed",top,left,background:"#fff",border:`1px solid ${C.border}`,borderRadius:12,boxShadow:"0 8px 24px rgba(0,0,0,.2)",minWidth:220,overflow:"hidden",zIndex:501}}
+                onClick={e=>e.stopPropagation()}>
+                <div style={{padding:"10px 16px",background:C.navy,color:"#fff",fontWeight:700,fontSize:13}}>🏨 Seleccionar Grupo</div>
+                <div onClick={()=>{setFiltroGrupo("");setGrupoPickerOpenMain(false);}}
+                  style={{padding:"10px 16px",cursor:"pointer",fontSize:13,color:!filtroGrupo?C.blue:C.text,fontWeight:!filtroGrupo?700:400,background:!filtroGrupo?"#E8F0FE":"#fff",borderBottom:`1px solid ${C.border}`}}>
+                  Todos los grupos
                 </div>
-              ))}
+                {gruposList.map(g=>(
+                  <div key={g} onClick={()=>{setFiltroGrupo(g);setGrupoPickerOpenMain(false);}}
+                    style={{padding:"10px 16px",cursor:"pointer",fontSize:13,color:filtroGrupo===g?C.blue:C.text,fontWeight:filtroGrupo===g?700:400,background:filtroGrupo===g?"#E8F0FE":"#fff",borderBottom:`1px solid ${C.border}`}}
+                    onMouseEnter={e=>{if(filtroGrupo!==g)e.currentTarget.style.background="#F8FAFC";}}
+                    onMouseLeave={e=>{e.currentTarget.style.background=filtroGrupo===g?"#E8F0FE":"#fff";}}>
+                    {g}
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
         {selectedIds.size > 0 && (()=>{
           const selInvs = (invoices[currency]||[]).filter(i=>selectedIds.has(i.id));
           const selTotal = selInvs.reduce((s,i)=>s+(+i.total||0),0);
