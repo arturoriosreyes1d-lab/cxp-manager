@@ -1143,7 +1143,7 @@ export default function CxpApp({ user, onLogout }) {
                     {clasifPresentes.map((c,ci)=>(
                       <th key={c} style={{padding:"12px 12px",textAlign:"right",color:"#A5D6A7",fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>
                         <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:4}}>
-                          <div style={{width:8,height:8,borderRadius:2,background:clasifColors[clasifData.findIndex(([n])=>n===c)%clasifColors.length]}}/>
+                          <div style={{width:8,height:8,borderRadius:2,background:clasifColors[(dashMesMoneda==="MXN"?clasifDataMXN:clasifDataUSD).findIndex(([n])=>n===c)%clasifColors.length]}}/>
                           {c}
                         </div>
                       </th>
