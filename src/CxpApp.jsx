@@ -1382,6 +1382,8 @@ export default function CxpApp({ user, onLogout }) {
             filtroProveedores={filtroProveedores}
             searchQuery={search}
             filtroMesConcepto={filtroMesConcepto}
+            filtroClasif={filters.clasificacion}
+            filtroEstatus={filters.estatus}
             excelBtnId="cxp-excel-btn"
             pdfBtnId="cxp-pdf-btn"
             fmt={fmt}
@@ -3007,7 +3009,7 @@ function ClientesView({ clientes, setClientes, empresaId, esConsulta = false }) 
 }
 
 /* ── ResumenCartera component ────────────────────────────────────────── */
-function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroGrupo, gruposList, filtroProveedores, searchQuery, filtroMesConcepto, excelBtnId, pdfBtnId, fmt, C }) {
+function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroGrupo, gruposList, filtroProveedores, searchQuery, filtroMesConcepto, filtroClasif, filtroEstatus, excelBtnId, pdfBtnId, fmt, C }) {
   const hoy = new Date().toISOString().slice(0,10);
   const [detailModal, setDetailModal] = React.useState(null);
   const [grupoPickerOpen, setGrupoPickerOpen] = React.useState(false);
@@ -3049,12 +3051,14 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
 
   const activeInvoices = React.useMemo(()=>invoices.filter(i=>{
     if(i.estatus==="Pagado") return false;
+    if(filtroClasif && i.clasificacion!==filtroClasif) return false;
+    if(filtroEstatus && i.estatus!==filtroEstatus) return false;
     if(filtroMesConcepto) {
       if(filtroMesConcepto==="__sin_mes__") { if(detectarMesCxP(i.concepto)!==null) return false; }
       else { if(detectarMesCxP(i.concepto)!==filtroMesConcepto) return false; }
     }
     return true;
-  }),[invoices, filtroMesConcepto]);
+  }),[invoices, filtroMesConcepto, filtroClasif, filtroEstatus]);
   const currencies = ["MXN","USD","EUR"];
   const monedaSym = m=>m==="EUR"?"€":"$";
   const monedaFlag = {MXN:"🇲🇽",USD:"🇺🇸",EUR:"🇪🇺"};
@@ -3445,6 +3449,20 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
                   {COLS.map((h,ci)=>(
                     <th key={h||ci} style={{padding:"11px 10px",textAlign:"center",color:["Corriente","# Facturas","Total","Pagado","Saldo"].includes(h)?"#A5D6A7":h.startsWith("Vencido")?"#FFCDD2":"#fff",fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                   ))}
+                </tr>
+                {/* Totals row */}
+                <tr style={{background:"#EEF2FF",borderBottom:`2px solid ${C.blue}`}}>
+                  <td style={{padding:"9px 14px",fontWeight:800,color:C.navy,fontSize:13}}>TOTAL ({provs.length} proveedores)</td>
+                  <td style={{padding:"9px 10px",textAlign:"right",fontWeight:700,color:C.muted,fontSize:13}}>{grand.count}</td>
+                  <td style={{padding:"9px 10px",textAlign:"right",fontWeight:700,fontSize:13}}>{sym}{fmt(grand.total)}</td>
+                  <td style={{padding:"9px 10px",textAlign:"right",fontWeight:700,color:C.ok,fontSize:13}}>{sym}{fmt(grand.pagado)}</td>
+                  <td style={{padding:"9px 10px",textAlign:"right",fontWeight:800,color:C.navy,fontSize:14}}>{sym}{fmt(grand.saldo)}</td>
+                  <td style={{padding:"9px 10px",textAlign:"right",fontWeight:700,color:C.ok,fontSize:13}}>{grand.corriente>0?`${sym}${fmt(grand.corriente)}`:""}</td>
+                  <td style={{padding:"9px 10px",textAlign:"right",fontWeight:700,color:C.danger,fontSize:13}}>{grand.v7>0?`${sym}${fmt(grand.v7)}`:""}</td>
+                  <td style={{padding:"9px 10px",textAlign:"right",fontWeight:700,color:C.danger,fontSize:13}}>{grand.v15>0?`${sym}${fmt(grand.v15)}`:""}</td>
+                  <td style={{padding:"9px 10px",textAlign:"right",fontWeight:700,color:"#C62828",fontSize:13}}>{grand.v30>0?`${sym}${fmt(grand.v30)}`:""}</td>
+                  <td style={{padding:"9px 10px",textAlign:"right",fontWeight:700,color:"#B71C1C",fontSize:13}}>{grand.v60>0?`${sym}${fmt(grand.v60)}`:""}</td>
+                  <td style={{padding:"9px 10px",textAlign:"right",fontWeight:700,color:"#4A0000",fontSize:13}}>{grand.vmas>0?`${sym}${fmt(grand.vmas)}`:""}</td>
                 </tr>
               </thead>
               <tbody>
