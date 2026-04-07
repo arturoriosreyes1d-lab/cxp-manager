@@ -1027,12 +1027,12 @@ export default function CxpApp({ user, onLogout }) {
             const filterCur = arr=>arr.filter(i=>i.moneda===cur);
             const totalCur = sumSaldo(curItems);
             const agingChips = [
-              {l:"Corriente",         v:sumSaldo(filterCur(corriente)),    c:"#fff", bg:"#1B5E20", border:"#2E7D32", items:filterCur(corriente)},
-              {l:"Vencido 1-7 Días",  v:sumSaldo(filterCur(vencido7)),    c:"#fff", bg:"#E65100", border:"#BF360C", items:filterCur(vencido7)},
-              {l:"Vencido 8-15 Días", v:sumSaldo(filterCur(vencido15)),   c:"#fff", bg:"#BF360C", border:"#870000", items:filterCur(vencido15)},
-              {l:"Vencido 16-30 Días",v:sumSaldo(filterCur(vencido30)),   c:"#fff", bg:"#E53935", border:"#B71C1C", items:filterCur(vencido30)},
-              {l:"Vencido 31-60 Días",v:sumSaldo(filterCur(vencido60)),   c:"#fff", bg:"#B71C1C", border:"#7F0000", items:filterCur(vencido60)},
-              {l:"Vencido +60 Días",  v:sumSaldo(filterCur(vencidoMas60)),c:"#fff", bg:"#4A0000", border:"#1A0000", items:filterCur(vencidoMas60)},
+              {l:"Corriente",         v:sumSaldo(filterCur(corriente)),    c:"#1B5E20", bg:"#E8F5E9", border:"#A5D6A7", items:filterCur(corriente)},
+              {l:"Vencido 1-7 Días",  v:sumSaldo(filterCur(vencido7)),    c:"#E65100", bg:"#FFF3E0", border:"#FFCC80", items:filterCur(vencido7)},
+              {l:"Vencido 8-15 Días", v:sumSaldo(filterCur(vencido15)),   c:"#BF360C", bg:"#FBE9E7", border:"#FF8A65", items:filterCur(vencido15)},
+              {l:"Vencido 16-30 Días",v:sumSaldo(filterCur(vencido30)),   c:"#C62828", bg:"#FFEBEE", border:"#EF9A9A", items:filterCur(vencido30)},
+              {l:"Vencido 31-60 Días",v:sumSaldo(filterCur(vencido60)),   c:"#B71C1C", bg:"#FFCDD2", border:"#E57373", items:filterCur(vencido60)},
+              {l:"Vencido +60 Días",  v:sumSaldo(filterCur(vencidoMas60)),c:"#7F0000", bg:"#EF9A9A", border:"#E53935", items:filterCur(vencidoMas60)},
             ].filter(ch=>ch.v>0);
             return(
               <div key={cur} style={{marginBottom:cur!=="EUR"?20:0}}>
@@ -1051,20 +1051,18 @@ export default function CxpApp({ user, onLogout }) {
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:12}}>
                   {agingChips.map(ch=>(
                     <div key={ch.l} onClick={()=>openDetailGrouped(`${cur} — ${ch.l}`,ch.items)}
-                      style={{background:ch.bg,border:`2px solid ${ch.border}`,borderRadius:16,padding:"18px 20px",cursor:"pointer",transition:"all .15s",boxShadow:"0 3px 10px rgba(0,0,0,.1)",position:"relative",overflow:"hidden"}}
-                      onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow="0 8px 24px rgba(0,0,0,.18)";}}
-                      onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 3px 10px rgba(0,0,0,.1)";}}>
-                      {/* Background accent */}
-                      <div style={{position:"absolute",top:-10,right:-10,width:60,height:60,borderRadius:"50%",background:"rgba(255,255,255,.08)"}}/>
+                      style={{background:ch.bg,border:`2px solid ${ch.border}`,borderRadius:16,padding:"18px 20px",cursor:"pointer",transition:"all .15s",boxShadow:"0 3px 10px rgba(0,0,0,.07)",position:"relative",overflow:"hidden"}}
+                      onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow="0 8px 24px rgba(0,0,0,.13)";}}
+                      onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 3px 10px rgba(0,0,0,.07)";}}>
+                      <div style={{position:"absolute",top:-10,right:-10,width:60,height:60,borderRadius:"50%",background:`${ch.border}30`}}/>
                       <div style={{fontSize:10,color:ch.c,fontWeight:700,textTransform:"uppercase",opacity:.8,marginBottom:6,letterSpacing:.8}}>{ch.l}</div>
                       <div style={{fontSize:22,fontWeight:900,color:ch.c,lineHeight:1}}>{sym}{fmt(ch.v)}</div>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:8}}>
                         <span style={{fontSize:11,color:ch.c,opacity:.75}}>{ch.items.length} factura{ch.items.length!==1?"s":""}</span>
                         <span style={{fontSize:11,color:ch.c,opacity:.75}}>{totalCur>0?((ch.v/totalCur)*100).toFixed(0):0}% del total</span>
                       </div>
-                      {/* Mini bar */}
-                      <div style={{height:3,borderRadius:2,background:"rgba(255,255,255,.2)",marginTop:10,overflow:"hidden"}}>
-                        <div style={{height:"100%",width:`${totalCur>0?(ch.v/totalCur)*100:0}%`,background:"rgba(255,255,255,.6)",borderRadius:2}}/>
+                      <div style={{height:3,borderRadius:2,background:`${ch.border}40`,marginTop:10,overflow:"hidden"}}>
+                        <div style={{height:"100%",width:`${totalCur>0?(ch.v/totalCur)*100:0}%`,background:ch.border,borderRadius:2}}/>
                       </div>
                     </div>
                   ))}
