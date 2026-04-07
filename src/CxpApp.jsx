@@ -1246,23 +1246,6 @@ export default function CxpApp({ user, onLogout }) {
 
             <div style={{flex:1,minWidth:4}}/>
 
-            {/* KPIs compactos — solo cuando hay facturas */}
-            {carteraTab !== "resumen" && (
-              <div style={{display:"flex",gap:6,alignItems:"center",flex:"0 0 auto"}}>
-                <span style={{background:"#F0F4FF",border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 10px",fontSize:12,color:C.navy,fontWeight:700,whiteSpace:"nowrap"}}>
-                  {filtered.length} fact.
-                </span>
-                <span style={{background:"#F0F4FF",border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 10px",fontSize:12,color:C.navy,fontWeight:700,whiteSpace:"nowrap"}}>
-                  ${fmt(totalFiltered)}
-                </span>
-                {carteraTab==="activas" && totalPendiente>0 && (
-                  <span style={{background:"#FFF3E0",border:"1px solid #FFCC02",borderRadius:8,padding:"5px 10px",fontSize:12,color:C.warn,fontWeight:700,whiteSpace:"nowrap"}}>
-                    ${fmt(totalPendiente)}
-                  </span>
-                )}
-              </div>
-            )}
-
             {/* ✕ Limpiar — solo si hay algo activo */}
             {(search||filters.clasificacion||filters.estatus||filters.fechaFrom||filters.fechaTo||filters.pagoFrom||filters.pagoTo||filtroGrupo||filtroProveedores.size>0||filtroMesConcepto) && (
               <button onClick={()=>{setFilters({proveedor:"",clasificacion:"",estatus:"",fechaFrom:"",fechaTo:"",pagoFrom:"",pagoTo:""});setSearch("");setFiltroGrupo("");setFiltroProveedores(new Set());setFiltroMesConcepto("");}}
@@ -1285,16 +1268,13 @@ export default function CxpApp({ user, onLogout }) {
                 ))}
                 <span style={{width:1,height:20,background:C.border,margin:"0 4px",flexShrink:0}}/>
                 <span style={{fontSize:12,color:C.muted,fontWeight:600,whiteSpace:"nowrap"}}>Luego:</span>
-                <button onClick={()=>setGrupo2("")}
-                  style={{padding:"5px 13px",borderRadius:20,border:`1px solid ${grupo2===""?C.teal:C.border}`,background:grupo2===""?"#E0F2F1":"#fff",color:grupo2===""?C.teal:C.text,cursor:"pointer",fontSize:12,fontWeight:grupo2===""?700:500,fontFamily:"inherit",whiteSpace:"nowrap"}}>
-                  Ninguno
-                </button>
-                {groupOptions.filter(g=>g!==grupoPor).map(g=>(
-                  <button key={g} onClick={()=>setGrupo2(g)}
-                    style={{padding:"5px 13px",borderRadius:20,border:`1px solid ${grupo2===g?C.teal:C.border}`,background:grupo2===g?"#E0F2F1":"#fff",color:grupo2===g?C.teal:C.text,cursor:"pointer",fontSize:12,fontWeight:grupo2===g?700:500,fontFamily:"inherit",whiteSpace:"nowrap"}}>
-                    {g==="grupo"?"Grupo":g.charAt(0).toUpperCase()+g.slice(1)}
-                  </button>
-                ))}
+                <select value={grupo2} onChange={e=>setGrupo2(e.target.value)}
+                  style={{...selectStyle,width:150,fontSize:12,borderColor:grupo2?C.teal:C.border,color:grupo2?C.teal:C.text,fontWeight:grupo2?700:400}}>
+                  <option value="">Ninguno</option>
+                  {groupOptions.filter(g=>g!==grupoPor).map(g=>(
+                    <option key={g} value={g}>{g==="grupo"?"Grupo":g.charAt(0).toUpperCase()+g.slice(1)}</option>
+                  ))}
+                </select>
                 <div style={{flex:1}}/>
                 {!esConsulta && (
                   <button onClick={()=>setModalInv({tipo:"Factura",fecha:today(),serie:"",folio:"",uuid:"",proveedor:"",clasificacion:clases[0],subtotal:"",iva:"",retIsr:0,retIva:0,total:"",montoPagado:0,concepto:"",diasCredito:30,vencimiento:"",estatus:"Pendiente",fechaProgramacion:"",diasFicticios:0,referencia:"",notas:"",moneda:currency})}
@@ -1327,19 +1307,17 @@ export default function CxpApp({ user, onLogout }) {
 
         {/* Grupo picker dropdown for Resumen */}
         {carteraTab==="resumen" && grupoPickerOpenMain && (
-          <div style={{position:"fixed",inset:0,zIndex:500}} onClick={()=>setGrupoPickerOpenMain(false)}>
-            <div style={{position:"absolute",top:"auto",left:18,background:"#fff",border:`1px solid ${C.border}`,borderRadius:12,boxShadow:"0 8px 24px rgba(0,0,0,.15)",minWidth:220,overflow:"hidden"}}
+          <div style={{position:"fixed",inset:0,zIndex:500,display:"flex",alignItems:"center",justifyContent:"flex-start",paddingLeft:40,paddingTop:200}} onClick={()=>setGrupoPickerOpenMain(false)}>
+            <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:12,boxShadow:"0 8px 24px rgba(0,0,0,.2)",minWidth:240,overflow:"hidden"}}
               onClick={e=>e.stopPropagation()}>
-              <div style={{padding:"10px 14px",background:C.navy,color:"#fff",fontWeight:700,fontSize:13}}>🏨 Seleccionar Grupo</div>
+              <div style={{padding:"10px 16px",background:C.navy,color:"#fff",fontWeight:700,fontSize:13}}>🏨 Seleccionar Grupo</div>
               <div onClick={()=>{setFiltroGrupo("");setGrupoPickerOpenMain(false);}}
-                style={{padding:"10px 16px",cursor:"pointer",fontSize:13,color:!filtroGrupo?C.blue:C.text,fontWeight:!filtroGrupo?700:400,background:!filtroGrupo?"#E8F0FE":"#fff"}}
-                onMouseEnter={e=>{if(filtroGrupo)e.currentTarget.style.background="#F8FAFC";}}
-                onMouseLeave={e=>{e.currentTarget.style.background=!filtroGrupo?"#E8F0FE":"#fff";}}>
+                style={{padding:"10px 16px",cursor:"pointer",fontSize:13,color:!filtroGrupo?C.blue:C.text,fontWeight:!filtroGrupo?700:400,background:!filtroGrupo?"#E8F0FE":"#fff",borderBottom:`1px solid ${C.border}`}}>
                 Todos los grupos
               </div>
               {gruposList.map(g=>(
                 <div key={g} onClick={()=>{setFiltroGrupo(g);setGrupoPickerOpenMain(false);}}
-                  style={{padding:"10px 16px",cursor:"pointer",fontSize:13,color:filtroGrupo===g?C.blue:C.text,fontWeight:filtroGrupo===g?700:400,background:filtroGrupo===g?"#E8F0FE":"#fff",borderTop:`1px solid ${C.border}`}}
+                  style={{padding:"10px 16px",cursor:"pointer",fontSize:13,color:filtroGrupo===g?C.blue:C.text,fontWeight:filtroGrupo===g?700:400,background:filtroGrupo===g?"#E8F0FE":"#fff",borderBottom:`1px solid ${C.border}`}}
                   onMouseEnter={e=>{if(filtroGrupo!==g)e.currentTarget.style.background="#F8FAFC";}}
                   onMouseLeave={e=>{e.currentTarget.style.background=filtroGrupo===g?"#E8F0FE":"#fff";}}>
                   {g}
@@ -1382,6 +1360,18 @@ export default function CxpApp({ user, onLogout }) {
         })()}
         {/* ── PESTAÑA RESUMEN ── */}
         {carteraTab === "resumen" && (
+          <>
+          {/* Excel + PDF top right */}
+          <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginBottom:12}}>
+            <button id="cxp-excel-btn"
+              style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:10,border:"1px solid #2E7D32",background:"#E8F5E9",color:"#2E7D32",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+              📊 Excel
+            </button>
+            <button id="cxp-pdf-btn"
+              style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:10,border:"1px solid #1565C0",background:"#E3F2FD",color:"#1565C0",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+              🖨️ PDF / Imprimir
+            </button>
+          </div>
           <ResumenCartera
             invoices={curInvoices}
             suppliers={suppliers}
@@ -1392,15 +1382,59 @@ export default function CxpApp({ user, onLogout }) {
             filtroProveedores={filtroProveedores}
             searchQuery={search}
             filtroMesConcepto={filtroMesConcepto}
+            excelBtnId="cxp-excel-btn"
+            pdfBtnId="cxp-pdf-btn"
             fmt={fmt}
             C={C}
           />
+          </>
         )}
 
         {/* ── PESTAÑAS ACTIVAS / PAGADAS ── */}
         {carteraTab !== "resumen" && (
         <>
-        {/* Grouped content — accordion */}
+        {/* ── KPI Aging chips ── */}
+        {(()=>{
+          const pend = filtered.filter(i=>i.estatus!=="Pagado");
+          const sOf = i => (+i.total||0)-(+i.montoPagado||0);
+          const calcD = v => v?Math.ceil((new Date(v)-new Date(today()))/864e5):null;
+          const sumS = arr => arr.reduce((s,i)=>s+sOf(i),0);
+          const total = sumS(pend);
+          const corriente = sumS(pend.filter(i=>{ const d=calcD(i.vencimiento); return d===null||d>=0; }));
+          const v7   = sumS(pend.filter(i=>{ const d=calcD(i.vencimiento); return d!==null&&d<0&&Math.abs(d)<=7; }));
+          const v15  = sumS(pend.filter(i=>{ const d=calcD(i.vencimiento); return d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=15; }));
+          const v30  = sumS(pend.filter(i=>{ const d=calcD(i.vencimiento); return d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30; }));
+          const v60  = sumS(pend.filter(i=>{ const d=calcD(i.vencimiento); return d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=60; }));
+          const vmas = sumS(pend.filter(i=>{ const d=calcD(i.vencimiento); return d!==null&&d<0&&Math.abs(d)>60; }));
+
+          const openChip=(title,items)=>{ setDashSearch("");setDashFilterProv("");setDashFilterClasif("");setDashFilterEstatus("");setDashGroupBy("");setDashSelectedIds(new Set());setDashBulkAutDir(""); setDashDetail({title,type:"invoices",items,grouped:true}); };
+
+          const chips = [
+            {l:"Saldo",      v:total,     c:"#fff",    bg:"#0F2D4A",border:"#0F2D4A", inv:pend},
+            {l:"Corriente",  v:corriente, c:"#1B5E20", bg:"#E8F5E9",border:"#A5D6A7", inv:pend.filter(i=>{const d=calcD(i.vencimiento);return d===null||d>=0;})},
+            {l:"Venc 1-7d",  v:v7,        c:"#E65100", bg:"#FFF3E0",border:"#FFCC80", inv:pend.filter(i=>{const d=calcD(i.vencimiento);return d!==null&&d<0&&Math.abs(d)<=7;})},
+            {l:"Venc 8-15d", v:v15,       c:"#BF360C", bg:"#FBE9E7",border:"#FF8A65", inv:pend.filter(i=>{const d=calcD(i.vencimiento);return d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=15;})},
+            {l:"Venc 16-30d",v:v30,       c:"#fff",    bg:"#E53935",border:"#E53935", inv:pend.filter(i=>{const d=calcD(i.vencimiento);return d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30;})},
+            {l:"Venc 31-60d",v:v60,       c:"#fff",    bg:"#B71C1C",border:"#B71C1C", inv:pend.filter(i=>{const d=calcD(i.vencimiento);return d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=60;})},
+            {l:"Venc +60d",  v:vmas,      c:"#fff",    bg:"#4A0000",border:"#4A0000", inv:pend.filter(i=>{const d=calcD(i.vencimiento);return d!==null&&d<0&&Math.abs(d)>60;})},
+          ].filter(k=>k.v>0);
+
+          if(!chips.length) return null;
+          return(
+            <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
+              {chips.map(k=>(
+                <div key={k.l} onClick={()=>openChip(`${currency} — ${k.l}`,k.inv)}
+                  style={{background:k.bg,border:`2px solid ${k.border}`,borderRadius:14,padding:"14px 20px",cursor:"pointer",minWidth:130,transition:"all .15s",boxShadow:"0 2px 6px rgba(0,0,0,.08)"}}
+                  onMouseEnter={e=>{e.currentTarget.style.transform="scale(1.04)";e.currentTarget.style.boxShadow="0 6px 16px rgba(0,0,0,.15)";}}
+                  onMouseLeave={e=>{e.currentTarget.style.transform="scale(1)";e.currentTarget.style.boxShadow="0 2px 6px rgba(0,0,0,.08)";}}>
+                  <div style={{fontSize:10,color:k.c,fontWeight:700,textTransform:"uppercase",opacity:.85,marginBottom:4,letterSpacing:.5}}>{k.l}</div>
+                  <div style={{fontSize:20,fontWeight:900,color:k.c}}>${fmt(k.v)}</div>
+                  <div style={{fontSize:10,color:k.c,opacity:.75,marginTop:2}}>{k.inv.length} fact.</div>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
         {Object.entries(grouped).map(([g1, data]) => {
           const invs = data.invoices || Object.values(data.subgroups||{}).flat();
           const saldo = invs.filter(i=>i.estatus!=="Pagado").reduce((s,i)=>s+((+i.total||0)-(+i.montoPagado||0)),0);
@@ -2973,7 +3007,7 @@ function ClientesView({ clientes, setClientes, empresaId, esConsulta = false }) 
 }
 
 /* ── ResumenCartera component ────────────────────────────────────────── */
-function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroGrupo, gruposList, filtroProveedores, searchQuery, filtroMesConcepto, fmt, C }) {
+function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroGrupo, gruposList, filtroProveedores, searchQuery, filtroMesConcepto, excelBtnId, pdfBtnId, fmt, C }) {
   const hoy = new Date().toISOString().slice(0,10);
   const [detailModal, setDetailModal] = React.useState(null);
   const [grupoPickerOpen, setGrupoPickerOpen] = React.useState(false);
@@ -2983,6 +3017,20 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
   const toggleGrupoMon = (key) => setExpandedGruposMon(prev => { const n=new Set(prev); n.has(key)?n.delete(key):n.add(key); return n; });
 
   const calcDias = (venc) => venc ? Math.ceil((new Date(venc)-new Date(hoy))/864e5) : null;
+
+  // Wire external Excel/PDF buttons
+  React.useEffect(()=>{
+    const excelBtn = excelBtnId ? document.getElementById(excelBtnId) : null;
+    const pdfBtn   = pdfBtnId   ? document.getElementById(pdfBtnId)   : null;
+    const doExcel = () => exportExcel();
+    const doPdf   = () => printResumen();
+    if(excelBtn) excelBtn.addEventListener('click', doExcel);
+    if(pdfBtn)   pdfBtn.addEventListener('click',   doPdf);
+    return () => {
+      if(excelBtn) excelBtn.removeEventListener('click', doExcel);
+      if(pdfBtn)   pdfBtn.removeEventListener('click',   doPdf);
+    };
+  });
 
   const aging = (saldo, vencimiento, estatus) => {
     if(estatus==="Pagado"||saldo<=0) return {corriente:0,v7:0,v15:0,v30:0,v60:0,vmas:0};
@@ -3489,17 +3537,8 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
       <DetailModal/>
       <GrupoPicker/>
 
-      {/* Export buttons only */}
-      <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginBottom:16}}>
-        <button onClick={()=>exportExcel(allProvData,filtroGrupo,fmt)}
-          style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",borderRadius:10,border:"1px solid #2E7D32",background:"#E8F5E9",color:"#2E7D32",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-          📊 Excel
-        </button>
-        <button onClick={()=>printResumen()}
-          style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",borderRadius:10,border:"1px solid #1565C0",background:"#E3F2FD",color:"#1565C0",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-          🖨️ PDF / Imprimir
-        </button>
-      </div>
+      {/* Export buttons only — now wired from outside */}
+      <div style={{display:"none"}}></div>
 
       {/* ── VISTA GRUPO SELECCIONADO ── */}
       {filtroGrupo && grupoData && (
