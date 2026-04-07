@@ -1141,25 +1141,25 @@ export default function CxpApp({ user, onLogout }) {
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
                 <thead>
                   <tr style={{background:C.navy}}>
-                    <th style={{padding:"16px 20px",textAlign:"left",color:"#fff",fontWeight:800,fontSize:14,textTransform:"uppercase",whiteSpace:"nowrap",minWidth:140}}>Mes</th>
+                    <th style={{padding:"16px 20px",textAlign:"left",color:"#fff",fontWeight:600,fontSize:13,textTransform:"uppercase",whiteSpace:"nowrap",minWidth:140,letterSpacing:.3}}>Mes</th>
                     {clasifPresentes.map((c,ci)=>(
-                      <th key={c} style={{padding:"16px 16px",textAlign:"center",color:"#fff",fontWeight:800,fontSize:13,textTransform:"uppercase",whiteSpace:"nowrap"}}>
+                      <th key={c} style={{padding:"16px 16px",textAlign:"center",color:"#CBD5E1",fontWeight:600,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap",letterSpacing:.3}}>
                         <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
-                          <div style={{width:10,height:10,borderRadius:3,background:clasifColors[(dashMesMoneda==="MXN"?clasifDataMXN:clasifDataUSD).findIndex(([n])=>n===c)%clasifColors.length],flexShrink:0}}/>
+                          <div style={{width:8,height:8,borderRadius:3,background:clasifColors[(dashMesMoneda==="MXN"?clasifDataMXN:clasifDataUSD).findIndex(([n])=>n===c)%clasifColors.length],flexShrink:0}}/>
                           {c}
                         </div>
                       </th>
                     ))}
-                    <th style={{padding:"16px 16px",textAlign:"center",color:"#A5D6A7",fontWeight:800,fontSize:14,whiteSpace:"nowrap"}}>Total Mes</th>
+                    <th style={{padding:"16px 16px",textAlign:"center",color:"#94A3B8",fontWeight:600,fontSize:12,whiteSpace:"nowrap",letterSpacing:.3}}>Total Mes</th>
                   </tr>
-                  {/* Totals row — destacada */}
-                  <tr style={{background:"#4527A0",borderBottom:`3px solid #7B1FA2`}}>
-                    <td style={{padding:"14px 20px",fontWeight:900,color:"#fff",fontSize:15,letterSpacing:.3}}>TOTAL GENERAL</td>
+                  {/* Totals row */}
+                  <tr style={{background:"#EDE7F6",borderBottom:`2px solid #B39DDB`}}>
+                    <td style={{padding:"12px 20px",fontWeight:700,color:"#4527A0",fontSize:13}}>Total General</td>
                     {clasifPresentes.map(c=>{
                       const totalClasif = mesesPresentes.reduce((s,m)=>s+(mesClasiMap[m]?.[c]?.sum||0),0);
-                      return <td key={c} style={{padding:"14px 16px",textAlign:"center",fontWeight:800,color:"#E1BEE7",fontSize:16}}>{totalClasif>0?`$${fmt(totalClasif)}`:""}</td>;
+                      return <td key={c} style={{padding:"12px 16px",textAlign:"center",fontWeight:700,color:"#4527A0",fontSize:15}}>{totalClasif>0?`$${fmt(totalClasif)}`:""}</td>;
                     })}
-                    <td style={{padding:"14px 16px",textAlign:"center",fontWeight:900,color:"#fff",fontSize:18,borderLeft:`2px solid #7B1FA2`}}>
+                    <td style={{padding:"12px 16px",textAlign:"center",fontWeight:800,color:"#4527A0",fontSize:17,borderLeft:`1px solid #B39DDB`}}>
                       ${fmt(mesesPresentes.reduce((s,m)=>s+clasifPresentes.reduce((ss,c)=>ss+(mesClasiMap[m]?.[c]?.sum||0),0),0))}
                     </td>
                   </tr>
