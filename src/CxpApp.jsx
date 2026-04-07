@@ -138,6 +138,7 @@ export default function CxpApp({ user, onLogout }) {
   const [search, setSearch] = useState("");
   const [filtroMesConcepto, setFiltroMesConcepto] = useState("");
   const [expandedGroups, setExpandedGroups] = useState(new Set());
+  const [grupoPickerOpenMain, setGrupoPickerOpenMain] = useState(false);
   const [carteraTab, setCarteraTab] = useState("activas"); // "activas" | "pagadas" | "resumen"
   const [filtroGrupo, setFiltroGrupo] = useState("");
   const [filtroProveedores, setFiltroProveedores] = useState(new Set()); // multi-select
@@ -1191,88 +1192,178 @@ export default function CxpApp({ user, onLogout }) {
           </div>
         )}
 
-        {/* Filters */}
-        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:16,marginBottom:20}}>
-          <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
-            <input ref={searchRef} placeholder="🔍 Buscar…" value={search} onChange={e=>setSearch(e.target.value)} style={{...inputStyle,maxWidth:200}} />
-            {/* Filtro por Grupo — solo en Activas/Pagadas; en Resumen el picker está dentro */}
-            {carteraTab !== "resumen" && (
+        {/* ── UNIFIED FILTER + ACTION BAR ── */}
+        <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:16,marginBottom:20,boxShadow:"0 2px 8px rgba(0,0,0,.05)",overflow:"hidden"}}>
+
+          {/* Row 1: Filters */}
+          <div style={{padding:"14px 18px",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",borderBottom:`1px solid ${C.border}`}}>
+            <input ref={searchRef} placeholder="🔍 Buscar…" value={search} onChange={e=>setSearch(e.target.value)}
+              style={{...inputStyle,maxWidth:190,flex:"0 0 auto"}} />
+
+            {carteraTab !== "resumen" && gruposList.length>0 && (
               <select value={filtroGrupo} onChange={e=>setFiltroGrupo(e.target.value)}
-                style={{...selectStyle,maxWidth:180,borderColor:filtroGrupo?C.blue:C.border,color:filtroGrupo?C.blue:C.text,fontWeight:filtroGrupo?700:400}}>
+                style={{...selectStyle,maxWidth:170,borderColor:filtroGrupo?C.blue:C.border,color:filtroGrupo?C.blue:C.text,fontWeight:filtroGrupo?700:400,flex:"0 0 auto"}}>
                 <option value="">🏨 Grupo</option>
-                {gruposList.length===0 && <option disabled>— Sin grupos configurados —</option>}
                 {gruposList.map(g=><option key={g} value={g}>{g}</option>)}
               </select>
             )}
-            {/* Proveedor multi-select picker */}
-            <ProveedorPicker
-              curInvoices={curInvoices}
-              filtroProveedores={filtroProveedores}
-              setFiltroProveedores={setFiltroProveedores}
-              inputStyle={inputStyle}
-              C={C}
-            />
-            <select value={filters.clasificacion} onChange={e=>setFilters(f=>({...f,clasificacion:e.target.value}))} style={{...selectStyle,maxWidth:180}}>
+
+            <ProveedorPicker curInvoices={curInvoices} filtroProveedores={filtroProveedores} setFiltroProveedores={setFiltroProveedores} inputStyle={inputStyle} C={C}/>
+
+            <select value={filters.clasificacion} onChange={e=>setFilters(f=>({...f,clasificacion:e.target.value}))}
+              style={{...selectStyle,maxWidth:180,flex:"0 0 auto"}}>
               <option value="">Todas las clasificaciones</option>
               {clases.map(c=><option key={c}>{c}</option>)}
             </select>
+
             {carteraTab !== "activas" && (
-              <select value={filters.estatus} onChange={e=>setFilters(f=>({...f,estatus:e.target.value}))} style={{...selectStyle,maxWidth:160}}>
+              <select value={filters.estatus} onChange={e=>setFilters(f=>({...f,estatus:e.target.value}))}
+                style={{...selectStyle,maxWidth:155,flex:"0 0 auto"}}>
                 <option value="">Todos los estatus</option>
                 {["Pendiente","Pagado","Vencido","Parcial"].map(s=><option key={s}>{s}</option>)}
               </select>
             )}
-            {/* Filtro por Mes en Concepto */}
+
+            {/* Mes en concepto */}
             {(()=>{
-              const mesesEnConcepto = [...new Set(curInvoices.filter(i=>i.estatus!=="Pagado").map(i=>detectarMesCxP(i.concepto)).filter(Boolean))];
-              const hayNoIdent = curInvoices.filter(i=>i.estatus!=="Pagado"&&!detectarMesCxP(i.concepto)).length > 0;
+              const mesesEnConcepto=[...new Set(curInvoices.filter(i=>i.estatus!=="Pagado").map(i=>detectarMesCxP(i.concepto)).filter(Boolean))];
+              const hayNoIdent=curInvoices.filter(i=>i.estatus!=="Pagado"&&!detectarMesCxP(i.concepto)).length>0;
               return(
                 <select value={filtroMesConcepto} onChange={e=>setFiltroMesConcepto(e.target.value)}
-                  style={{...selectStyle,maxWidth:190,borderColor:filtroMesConcepto?C.blue:C.border,color:filtroMesConcepto?C.blue:C.text,fontWeight:filtroMesConcepto?700:400}}>
+                  style={{...selectStyle,maxWidth:185,borderColor:filtroMesConcepto?C.blue:C.border,color:filtroMesConcepto?C.blue:C.text,fontWeight:filtroMesConcepto?700:400,flex:"0 0 auto"}}>
                   <option value="">📅 Mes en concepto</option>
                   {["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"].filter(m=>mesesEnConcepto.includes(m)).map(m=>(
                     <option key={m} value={m}>{m}</option>
                   ))}
-                  {hayNoIdent && <option value="__sin_mes__">⚠️ Sin mes identificado</option>}
+                  {hayNoIdent&&<option value="__sin_mes__">⚠️ Sin mes identificado</option>}
                 </select>
               );
             })()}
-            <input type="date" value={filters.fechaFrom} onChange={e=>setFilters(f=>({...f,fechaFrom:e.target.value}))} style={{...inputStyle,maxWidth:150}} title="Fecha desde"/>
-            <input type="date" value={filters.fechaTo} onChange={e=>setFilters(f=>({...f,fechaTo:e.target.value}))} style={{...inputStyle,maxWidth:150}} title="Fecha hasta"/>
-            <button onClick={()=>{setFilters({proveedor:"",clasificacion:"",estatus:"",fechaFrom:"",fechaTo:"",pagoFrom:"",pagoTo:""});setSearch("");setFiltroGrupo("");setFiltroProveedores(new Set());setFiltroMesConcepto("");}} style={{...btnStyle,background:"#F1F5F9",color:C.text}}>Limpiar</button>
-          </div>
-          {carteraTab !== "resumen" && (
-            <>
-            <div style={{display:"flex",gap:10,marginTop:10,alignItems:"center",flexWrap:"wrap"}}>
-              <span style={{fontSize:12,color:C.muted,fontWeight:600}}>📅 Fecha pago programado:</span>
-              <input type="date" value={filters.pagoFrom||""} onChange={e=>setFilters(f=>({...f,pagoFrom:e.target.value}))} style={{...inputStyle,maxWidth:150}}/>
-              <span style={{color:C.muted,fontSize:12}}>a</span>
-              <input type="date" value={filters.pagoTo||""} onChange={e=>setFilters(f=>({...f,pagoTo:e.target.value}))} style={{...inputStyle,maxWidth:150}}/>
-            </div>
-            <div style={{display:"flex",gap:8,marginTop:12,alignItems:"center",flexWrap:"wrap"}}>
-              <span style={{fontSize:13,color:C.muted,fontWeight:600}}>Agrupar por:</span>
-              {groupOptions.map(g=>(
-                <button key={g} onClick={()=>{setGrupoPor(g); if(grupo2===g) setGrupo2("");}} style={{padding:"4px 12px",borderRadius:20,border:`1px solid ${grupoPor===g?C.blue:C.border}`,background:grupoPor===g?"#E8F0FE":C.surface,color:grupoPor===g?C.blue:C.text,cursor:"pointer",fontSize:12,fontWeight:600}}>
-                  {g==="grupo"?"Grupo":g.charAt(0).toUpperCase()+g.slice(1)}
-                </button>
-              ))}
-              <span style={{fontSize:13,color:C.muted,marginLeft:12,fontWeight:600}}>y luego por:</span>
-              <button onClick={()=>setGrupo2("")} style={{padding:"4px 12px",borderRadius:20,border:`1px solid ${grupo2===""?C.blue:C.border}`,background:grupo2===""?"#E8F0FE":C.surface,color:grupo2===""?C.blue:C.text,cursor:"pointer",fontSize:12,fontWeight:600}}>Ninguno</button>
-              {groupOptions.filter(g=>g!==grupoPor).map(g=>(
-                <button key={g} onClick={()=>setGrupo2(g)} style={{padding:"4px 12px",borderRadius:20,border:`1px solid ${grupo2===g?C.teal:C.border}`,background:grupo2===g?"#E0F2F1":C.surface,color:grupo2===g?C.teal:C.text,cursor:"pointer",fontSize:12,fontWeight:600}}>
-                  {g==="grupo"?"Grupo":g.charAt(0).toUpperCase()+g.slice(1)}
-                </button>
-              ))}
-            </div>
-            </>
-          )}
-        </div>
 
-        {/* Add button */}
-        <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}>
-          {!esConsulta && <button onClick={()=>setModalInv({tipo:"Factura",fecha:today(),serie:"",folio:"",uuid:"",proveedor:"",clasificacion:clases[0],subtotal:"",iva:"",retIsr:0,retIva:0,total:"",montoPagado:0,concepto:"",diasCredito:30,vencimiento:"",estatus:"Pendiente",fechaProgramacion:"",diasFicticios:0,referencia:"",notas:"",moneda:currency})} style={btnStyle}>+ Nueva Factura</button>}
+            <input type="date" value={filters.fechaFrom} onChange={e=>setFilters(f=>({...f,fechaFrom:e.target.value}))} style={{...inputStyle,maxWidth:145,flex:"0 0 auto"}} title="Fecha desde"/>
+            <input type="date" value={filters.fechaTo} onChange={e=>setFilters(f=>({...f,fechaTo:e.target.value}))} style={{...inputStyle,maxWidth:145,flex:"0 0 auto"}} title="Fecha hasta"/>
+
+            {/* Limpiar — icono */}
+            {(search||filters.clasificacion||filters.estatus||filters.fechaFrom||filters.fechaTo||filters.pagoFrom||filters.pagoTo||filtroGrupo||filtroProveedores.size>0||filtroMesConcepto) && (
+              <button onClick={()=>{setFilters({proveedor:"",clasificacion:"",estatus:"",fechaFrom:"",fechaTo:"",pagoFrom:"",pagoTo:""});setSearch("");setFiltroGrupo("");setFiltroProveedores(new Set());setFiltroMesConcepto("");}}
+                style={{display:"flex",alignItems:"center",gap:5,padding:"8px 14px",borderRadius:8,border:`1px solid ${C.danger}`,background:"#FFEBEE",color:C.danger,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",flex:"0 0 auto"}}>
+                ✕ Limpiar
+              </button>
+            )}
+
+            {/* Spacer */}
+            <div style={{flex:1}}/>
+
+            {/* KPI chips inline */}
+            {carteraTab !== "resumen" && (
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                <div style={{background:"#F8FAFC",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 12px",fontSize:12,color:C.muted}}>
+                  <b style={{color:C.navy}}>{filtered.length}</b> factura{filtered.length!==1?"s":""}
+                </div>
+                <div style={{background:"#F8FAFC",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 12px",fontSize:12,color:C.muted}}>
+                  Total: <b style={{color:C.navy}}>${fmt(totalFiltered)}</b>
+                </div>
+                {carteraTab==="activas" && totalPendiente>0 && (
+                  <div style={{background:"#FFF3E0",border:"1px solid #FFCC02",borderRadius:8,padding:"6px 12px",fontSize:12}}>
+                    Pendiente: <b style={{color:C.warn}}>${fmt(totalPendiente)}</b>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Row 2: Agrupar por (Activas/Pagadas) OR Ver por Grupo + acciones (Resumen) */}
+          <div style={{padding:"10px 18px",background:"#FAFBFC",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            {carteraTab !== "resumen" ? (
+              <>
+                {/* Fecha pago programado */}
+                <span style={{fontSize:12,color:C.muted,fontWeight:600}}>📅 Pago:</span>
+                <input type="date" value={filters.pagoFrom||""} onChange={e=>setFilters(f=>({...f,pagoFrom:e.target.value}))} style={{...inputStyle,maxWidth:140,fontSize:12}}/>
+                <span style={{color:C.muted,fontSize:11}}>a</span>
+                <input type="date" value={filters.pagoTo||""} onChange={e=>setFilters(f=>({...f,pagoTo:e.target.value}))} style={{...inputStyle,maxWidth:140,fontSize:12}}/>
+
+                <div style={{width:1,height:22,background:C.border,margin:"0 6px"}}/>
+
+                {/* Agrupar por — pills */}
+                <span style={{fontSize:12,color:C.muted,fontWeight:600}}>Agrupar:</span>
+                {groupOptions.map(g=>(
+                  <button key={g} onClick={()=>{setGrupoPor(g);if(grupo2===g)setGrupo2("");}}
+                    style={{padding:"4px 12px",borderRadius:20,border:`1px solid ${grupoPor===g?C.blue:C.border}`,background:grupoPor===g?C.blue:C.surface,color:grupoPor===g?"#fff":C.text,cursor:"pointer",fontSize:12,fontWeight:grupoPor===g?700:500,fontFamily:"inherit",transition:"all .15s"}}>
+                    {g==="grupo"?"Grupo":g.charAt(0).toUpperCase()+g.slice(1)}
+                  </button>
+                ))}
+
+                <div style={{width:1,height:22,background:C.border,margin:"0 2px"}}/>
+                <span style={{fontSize:12,color:C.muted,fontWeight:600}}>Luego:</span>
+                <button onClick={()=>setGrupo2("")}
+                  style={{padding:"4px 12px",borderRadius:20,border:`1px solid ${grupo2===""?C.teal:C.border}`,background:grupo2===""?"#E0F2F1":C.surface,color:grupo2===""?C.teal:C.text,cursor:"pointer",fontSize:12,fontWeight:grupo2===""?700:500,fontFamily:"inherit"}}>
+                  Ninguno
+                </button>
+                {groupOptions.filter(g=>g!==grupoPor).map(g=>(
+                  <button key={g} onClick={()=>setGrupo2(g)}
+                    style={{padding:"4px 12px",borderRadius:20,border:`1px solid ${grupo2===g?C.teal:C.border}`,background:grupo2===g?"#E0F2F1":C.surface,color:grupo2===g?C.teal:C.text,cursor:"pointer",fontSize:12,fontWeight:grupo2===g?700:500,fontFamily:"inherit"}}>
+                    {g==="grupo"?"Grupo":g.charAt(0).toUpperCase()+g.slice(1)}
+                  </button>
+                ))}
+
+                <div style={{flex:1}}/>
+                {/* Nueva factura alineada aquí */}
+                {!esConsulta && (
+                  <button onClick={()=>setModalInv({tipo:"Factura",fecha:today(),serie:"",folio:"",uuid:"",proveedor:"",clasificacion:clases[0],subtotal:"",iva:"",retIsr:0,retIva:0,total:"",montoPagado:0,concepto:"",diasCredito:30,vencimiento:"",estatus:"Pendiente",fechaProgramacion:"",diasFicticios:0,referencia:"",notas:"",moneda:currency})}
+                    style={{...btnStyle,padding:"7px 18px",fontSize:13}}>
+                    + Nueva Factura
+                  </button>
+                )}
+              </>
+            ) : (
+              /* Resumen: Ver por Grupo + Excel + PDF integrados */
+              <>
+                {/* Ver por Grupo dropdown */}
+                <div style={{position:"relative"}}>
+                  <button onClick={()=>setGrupoPickerOpenMain(p=>!p)}
+                    style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",border:`1px solid ${filtroGrupo?C.blue:C.border}`,borderRadius:10,background:filtroGrupo?"#E8F0FE":"#fff",color:filtroGrupo?C.blue:C.text,cursor:"pointer",fontSize:13,fontWeight:filtroGrupo?700:500,fontFamily:"inherit"}}>
+                    🏨 {filtroGrupo||"Ver por Grupo"} ▾
+                  </button>
+                </div>
+                {filtroGrupo && (
+                  <button onClick={()=>setFiltroGrupo("")}
+                    style={{padding:"5px 10px",borderRadius:8,border:`1px solid ${C.danger}`,background:"#FFEBEE",color:C.danger,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>✕</button>
+                )}
+                <div style={{flex:1}}/>
+                {/* Nueva factura */}
+                {!esConsulta && (
+                  <button onClick={()=>setModalInv({tipo:"Factura",fecha:today(),serie:"",folio:"",uuid:"",proveedor:"",clasificacion:clases[0],subtotal:"",iva:"",retIsr:0,retIva:0,total:"",montoPagado:0,concepto:"",diasCredito:30,vencimiento:"",estatus:"Pendiente",fechaProgramacion:"",diasFicticios:0,referencia:"",notas:"",moneda:currency})}
+                    style={{...btnStyle,padding:"7px 16px",fontSize:13}}>
+                    + Nueva Factura
+                  </button>
+                )}
+              </>
+            )}
+          </div>
         </div>
-        {/* Bulk edit toolbar */}
+        {/* Grupo picker dropdown for Resumen */}
+        {carteraTab==="resumen" && grupoPickerOpenMain && (
+          <div style={{position:"fixed",inset:0,zIndex:500}} onClick={()=>setGrupoPickerOpenMain(false)}>
+            <div style={{position:"absolute",top:"auto",left:18,background:"#fff",border:`1px solid ${C.border}`,borderRadius:12,boxShadow:"0 8px 24px rgba(0,0,0,.15)",minWidth:220,overflow:"hidden"}}
+              onClick={e=>e.stopPropagation()}>
+              <div style={{padding:"10px 14px",background:C.navy,color:"#fff",fontWeight:700,fontSize:13}}>🏨 Seleccionar Grupo</div>
+              <div onClick={()=>{setFiltroGrupo("");setGrupoPickerOpenMain(false);}}
+                style={{padding:"10px 16px",cursor:"pointer",fontSize:13,color:!filtroGrupo?C.blue:C.text,fontWeight:!filtroGrupo?700:400,background:!filtroGrupo?"#E8F0FE":"#fff"}}
+                onMouseEnter={e=>{if(filtroGrupo)e.currentTarget.style.background="#F8FAFC";}}
+                onMouseLeave={e=>{e.currentTarget.style.background=!filtroGrupo?"#E8F0FE":"#fff";}}>
+                Todos los grupos
+              </div>
+              {gruposList.map(g=>(
+                <div key={g} onClick={()=>{setFiltroGrupo(g);setGrupoPickerOpenMain(false);}}
+                  style={{padding:"10px 16px",cursor:"pointer",fontSize:13,color:filtroGrupo===g?C.blue:C.text,fontWeight:filtroGrupo===g?700:400,background:filtroGrupo===g?"#E8F0FE":"#fff",borderTop:`1px solid ${C.border}`}}
+                  onMouseEnter={e=>{if(filtroGrupo!==g)e.currentTarget.style.background="#F8FAFC";}}
+                  onMouseLeave={e=>{e.currentTarget.style.background=filtroGrupo===g?"#E8F0FE":"#fff";}}>
+                  {g}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {selectedIds.size > 0 && (()=>{
           const selInvs = (invoices[currency]||[]).filter(i=>selectedIds.has(i.id));
           const selTotal = selInvs.reduce((s,i)=>s+(+i.total||0),0);
@@ -3414,35 +3505,16 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
       <DetailModal/>
       <GrupoPicker/>
 
-      {/* Header with grupo picker button */}
-      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20,flexWrap:"wrap"}}>
-        <button onClick={()=>setGrupoPickerOpen(true)}
-          style={{display:"flex",alignItems:"center",gap:8,padding:"9px 18px",borderRadius:10,
-            border:`2px solid ${filtroGrupo?C.blue:C.border}`,
-            background:filtroGrupo?"#E8F0FE":C.surface,
-            color:filtroGrupo?C.blue:C.text,
-            fontWeight:filtroGrupo?800:500,fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"all .15s"}}>
-          <span>🏨</span>
-          {filtroGrupo ? `Grupo: ${filtroGrupo}` : "Ver por Grupo"}
-          <span style={{fontSize:11,opacity:.7}}>▼</span>
+      {/* Export buttons only */}
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginBottom:16}}>
+        <button onClick={()=>exportExcel(allProvData,filtroGrupo,fmt)}
+          style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",borderRadius:10,border:"1px solid #2E7D32",background:"#E8F5E9",color:"#2E7D32",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+          📊 Excel
         </button>
-        {filtroGrupo && (
-          <button onClick={()=>setFiltroGrupo("")}
-            style={{padding:"8px 14px",borderRadius:10,border:`1px solid ${C.border}`,background:"#F1F5F9",color:C.text,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>
-            ✕ Ver todos
-          </button>
-        )}
-        {/* Export buttons */}
-        <div style={{marginLeft:"auto",display:"flex",gap:8}}>
-          <button onClick={()=>exportExcel(allProvData,filtroGrupo,fmt)}
-            style={{display:"flex",alignItems:"center",gap:6,padding:"9px 16px",borderRadius:10,border:"1px solid #2E7D32",background:"#E8F5E9",color:"#2E7D32",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-            📊 Excel
-          </button>
-          <button onClick={()=>printResumen()}
-            style={{display:"flex",alignItems:"center",gap:6,padding:"9px 16px",borderRadius:10,border:"1px solid #1565C0",background:"#E3F2FD",color:"#1565C0",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-            🖨️ PDF / Imprimir
-          </button>
-        </div>
+        <button onClick={()=>printResumen()}
+          style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",borderRadius:10,border:"1px solid #1565C0",background:"#E3F2FD",color:"#1565C0",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+          🖨️ PDF / Imprimir
+        </button>
       </div>
 
       {/* ── VISTA GRUPO SELECCIONADO ── */}
