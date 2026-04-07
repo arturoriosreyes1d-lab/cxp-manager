@@ -1304,7 +1304,7 @@ export default function CxcView({
                   {[
                     {l:"Total",    v:`${sym2}${fmt(i.total)}`,      c:C.navy,   bg:"#F8FAFC"},
                     {l:"Pagado",   v:`${sym2}${fmt(i.montoPagado)}`,c:C.ok,     bg:"#E8F5E9"},
-                    {l:"Saldo",    v:`${sym2}${fmt(saldo)}`,         c:saldo>0?C.warn:C.ok, bg:saldo>0?"#FFF3E0":"#E8F5E9"},
+                    {l:"Saldo Total",    v:`${sym2}${fmt(saldo)}`,         c:saldo>0?C.warn:C.ok, bg:saldo>0?"#FFF3E0":"#E8F5E9"},
                   ].map(k=>(
                     <div key={k.l} style={{background:k.bg,borderRadius:10,padding:"12px 14px",textAlign:"center"}}>
                       <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:"uppercase",marginBottom:3}}>{k.l}</div>
@@ -3175,7 +3175,7 @@ function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
       const rows=[
         [`Resumen CxC — ${mon} — ${new Date().toLocaleDateString('es-MX')}`],
         [],
-        ["Cliente","# Facturas","Total","Cobrado","Por Cobrar","Corriente","Venc 1-7d","Venc 8-30d","Venc 31-45d","Venc 46-60d","Venc +60d"],
+        ["Cliente","# Facturas","Total","Cobrado","Por Cobrar","Corriente","Vencido 1-7 Días","Vencido 8-30 Días","Vencido 31-45 Días","Vencido 46-60 Días","Vencido +60 Días"],
         ...data.clientes.map(c=>[c.nombre,c.count,c.total,c.cobrado,c.porCobrar,c.corriente,c.v7,c.v30,c.v45,c.v60,c.vmas]),
         [],
         ["TOTAL",data.grand.count,data.grand.total,data.grand.cobrado,data.grand.porCobrar,data.grand.corriente,data.grand.v7,data.grand.v30,data.grand.v45,data.grand.v60,data.grand.vmas],
@@ -3261,11 +3261,11 @@ function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
           {[
             {l:"Por Cobrar",  v:g.porCobrar, c:"#fff",    bg:"#0F2D4A",  border:"#0F2D4A",  fn: i=>true},
             {l:"Corriente",   v:g.corriente, c:"#1B5E20", bg:"#E8F5E9",  border:"#A5D6A7",  fn: i=>{const d=calcDias(i.fechaVencimiento);return d===null||d>=0;}},
-            {l:"Venc 1-7d",   v:g.v7,        c:"#E65100", bg:"#FFF3E0",  border:"#FFCC80",  fn: i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)<=7;}},
-            {l:"Venc 8-30d",  v:g.v30,       c:"#BF360C", bg:"#FBE9E7",  border:"#FF8A65",  fn: i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=30;}},
-            {l:"Venc 31-45d", v:g.v45,       c:"#fff",    bg:"#E53935",  border:"#E53935",  fn: i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=45;}},
-            {l:"Venc 46-60d", v:g.v60,       c:"#fff",    bg:"#B71C1C",  border:"#B71C1C",  fn: i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)>45&&Math.abs(d)<=60;}},
-            {l:"Venc +60d",   v:g.vmas,      c:"#fff",    bg:"#4A0000",  border:"#4A0000",  fn: i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)>60;}},
+            {l:"Vencido 1-7 Días",   v:g.v7,        c:"#E65100", bg:"#FFF3E0",  border:"#FFCC80",  fn: i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)<=7;}},
+            {l:"Vencido 8-30 Días",  v:g.v30,       c:"#BF360C", bg:"#FBE9E7",  border:"#FF8A65",  fn: i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=30;}},
+            {l:"Vencido 31-45 Días", v:g.v45,       c:"#fff",    bg:"#E53935",  border:"#E53935",  fn: i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=45;}},
+            {l:"Vencido 46-60 Días", v:g.v60,       c:"#fff",    bg:"#B71C1C",  border:"#B71C1C",  fn: i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)>45&&Math.abs(d)<=60;}},
+            {l:"Vencido +60 Días",   v:g.vmas,      c:"#fff",    bg:"#4A0000",  border:"#4A0000",  fn: i=>{const d=calcDias(i.fechaVencimiento);return d!==null&&d<0&&Math.abs(d)>60;}},
           ].filter(k=>k.v>0).map(k=>{
             const filtInvs = data.clientes.flatMap(c=>c.ingresos.filter(k.fn));
             return(

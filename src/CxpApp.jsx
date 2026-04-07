@@ -889,7 +889,7 @@ export default function CxpApp({ user, onLogout }) {
                 {[
                   {h:"Tipo",col:"tipo"},{h:"Fecha",col:"fecha"},{h:"Folio",col:"folio"},{h:"Proveedor",col:"proveedor"},
                   {h:"Concepto",col:"concepto"},{h:"Clasif.",col:"clasificacion"},{h:"Total",col:"total"},{h:"Pagado",col:"montoPagado"},
-                  {h:"Saldo",col:"saldo"},{h:"Pago/Prog.",col:""},{h:"Vence",col:"vencimiento"},{h:"Días",col:"dias"},
+                  {h:"Saldo Total",col:"saldo"},{h:"Pago/Prog.",col:""},{h:"Vence",col:"vencimiento"},{h:"Días",col:"dias"},
                   {h:"Estatus",col:"estatus"},{h:"VoBo",col:""},{h:"Aut.Dir.",col:""},{h:"Acciones",col:""}
                 ].map(({h,col})=>(
                   <th key={h} onClick={col?()=>{if(sortCol===col) setSortDir(d=>d==="asc"?"desc":"asc"); else {setSortCol(col);setSortDir("asc");}}:undefined}
@@ -1072,11 +1072,11 @@ export default function CxpApp({ user, onLogout }) {
               const filterCur = arr => arr.filter(i=>i.moneda===cur);
               const chips = [
                 {l:"Corriente",    v:sumSaldo(filterCur(vigByCur(cur))),    c:"#fff",    bg:"#1B5E20", items:filterCur(vigByCur(cur))},
-                {l:"Venc 1-7d",    v:sumSaldo(filterCur(vencido7)),         c:"#fff",    bg:"#E65100", items:filterCur(vencido7)},
-                {l:"Venc 8-15d",   v:sumSaldo(filterCur(vencido15)),        c:"#fff",    bg:"#BF360C", items:filterCur(vencido15)},
-                {l:"Venc 16-30d",  v:sumSaldo(filterCur(vencido30)),        c:"#fff",    bg:"#E53935", items:filterCur(vencido30)},
-                {l:"Venc 31-60d",  v:sumSaldo(filterCur(vencido60)),        c:"#fff",    bg:"#B71C1C", items:filterCur(vencido60)},
-                {l:"Venc +60d",    v:sumSaldo(filterCur(vencidoMas60)),     c:"#fff",    bg:"#4A0000", items:filterCur(vencidoMas60)},
+                {l:"Vencido 1-7 Días",    v:sumSaldo(filterCur(vencido7)),         c:"#fff",    bg:"#E65100", items:filterCur(vencido7)},
+                {l:"Vencido 8-15 Días",   v:sumSaldo(filterCur(vencido15)),        c:"#fff",    bg:"#BF360C", items:filterCur(vencido15)},
+                {l:"Vencido 16-30 Días",  v:sumSaldo(filterCur(vencido30)),        c:"#fff",    bg:"#E53935", items:filterCur(vencido30)},
+                {l:"Vencido 31-60 Días",  v:sumSaldo(filterCur(vencido60)),        c:"#fff",    bg:"#B71C1C", items:filterCur(vencido60)},
+                {l:"Vencido +60 Días",    v:sumSaldo(filterCur(vencidoMas60)),     c:"#fff",    bg:"#4A0000", items:filterCur(vencidoMas60)},
               ].filter(ch=>ch.v>0);
               return(
                 <div key={cur} style={{background:"#F8FAFC",border:`1px solid ${C.border}`,borderRadius:12,padding:14,marginBottom:10}}>
@@ -1412,13 +1412,13 @@ export default function CxpApp({ user, onLogout }) {
           const openChip=(title,items)=>{ setDashSearch("");setDashFilterProv("");setDashFilterClasif("");setDashFilterEstatus("");setDashGroupBy("");setDashSelectedIds(new Set());setDashBulkAutDir(""); setDashDetail({title,type:"invoices",items,grouped:true}); };
 
           const chips = [
-            {l:"Saldo",      v:total,     c:"#fff",    bg:"#0F2D4A",border:"#0F2D4A", inv:pend},
+            {l:"Saldo Total",      v:total,     c:"#fff",    bg:"#0F2D4A",border:"#0F2D4A", inv:pend},
             {l:"Corriente",  v:corriente, c:"#1B5E20", bg:"#E8F5E9",border:"#A5D6A7", inv:pend.filter(i=>{const d=calcD(i.vencimiento);return d===null||d>=0;})},
-            {l:"Venc 1-7d",  v:v7,        c:"#E65100", bg:"#FFF3E0",border:"#FFCC80", inv:pend.filter(i=>{const d=calcD(i.vencimiento);return d!==null&&d<0&&Math.abs(d)<=7;})},
-            {l:"Venc 8-15d", v:v15,       c:"#BF360C", bg:"#FBE9E7",border:"#FF8A65", inv:pend.filter(i=>{const d=calcD(i.vencimiento);return d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=15;})},
-            {l:"Venc 16-30d",v:v30,       c:"#fff",    bg:"#E53935",border:"#E53935", inv:pend.filter(i=>{const d=calcD(i.vencimiento);return d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30;})},
-            {l:"Venc 31-60d",v:v60,       c:"#fff",    bg:"#B71C1C",border:"#B71C1C", inv:pend.filter(i=>{const d=calcD(i.vencimiento);return d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=60;})},
-            {l:"Venc +60d",  v:vmas,      c:"#fff",    bg:"#4A0000",border:"#4A0000", inv:pend.filter(i=>{const d=calcD(i.vencimiento);return d!==null&&d<0&&Math.abs(d)>60;})},
+            {l:"Vencido 1-7 Días",  v:v7,        c:"#E65100", bg:"#FFF3E0",border:"#FFCC80", inv:pend.filter(i=>{const d=calcD(i.vencimiento);return d!==null&&d<0&&Math.abs(d)<=7;})},
+            {l:"Vencido 8-15 Días", v:v15,       c:"#BF360C", bg:"#FBE9E7",border:"#FF8A65", inv:pend.filter(i=>{const d=calcD(i.vencimiento);return d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=15;})},
+            {l:"Vencido 16-30 Días",v:v30,       c:"#fff",    bg:"#E53935",border:"#E53935", inv:pend.filter(i=>{const d=calcD(i.vencimiento);return d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30;})},
+            {l:"Vencido 31-60 Días",v:v60,       c:"#fff",    bg:"#B71C1C",border:"#B71C1C", inv:pend.filter(i=>{const d=calcD(i.vencimiento);return d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=60;})},
+            {l:"Vencido +60 Días",  v:vmas,      c:"#fff",    bg:"#4A0000",border:"#4A0000", inv:pend.filter(i=>{const d=calcD(i.vencimiento);return d!==null&&d<0&&Math.abs(d)>60;})},
           ].filter(k=>k.v>0);
 
           if(!chips.length) return null;
@@ -2200,7 +2200,7 @@ export default function CxpApp({ user, onLogout }) {
           <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead><tr style={{background:"#F8FAFC"}}>
-              {["Folio","Concepto","Clasificación","Fecha","Total","Pagado","Saldo","Vencimiento","Moneda"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>{h}</th>)}
+              {["Folio","Concepto","Clasificación","Fecha","Total","Pagado","Saldo Total","Vencimiento","Moneda"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>{h}</th>)}
             </tr></thead>
             <tbody>
               {projDetail.invoices.map(inv=>(
@@ -2544,7 +2544,7 @@ export default function CxpApp({ user, onLogout }) {
                     <th style={{padding:"7px 4px",textAlign:"center",width:32}}>
                       <input type="checkbox" checked={allChecked} onChange={toggleDashSelAll} style={{cursor:"pointer",width:15,height:15,accentColor:C.blue}}/>
                     </th>
-                    {["Folio","Proveedor","Concepto","Clasif.","Fecha","Total","Pagado","Saldo","Vence","Días","Estatus","Aut.Dir.","Moneda"].map(h=>(
+                    {["Folio","Proveedor","Concepto","Clasif.","Fecha","Total","Pagado","Saldo Total","Vence","Días","Estatus","Aut.Dir.","Moneda"].map(h=>(
                       <th key={h} style={{padding:"7px 6px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                     ))}
                   </tr></thead>
@@ -3087,7 +3087,7 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
       });
       const rows = Object.values(map).filter(p=>p.total>0).sort((a,b)=>b.saldo-a.saldo);
       if(!rows.length) return;
-      const headers = ["Proveedor","# Facturas","Total","Pagado","Saldo","Corriente","Vencido 1-7 Días","Vencido 8-15 Días","Vencido 16-30 Días","Vencido 31-60 Días","Vencido +60 Días"];
+      const headers = ["Proveedor","# Facturas","Total","Pagado","Saldo Total","Corriente","Vencido 1-7 Días","Vencido 8-15 Días","Vencido 16-30 Días","Vencido 31-60 Días","Vencido +60 Días"];
       const data = [
         [`Reporte de Cartera — ${titulo} — ${mon}`, "", `Fecha: ${hoy2}`],
         [],
@@ -3277,8 +3277,8 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
     const thead=(
       <thead style={{position:"sticky",top:0}}>
         <tr style={{background:C.navy}}>
-          {["Fecha","Folio","Proveedor","Concepto","Mes","Clasif.","Total","Pagado","Saldo","Vencimiento","Días","Estatus"].map(h=>(
-            <th key={h} style={{padding:"10px 12px",textAlign:["Total","Pagado","Saldo"].includes(h)?"right":"left",color:"#fff",fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+          {["Fecha","Folio","Proveedor","Concepto","Mes","Clasif.","Total","Pagado","Saldo Total","Vencimiento","Días","Estatus"].map(h=>(
+            <th key={h} style={{padding:"10px 12px",textAlign:["Total","Pagado","Saldo Total"].includes(h)?"right":"left",color:"#fff",fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
           ))}
         </tr>
       </thead>
@@ -3400,7 +3400,7 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
     );
   };
 
-  const COLS = ["# Facturas","Total","Pagado","Saldo","Corriente","Vencido 1-7 Días","Vencido 8-15 Días","Vencido 16-30 Días","Vencido 31-60 Días","Vencido +60 Días",""];
+  const COLS = ["# Facturas","Total","Pagado","Saldo Total","Corriente","Vencido 1-7 Días","Vencido 8-15 Días","Vencido 16-30 Días","Vencido 31-60 Días","Vencido +60 Días",""];
 
   // Render flat proveedor table for a given moneda
   const ProvTable=({mon, provs})=>{
@@ -3422,13 +3422,13 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
         {/* Chips — grande con paleta de urgencia */}
         <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
           {[
-            {l:"Saldo",      v:grand.saldo,   c:"#fff", bg:"#0F2D4A", border:"#0F2D4A", inv:allInvs},
+            {l:"Saldo Total",      v:grand.saldo,   c:"#fff", bg:"#0F2D4A", border:"#0F2D4A", inv:allInvs},
             {l:"Corriente",  v:grand.corriente,c:"#1B5E20",bg:"#E8F5E9",border:"#A5D6A7",inv:filterInvs(d=>d!==null&&d>=0)},
-            {l:"Venc 1-7d",  v:grand.v7,      c:"#E65100",bg:"#FFF3E0",border:"#FFCC80",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)<=7)},
-            {l:"Venc 8-15d", v:grand.v15,     c:"#BF360C",bg:"#FBE9E7",border:"#FF8A65",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=15)},
-            {l:"Venc 16-30d",v:grand.v30,     c:"#fff",   bg:"#E53935",border:"#E53935",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30)},
-            {l:"Venc 31-60d",v:grand.v60,     c:"#fff",   bg:"#B71C1C",border:"#B71C1C",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=60)},
-            {l:"Venc +60d",  v:grand.vmas,    c:"#fff",   bg:"#4A0000",border:"#4A0000",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>60)},
+            {l:"Vencido 1-7 Días",  v:grand.v7,      c:"#E65100",bg:"#FFF3E0",border:"#FFCC80",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)<=7)},
+            {l:"Vencido 8-15 Días", v:grand.v15,     c:"#BF360C",bg:"#FBE9E7",border:"#FF8A65",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=15)},
+            {l:"Vencido 16-30 Días",v:grand.v30,     c:"#fff",   bg:"#E53935",border:"#E53935",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30)},
+            {l:"Vencido 31-60 Días",v:grand.v60,     c:"#fff",   bg:"#B71C1C",border:"#B71C1C",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=60)},
+            {l:"Vencido +60 Días",  v:grand.vmas,    c:"#fff",   bg:"#4A0000",border:"#4A0000",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>60)},
           ].filter(k=>k.v>0).map(k=>(
             <div key={k.l} onClick={()=>openDetail(`${mon} — ${k.l}`,k.inv,true)}
               style={{background:k.bg,border:`2px solid ${k.border}`,borderRadius:14,padding:"14px 20px",cursor:"pointer",minWidth:130,transition:"all .15s",boxShadow:"0 2px 6px rgba(0,0,0,.08)"}}
@@ -3447,7 +3447,7 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
                 <tr style={{background:C.navy}}>
                   <th style={{padding:"11px 14px",textAlign:"center",color:"#fff",fontWeight:700,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap"}}>Proveedor</th>
                   {COLS.map((h,ci)=>(
-                    <th key={h||ci} style={{padding:"11px 10px",textAlign:"center",color:["Corriente","# Facturas","Total","Pagado","Saldo"].includes(h)?"#A5D6A7":h.startsWith("Vencido")?"#FFCDD2":"#fff",fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                    <th key={h||ci} style={{padding:"11px 10px",textAlign:"center",color:["Corriente","# Facturas","Total","Pagado","Saldo Total"].includes(h)?"#A5D6A7":h.startsWith("Vencido")?"#FFCDD2":"#fff",fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                   ))}
                 </tr>
                 {/* Totals row */}
@@ -3505,8 +3505,8 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
                             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                               <thead>
                                 <tr style={{background:"#EEF2FF"}}>
-                                  {["Fecha","Folio","Concepto","Clasif.","Vencimiento","Días","Total","Pagado","Saldo","Estatus"].map(h=>(
-                                    <th key={h} style={{padding:"7px 12px",textAlign:["Total","Pagado","Saldo"].includes(h)?"right":"left",color:C.navy,fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                                  {["Fecha","Folio","Concepto","Clasif.","Vencimiento","Días","Total","Pagado","Saldo Total","Estatus"].map(h=>(
+                                    <th key={h} style={{padding:"7px 12px",textAlign:["Total","Pagado","Saldo Total"].includes(h)?"right":"left",color:C.navy,fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                                   ))}
                                 </tr>
                               </thead>
