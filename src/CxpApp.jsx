@@ -37,6 +37,24 @@ const today = () => new Date().toISOString().split("T")[0];
 const addDays = (ds,d) => { if(!ds||!d) return ""; const x=new Date(ds); x.setDate(x.getDate()+ +d); return x.toISOString().split("T")[0]; };
 const isOverdue = (v,e) => v && e!=="Pagado" && new Date(v)<new Date(today());
 const daysUntil = ds => { if(!ds) return null; return Math.ceil((new Date(ds)-new Date(today()))/864e5); };
+
+// Detect mes from concepto text
+const detectarMesCxP = (concepto) => {
+  const t = String(concepto||"").toUpperCase();
+  if(/\bENE\b|\bENERO\b|\bJAN\b|\bJANUARY\b/.test(t)) return "Enero";
+  if(/\bFEB\b|\bFEBRERO\b|\bFEBR\b/.test(t)) return "Febrero";
+  if(/\bMAR\b|\bMARZO\b|\bMZO\b|\bMARZ\b/.test(t)) return "Marzo";
+  if(/\bABR\b|\bABRIL\b|\bAPR\b/.test(t)) return "Abril";
+  if(/\bMAY\b|\bMAYO\b/.test(t)) return "Mayo";
+  if(/\bJUN\b|\bJUNIO\b|\bJUNE\b/.test(t)) return "Junio";
+  if(/\bJUL\b|\bJULIO\b|\bJULY\b/.test(t)) return "Julio";
+  if(/\bAGO\b|\bAGOSTO\b|\bAUG\b/.test(t)) return "Agosto";
+  if(/\bSEP\b|\bSEPT\b|\bSEPTIEMBRE\b|\bSEPTIEM\b/.test(t)) return "Septiembre";
+  if(/\bOCT\b|\bOCTUBRE\b/.test(t)) return "Octubre";
+  if(/\bNOV\b|\bNOVIEMBRE\b|\bNOVIEM\b/.test(t)) return "Noviembre";
+  if(/\bDIC\b|\bDICIEMBRE\b|\bDEC\b/.test(t)) return "Diciembre";
+  return null;
+};
 const uid = () => Math.random().toString(36).slice(2,10);
 const fmtDateShort = d => { if(!d) return ""; const [,m,dy]=d.split("-"); return `${dy}/${m}`; };
 const fmtDateLabel = d => { if(!d) return ""; const dias=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"]; return `${dias[new Date(d+"T12:00:00").getDay()]} ${fmtDateShort(d)}`; };
@@ -86,15 +104,16 @@ const ModalShell = ({title,onClose,wide,extraWide,children}) => (
 );
 
 const KpiCard = ({label,value,sub,color=C.navy,icon,onClick}) => (
-  <div onClick={onClick} style={{background:C.surface,borderRadius:16,padding:"20px 24px",border:`1px solid ${C.border}`,boxShadow:"0 2px 8px rgba(0,0,0,.05)",flex:1,minWidth:160,cursor:onClick?"pointer":"default",transition:"transform .15s"}}
-    onMouseEnter={e=>{if(onClick)e.currentTarget.style.transform="scale(1.03)";}} onMouseLeave={e=>{e.currentTarget.style.transform="scale(1)";}}>
+  <div onClick={onClick} style={{background:"#fff",borderRadius:16,padding:"18px 22px",border:`1px solid ${C.border}`,borderLeft:`4px solid ${color}`,boxShadow:"0 2px 10px rgba(0,0,0,.06)",flex:1,minWidth:160,cursor:onClick?"pointer":"default",transition:"all .15s"}}
+    onMouseEnter={e=>{if(onClick){e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 8px 24px rgba(0,0,0,.12)`;e.currentTarget.style.borderLeftColor=color;}}}
+    onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 2px 10px rgba(0,0,0,.06)";}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
       <div>
-        <div style={{fontSize:12,color:C.muted,fontWeight:600,textTransform:"uppercase",letterSpacing:.5}}>{label}</div>
-        <div style={{fontSize:26,fontWeight:800,color,marginTop:4}}>{value}</div>
-        {sub && <div style={{fontSize:12,color:C.muted,marginTop:2}}>{sub}</div>}
+        <div style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:.7,marginBottom:4}}>{label}</div>
+        <div style={{fontSize:24,fontWeight:900,color,lineHeight:1.1}}>{value}</div>
+        {sub && <div style={{fontSize:11,color:C.muted,marginTop:4}}>{sub}</div>}
       </div>
-      <div style={{fontSize:28}}>{icon}</div>
+      <div style={{fontSize:26,background:`${color}15`,borderRadius:10,width:42,height:42,display:"flex",alignItems:"center",justifyContent:"center"}}>{icon}</div>
     </div>
   </div>
 );
@@ -117,6 +136,8 @@ export default function CxpApp({ user, onLogout }) {
   const empresa = EMPRESAS.find(e => e.id === empresaId) || EMPRESAS[0];
   const [filters, setFilters] = useState({proveedor:"",clasificacion:"",estatus:"",fechaFrom:"",fechaTo:"",pagoFrom:"",pagoTo:""});
   const [search, setSearch] = useState("");
+  const [filtroMesConcepto, setFiltroMesConcepto] = useState("");
+  const [expandedGroups, setExpandedGroups] = useState(new Set());
   const [carteraTab, setCarteraTab] = useState("activas"); // "activas" | "pagadas" | "resumen"
   const [filtroGrupo, setFiltroGrupo] = useState("");
   const [filtroProveedores, setFiltroProveedores] = useState(new Set()); // multi-select
@@ -266,6 +287,10 @@ export default function CxpApp({ user, onLogout }) {
       }
       if(filtroGrupo && getSupGrupo(inv.proveedor) !== filtroGrupo) return false;
       if(search && !JSON.stringify(inv).toLowerCase().includes(search.toLowerCase())) return false;
+      if(filtroMesConcepto) {
+        if(filtroMesConcepto === "__sin_mes__") { if(detectarMesCxP(inv.concepto)!==null) return false; }
+        else { if(detectarMesCxP(inv.concepto) !== filtroMesConcepto) return false; }
+      }
       return true;
     });
     if(sortCol) {
@@ -899,128 +924,184 @@ export default function CxpApp({ user, onLogout }) {
 
   /* ── DASHBOARD ──────────────────────────────────────────────────────── */
   const renderDashboard = () => {
-    const pieData = [{name:"MXN",value:kpis.totalMXN,color:C.mxn},{name:"USD",value:kpis.totalUSD,color:C.usd},{name:"EUR",value:kpis.totalEUR,color:C.eur}].filter(d=>d.value>0);
-    const claseData = Object.entries(
-      [...invoices.MXN,...invoices.USD,...invoices.EUR].filter(i=>i.estatus!=="Pagado")
-        .reduce((acc,inv)=>{ acc[inv.clasificacion]=(acc[inv.clasificacion]||0)+((+inv.total||0)-(+inv.montoPagado||0)); return acc; },{})
-    ).map(([name,value])=>({name,value})).filter(d=>d.value>0).sort((a,b)=>b.value-a.value);
-
     const allInvs = [...invoices.MXN.map(i=>({...i,moneda:"MXN"})),...invoices.USD.map(i=>({...i,moneda:"USD"})),...invoices.EUR.map(i=>({...i,moneda:"EUR"}))];
     const pendAll = allInvs.filter(i=>i.estatus!=="Pagado"&&((+i.total||0)-(+i.montoPagado||0))>0);
     const saldoOf = i => (+i.total||0)-(+i.montoPagado||0);
     const daysOf = i => daysUntil(i.vencimiento);
-    // Per currency helpers
     const pendByCur = cur => pendAll.filter(i=>i.moneda===cur);
     const vigByCur = cur => pendByCur(cur).filter(i=>!isOverdue(i.vencimiento,i.estatus));
     const vencByCur = cur => pendByCur(cur).filter(i=>isOverdue(i.vencimiento,i.estatus));
     const sumSaldo = arr => arr.reduce((s,i)=>s+saldoOf(i),0);
-    // Aging buckets (based on days until vencimiento)
+    const claseData = Object.entries(
+      [...invoices.MXN,...invoices.USD,...invoices.EUR].filter(i=>i.estatus!=="Pagado")
+        .reduce((acc,inv)=>{ acc[inv.clasificacion]=(acc[inv.clasificacion]||0)+((+inv.total||0)-(+inv.montoPagado||0)); return acc; },{})
+    ).map(([name,value])=>({name,value})).filter(d=>d.value>0).sort((a,b)=>b.value-a.value);
+    const pieData = [{name:"MXN",value:kpis.totalMXN,color:C.mxn},{name:"USD",value:kpis.totalUSD,color:C.usd},{name:"EUR",value:kpis.totalEUR,color:C.eur}].filter(d=>d.value>0);
+
+    // Modal grouped by proveedor
+    const openDetailGrouped = (title, items) => {
+      setDashSearch(""); setDashFilterProv(""); setDashFilterClasif(""); setDashFilterEstatus(""); setDashGroupBy(""); setDashSelectedIds(new Set()); setDashBulkAutDir("");
+      setDashDetail({title, type:"invoices", items, grouped:true});
+    };
+
     const corriente7 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d>=0 && d<=7; });
     const corriente15 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d>7 && d<=15; });
     const corriente30 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d>15 && d<=30; });
     const corrienteMas30 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d>30; });
     const vencido7 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d<0 && d>=-7; });
-    const vencido15 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d<-7 && d>=-15; });
+    const vencido15 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d<-15 && d>=-7; });
     const vencido30 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d<-15 && d>=-30; });
     const vencido60 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d<-30 && d>=-60; });
     const vencidoMas60 = pendAll.filter(i=>{ const d=daysOf(i); return d!==null && d<-60; });
-    const openDetail = (title, items) => { setDashSearch(""); setDashFilterProv(""); setDashFilterClasif(""); setDashFilterEstatus(""); setDashGroupBy(""); setDashSelectedIds(new Set()); setDashBulkAutDir(""); setDashDetail({title, type:"invoices", items}); };
+
+    // Semáforo de salud
+    const totalPend = sumSaldo(pendAll);
+    const totalVenc = sumSaldo(pendAll.filter(i=>isOverdue(i.vencimiento,i.estatus)));
+    const pctVenc = totalPend>0 ? (totalVenc/totalPend)*100 : 0;
+    const saludColor = pctVenc<20?"#2E7D32":pctVenc<50?"#F57F17":"#C62828";
+    const saludBg = pctVenc<20?"#E8F5E9":pctVenc<50?"#FFF8E1":"#FFEBEE";
+    const saludIcon = pctVenc<20?"🟢":pctVenc<50?"🟡":"🔴";
+    const saludLabel = pctVenc<20?"Saludable":pctVenc<50?"Moderado":"Atención";
+
+    // Top 5 proveedores
+    const top5 = Object.entries(
+      pendAll.reduce((acc,i)=>{acc[i.proveedor]=(acc[i.proveedor]||0)+saldoOf(i);return acc;},{})
+    ).sort((a,b)=>b[1]-a[1]).slice(0,5);
 
     return (
       <div>
-        <h1 style={{fontSize:24,fontWeight:800,color:C.navy,marginBottom:4}}>Dashboard General</h1>
-        <p style={{color:C.muted,marginBottom:20,fontSize:14}}>Haz clic en cualquier tarjeta para ver el detalle</p>
-        {/* Row 1: Saldo total por moneda */}
-        <div style={{display:"flex",gap:16,flexWrap:"wrap",marginBottom:16}}>
+        {/* Title + semáforo */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20,flexWrap:"wrap",gap:12}}>
+          <div>
+            <h1 style={{fontSize:24,fontWeight:800,color:C.navy,margin:0}}>Dashboard General</h1>
+            <p style={{color:C.muted,marginTop:4,fontSize:14}}>Haz clic en cualquier tarjeta para ver el detalle</p>
+          </div>
+          {/* Semáforo */}
+          <div style={{background:saludBg,border:`2px solid ${saludColor}`,borderRadius:14,padding:"12px 20px",display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:24}}>{saludIcon}</span>
+            <div>
+              <div style={{fontWeight:800,fontSize:15,color:saludColor}}>Salud de Cartera: {saludLabel}</div>
+              <div style={{fontSize:12,color:saludColor,opacity:.8}}>{pctVenc.toFixed(1)}% del saldo está vencido</div>
+            </div>
+          </div>
+        </div>
+
+        {/* KPI Cards */}
+        <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:20}}>
           <KpiCard label="Saldo MXN" value={`$${fmt(kpis.totalMXN)}`} sub="Pendiente de pago" color={C.mxn} icon="🇲🇽"
-            onClick={()=>openDetail("Saldo Pendiente MXN",pendByCur("MXN"))}/>
+            onClick={()=>openDetailGrouped("Saldo Pendiente MXN",pendByCur("MXN"))}/>
           <KpiCard label="Saldo USD" value={`$${fmt(kpis.totalUSD)}`} sub="Pendiente de pago" color={C.usd} icon="🇺🇸"
-            onClick={()=>openDetail("Saldo Pendiente USD",pendByCur("USD"))}/>
+            onClick={()=>openDetailGrouped("Saldo Pendiente USD",pendByCur("USD"))}/>
           <KpiCard label="Saldo EUR" value={`€${fmt(kpis.totalEUR)}`} sub="Pendiente de pago" color={C.eur} icon="🇪🇺"
-            onClick={()=>openDetail("Saldo Pendiente EUR",pendByCur("EUR"))}/>
+            onClick={()=>openDetailGrouped("Saldo Pendiente EUR",pendByCur("EUR"))}/>
           <KpiCard label="Facturas Vencidas" value={kpis.vencidas} sub="Requieren atención" color={C.danger} icon="⚠️"
-            onClick={()=>openDetail("Facturas Vencidas",pendAll.filter(i=>isOverdue(i.vencimiento,i.estatus)))}/>
+            onClick={()=>openDetailGrouped("Facturas Vencidas",pendAll.filter(i=>isOverdue(i.vencimiento,i.estatus)))}/>
           <KpiCard label="Total Facturas" value={kpis.facturas} color={C.sky} icon="🧾"
-            onClick={()=>openDetail("Todas las Facturas",allInvs)}/>
+            onClick={()=>openDetailGrouped("Todas las Facturas",allInvs)}/>
           <KpiCard label="Proveedores" value={kpis.proveedores} sub="Activos" color={C.teal} icon="🏢"
             onClick={()=>{setDashSearch("");setDashFilterProv("");setDashFilterClasif("");setDashFilterEstatus("");setDashGroupBy("");setDashDetail({title:"Proveedores Activos",type:"suppliers",items:suppliers.filter(s=>s.activo)});}}/>
         </div>
-        {/* Row 2: Vigente / Vencido por moneda */}
-        <h3 style={{fontSize:14,fontWeight:700,color:C.navy,marginBottom:10}}>Vigente vs Vencido por Moneda</h3>
-        <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:20}}>
-          {["MXN","USD","EUR"].map(cur=>{
-            const vig=vigByCur(cur); const ven=vencByCur(cur);
-            const vigSum=sumSaldo(vig); const venSum=sumSaldo(ven);
-            if(vigSum===0&&venSum===0) return null;
-            const sym=cur==="EUR"?"€":"$"; const flag={MXN:"🇲🇽",USD:"🇺🇸",EUR:"🇪🇺"}[cur];
-            return (
-              <div key={cur} style={{display:"flex",gap:8}}>
-                <div onClick={()=>openDetail(`${cur} Vigente`,vig)} style={{background:"#E8F5E9",border:"1px solid #A5D6A7",borderRadius:12,padding:"12px 18px",cursor:"pointer",minWidth:140,transition:"transform .15s"}}
-                  onMouseEnter={e=>{e.currentTarget.style.transform="scale(1.03)";}} onMouseLeave={e=>{e.currentTarget.style.transform="scale(1)";}}>
-                  <div style={{fontSize:11,color:C.muted,fontWeight:600}}>{flag} {cur} VIGENTE</div>
-                  <div style={{fontSize:20,fontWeight:800,color:C.ok}}>{sym}{fmt(vigSum)}</div>
-                  <div style={{fontSize:11,color:C.muted}}>{vig.length} fact.</div>
+
+        {/* Barra de progreso Vigente vs Vencido */}
+        {["MXN","USD"].map(cur=>{
+          const vig=vigByCur(cur); const ven=vencByCur(cur);
+          const vigSum=sumSaldo(vig); const venSum=sumSaldo(ven);
+          if(vigSum===0&&venSum===0) return null;
+          const total=vigSum+venSum;
+          const pctVig=total>0?(vigSum/total)*100:0;
+          const pctVen=total>0?(venSum/total)*100:0;
+          const sym=cur==="EUR"?"€":"$"; const flag={MXN:"🇲🇽",USD:"🇺🇸",EUR:"🇪🇺"}[cur];
+          return(
+            <div key={cur} style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:14,padding:18,marginBottom:12}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                <span style={{fontWeight:700,fontSize:14,color:C.navy}}>{flag} {cur} — Vigente vs Vencido</span>
+                <span style={{fontSize:12,color:C.muted}}>Total: {sym}{fmt(total)}</span>
+              </div>
+              <div style={{height:28,borderRadius:8,overflow:"hidden",display:"flex",marginBottom:8}}>
+                <div onClick={()=>openDetailGrouped(`${cur} Vigente`,vig)} style={{width:`${pctVig}%`,background:"#43A047",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"opacity .15s",minWidth:pctVig>5?0:0}}
+                  onMouseEnter={e=>e.currentTarget.style.opacity=".85"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                  {pctVig>8&&<span style={{color:"#fff",fontSize:11,fontWeight:700}}>{pctVig.toFixed(0)}%</span>}
                 </div>
-                <div onClick={()=>openDetail(`${cur} Vencido`,ven)} style={{background:"#FFEBEE",border:"1px solid #EF9A9A",borderRadius:12,padding:"12px 18px",cursor:"pointer",minWidth:140,transition:"transform .15s"}}
-                  onMouseEnter={e=>{e.currentTarget.style.transform="scale(1.03)";}} onMouseLeave={e=>{e.currentTarget.style.transform="scale(1)";}}>
-                  <div style={{fontSize:11,color:C.muted,fontWeight:600}}>{flag} {cur} VENCIDO</div>
-                  <div style={{fontSize:20,fontWeight:800,color:C.danger}}>{sym}{fmt(venSum)}</div>
-                  <div style={{fontSize:11,color:C.muted}}>{ven.length} fact.</div>
+                <div onClick={()=>openDetailGrouped(`${cur} Vencido`,ven)} style={{width:`${pctVen}%`,background:pctVen>50?"#C62828":"#E53935",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"opacity .15s"}}
+                  onMouseEnter={e=>e.currentTarget.style.opacity=".85"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                  {pctVen>8&&<span style={{color:"#fff",fontSize:11,fontWeight:700}}>{pctVen.toFixed(0)}%</span>}
                 </div>
               </div>
-            );
-          })}
-        </div>
-        {/* Row 3: Aging — per currency */}
-        <h3 style={{fontSize:14,fontWeight:700,color:C.navy,marginBottom:10}}>Antigüedad de Saldos</h3>
-        {["MXN","USD","EUR"].map(cur => {
-          const curItems = pendAll.filter(i=>i.moneda===cur);
-          if(curItems.length===0) return null;
-          const sym = cur==="EUR"?"€":"$";
-          const flag = {MXN:"🇲🇽",USD:"🇺🇸",EUR:"🇪🇺"}[cur];
-          const curColor = {MXN:C.mxn,USD:C.usd,EUR:C.eur}[cur];
-          const curBg = {MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[cur];
-          const curBorder = {MXN:"#90CAF9",USD:"#A5D6A7",EUR:"#CE93D8"}[cur];
-          const filterCur = arr => arr.filter(i=>i.moneda===cur);
-          const corrBuckets = [
-            {label:`Corriente 0-7 Días`,items:filterCur(corriente7),bg:"#E8F5E9",border:"#A5D6A7",color:C.ok},
-            {label:`Corriente 8-15 Días`,items:filterCur(corriente15),bg:"#E8F5E9",border:"#A5D6A7",color:C.ok},
-            {label:`Corriente 16-30 Días`,items:filterCur(corriente30),bg:"#FFF8E1",border:"#FFE082",color:"#F57F17"},
-            {label:`Corriente +30 Días`,items:filterCur(corrienteMas30),bg:"#FFF3E0",border:"#FFCC80",color:C.warn},
-          ];
-          const vencBuckets = [
-            {label:`Vencido 1-7 Días`,items:filterCur(vencido7),bg:"#FFF5F5",border:"#FFCDD2",color:"#E57373"},
-            {label:`Vencido 8-15 Días`,items:filterCur(vencido15),bg:"#FFEBEE",border:"#EF9A9A",color:C.danger},
-            {label:`Vencido 16-30 Días`,items:filterCur(vencido30),bg:"#FFEBEE",border:"#EF9A9A",color:C.danger},
-            {label:`Vencido 31-60 Días`,items:filterCur(vencido60),bg:"#FFCDD2",border:"#E57373",color:"#C62828"},
-            {label:`Vencido +60 Días`,items:filterCur(vencidoMas60),bg:"#FFCDD2",border:"#E57373",color:"#B71C1C"},
-          ];
-          const AgingCard = ({b}) => (
-            <div onClick={()=>openDetail(`${cur} — ${b.label}`,b.items)} style={{background:b.bg,border:`1px solid ${b.border}`,borderRadius:12,padding:"10px 12px",cursor:b.items.length>0?"pointer":"default",transition:"transform .15s",opacity:b.items.length>0?1:0.5}}
-              onMouseEnter={e=>{if(b.items.length>0)e.currentTarget.style.transform="scale(1.03)";}} onMouseLeave={e=>{e.currentTarget.style.transform="scale(1)";}}>
-              <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:"uppercase",marginBottom:3}}>{b.label}</div>
-              <div style={{fontSize:16,fontWeight:800,color:b.items.length>0?b.color:C.muted}}>{sym}{fmt(sumSaldo(b.items))}</div>
-              <div style={{fontSize:10,color:C.muted}}>{b.items.length} fact.</div>
-            </div>
-          );
-          return (
-            <div key={cur} style={{background:curBg,border:`2px solid ${curBorder}`,borderRadius:16,padding:16,marginBottom:14}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-                <span style={{fontSize:18}}>{flag}</span>
-                <span style={{fontSize:15,fontWeight:800,color:curColor}}>{cur}</span>
-                <span style={{fontSize:12,color:C.muted}}>— Saldo total: {sym}{fmt(sumSaldo(curItems))} ({curItems.length} fact.)</span>
-              </div>
-              <div style={{fontSize:12,fontWeight:700,color:C.ok,marginBottom:6}}>Corriente</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:8,marginBottom:10}}>
-                {corrBuckets.map(b=><AgingCard key={b.label} b={b}/>)}
-              </div>
-              <div style={{fontSize:12,fontWeight:700,color:C.danger,marginBottom:6}}>Vencido</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:8}}>
-                {vencBuckets.map(b=><AgingCard key={b.label} b={b}/>)}
+              <div style={{display:"flex",gap:20}}>
+                <span style={{fontSize:12,display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:"#43A047",display:"inline-block"}}/><b style={{color:"#2E7D32"}}>Vigente:</b> {sym}{fmt(vigSum)} ({vig.length} fact.)</span>
+                <span style={{fontSize:12,display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:"#E53935",display:"inline-block"}}/><b style={{color:C.danger}}>Vencido:</b> {sym}{fmt(venSum)} ({ven.length} fact.)</span>
               </div>
             </div>
           );
         })}
+
+        {/* Top 5 + Antigüedad side by side */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:16,marginBottom:20,marginTop:8}}>
+          {/* Top 5 */}
+          <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:14,padding:18}}>
+            <h3 style={{fontSize:14,fontWeight:800,color:C.navy,marginBottom:14,margin:"0 0 14px"}}>🏆 Top 5 Proveedores</h3>
+            {top5.map(([prov,saldo],idx)=>{
+              const maxSaldo=top5[0][1];
+              const pct=maxSaldo>0?(saldo/maxSaldo)*100:0;
+              const colors=["#1565C0","#1976D2","#1E88E5","#42A5F5","#90CAF9"];
+              return(
+                <div key={prov} style={{marginBottom:10,cursor:"pointer"}}
+                  onClick={()=>openDetailGrouped(`${prov} — Facturas`,pendAll.filter(i=>i.proveedor===prov))}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                    <span style={{fontSize:12,fontWeight:700,color:C.navy,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{idx+1}. {prov}</span>
+                    <span style={{fontSize:12,fontWeight:800,color:colors[idx]}}>${fmt(saldo)}</span>
+                  </div>
+                  <div style={{height:6,borderRadius:4,background:"#EEF2FF",overflow:"hidden"}}>
+                    <div style={{height:"100%",width:`${pct}%`,background:colors[idx],borderRadius:4,transition:"width .5s"}}/>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Aging */}
+          <div>
+            <h3 style={{fontSize:14,fontWeight:800,color:C.navy,marginBottom:14}}>📊 Antigüedad de Saldos</h3>
+            {["MXN","USD","EUR"].map(cur => {
+              const curItems = pendAll.filter(i=>i.moneda===cur);
+              if(curItems.length===0) return null;
+              const sym = cur==="EUR"?"€":"$";
+              const flag = {MXN:"🇲🇽",USD:"🇺🇸",EUR:"🇪🇺"}[cur];
+              const curColor = {MXN:C.mxn,USD:C.usd,EUR:C.eur}[cur];
+              const filterCur = arr => arr.filter(i=>i.moneda===cur);
+              const chips = [
+                {l:"Corriente",    v:sumSaldo(filterCur(vigByCur(cur))),    c:"#fff",    bg:"#1B5E20", items:filterCur(vigByCur(cur))},
+                {l:"Venc 1-7d",    v:sumSaldo(filterCur(vencido7)),         c:"#fff",    bg:"#E65100", items:filterCur(vencido7)},
+                {l:"Venc 8-15d",   v:sumSaldo(filterCur(vencido15)),        c:"#fff",    bg:"#BF360C", items:filterCur(vencido15)},
+                {l:"Venc 16-30d",  v:sumSaldo(filterCur(vencido30)),        c:"#fff",    bg:"#E53935", items:filterCur(vencido30)},
+                {l:"Venc 31-60d",  v:sumSaldo(filterCur(vencido60)),        c:"#fff",    bg:"#B71C1C", items:filterCur(vencido60)},
+                {l:"Venc +60d",    v:sumSaldo(filterCur(vencidoMas60)),     c:"#fff",    bg:"#4A0000", items:filterCur(vencidoMas60)},
+              ].filter(ch=>ch.v>0);
+              return(
+                <div key={cur} style={{background:"#F8FAFC",border:`1px solid ${C.border}`,borderRadius:12,padding:14,marginBottom:10}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                    <span style={{fontSize:16}}>{flag}</span>
+                    <span style={{fontSize:14,fontWeight:800,color:curColor}}>{cur}</span>
+                    <span style={{fontSize:12,color:C.muted}}>· {sym}{fmt(sumSaldo(curItems))} · {curItems.length} fact.</span>
+                  </div>
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                    {chips.map(ch=>(
+                      <div key={ch.l} onClick={()=>openDetailGrouped(`${cur} — ${ch.l}`,ch.items)}
+                        style={{background:ch.bg,borderRadius:12,padding:"12px 16px",cursor:"pointer",minWidth:120,transition:"all .15s",boxShadow:"0 2px 6px rgba(0,0,0,.1)"}}
+                        onMouseEnter={e=>{e.currentTarget.style.transform="scale(1.04)";e.currentTarget.style.boxShadow="0 6px 18px rgba(0,0,0,.2)";}}
+                        onMouseLeave={e=>{e.currentTarget.style.transform="scale(1)";e.currentTarget.style.boxShadow="0 2px 6px rgba(0,0,0,.1)";}}>
+                        <div style={{fontSize:10,color:ch.c,fontWeight:700,textTransform:"uppercase",opacity:.85,marginBottom:3,letterSpacing:.5}}>{ch.l}</div>
+                        <div style={{fontSize:18,fontWeight:900,color:ch.c}}>{sym}{fmt(ch.v)}</div>
+                        <div style={{fontSize:10,color:ch.c,opacity:.75,marginTop:2}}>{ch.items.length} fact.</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Charts */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
           <div style={{background:C.surface,borderRadius:16,padding:24,border:`1px solid ${C.border}`}}>
@@ -1034,7 +1115,7 @@ export default function CxpApp({ user, onLogout }) {
             ):<div style={{textAlign:"center",color:C.muted,padding:40}}>Sin datos</div>}
           </div>
           <div style={{background:C.surface,borderRadius:16,padding:24,border:`1px solid ${C.border}`}}>
-            <h3 style={{fontSize:15,fontWeight:700,marginBottom:16,color:C.navy}}>Saldo Pendiente por Clasificación</h3>
+            <h3 style={{fontSize:15,fontWeight:700,marginBottom:16,color:C.navy}}>Saldo por Clasificación</h3>
             {claseData.length>0?(
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={claseData} layout="vertical">
@@ -1045,27 +1126,6 @@ export default function CxpApp({ user, onLogout }) {
               </ResponsiveContainer>
             ):<div style={{textAlign:"center",color:C.muted,padding:40}}>Sin datos</div>}
           </div>
-        </div>
-        <div style={{background:C.surface,borderRadius:16,padding:24,border:`1px solid ${C.border}`}}>
-          <h3 style={{fontSize:15,fontWeight:700,marginBottom:16,color:C.navy}}>⚠️ Facturas Vencidas</h3>
-          {[...invoices.MXN,...invoices.USD,...invoices.EUR].filter(i=>isOverdue(i.vencimiento,i.estatus)).sort((a,b)=>(a.vencimiento||"").localeCompare(b.vencimiento||"")).slice(0,8).map(inv=>{
-            const saldo=(+inv.total||0)-(+inv.montoPagado||0);
-            return (
-              <div key={inv.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${C.border}`}}>
-                <div>
-                  <div style={{fontWeight:700,fontSize:14}}>{inv.proveedor}</div>
-                  <div style={{fontSize:12,color:C.muted}}>Folio {inv.folio} · {inv.fecha}</div>
-                  {+inv.montoPagado>0 && <div style={{fontSize:11,color:C.ok}}>Pagado: ${fmt(inv.montoPagado)}</div>}
-                </div>
-                <div style={{textAlign:"right"}}>
-                  <div style={{fontWeight:700,color:C.danger}}>${fmt(saldo)}</div>
-                  <div style={{fontSize:11,color:C.danger}}>{Math.abs(daysUntil(inv.vencimiento))} días vencida</div>
-                </div>
-              </div>
-            );
-          })}
-          {[...invoices.MXN,...invoices.USD,...invoices.EUR].filter(i=>isOverdue(i.vencimiento,i.estatus)).length===0 &&
-            <div style={{textAlign:"center",color:C.ok,padding:20}}>✅ Sin facturas vencidas</div>}
         </div>
       </div>
     );
@@ -1132,7 +1192,7 @@ export default function CxpApp({ user, onLogout }) {
         )}
 
         {/* Filters */}
-        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:18,marginBottom:20}}>
+        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:16,marginBottom:20}}>
           <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
             <input ref={searchRef} placeholder="🔍 Buscar…" value={search} onChange={e=>setSearch(e.target.value)} style={{...inputStyle,maxWidth:200}} />
             {/* Filtro por Grupo — solo en Activas/Pagadas; en Resumen el picker está dentro */}
@@ -1162,9 +1222,24 @@ export default function CxpApp({ user, onLogout }) {
                 {["Pendiente","Pagado","Vencido","Parcial"].map(s=><option key={s}>{s}</option>)}
               </select>
             )}
+            {/* Filtro por Mes en Concepto */}
+            {(()=>{
+              const mesesEnConcepto = [...new Set(curInvoices.filter(i=>i.estatus!=="Pagado").map(i=>detectarMesCxP(i.concepto)).filter(Boolean))];
+              const hayNoIdent = curInvoices.filter(i=>i.estatus!=="Pagado"&&!detectarMesCxP(i.concepto)).length > 0;
+              return(
+                <select value={filtroMesConcepto} onChange={e=>setFiltroMesConcepto(e.target.value)}
+                  style={{...selectStyle,maxWidth:190,borderColor:filtroMesConcepto?C.blue:C.border,color:filtroMesConcepto?C.blue:C.text,fontWeight:filtroMesConcepto?700:400}}>
+                  <option value="">📅 Mes en concepto</option>
+                  {["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"].filter(m=>mesesEnConcepto.includes(m)).map(m=>(
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                  {hayNoIdent && <option value="__sin_mes__">⚠️ Sin mes identificado</option>}
+                </select>
+              );
+            })()}
             <input type="date" value={filters.fechaFrom} onChange={e=>setFilters(f=>({...f,fechaFrom:e.target.value}))} style={{...inputStyle,maxWidth:150}} title="Fecha desde"/>
             <input type="date" value={filters.fechaTo} onChange={e=>setFilters(f=>({...f,fechaTo:e.target.value}))} style={{...inputStyle,maxWidth:150}} title="Fecha hasta"/>
-            <button onClick={()=>{setFilters({proveedor:"",clasificacion:"",estatus:"",fechaFrom:"",fechaTo:"",pagoFrom:"",pagoTo:""});setSearch("");setFiltroGrupo("");setFiltroProveedores(new Set());}} style={{...btnStyle,background:"#F1F5F9",color:C.text}}>Limpiar</button>
+            <button onClick={()=>{setFilters({proveedor:"",clasificacion:"",estatus:"",fechaFrom:"",fechaTo:"",pagoFrom:"",pagoTo:""});setSearch("");setFiltroGrupo("");setFiltroProveedores(new Set());setFiltroMesConcepto("");}} style={{...btnStyle,background:"#F1F5F9",color:C.text}}>Limpiar</button>
           </div>
           {carteraTab !== "resumen" && (
             <>
@@ -1241,6 +1316,7 @@ export default function CxpApp({ user, onLogout }) {
             gruposList={gruposList}
             filtroProveedores={filtroProveedores}
             searchQuery={search}
+            filtroMesConcepto={filtroMesConcepto}
             fmt={fmt}
             C={C}
           />
@@ -1249,33 +1325,55 @@ export default function CxpApp({ user, onLogout }) {
         {/* ── PESTAÑAS ACTIVAS / PAGADAS ── */}
         {carteraTab !== "resumen" && (
         <>
-        {/* Grouped content */}
-        {Object.entries(grouped).map(([g1, data]) => (
-          <div key={g1} style={{marginBottom:24}}>
-            {/* Primary group header */}
-            <div style={{display:"flex",justifyContent:"space-between",padding:"10px 16px",background:C.navy,borderRadius:10,marginBottom:8}}>
-              <span style={{fontWeight:700,color:"#fff",fontSize:14}}>{grupoPor.charAt(0).toUpperCase()+grupoPor.slice(1)}: {g1||"—"}</span>
-              <span style={{fontSize:13,color:"#94A3B8"}}>
-                {(data.invoices || Object.values(data.subgroups||{}).flat()).length} facturas
-              </span>
-            </div>
-            {data.invoices ? (
-              /* Single grouping */
-              <>
-                <GroupHeader label={g1} invs={data.invoices}/>
-                <InvoiceTable invs={data.invoices}/>
-              </>
-            ) : (
-              /* Dual grouping */
-              Object.entries(data.subgroups).map(([g2, invs]) => (
-                <div key={g2} style={{marginLeft:16,marginBottom:16}}>
-                  <GroupHeader label={`${grupo2.charAt(0).toUpperCase()+grupo2.slice(1)}: ${g2}`} invs={invs}/>
-                  <InvoiceTable invs={invs}/>
+        {/* Grouped content — accordion */}
+        {Object.entries(grouped).map(([g1, data]) => {
+          const invs = data.invoices || Object.values(data.subgroups||{}).flat();
+          const saldo = invs.filter(i=>i.estatus!=="Pagado").reduce((s,i)=>s+((+i.total||0)-(+i.montoPagado||0)),0);
+          const vencidas = invs.filter(i=>isOverdue(i.vencimiento,i.estatus)).length;
+          const expanded = expandedGroups.has(g1);
+          const toggle = () => setExpandedGroups(prev=>{const n=new Set(prev);n.has(g1)?n.delete(g1):n.add(g1);return n;});
+          return(
+            <div key={g1} style={{marginBottom:12,border:`1px solid ${expanded?"#90CAF9":C.border}`,borderRadius:12,overflow:"hidden",transition:"border-color .2s"}}>
+              {/* Accordion header */}
+              <div onClick={toggle} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 18px",background:expanded?"#E8F0FE":"#F8FAFC",cursor:"pointer",transition:"background .15s"}}
+                onMouseEnter={e=>{if(!expanded)e.currentTarget.style.background="#F0F4FF";}}
+                onMouseLeave={e=>{if(!expanded)e.currentTarget.style.background="#F8FAFC";}}>
+                <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <span style={{fontSize:13,color:expanded?C.blue:C.muted,transition:"transform .2s",display:"inline-block",transform:expanded?"rotate(90deg)":"rotate(0deg)"}}>▶</span>
+                  <div>
+                    <span style={{fontWeight:800,fontSize:15,color:C.navy}}>{g1||"—"}</span>
+                    <span style={{fontSize:12,color:C.muted,marginLeft:10}}>{invs.length} factura{invs.length!==1?"s":""}</span>
+                    {vencidas>0 && <span style={{marginLeft:8,background:"#FFEBEE",color:C.danger,fontWeight:700,fontSize:11,padding:"1px 8px",borderRadius:20}}>⚠️ {vencidas} vencida{vencidas!==1?"s":""}</span>}
+                  </div>
                 </div>
-              ))
-            )}
-          </div>
-        ))}
+                <div style={{display:"flex",gap:20,alignItems:"center"}}>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontSize:13,color:C.muted,fontWeight:600}}>Saldo</div>
+                    <div style={{fontSize:16,fontWeight:800,color:saldo>0?C.warn:C.ok}}>${fmt(saldo)}</div>
+                  </div>
+                </div>
+              </div>
+              {/* Accordion content */}
+              {expanded && (
+                <div>
+                  {data.invoices ? (
+                    <>
+                      <GroupHeader label={g1} invs={data.invoices}/>
+                      <InvoiceTable invs={data.invoices}/>
+                    </>
+                  ) : (
+                    Object.entries(data.subgroups).map(([g2, invs2]) => (
+                      <div key={g2} style={{marginLeft:16,marginBottom:16}}>
+                        <GroupHeader label={`${grupo2.charAt(0).toUpperCase()+grupo2.slice(1)}: ${g2}`} invs={invs2}/>
+                        <InvoiceTable invs={invs2}/>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
         {filtered.length===0 && carteraTab !== "resumen" && (
           <div style={{textAlign:"center",padding:60,color:C.muted}}>
             <div style={{fontSize:48,marginBottom:12}}>📭</div>
@@ -2800,7 +2898,7 @@ function ClientesView({ clientes, setClientes, empresaId, esConsulta = false }) 
 }
 
 /* ── ResumenCartera component ────────────────────────────────────────── */
-function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroGrupo, gruposList, filtroProveedores, searchQuery, fmt, C }) {
+function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroGrupo, gruposList, filtroProveedores, searchQuery, filtroMesConcepto, fmt, C }) {
   const hoy = new Date().toISOString().slice(0,10);
   const [detailModal, setDetailModal] = React.useState(null);
   const [grupoPickerOpen, setGrupoPickerOpen] = React.useState(false);
@@ -2826,7 +2924,14 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
   const addAging=(acc,a)=>{acc.corriente+=a.corriente;acc.v7+=a.v7;acc.v15+=a.v15;acc.v30+=a.v30;acc.v60+=a.v60;acc.vmas+=a.vmas;};
   const zeroAging=()=>({corriente:0,v7:0,v15:0,v30:0,v60:0,vmas:0});
 
-  const activeInvoices = React.useMemo(()=>invoices.filter(i=>i.estatus!=="Pagado"),[invoices]);
+  const activeInvoices = React.useMemo(()=>invoices.filter(i=>{
+    if(i.estatus==="Pagado") return false;
+    if(filtroMesConcepto) {
+      if(filtroMesConcepto==="__sin_mes__") { if(detectarMesCxP(i.concepto)!==null) return false; }
+      else { if(detectarMesCxP(i.concepto)!==filtroMesConcepto) return false; }
+    }
+    return true;
+  }),[invoices, filtroMesConcepto]);
   const currencies = ["MXN","USD","EUR"];
   const monedaSym = m=>m==="EUR"?"€":"$";
   const monedaFlag = {MXN:"🇲🇽",USD:"🇺🇸",EUR:"🇪🇺"};
@@ -3013,75 +3118,114 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
     return byMon;
   },[allProvData,filtroGrupo]);
 
-  const openDetail=(title,invList)=>{ if(!invList||!invList.length) return; setDetailModal({title,invoices:invList}); };
+  const openDetail=(title,invList,grouped=true)=>{ if(!invList||!invList.length) return; setDetailModal({title,invoices:invList,grouped}); };
 
   const vCell=(v,sym,invList,label,intense=false)=>v>0?(
-    <span onClick={()=>openDetail(label,invList)}
+    <span onClick={()=>openDetail(label,invList,true)}
       style={{fontWeight:700,color:intense?"#B71C1C":C.danger,cursor:"pointer",borderBottom:`1px dotted ${intense?"#B71C1C":C.danger}`}}>
       {sym}{fmt(v)}
     </span>
   ):<span style={{color:C.muted}}>—</span>;
 
-  // Detail Modal
+  // Detail Modal — grouped by proveedor
   const DetailModal=()=>{
     if(!detailModal) return null;
     const invs=detailModal.invoices;
+    const grouped=detailModal.grouped!==false;
     const total=invs.reduce((s,i)=>s+(+i.total||0),0);
     const pagado=invs.reduce((s,i)=>s+(+i.montoPagado||0),0);
     const saldo=total-pagado;
     const sym=invs[0]?monedaSym(invs[0].moneda||"MXN"):"$";
+
+    // Group by proveedor
+    const byProv = grouped ? invs.reduce((acc,i)=>{
+      const p=i.proveedor||"—";
+      if(!acc[p]) acc[p]={proveedor:p,invs:[],saldo:0};
+      acc[p].invs.push(i);
+      acc[p].saldo+=((+i.total||0)-(+i.montoPagado||0));
+      return acc;
+    },{}) : null;
+    const provList = byProv ? Object.values(byProv).sort((a,b)=>b.saldo-a.saldo) : null;
+
+    const thead=(
+      <thead style={{position:"sticky",top:0}}>
+        <tr style={{background:C.navy}}>
+          {["Fecha","Folio","Proveedor","Concepto","Mes","Clasif.","Total","Pagado","Saldo","Vencimiento","Días","Estatus"].map(h=>(
+            <th key={h} style={{padding:"10px 12px",textAlign:["Total","Pagado","Saldo"].includes(h)?"right":"left",color:"#fff",fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+          ))}
+        </tr>
+      </thead>
+    );
+
+    const InvRow=({inv,i})=>{
+      const saldoInv=(+inv.total||0)-(+inv.montoPagado||0);
+      const dias=calcDias(inv.vencimiento);
+      const mes=detectarMesCxP(inv.concepto);
+      return(
+        <tr style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFC"}}>
+          <td style={{padding:"10px 12px",fontSize:12,color:C.muted,whiteSpace:"nowrap"}}>{inv.fecha||"—"}</td>
+          <td style={{padding:"10px 12px",fontWeight:600,color:C.blue,whiteSpace:"nowrap"}}>{inv.serie}{inv.folio}</td>
+          <td style={{padding:"10px 12px",fontWeight:600,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{inv.proveedor}</td>
+          <td style={{padding:"10px 12px",fontSize:12,color:C.muted,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{inv.concepto||"—"}</td>
+          <td style={{padding:"10px 12px"}}>
+            {mes?<span style={{background:"#E8EAF6",color:"#3949AB",padding:"2px 8px",borderRadius:20,fontSize:10,fontWeight:700,whiteSpace:"nowrap"}}>{mes}</span>:<span style={{color:C.muted,fontSize:11}}>—</span>}
+          </td>
+          <td style={{padding:"10px 12px"}}><span style={{background:"#EEF2FF",color:C.blue,padding:"2px 8px",borderRadius:20,fontSize:10,fontWeight:700,whiteSpace:"nowrap"}}>{inv.clasificacion}</span></td>
+          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700,whiteSpace:"nowrap"}}>{sym}{fmt(+inv.total||0)}</td>
+          <td style={{padding:"10px 12px",textAlign:"right",color:C.ok,whiteSpace:"nowrap"}}>{sym}{fmt(+inv.montoPagado||0)}</td>
+          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:800,color:saldoInv>0?C.danger:C.ok,whiteSpace:"nowrap"}}>{sym}{fmt(saldoInv)}</td>
+          <td style={{padding:"10px 12px",fontSize:12,color:C.muted,whiteSpace:"nowrap"}}>{inv.vencimiento||"—"}</td>
+          <td style={{padding:"10px 12px",textAlign:"center"}}>
+            {dias===null?<span style={{color:C.muted}}>—</span>:dias<0?(
+              <span style={{background:"#FFEBEE",color:C.danger,fontWeight:800,fontSize:11,padding:"2px 7px",borderRadius:20,whiteSpace:"nowrap"}}>{Math.abs(dias)}d venc.</span>
+            ):<span style={{background:"#E8F5E9",color:C.ok,fontWeight:700,fontSize:11,padding:"2px 7px",borderRadius:20,whiteSpace:"nowrap"}}>{dias}d</span>}
+          </td>
+          <td style={{padding:"10px 12px"}}><span style={{background:`${statusColor(inv.estatus)}22`,color:statusColor(inv.estatus),border:`1px solid ${statusColor(inv.estatus)}`,padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>{inv.estatus}</span></td>
+        </tr>
+      );
+    };
+
     return(
       <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
         onClick={()=>setDetailModal(null)}>
-        <div style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:1200,maxHeight:"85vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
+        <div style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:1300,maxHeight:"88vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
           onClick={e=>e.stopPropagation()}>
-          <div style={{padding:"18px 28px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{padding:"18px 28px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",background:C.navy,borderRadius:"16px 16px 0 0"}}>
             <div>
-              <div style={{fontWeight:800,fontSize:17,color:C.navy}}>{detailModal.title}</div>
-              <div style={{fontSize:13,color:C.muted,marginTop:3}}>{invs.length} factura{invs.length!==1?"s":""} · Saldo: <b style={{color:C.danger}}>{sym}{fmt(saldo)}</b></div>
+              <div style={{fontWeight:800,fontSize:17,color:"#fff"}}>{detailModal.title}</div>
+              <div style={{fontSize:13,color:"#A5D6A7",marginTop:3}}>
+                {invs.length} factura{invs.length!==1?"s":""} · Saldo: <b>{sym}{fmt(saldo)}</b>
+                {grouped&&provList?` · ${provList.length} proveedor${provList.length!==1?"es":""}`:""}</div>
             </div>
-            <button onClick={()=>setDetailModal(null)} style={{background:"#F1F5F9",border:"none",borderRadius:8,width:34,height:34,cursor:"pointer",fontSize:20,color:C.text}}>×</button>
+            <button onClick={()=>setDetailModal(null)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,width:34,height:34,cursor:"pointer",fontSize:20,color:"#fff"}}>×</button>
           </div>
           <div style={{overflowY:"auto",flex:1}}>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-              <thead style={{position:"sticky",top:0}}>
-                <tr style={{background:C.navy}}>
-                  {["Fecha","Folio","Proveedor","Concepto","Clasif.","Total","Pagado","Saldo","Vencimiento","Días","Estatus"].map(h=>(
-                    <th key={h} style={{padding:"11px 14px",textAlign:["Total","Pagado","Saldo"].includes(h)?"right":"left",color:"#fff",fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {invs.sort((a,b)=>(a.vencimiento||"").localeCompare(b.vencimiento||"")).map((inv,i)=>{
-                  const saldoInv=(+inv.total||0)-(+inv.montoPagado||0);
-                  const dias=calcDias(inv.vencimiento);
-                  return(
-                    <tr key={inv.id} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFC"}}>
-                      <td style={{padding:"10px 14px",fontSize:12,color:C.muted,whiteSpace:"nowrap"}}>{inv.fecha||"—"}</td>
-                      <td style={{padding:"10px 14px",fontWeight:600,color:C.blue,whiteSpace:"nowrap"}}>{inv.serie}{inv.folio}</td>
-                      <td style={{padding:"10px 14px",fontWeight:600,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{inv.proveedor}</td>
-                      <td style={{padding:"10px 14px",fontSize:12,color:C.muted,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{inv.concepto||"—"}</td>
-                      <td style={{padding:"10px 14px"}}><span style={{background:"#EEF2FF",color:C.blue,padding:"2px 8px",borderRadius:20,fontSize:10,fontWeight:700,whiteSpace:"nowrap"}}>{inv.clasificacion}</span></td>
-                      <td style={{padding:"10px 14px",textAlign:"right",fontWeight:700,whiteSpace:"nowrap"}}>{sym}{fmt(+inv.total||0)}</td>
-                      <td style={{padding:"10px 14px",textAlign:"right",color:C.ok,whiteSpace:"nowrap"}}>{sym}{fmt(+inv.montoPagado||0)}</td>
-                      <td style={{padding:"10px 14px",textAlign:"right",fontWeight:800,color:saldoInv>0?C.danger:C.ok,whiteSpace:"nowrap"}}>{sym}{fmt(saldoInv)}</td>
-                      <td style={{padding:"10px 14px",fontSize:12,color:C.muted,whiteSpace:"nowrap"}}>{inv.vencimiento||"—"}</td>
-                      <td style={{padding:"10px 14px",textAlign:"center"}}>
-                        {dias===null?<span style={{color:C.muted}}>—</span>:dias<0?(
-                          <span style={{background:"#FFEBEE",color:C.danger,fontWeight:800,fontSize:11,padding:"2px 7px",borderRadius:20,whiteSpace:"nowrap"}}>{Math.abs(dias)}d venc.</span>
-                        ):<span style={{background:"#E8F5E9",color:C.ok,fontWeight:700,fontSize:11,padding:"2px 7px",borderRadius:20,whiteSpace:"nowrap"}}>{dias}d</span>}
-                      </td>
-                      <td style={{padding:"10px 14px"}}><span style={{background:`${statusColor(inv.estatus)}22`,color:statusColor(inv.estatus),border:`1px solid ${statusColor(inv.estatus)}`,padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>{inv.estatus}</span></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            {grouped && provList ? (
+              provList.map((pg,pi)=>(
+                <div key={pg.proveedor}>
+                  <div style={{background:"#EEF2FF",padding:"10px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:pi>0?`3px solid #C5CAE9`:`1px solid ${C.border}`,position:"sticky",top:0,zIndex:2}}>
+                    <span style={{fontWeight:800,fontSize:14,color:C.navy}}>🏢 {pg.proveedor}</span>
+                    <div style={{display:"flex",gap:20,fontSize:13}}>
+                      <span style={{color:C.muted}}>{pg.invs.length} factura{pg.invs.length!==1?"s":""}</span>
+                      <span style={{color:C.danger,fontWeight:700}}>Saldo: {sym}{fmt(pg.saldo)}</span>
+                    </div>
+                  </div>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                    {thead}<tbody>{pg.invs.sort((a,b)=>(a.vencimiento||"").localeCompare(b.vencimiento||"")).map((inv,i)=><InvRow key={inv.id} inv={inv} i={i}/>)}</tbody>
+                  </table>
+                </div>
+              ))
+            ):(
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                {thead}<tbody>{invs.sort((a,b)=>(a.vencimiento||"").localeCompare(b.vencimiento||"")).map((inv,i)=><InvRow key={inv.id} inv={inv} i={i}/>)}</tbody>
+              </table>
+            )}
           </div>
           <div style={{padding:"14px 28px",borderTop:`1px solid ${C.border}`,display:"flex",gap:24,background:"#F8FAFC"}}>
             <span style={{fontSize:13,color:C.muted}}>Total: <b style={{color:C.navy}}>{sym}{fmt(total)}</b></span>
             <span style={{fontSize:13,color:C.muted}}>Pagado: <b style={{color:C.ok}}>{sym}{fmt(pagado)}</b></span>
             <span style={{fontSize:13,color:C.muted}}>Saldo: <b style={{color:C.danger}}>{sym}{fmt(saldo)}</b></span>
+            {grouped&&provList&&<span style={{fontSize:13,color:C.muted}}>Proveedores: <b style={{color:C.navy}}>{provList.length}</b></span>}
           </div>
         </div>
       </div>
@@ -3148,23 +3292,23 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
           <span style={{fontSize:17,fontWeight:900,color:monedaColor[mon]}}>{mon}</span>
           <span style={{fontSize:13,color:C.muted}}>{grand.count} facturas activas · {provs.length} proveedores</span>
         </div>
-        {/* Chips */}
-        <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+        {/* Chips — grande con paleta de urgencia */}
+        <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
           {[
-            {l:"Saldo",v:grand.saldo,c:C.navy,bg:"#E8F0FE",inv:allInvs},
-            {l:"Corriente",v:grand.corriente,c:C.ok,bg:"#E8F5E9",inv:filterInvs(d=>d!==null&&d>=0)},
-            {l:"Venc 1-7d",v:grand.v7,c:"#E57373",bg:"#FFF5F5",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)<=7)},
-            {l:"Venc 8-15d",v:grand.v15,c:C.danger,bg:"#FFEBEE",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=15)},
-            {l:"Venc 16-30d",v:grand.v30,c:"#C62828",bg:"#FFCDD2",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30)},
-            {l:"Venc 31-60d",v:grand.v60,c:"#B71C1C",bg:"#EF9A9A",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=60)},
-            {l:"Venc +60d",v:grand.vmas,c:"#7F0000",bg:"#E57373",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>60)},
+            {l:"Saldo",      v:grand.saldo,   c:"#fff", bg:"#0F2D4A", border:"#0F2D4A", inv:allInvs},
+            {l:"Corriente",  v:grand.corriente,c:"#1B5E20",bg:"#E8F5E9",border:"#A5D6A7",inv:filterInvs(d=>d!==null&&d>=0)},
+            {l:"Venc 1-7d",  v:grand.v7,      c:"#E65100",bg:"#FFF3E0",border:"#FFCC80",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)<=7)},
+            {l:"Venc 8-15d", v:grand.v15,     c:"#BF360C",bg:"#FBE9E7",border:"#FF8A65",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=15)},
+            {l:"Venc 16-30d",v:grand.v30,     c:"#fff",   bg:"#E53935",border:"#E53935",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30)},
+            {l:"Venc 31-60d",v:grand.v60,     c:"#fff",   bg:"#B71C1C",border:"#B71C1C",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=60)},
+            {l:"Venc +60d",  v:grand.vmas,    c:"#fff",   bg:"#4A0000",border:"#4A0000",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>60)},
           ].filter(k=>k.v>0).map(k=>(
-            <div key={k.l} onClick={()=>openDetail(`${mon} — ${k.l}`,k.inv)}
-              style={{background:k.bg,borderRadius:10,padding:"9px 14px",cursor:"pointer",transition:"transform .15s"}}
-              onMouseEnter={e=>e.currentTarget.style.transform="scale(1.03)"}
-              onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
-              <div style={{fontSize:10,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:2}}>{k.l}</div>
-              <div style={{fontSize:16,fontWeight:900,color:k.c}}>{sym}{fmt(k.v)}</div>
+            <div key={k.l} onClick={()=>openDetail(`${mon} — ${k.l}`,k.inv,true)}
+              style={{background:k.bg,border:`2px solid ${k.border}`,borderRadius:14,padding:"14px 20px",cursor:"pointer",minWidth:130,transition:"all .15s",boxShadow:"0 2px 6px rgba(0,0,0,.08)"}}
+              onMouseEnter={e=>{e.currentTarget.style.transform="scale(1.04)";e.currentTarget.style.boxShadow="0 6px 18px rgba(0,0,0,.15)";}}
+              onMouseLeave={e=>{e.currentTarget.style.transform="scale(1)";e.currentTarget.style.boxShadow="0 2px 6px rgba(0,0,0,.08)";}}>
+              <div style={{fontSize:11,color:k.c,fontWeight:700,textTransform:"uppercase",opacity:.85,marginBottom:4,letterSpacing:.5}}>{k.l}</div>
+              <div style={{fontSize:20,fontWeight:900,color:k.c}}>{sym}{fmt(k.v)}</div>
             </div>
           ))}
         </div>
