@@ -962,7 +962,7 @@ export default function CxpApp({ user, onLogout }) {
     ).sort((a,b)=>b[1].sum-a[1].sum);
     const clasifDataMXN = clasifByCur("MXN");
     const clasifDataUSD = clasifByCur("USD");
-    const clasifColors = ["#1565C0","#0288D1","#00838F","#2E7D32","#F57F17","#E65100","#6A1B9A","#880E4F","#37474F","#4E342E"];
+    const clasifColors = ["#4527A0","#6A1B9A","#7B1FA2","#8E24AA","#AB47BC","#BA68C8","#CE93D8","#9575CD","#5E35B1","#7E57C2"];
 
     // Por Mes × Clasificación — usa dashMesMoneda
     const MESES_ORDER = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
@@ -1083,10 +1083,11 @@ export default function CxpApp({ user, onLogout }) {
             const totalCur = data.reduce((s,[,{sum}])=>s+sum,0);
             return(
               <div key={cur} style={{marginBottom:24}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
-                  <span style={{fontSize:16}}>{flag}</span>
-                  <span style={{fontSize:14,fontWeight:800,color:{MXN:C.mxn,USD:C.usd}[cur]}}>{cur}</span>
-                  <span style={{fontSize:12,color:C.muted}}>· Total: {sym}{fmt(totalCur)}</span>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"12px 16px",background:{MXN:"#F3E5F5",USD:"#E8F5E9"}[cur],borderRadius:12,border:`1px solid ${{MXN:"#CE93D8",USD:"#A5D6A7"}[cur]}`}}>
+                  <span style={{fontSize:22}}>{flag}</span>
+                  <span style={{fontSize:20,fontWeight:900,color:{MXN:"#6A1B9A",USD:"#2E7D32"}[cur]}}>{cur}</span>
+                  <span style={{fontSize:14,color:{MXN:"#7B1FA2",USD:"#388E3C"}[cur],fontWeight:600}}>· Total: <b>{sym}{fmt(totalCur)}</b></span>
+                  <span style={{marginLeft:4,fontSize:12,color:{MXN:"#9C27B0",USD:"#43A047"}[cur]}}>{data.length} clasificaciones</span>
                 </div>
                 <div style={{display:"flex",flexDirection:"column",gap:10}}>
                   {data.map(([clas,{sum,items}],idx)=>{
@@ -1110,7 +1111,7 @@ export default function CxpApp({ user, onLogout }) {
                             <span style={{fontSize:11,background:{MXN:"#E3F2FD",USD:"#E8F5E9"}[cur],color:{MXN:"#1565C0",USD:"#2E7D32"}[cur],padding:"2px 8px",borderRadius:20,fontWeight:700}}>{flag} {cur}</span>
                           </div>
                         </div>
-                        <div style={{height:10,borderRadius:6,background:"#EEF2FF",overflow:"hidden"}}>
+                        <div style={{height:10,borderRadius:6,background:"#EDE7F6",overflow:"hidden"}}>
                           <div style={{height:"100%",width:`${pct}%`,background:color,borderRadius:6,transition:"width .6s ease"}}/>
                         </div>
                       </div>
