@@ -966,6 +966,7 @@ export default function CxpApp({ user, onLogout }) {
 
     // Por Mes × Clasificación — usa dashMesMoneda
     const MESES_ORDER = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+    const MESES_PREV_YEAR = ["Noviembre","Diciembre"]; // si hay meses de año actual, estos son del año anterior
     const pendMesMoneda = pendAll.filter(i=>i.moneda===dashMesMoneda);
     const mesClasiMap = {};
     pendMesMoneda.forEach(i=>{
@@ -977,7 +978,12 @@ export default function CxpApp({ user, onLogout }) {
       mesClasiMap[mes][clas].sum+=saldoOf(i);
       mesClasiMap[mes][clas].items.push(i);
     });
-    const mesesPresentes = MESES_ORDER.filter(m=>mesClasiMap[m]);
+    const mesesRaw = MESES_ORDER.filter(m=>mesClasiMap[m]);
+    // If we have "current year" months (Jan-Oct) AND "prev year" months (Nov-Dec), reorder
+    const hayMesesActuales = mesesRaw.some(m=>!MESES_PREV_YEAR.includes(m));
+    const mesesPresentes = hayMesesActuales
+      ? [...mesesRaw.filter(m=>MESES_PREV_YEAR.includes(m)), ...mesesRaw.filter(m=>!MESES_PREV_YEAR.includes(m))]
+      : mesesRaw;
     const clasifPresentes = [...new Set(pendMesMoneda.filter(i=>detectarMesCxP(i.concepto)).map(i=>i.clasificacion||"Otros"))];
 
     return (
@@ -1150,14 +1156,14 @@ export default function CxpApp({ user, onLogout }) {
                     ))}
                     <th style={{padding:"12px 12px",textAlign:"right",color:"#fff",fontWeight:800,fontSize:12,whiteSpace:"nowrap"}}>Total Mes</th>
                   </tr>
-                  {/* Sub-header */}
+                  {/* Sub-header totals row */}
                   <tr style={{background:"#EEF2FF",borderBottom:`2px solid ${C.blue}`}}>
-                    <td style={{padding:"7px 16px",fontWeight:700,color:C.navy,fontSize:12}}>TOTAL</td>
+                    <td style={{padding:"9px 16px",fontWeight:800,color:C.navy,fontSize:13}}>TOTAL</td>
                     {clasifPresentes.map(c=>{
                       const totalClasif = mesesPresentes.reduce((s,m)=>s+(mesClasiMap[m]?.[c]?.sum||0),0);
-                      return <td key={c} style={{padding:"7px 12px",textAlign:"right",fontWeight:700,color:C.danger,fontSize:13}}>{totalClasif>0?`$${fmt(totalClasif)}`:""}</td>;
+                      return <td key={c} style={{padding:"9px 12px",textAlign:"right",fontWeight:800,color:C.navy,fontSize:15}}>{totalClasif>0?`$${fmt(totalClasif)}`:""}</td>;
                     })}
-                    <td style={{padding:"7px 12px",textAlign:"right",fontWeight:800,color:C.navy,fontSize:14}}>
+                    <td style={{padding:"9px 12px",textAlign:"right",fontWeight:900,color:C.navy,fontSize:17,borderLeft:`2px solid ${C.border}`}}>
                       ${fmt(mesesPresentes.reduce((s,m)=>s+clasifPresentes.reduce((ss,c)=>ss+(mesClasiMap[m]?.[c]?.sum||0),0),0))}
                     </td>
                   </tr>
@@ -1165,26 +1171,31 @@ export default function CxpApp({ user, onLogout }) {
                 <tbody>
                   {mesesPresentes.map((mes,mi)=>{
                     const totalMes = clasifPresentes.reduce((s,c)=>s+(mesClasiMap[mes]?.[c]?.sum||0),0);
+                    const esPrevYear = hayMesesActuales && MESES_PREV_YEAR.includes(mes);
+                    const yearLabel = esPrevYear ? " '25" : hayMesesActuales ? " '26" : "";
                     return(
                       <tr key={mes} style={{borderTop:`1px solid ${C.border}`,background:mi%2===0?"#FAFBFF":"#fff"}}
                         onMouseEnter={e=>e.currentTarget.style.background="#E8F0FE"}
                         onMouseLeave={e=>e.currentTarget.style.background=mi%2===0?"#FAFBFF":"#fff"}>
-                        <td style={{padding:"12px 16px",fontWeight:700,color:C.navy,fontSize:13}}>{mes}</td>
+                        <td style={{padding:"14px 16px",fontWeight:700,color:C.navy,fontSize:14}}>
+                          {mes}
+                          {yearLabel && <span style={{fontSize:11,color:C.muted,marginLeft:4,fontWeight:400}}>{yearLabel}</span>}
+                        </td>
                         {clasifPresentes.map(c=>{
                           const cell = mesClasiMap[mes]?.[c];
                           return(
-                            <td key={c} style={{padding:"12px 12px",textAlign:"right"}}>
+                            <td key={c} style={{padding:"14px 12px",textAlign:"right"}}>
                               {cell && cell.sum>0 ? (
-                                <span onClick={()=>openDetailGrouped(`${mes} · ${c}`,cell.items)}
-                                  style={{color:C.danger,fontWeight:700,cursor:"pointer",fontSize:13,borderBottom:`1px dotted ${C.danger}`}}>
-                                  ${fmt(cell.sum)}
-                                  <div style={{fontSize:10,color:C.muted,fontWeight:400}}>{cell.items.length} fact.</div>
+                                <span onClick={()=>openDetailGrouped(`${mes}${yearLabel} · ${c}`,cell.items)}
+                                  style={{cursor:"pointer",display:"inline-block"}}>
+                                  <div style={{fontWeight:800,fontSize:16,color:C.navy,borderBottom:`1px dotted ${C.blue}`}}>${fmt(cell.sum)}</div>
+                                  <div style={{fontSize:11,color:C.muted,marginTop:2}}>{cell.items.length} fact.</div>
                                 </span>
-                              ) : <span style={{color:"#E2E8F0"}}>—</span>}
+                              ) : <span style={{color:"#E2E8F0",fontSize:14}}>—</span>}
                             </td>
                           );
                         })}
-                        <td style={{padding:"12px 12px",textAlign:"right",fontWeight:800,color:C.navy,fontSize:14,borderLeft:`2px solid ${C.border}`}}>
+                        <td style={{padding:"14px 12px",textAlign:"right",fontWeight:900,color:C.navy,fontSize:17,borderLeft:`2px solid ${C.border}`}}>
                           {totalMes>0?`$${fmt(totalMes)}`:"—"}
                         </td>
                       </tr>
