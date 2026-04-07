@@ -1141,25 +1141,25 @@ export default function CxpApp({ user, onLogout }) {
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
                 <thead>
                   <tr style={{background:C.navy}}>
-                    <th style={{padding:"12px 16px",textAlign:"left",color:"#fff",fontWeight:700,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap",minWidth:120}}>Mes</th>
+                    <th style={{padding:"16px 20px",textAlign:"left",color:"#fff",fontWeight:800,fontSize:14,textTransform:"uppercase",whiteSpace:"nowrap",minWidth:140}}>Mes</th>
                     {clasifPresentes.map((c,ci)=>(
-                      <th key={c} style={{padding:"12px 12px",textAlign:"right",color:"#A5D6A7",fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>
-                        <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:4}}>
-                          <div style={{width:8,height:8,borderRadius:2,background:clasifColors[(dashMesMoneda==="MXN"?clasifDataMXN:clasifDataUSD).findIndex(([n])=>n===c)%clasifColors.length]}}/>
+                      <th key={c} style={{padding:"16px 16px",textAlign:"center",color:"#fff",fontWeight:800,fontSize:13,textTransform:"uppercase",whiteSpace:"nowrap"}}>
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                          <div style={{width:10,height:10,borderRadius:3,background:clasifColors[(dashMesMoneda==="MXN"?clasifDataMXN:clasifDataUSD).findIndex(([n])=>n===c)%clasifColors.length],flexShrink:0}}/>
                           {c}
                         </div>
                       </th>
                     ))}
-                    <th style={{padding:"12px 12px",textAlign:"right",color:"#fff",fontWeight:800,fontSize:12,whiteSpace:"nowrap"}}>Total Mes</th>
+                    <th style={{padding:"16px 16px",textAlign:"center",color:"#A5D6A7",fontWeight:800,fontSize:14,whiteSpace:"nowrap"}}>Total Mes</th>
                   </tr>
-                  {/* Sub-header totals row */}
-                  <tr style={{background:"#EEF2FF",borderBottom:`2px solid ${C.blue}`}}>
-                    <td style={{padding:"9px 16px",fontWeight:800,color:C.navy,fontSize:13}}>TOTAL</td>
+                  {/* Totals row — destacada */}
+                  <tr style={{background:"#4527A0",borderBottom:`3px solid #7B1FA2`}}>
+                    <td style={{padding:"14px 20px",fontWeight:900,color:"#fff",fontSize:15,letterSpacing:.3}}>TOTAL GENERAL</td>
                     {clasifPresentes.map(c=>{
                       const totalClasif = mesesPresentes.reduce((s,m)=>s+(mesClasiMap[m]?.[c]?.sum||0),0);
-                      return <td key={c} style={{padding:"9px 12px",textAlign:"right",fontWeight:800,color:C.navy,fontSize:15}}>{totalClasif>0?`$${fmt(totalClasif)}`:""}</td>;
+                      return <td key={c} style={{padding:"14px 16px",textAlign:"center",fontWeight:800,color:"#E1BEE7",fontSize:16}}>{totalClasif>0?`$${fmt(totalClasif)}`:""}</td>;
                     })}
-                    <td style={{padding:"9px 12px",textAlign:"right",fontWeight:900,color:C.navy,fontSize:17,borderLeft:`2px solid ${C.border}`}}>
+                    <td style={{padding:"14px 16px",textAlign:"center",fontWeight:900,color:"#fff",fontSize:18,borderLeft:`2px solid #7B1FA2`}}>
                       ${fmt(mesesPresentes.reduce((s,m)=>s+clasifPresentes.reduce((ss,c)=>ss+(mesClasiMap[m]?.[c]?.sum||0),0),0))}
                     </td>
                   </tr>
@@ -1173,17 +1173,17 @@ export default function CxpApp({ user, onLogout }) {
                       <tr key={mes} style={{borderTop:`1px solid ${C.border}`,background:mi%2===0?"#FAFBFF":"#fff"}}
                         onMouseEnter={e=>e.currentTarget.style.background="#E8F0FE"}
                         onMouseLeave={e=>e.currentTarget.style.background=mi%2===0?"#FAFBFF":"#fff"}>
-                        <td style={{padding:"14px 16px",fontWeight:700,color:C.navy,fontSize:14}}>
+                        <td style={{padding:"14px 20px",fontWeight:700,color:C.navy,fontSize:15}}>
                           {mes}
                           {yearLabel && <span style={{fontSize:11,color:C.muted,marginLeft:4,fontWeight:400}}>{yearLabel}</span>}
                         </td>
                         {clasifPresentes.map(c=>{
                           const cell = mesClasiMap[mes]?.[c];
                           return(
-                            <td key={c} style={{padding:"14px 12px",textAlign:"right"}}>
+                            <td key={c} style={{padding:"14px 16px",textAlign:"center"}}>
                               {cell && cell.sum>0 ? (
                                 <span onClick={()=>openDetailGrouped(`${mes}${yearLabel} · ${c}`,cell.items)}
-                                  style={{cursor:"pointer",display:"inline-block"}}>
+                                  style={{cursor:"pointer",display:"inline-block",textAlign:"center"}}>
                                   <div style={{fontWeight:800,fontSize:16,color:C.navy,borderBottom:`1px dotted ${C.blue}`}}>${fmt(cell.sum)}</div>
                                   <div style={{fontSize:11,color:C.muted,marginTop:2}}>{cell.items.length} fact.</div>
                                 </span>
@@ -1191,7 +1191,7 @@ export default function CxpApp({ user, onLogout }) {
                             </td>
                           );
                         })}
-                        <td style={{padding:"14px 12px",textAlign:"right",fontWeight:900,color:C.navy,fontSize:17,borderLeft:`2px solid ${C.border}`}}>
+                        <td style={{padding:"14px 16px",textAlign:"center",fontWeight:900,color:C.navy,fontSize:17,borderLeft:`2px solid ${C.border}`}}>
                           {totalMes>0?`$${fmt(totalMes)}`:"—"}
                         </td>
                       </tr>
