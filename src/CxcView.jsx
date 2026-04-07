@@ -2252,39 +2252,45 @@ export default function CxcView({
                       const monCol = {MXN:C.mxn,USD:C.usd,EUR:C.eur}[mon]||C.navy;
                       const monBg  = {MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[mon]||"#F8FAFC";
                       if (empresaId === "empresa_2") {
-                        // Calcular aging por cada ingreso del cliente en esta moneda
+                        // Calcular buckets CxC por vencimiento para cada ingreso del cliente
                         const ingsMon = ings.filter(i => i.moneda === mon);
-                        const ag = {corriente:0, v7:0, v15:0, v30:0, v60:0, vmas:0};
+                        const ag = {total:0, cobradoParcial:0, vencido:0, pv15:0, pv30:0, pv60:0, pvmas:0};
                         ingsMon.forEach(ing => {
-                          const saldo = metrics[ing.id]?.porCobrar || 0;
+                          const m = metrics[ing.id] || {};
+                          const saldo = m.porCobrar || 0;
+                          const cobrado = m.totalCobrado || 0;
+                          if (saldo <= 0 && cobrado <= 0) return;
+                          ag.total += saldo;
+                          // Cobrado parcial: tiene cobros PERO aún tiene saldo pendiente
+                          if (cobrado > 0 && saldo > 0) ag.cobradoParcial += cobrado;
                           if (saldo <= 0) return;
                           const d = diasDiff(ing.fechaVencimiento);
-                          if (d === null || d >= 0) ag.corriente += saldo;
-                          else if (Math.abs(d) <= 7)  ag.v7   += saldo;
-                          else if (Math.abs(d) <= 15) ag.v15  += saldo;
-                          else if (Math.abs(d) <= 30) ag.v30  += saldo;
-                          else if (Math.abs(d) <= 60) ag.v60  += saldo;
-                          else                        ag.vmas += saldo;
+                          if (d === null) { ag.pv15 += saldo; return; } // sin fecha → por vencer pronto
+                          if (d < 0)               ag.vencido += saldo;       // ya venció
+                          else if (d <= 15)         ag.pv15    += saldo;       // por vencer 1-15d
+                          else if (d <= 30)         ag.pv30    += saldo;       // por vencer 16-30d
+                          else if (d <= 60)         ag.pv60    += saldo;       // por vencer 31-60d
+                          else                      ag.pvmas   += saldo;       // por vencer +60d
                         });
                         const agCols = [
-                          {l:"Corriente",          v:ag.corriente, c:"#1B5E20", hc:"#A5D6A7", bg:"#E8F5E9"},
-                          {l:"Venc 1-7 Días",      v:ag.v7,        c:"#E65100", hc:"#FFCC80", bg:"#FFF3E0"},
-                          {l:"Venc 8-15 Días",     v:ag.v15,       c:"#BF360C", hc:"#FF8A65", bg:"#FBE9E7"},
-                          {l:"Venc 16-30 Días",    v:ag.v30,       c:"#fff",    hc:"#EF9A9A", bg:"#E53935"},
-                          {l:"Venc 31-60 Días",    v:ag.v60,       c:"#fff",    hc:"#EF9A9A", bg:"#B71C1C"},
-                          {l:"Venc +60 Días",      v:ag.vmas,      c:"#fff",    hc:"#FFCDD2", bg:"#4A0000"},
+                          {l:"Total",              v:ag.total,          c:C.navy,    labelC:C.muted},
+                          ...(ag.cobradoParcial > 0 ? [{l:"Cobrado",   v:ag.cobradoParcial, c:C.ok, labelC:C.muted}] : []),
+                          {l:"Vencido",            v:ag.vencido,        c:"#C62828", labelC:"#C62828"},
+                          {l:"Por Vencer 1-15d",   v:ag.pv15,           c:"#E65100", labelC:"#E65100"},
+                          {l:"Por Vencer 16-30d",  v:ag.pv30,           c:"#F57F17", labelC:"#F57F17"},
+                          {l:"Por Vencer 31-60d",  v:ag.pv60,           c:C.teal,    labelC:C.teal},
+                          {l:"Por Vencer +60d",    v:ag.pvmas,          c:"#1B5E20", labelC:"#1B5E20"},
                         ];
+                        const cols = `50px repeat(${agCols.length},115px)`;
                         return (
-                          <div key={mon} style={{display:"grid",gridTemplateColumns:`50px repeat(${agCols.length},110px)`,alignItems:"center",gap:0}}>
+                          <div key={mon} style={{display:"grid",gridTemplateColumns:cols,alignItems:"center",gap:0}}>
                             <span style={{background:monBg,color:monCol,fontWeight:800,fontSize:11,padding:"2px 8px",borderRadius:20,textAlign:"center"}}>{mon}</span>
                             {agCols.map(k=>(
                               <div key={k.l} style={{textAlign:"right",padding:"0 8px"}}>
-                                <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:.3,whiteSpace:"nowrap",
-                                  color: k.v > 0 ? (["#E53935","#B71C1C","#4A0000"].includes(k.bg) ? k.hc : k.c) : C.muted}}>
+                                <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:.3,whiteSpace:"nowrap",color:k.v>0?k.labelC:C.muted}}>
                                   {k.l}
                                 </div>
-                                <div style={{fontSize:14,fontWeight:800,marginTop:1,whiteSpace:"nowrap",
-                                  color: k.v > 0 ? (["#E53935","#B71C1C","#4A0000"].includes(k.bg) ? k.bg : k.c) : C.muted}}>
+                                <div style={{fontSize:14,fontWeight:800,marginTop:1,whiteSpace:"nowrap",color:k.v>0?k.c:C.muted}}>
                                   {k.v > 0 ? `${sym}${fmt(k.v)}` : "—"}
                                 </div>
                               </div>
