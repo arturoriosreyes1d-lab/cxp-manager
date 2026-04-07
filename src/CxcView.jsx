@@ -118,6 +118,8 @@ export default function CxcView({
   const [kpiModal, setKpiModal] = useState(null); // { titulo, tipo, moneda }
   const [vistaGrupo, setVistaGrupo] = useState("cliente"); // "ingreso" | "cliente"
   const [clientesExpanded, setClientesExpanded] = useState(new Set());
+  const [clienteSortCol, setClienteSortCol] = useState("cliente");
+  const [clienteSortDir, setClienteSortDir] = useState("asc");
   const [importModal, setImportModal] = useState(false);
   const [importPreview, setImportPreview] = useState(null); // { rows, dupes, catDefault }
   const [importCatDefault, setImportCatDefault] = useState("");
@@ -351,8 +353,51 @@ export default function CxcView({
       if (!map[ing.cliente]) map[ing.cliente] = [];
       map[ing.cliente].push(ing);
     });
-    return Object.entries(map).sort((a,b) => a[0].localeCompare(b[0]));
-  }, [filteredActivas]);
+    const entries = Object.entries(map).map(([cliente, ings]) => {
+      // Pre-calc aging totals per moneda (needed for sorting in empresa_2)
+      const agByMon = {};
+      ings.forEach(ing => {
+        const m = metrics[ing.id] || {};
+        const mon = ing.moneda;
+        if (!agByMon[mon]) agByMon[mon] = {total:0,cobradoParcial:0,vencido:0,pv15:0,pv30:0,pv60:0,pvmas:0};
+        const saldo = m.porCobrar || 0;
+        const cobrado = m.totalCobrado || 0;
+        agByMon[mon].total += saldo;
+        if (cobrado > 0 && saldo > 0) agByMon[mon].cobradoParcial += cobrado;
+        if (saldo > 0) {
+          const d = diasDiff(ing.fechaVencimiento);
+          if (d === null)       agByMon[mon].pv15   += saldo;
+          else if (d < 0)       agByMon[mon].vencido += saldo;
+          else if (d <= 15)     agByMon[mon].pv15   += saldo;
+          else if (d <= 30)     agByMon[mon].pv30   += saldo;
+          else if (d <= 60)     agByMon[mon].pv60   += saldo;
+          else                  agByMon[mon].pvmas  += saldo;
+        }
+      });
+      // Primary moneda for sort (MXN > USD > EUR)
+      const monPri = agByMon["MXN"] ? "MXN" : agByMon["USD"] ? "USD" : Object.keys(agByMon)[0] || "MXN";
+      const ag = agByMon[monPri] || {total:0,cobradoParcial:0,vencido:0,pv15:0,pv30:0,pv60:0,pvmas:0};
+      return [cliente, ings, ag, agByMon];
+    });
+    // Sort
+    entries.sort(([ca,,aga], [cb,,agb]) => {
+      let va, vb;
+      switch(clienteSortCol) {
+        case "cliente":  va=ca; vb=cb; break;
+        case "total":    va=aga.total;    vb=agb.total;    break;
+        case "cobrado":  va=aga.cobradoParcial; vb=agb.cobradoParcial; break;
+        case "vencido":  va=aga.vencido;  vb=agb.vencido;  break;
+        case "pv15":     va=aga.pv15;     vb=agb.pv15;     break;
+        case "pv30":     va=aga.pv30;     vb=agb.pv30;     break;
+        case "pv60":     va=aga.pv60;     vb=agb.pv60;     break;
+        case "pvmas":    va=aga.pvmas;    vb=agb.pvmas;    break;
+        default:         va=ca; vb=cb;
+      }
+      let cmp = typeof va === "number" ? va - vb : String(va).localeCompare(String(vb));
+      return clienteSortDir === "asc" ? cmp : -cmp;
+    });
+    return entries;
+  }, [filteredActivas, metrics, clienteSortCol, clienteSortDir]);
 
   /* Sorted filtered list */
   const sortedFiltered = useMemo(() => {
@@ -2206,10 +2251,53 @@ export default function CxcView({
       ) : vistaGrupo === "cliente" ? (
 
         /* ── VISTA AGRUPADA POR CLIENTE ── */
-        <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {groupedByCliente.map(([cliente, ings]) => {
+        <div style={{display:"flex",flexDirection:"column",gap:0}}>
+
+          {/* ── Header bar con títulos y ordenamiento (solo empresa_2) ── */}
+          {empresaId === "empresa_2" && (() => {
+            const toggleSort = (col) => {
+              if (clienteSortCol === col) setClienteSortDir(d => d === "asc" ? "desc" : "asc");
+              else { setClienteSortCol(col); setClienteSortDir(col === "cliente" ? "asc" : "desc"); }
+            };
+            const arrow = (col) => clienteSortCol === col ? (clienteSortDir === "asc" ? " ↑" : " ↓") : "";
+            const hStyle = (col, align="center") => ({
+              padding:"9px 8px", textAlign:align, fontSize:10, fontWeight:800,
+              textTransform:"uppercase", letterSpacing:.5, cursor:"pointer",
+              color: clienteSortCol === col ? C.blue : C.muted,
+              userSelect:"none", whiteSpace:"nowrap",
+              borderBottom: clienteSortCol === col ? `2px solid ${C.blue}` : "2px solid transparent",
+              transition:"color .15s",
+            });
+            const COLS_HEADER = [
+              {k:"cliente", l:"Cliente", w:"1fr", align:"left"},
+              {k:"_moneda", l:"Moneda",  w:"60px", align:"center"},
+              {k:"total",   l:"Total",   w:"120px"},
+              {k:"cobrado", l:"Cobrado", w:"120px"},
+              {k:"vencido", l:"Vencido", w:"120px"},
+              {k:"pv15",    l:"Por Vencer 1-15d",  w:"120px"},
+              {k:"pv30",    l:"Por Vencer 16-30d", w:"120px"},
+              {k:"pv60",    l:"Por Vencer 31-60d", w:"120px"},
+              {k:"pvmas",   l:"Por Vencer +60d",   w:"120px"},
+            ];
+            const tplCols = COLS_HEADER.map(c=>c.w).join(" ");
+            return (
+              <div style={{display:"grid", gridTemplateColumns:tplCols, background:C.navy, borderRadius:"14px 14px 0 0", marginBottom:0, position:"sticky", top:0, zIndex:10}}>
+                {COLS_HEADER.map(col => (
+                  <div key={col.k}
+                    onClick={col.k !== "_moneda" ? ()=>toggleSort(col.k) : undefined}
+                    style={hStyle(col.k, col.align||"center")}
+                    onMouseEnter={e=>{if(col.k!=="moneda")e.currentTarget.style.color="#90CAF9";}}
+                    onMouseLeave={e=>{e.currentTarget.style.color=clienteSortCol===col.k?C.blue:C.muted;}}>
+                    {col.l}{arrow(col.k)}
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
+          {groupedByCliente.map(([cliente, ings, agPri, agByMon]) => {
             const expanded = clientesExpanded.has(cliente);
-            // Consolidated metrics per moneda
+            // Consolidated metrics per moneda (for empresa_1 standard view)
             const byMon = {};
             ings.forEach(ing => {
               const m = metrics[ing.id] || {};
@@ -2225,80 +2313,57 @@ export default function CxcView({
             });
             const monedas = Object.keys(byMon);
             return (
-              <div key={cliente} style={{background:C.surface,border:`1px solid ${expanded?C.blue:C.border}`,borderRadius:14,overflow:"hidden",transition:"border-color .2s"}}>
+              <div key={cliente} style={{background:C.surface, border:`1px solid ${expanded?C.blue:C.border}`, borderTop:"none", overflow:"hidden", transition:"border-color .2s"}}>
                 {/* Cliente header — clickable */}
                 <div onClick={()=>toggleCliente(cliente)}
-                  style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 18px",background:expanded?"#E8F0FE":"#F8FAFC",cursor:"pointer",transition:"background .15s"}}
+                  style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 18px",background:expanded?"#E8F0FE":"#F8FAFC",cursor:"pointer",transition:"background .15s"}}
                   onMouseEnter={e=>{if(!expanded)e.currentTarget.style.background="#F0F4FF";}}
                   onMouseLeave={e=>{if(!expanded)e.currentTarget.style.background="#F8FAFC";}}>
-                  <div style={{display:"flex",alignItems:"center",gap:12}}>
-                    <span style={{fontSize:16,color:expanded?C.blue:C.muted,transition:"transform .2s",display:"inline-block",transform:expanded?"rotate(90deg)":"rotate(0deg)"}}>▶</span>
-                    <div>
-                      <div style={{fontWeight:800,fontSize:15,color:C.navy}}>{cliente}</div>
-                      <div style={{fontSize:12,color:C.blue,marginTop:2,cursor:"pointer",textDecoration:"underline",textDecorationStyle:"dotted"}}
-                        onClick={e=>{e.stopPropagation();setDetailIngreso(ings[0]?.id);/* open list modal */;
-                          // Show a quick modal with all invoices of this client
-                          setKpiModal({titulo:`${cliente} — Todas las facturas`,tipo:"_lista",moneda:null,ingresos:ings});
-                        }}>
+                  <div style={{display:"flex",alignItems:"center",gap:12, minWidth:0}}>
+                    <span style={{fontSize:16,color:expanded?C.blue:C.muted,transition:"transform .2s",display:"inline-block",transform:expanded?"rotate(90deg)":"rotate(0deg)",flexShrink:0}}>▶</span>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontWeight:800,fontSize:14,color:C.navy,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{cliente}</div>
+                      <div style={{fontSize:12,color:C.blue,marginTop:1,cursor:"pointer",textDecoration:"underline",textDecorationStyle:"dotted"}}
+                        onClick={e=>{e.stopPropagation();setKpiModal({titulo:`${cliente} — Todas las facturas`,tipo:"_lista",moneda:null,ingresos:ings});}}>
                         {ings.length} ingreso{ings.length!==1?"s":""}
                       </div>
                     </div>
                   </div>
-                  {/* KPI chips por moneda — aging para TAS, columnas estándar para otros */}
-                  <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end"}}>
+
+                  {/* Columnas de datos */}
+                  <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end",flexShrink:0}}>
                     {monedas.map(mon => {
                       const v = byMon[mon];
                       const sym = monedaSym(mon);
                       const monCol = {MXN:C.mxn,USD:C.usd,EUR:C.eur}[mon]||C.navy;
                       const monBg  = {MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[mon]||"#F8FAFC";
                       if (empresaId === "empresa_2") {
-                        // Calcular buckets CxC por vencimiento para cada ingreso del cliente
-                        const ingsMon = ings.filter(i => i.moneda === mon);
-                        const ag = {total:0, cobradoParcial:0, vencido:0, pv15:0, pv30:0, pv60:0, pvmas:0};
-                        ingsMon.forEach(ing => {
-                          const m = metrics[ing.id] || {};
-                          const saldo = m.porCobrar || 0;
-                          const cobrado = m.totalCobrado || 0;
-                          if (saldo <= 0 && cobrado <= 0) return;
-                          ag.total += saldo;
-                          // Cobrado parcial: tiene cobros PERO aún tiene saldo pendiente
-                          if (cobrado > 0 && saldo > 0) ag.cobradoParcial += cobrado;
-                          if (saldo <= 0) return;
-                          const d = diasDiff(ing.fechaVencimiento);
-                          if (d === null) { ag.pv15 += saldo; return; } // sin fecha → por vencer pronto
-                          if (d < 0)               ag.vencido += saldo;       // ya venció
-                          else if (d <= 15)         ag.pv15    += saldo;       // por vencer 1-15d
-                          else if (d <= 30)         ag.pv30    += saldo;       // por vencer 16-30d
-                          else if (d <= 60)         ag.pv60    += saldo;       // por vencer 31-60d
-                          else                      ag.pvmas   += saldo;       // por vencer +60d
-                        });
-                        const agCols = [
-                          {l:"Total",              v:ag.total,          c:C.navy,    labelC:C.muted},
-                          ...(ag.cobradoParcial > 0 ? [{l:"Cobrado",   v:ag.cobradoParcial, c:C.ok, labelC:C.muted}] : []),
-                          {l:"Vencido",            v:ag.vencido,        c:"#C62828", labelC:"#C62828"},
-                          {l:"Por Vencer 1-15d",   v:ag.pv15,           c:"#E65100", labelC:"#E65100"},
-                          {l:"Por Vencer 16-30d",  v:ag.pv30,           c:"#F57F17", labelC:"#F57F17"},
-                          {l:"Por Vencer 31-60d",  v:ag.pv60,           c:C.teal,    labelC:C.teal},
-                          {l:"Por Vencer +60d",    v:ag.pvmas,          c:"#1B5E20", labelC:"#1B5E20"},
+                        const ag = agByMon[mon] || {total:0,cobradoParcial:0,vencido:0,pv15:0,pv30:0,pv60:0,pvmas:0};
+                        const COLS_DATA = [
+                          {k:"total",  v:ag.total,           c:"#1A237E"},
+                          {k:"cobrado",v:ag.cobradoParcial,  c:"#2E7D32"},
+                          {k:"vencido",v:ag.vencido,         c:"#B71C1C"},
+                          {k:"pv15",   v:ag.pv15,            c:"#33691E"},
+                          {k:"pv30",   v:ag.pv30,            c:"#388E3C"},
+                          {k:"pv60",   v:ag.pv60,            c:"#43A047"},
+                          {k:"pvmas",  v:ag.pvmas,           c:"#66BB6A"},
                         ];
-                        const cols = `50px repeat(${agCols.length},115px)`;
+                        const tplCols = `60px repeat(${COLS_DATA.length},120px)`;
                         return (
-                          <div key={mon} style={{display:"grid",gridTemplateColumns:cols,alignItems:"center",gap:0}}>
+                          <div key={mon} style={{display:"grid",gridTemplateColumns:tplCols,alignItems:"center",gap:0}}>
                             <span style={{background:monBg,color:monCol,fontWeight:800,fontSize:11,padding:"2px 8px",borderRadius:20,textAlign:"center"}}>{mon}</span>
-                            {agCols.map(k=>(
-                              <div key={k.l} style={{textAlign:"right",padding:"0 8px"}}>
-                                <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:.3,whiteSpace:"nowrap",color:k.v>0?k.labelC:C.muted}}>
-                                  {k.l}
-                                </div>
-                                <div style={{fontSize:14,fontWeight:800,marginTop:1,whiteSpace:"nowrap",color:k.v>0?k.c:C.muted}}>
-                                  {k.v > 0 ? `${sym}${fmt(k.v)}` : "—"}
+                            {COLS_DATA.map(k=>(
+                              <div key={k.k} style={{textAlign:"center",padding:"0 8px"}}>
+                                <div style={{fontSize:15,fontWeight:900,whiteSpace:"nowrap",
+                                  color:k.v>0?k.c:"#CFD8DC"}}>
+                                  {k.v>0?`${sym}${fmt(k.v)}`:"—"}
                                 </div>
                               </div>
                             ))}
                           </div>
                         );
                       }
-                      // Vista estándar para empresa_1
+                      // Vista estándar empresa_1
                       return (
                         <div key={mon} style={{display:"grid",gridTemplateColumns:"50px 120px 120px 120px 120px 120px 120px 120px",alignItems:"center",gap:0}}>
                           <span style={{background:monBg,color:monCol,fontWeight:800,fontSize:11,padding:"2px 8px",borderRadius:20,textAlign:"center"}}>{mon}</span>
