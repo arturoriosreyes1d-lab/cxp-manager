@@ -2523,36 +2523,34 @@ export default function CxcView({
 
       {/* Bulk toolbar */}
       {selectedIngresos.size > 0 && !esConsulta && (
-        <div style={{background:"#E8F0FE",border:`1px solid ${C.blue}`,borderRadius:10,padding:"10px 16px",marginBottom:12}}>
-          <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-            <span style={{fontWeight:700,color:C.blue,fontSize:13}}>{selectedIngresos.size} ingreso{selectedIngresos.size!==1?"s":""} seleccionado{selectedIngresos.size!==1?"s":""}</span>
+        <div style={{background:"#E8F0FE",border:`2px solid ${C.blue}`,borderRadius:12,padding:"14px 20px",marginBottom:14}}>
+          <div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",marginBottom:10}}>
+            <span style={{fontWeight:800,color:C.blue,fontSize:16}}>{selectedIngresos.size} ingreso{selectedIngresos.size!==1?"s":""} seleccionado{selectedIngresos.size!==1?"s":""}</span>
             {Object.entries(selectedTotals).map(([mon,v])=>(
-              <div key={mon} style={{display:"flex",gap:10,fontSize:12,flexWrap:"wrap"}}>
-                <span style={{fontWeight:700,color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[mon]}}>{mon}:</span>
+              <div key={mon} style={{display:"flex",gap:12,fontSize:14,flexWrap:"wrap",alignItems:"center"}}>
+                <span style={{fontWeight:800,color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[mon]}}>{mon}:</span>
                 <span style={{color:C.navy,fontWeight:700}}>Total {monedaSym(mon)}{fmt(v.monto)}</span>
-                <span style={{color:C.ok}}>Cobrado {monedaSym(mon)}{fmt(v.cobrado)}</span>
-                <span style={{color:C.warn}}>x Cobrar {monedaSym(mon)}{fmt(v.porCobrar)}</span>
+                <span style={{color:C.ok,fontWeight:700}}>Cobrado {monedaSym(mon)}{fmt(v.cobrado)}</span>
+                <span style={{color:C.warn,fontWeight:700}}>x Cobrar {monedaSym(mon)}{fmt(v.porCobrar)}</span>
               </div>
             ))}
           </div>
-          <div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
-            <button onClick={()=>setCobroMasivoModal(true)} style={{...btnStyle,background:C.ok,padding:"6px 14px",fontSize:12}}>💰 Cobro Masivo</button>
-            <button onClick={()=>setBulkFechaModal(true)} style={{...btnStyle,background:"#7B1FA2",padding:"6px 14px",fontSize:12}}>📅 Fecha Ficticia Masiva</button>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+            <button onClick={()=>setCobroMasivoModal(true)} style={{...btnStyle,background:C.ok,padding:"9px 18px",fontSize:13,fontWeight:700}}>💰 Cobro Masivo</button>
+            <button onClick={()=>setBulkFechaModal(true)} style={{...btnStyle,background:"#7B1FA2",padding:"9px 18px",fontSize:13,fontWeight:700}}>📅 Fecha Ficticia Masiva</button>
             <button onClick={async()=>{
               const ids=[...selectedIngresos];
-              const ocultarVal=!mostrarOcultas; // if showing ocultas, restore; else hide
-              // Actually always hide when using this button
               setIngresos(prev=>prev.map(i=>ids.includes(i.id)?{...i,oculta:true}:i));
               await Promise.all(ids.map(id=>updateIngresoField(id,{oculta:true})));
               setSelectedIngresos(new Set());
-            }} style={{...btnStyle,background:"#E65100",color:"#fff",padding:"6px 14px",fontSize:12}}>👁️ Ocultar seleccionadas</button>
+            }} style={{...btnStyle,background:"#E65100",color:"#fff",padding:"9px 18px",fontSize:13,fontWeight:700}}>👁️ Ocultar seleccionadas</button>
             {mostrarOcultas && <button onClick={async()=>{
               const ids=[...selectedIngresos];
               setIngresos(prev=>prev.map(i=>ids.includes(i.id)?{...i,oculta:false}:i));
               await Promise.all(ids.map(id=>updateIngresoField(id,{oculta:false})));
               setSelectedIngresos(new Set());
-            }} style={{...btnStyle,background:C.ok,padding:"6px 14px",fontSize:12}}>👁️ Restaurar seleccionadas</button>}
-            <button onClick={()=>setSelectedIngresos(new Set())} style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"6px 12px",fontSize:12}}>✕ Deseleccionar</button>
+            }} style={{...btnStyle,background:C.ok,padding:"9px 18px",fontSize:13,fontWeight:700}}>👁️ Restaurar seleccionadas</button>}
+            <button onClick={()=>setSelectedIngresos(new Set())} style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"9px 14px",fontSize:13,fontWeight:600}}>✕ Deseleccionar</button>
           </div>
         </div>
       )}
@@ -2697,7 +2695,7 @@ export default function CxcView({
                   {/* Ingresos expandidos */}
                   {expanded && (
                     <div style={{borderTop:`1px solid ${C.border}`,overflowX:"auto"}}>
-                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:1200}}>
+                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:14,minWidth:1200}}>
                         <thead>
                           <tr style={{background:C.navy}}>
                             <th style={{padding:"8px 6px",width:36,textAlign:"center"}}>
@@ -2737,10 +2735,9 @@ export default function CxcView({
                                 style={{padding:"10px 10px",
                                   textAlign:["total","montoPagado","porCobrar"].includes(col.k)?"right":["diasVencidos","porVencer"].includes(col.k)?"center":"left",
                                   color:clienteSortCol===col.k?"#90CAF9":"rgba(255,255,255,.85)",
-                                  fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap",
+                                  fontWeight:700,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap",
                                   cursor:col.k.startsWith("_")?"default":"pointer",userSelect:"none",
-                                  borderBottom:clienteSortCol===col.k?"2px solid #90CAF9":"2px solid transparent"}}>
-                                {col.l}{clienteSortCol===col.k?(clienteSortDir==="asc"?" ↑":" ↓"):""}
+                                  borderBottom:clienteSortCol===col.k?"2px solid #90CAF9":"2px solid transparent"}}>                                {col.l}{clienteSortCol===col.k?(clienteSortDir==="asc"?" ↑":" ↓"):""}
                               </th>
                             ))}
                           </tr>
