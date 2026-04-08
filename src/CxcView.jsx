@@ -142,6 +142,8 @@ export default function CxcView({
   const [modalSortCol, setModalSortCol] = useState("vencimiento");
   const [modalSortDir, setModalSortDir] = useState("asc");
   const [filtroBancoMes, setFiltroBancoMes] = useState("Todos");
+  const [filtroSegmentoMes, setFiltroSegmentoMes] = useState("");
+  const [filtroMesVentaMes, setFiltroMesVentaMes] = useState("");
   const [porFacturarModal, setPorFacturarModal] = useState(false);
   const porFacturarRef = useRef();
 
@@ -2037,111 +2039,142 @@ export default function CxcView({
         const mesPrefix = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
         const MESES_ES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
         const mesNombre = `${MESES_ES[now.getMonth()]} ${now.getFullYear()}`;
-        const cobrosDelMes = cobros.filter(c =>
-          c.tipo === "realizado" &&
-          c.fechaCobro &&
-          c.fechaCobro.startsWith(mesPrefix) &&
-          !ingresos.find(i => i.id === c.ingresoId)?.oculta
-        );
-        // Bancos disponibles
-        const bancos = ["Todos",...[...new Set(cobrosDelMes.map(c=>c.banco||"Sin banco").filter(Boolean))]];
-        const cobrosFiltrados = filtroBancoMes === "Todos" ? cobrosDelMes : cobrosDelMes.filter(c=>(c.banco||"Sin banco")===filtroBancoMes);
-        // Agrupar por cliente
-        const porCliente = {};
-        cobrosFiltrados.forEach(c => {
-          const ing = ingresos.find(i => i.id === c.ingresoId);
-          if (!ing) return;
-          const cl = ing.cliente || "Sin cliente";
-          if (!porCliente[cl]) porCliente[cl] = {cobros:[], total:0, bancos:{}};
-          porCliente[cl].cobros.push({...c, ing});
-          porCliente[cl].total += c.monto;
-          const b = c.banco || "Sin banco";
-          porCliente[cl].bancos[b] = (porCliente[cl].bancos[b]||0) + c.monto;
-        });
-        const clientesSorted = Object.entries(porCliente).sort((a,b)=>b[1].total-a[1].total);
-        const grandTotal = cobrosFiltrados.reduce((s,c)=>s+c.monto,0);
-        const bancosEnFiltro = [...new Set(cobrosFiltrados.map(c=>c.banco||"Sin banco"))];
+
+        // Todos los cobros realizados del mes, enriquecidos con datos del ingreso
+        const cobrosDelMes = cobros
+          .filter(c => c.tipo==="realizado" && c.fechaCobro && c.fechaCobro.startsWith(mesPrefix))
+          .map(c => { const ing = ingresos.find(i=>i.id===c.ingresoId); return ing && !ing.oculta ? {...c, ing} : null; })
+          .filter(Boolean);
+
+        // Opciones de filtros
+        const bancosOpts    = ["Todos",...[...new Set(cobrosDelMes.map(c=>c.banco||"Sin banco"))]];
+        const segmentosOpts = ["Todos",...[...new Set(cobrosDelMes.map(c=>c.ing.segmento||"Sin segmento").filter(Boolean))]];
+        const mesesVentaOpts = ["Todos",...[...new Set(cobrosDelMes.map(c=>c.ing.fechaContable?.slice(0,7)).filter(Boolean))].sort()];
+
+        // Aplicar filtros
+        const filas = cobrosDelMes.filter(c => {
+          if (filtroBancoMes !== "Todos" && (c.banco||"Sin banco") !== filtroBancoMes) return false;
+          if (filtroSegmentoMes !== "Todos" && filtroSegmentoMes !== "" && (c.ing.segmento||"Sin segmento") !== filtroSegmentoMes) return false;
+          if (filtroMesVentaMes !== "Todos" && filtroMesVentaMes !== "" && !c.ing.fechaContable?.startsWith(filtroMesVentaMes)) return false;
+          return true;
+        }).sort((a,b) => a.ing.cliente.localeCompare(b.ing.cliente) || a.fechaCobro.localeCompare(b.fechaCobro));
+
+        const grandTotal = filas.reduce((s,c)=>s+c.monto, 0);
         const sym = monedaSym("MXN");
+
         return (
-          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:10}}
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:8}}
             onClick={()=>setCobrosMesModal(false)}>
-            <div style={{background:"#fff",borderRadius:18,width:"100%",maxWidth:1500,maxHeight:"95vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
+            <div style={{background:"#fff",borderRadius:18,width:"100%",maxWidth:"98vw",maxHeight:"96vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
               onClick={e=>e.stopPropagation()}>
+
               {/* Header */}
-              <div style={{padding:"18px 24px",borderBottom:`1px solid ${C.border}`,background:"#1B5E20",borderRadius:"18px 18px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{padding:"18px 28px",background:"#1B5E20",borderRadius:"18px 18px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div>
-                  <div style={{fontWeight:800,fontSize:17,color:"#fff"}}>💰 Cobranza de {mesNombre}</div>
-                  <div style={{fontSize:12,color:"#A5D6A7",marginTop:2}}>{cobrosDelMes.length} cobros registrados</div>
+                  <div style={{fontWeight:800,fontSize:18,color:"#fff"}}>💰 Cobranza de {mesNombre}</div>
+                  <div style={{fontSize:12,color:"#A5D6A7",marginTop:2}}>{cobrosDelMes.length} cobros registrados · mostrando {filas.length}</div>
                 </div>
-                <button onClick={()=>setCobrosMesModal(false)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",width:34,height:34,cursor:"pointer",fontSize:18}}>×</button>
+                <button onClick={()=>setCobrosMesModal(false)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",width:36,height:36,cursor:"pointer",fontSize:20}}>×</button>
               </div>
-              {/* Filtro bancos */}
-              <div style={{padding:"14px 24px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",background:"#F8FAFC"}}>
-                <span style={{fontSize:12,color:C.muted,fontWeight:600}}>Banco:</span>
-                {bancos.map(b=>(
-                  <button key={b} onClick={()=>setFiltroBancoMes(b)}
-                    style={{padding:"5px 14px",borderRadius:20,border:"none",cursor:"pointer",fontWeight:700,fontSize:12,fontFamily:"inherit",
-                      background:filtroBancoMes===b?"#1B5E20":"#E8F5E9",
-                      color:filtroBancoMes===b?"#fff":"#2E7D32",
-                      transition:"all .15s"}}>
-                    {b}
+
+              {/* Filtros */}
+              <div style={{padding:"12px 24px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",background:"#F8FAFC"}}>
+                {/* Banco */}
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{fontSize:11,color:C.muted,fontWeight:700}}>🏦 BANCO</span>
+                  <div style={{display:"flex",gap:4}}>
+                    {bancosOpts.map(b=>(
+                      <button key={b} onClick={()=>setFiltroBancoMes(b)}
+                        style={{padding:"4px 12px",borderRadius:20,border:"none",cursor:"pointer",fontWeight:700,fontSize:12,fontFamily:"inherit",
+                          background:filtroBancoMes===b?"#1B5E20":"#E8F5E9",color:filtroBancoMes===b?"#fff":"#2E7D32",transition:"all .15s"}}>
+                        {b}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {/* Segmento */}
+                {segmentosOpts.length > 2 && (
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:11,color:C.muted,fontWeight:700}}>✈️ SEGMENTO</span>
+                    <select value={filtroSegmentoMes} onChange={e=>setFiltroSegmentoMes(e.target.value)}
+                      style={{padding:"5px 10px",borderRadius:8,border:`1px solid ${C.border}`,fontSize:12,fontFamily:"inherit",background:"#fff",cursor:"pointer"}}>
+                      {segmentosOpts.map(s=><option key={s} value={s==="Todos"?"":s}>{s}</option>)}
+                    </select>
+                  </div>
+                )}
+                {/* Mes de Venta */}
+                {mesesVentaOpts.length > 2 && (
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:11,color:C.muted,fontWeight:700}}>📅 MES VENTA</span>
+                    <select value={filtroMesVentaMes} onChange={e=>setFiltroMesVentaMes(e.target.value)}
+                      style={{padding:"5px 10px",borderRadius:8,border:`1px solid ${C.border}`,fontSize:12,fontFamily:"inherit",background:"#fff",cursor:"pointer"}}>
+                      {mesesVentaOpts.map(m=>{
+                        if(m==="Todos") return <option key="todos" value="">Todos</option>;
+                        const [y,mo]=m.split("-");
+                        return <option key={m} value={m}>{MESES_ES[+mo-1]} {y}</option>;
+                      })}
+                    </select>
+                  </div>
+                )}
+                {/* Limpiar */}
+                {(filtroBancoMes!=="Todos"||filtroSegmentoMes||filtroMesVentaMes) && (
+                  <button onClick={()=>{setFiltroBancoMes("Todos");setFiltroSegmentoMes("");setFiltroMesVentaMes("");}}
+                    style={{padding:"4px 12px",borderRadius:20,border:"none",cursor:"pointer",fontWeight:700,fontSize:12,fontFamily:"inherit",background:"#F1F5F9",color:C.text}}>
+                    ✕ Limpiar
                   </button>
-                ))}
-                <div style={{marginLeft:"auto",fontSize:13,fontWeight:800,color:"#1B5E20"}}>
+                )}
+                <div style={{marginLeft:"auto",fontSize:14,fontWeight:900,color:"#1B5E20"}}>
                   Total: {sym}{fmt(grandTotal)}
                 </div>
               </div>
-              {/* Tabla por cliente */}
+
+              {/* Tabla plana */}
               <div style={{overflowY:"auto",flex:1}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
                   <thead style={{position:"sticky",top:0}}>
-                    <tr style={{background:"#E8F5E9"}}>
-                      <th style={{padding:"10px 16px",textAlign:"left",color:"#1B5E20",fontWeight:800,fontSize:11,textTransform:"uppercase"}}>Cliente</th>
-                      <th style={{padding:"10px 12px",textAlign:"center",color:"#1B5E20",fontWeight:800,fontSize:11,textTransform:"uppercase"}}>Cobros</th>
-                      {bancosEnFiltro.map(b=>(
-                        <th key={b} style={{padding:"10px 12px",textAlign:"right",color:"#1B5E20",fontWeight:800,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{b}</th>
+                    <tr style={{background:"#1B5E20"}}>
+                      {["Cliente","Segmento","Folio","Concepto","F. Contable","F. Factura","F. Cobro","Monto Fact.","Cobrado","Banco","Notas"].map(h=>(
+                        <th key={h} style={{padding:"11px 14px",textAlign:["Monto Fact.","Cobrado"].includes(h)?"right":"left",
+                          color:"rgba(255,255,255,.85)",fontWeight:800,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>
+                          {h}
+                        </th>
                       ))}
-                      <th style={{padding:"10px 16px",textAlign:"right",color:"#1B5E20",fontWeight:800,fontSize:11,textTransform:"uppercase"}}>Total</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {clientesSorted.map(([cliente, data], ci) => (
-                      <React.Fragment key={cliente}>
-                        <tr style={{borderTop:`1px solid ${C.border}`,background:ci%2===0?"#fff":"#F8FFF8"}}>
-                          <td style={{padding:"11px 16px",fontWeight:700,color:C.navy,fontSize:14}}>{cliente}</td>
-                          <td style={{padding:"11px 12px",textAlign:"center",color:C.muted,fontSize:13}}>{data.cobros.length}</td>
-                          {bancosEnFiltro.map(b=>(
-                            <td key={b} style={{padding:"11px 12px",textAlign:"right",fontWeight:600,color:data.bancos[b]>0?"#1B5E20":C.muted}}>
-                              {data.bancos[b]>0?`${sym}${fmt(data.bancos[b])}`:"—"}
-                            </td>
-                          ))}
-                          <td style={{padding:"11px 16px",textAlign:"right",fontWeight:800,color:"#1B5E20",fontSize:14}}>{sym}{fmt(data.total)}</td>
+                    {filas.map((c,i)=>{
+                      const ing = c.ing;
+                      return (
+                        <tr key={c.id} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#fff":"#F8FFF8",cursor:"pointer"}}
+                          onClick={()=>{setCobrosMesModal(false);setDetailIngreso(ing.id);}}
+                          onMouseEnter={e=>e.currentTarget.style.background="#E8F5E9"}
+                          onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"#fff":"#F8FFF8"}>
+                          <td style={{padding:"10px 14px",fontWeight:700,color:C.navy,whiteSpace:"nowrap"}}>{ing.cliente}</td>
+                          <td style={{padding:"10px 14px",fontSize:12,color:C.muted}}>{ing.segmento||"—"}</td>
+                          <td style={{padding:"10px 14px",color:C.blue,fontWeight:600,whiteSpace:"nowrap",fontSize:12}}>{ing.folio||"—"}</td>
+                          <td style={{padding:"10px 14px",color:C.text,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.concepto||"—"}</td>
+                          <td style={{padding:"10px 14px",color:C.teal,whiteSpace:"nowrap",fontSize:12}}>{ing.fechaContable||"—"}</td>
+                          <td style={{padding:"10px 14px",color:C.muted,whiteSpace:"nowrap",fontSize:12}}>{ing.fecha||"—"}</td>
+                          <td style={{padding:"10px 14px",color:"#1B5E20",fontWeight:600,whiteSpace:"nowrap",fontSize:12}}>{c.fechaCobro}</td>
+                          <td style={{padding:"10px 14px",textAlign:"right",fontWeight:600,color:C.navy}}>{sym}{fmt(ing.monto)}</td>
+                          <td style={{padding:"10px 14px",textAlign:"right",fontWeight:800,color:"#1B5E20",fontSize:14}}>{sym}{fmt(c.monto)}</td>
+                          <td style={{padding:"10px 14px",whiteSpace:"nowrap"}}>
+                            <span style={{background:"#E8F5E9",color:"#2E7D32",fontWeight:700,fontSize:11,padding:"2px 8px",borderRadius:12}}>{c.banco||"—"}</span>
+                          </td>
+                          <td style={{padding:"10px 14px",color:C.muted,fontSize:12,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.notas||"—"}</td>
                         </tr>
-                        {data.cobros.map(c=>(
-                          <tr key={c.id} style={{background:"#F0FFF4",borderTop:`1px solid #E8F5E9`}}>
-                            <td style={{padding:"7px 16px 7px 36px",color:C.muted,fontSize:12}}>{c.fechaCobro} · {c.ing?.folio||c.ing?.concepto||"—"}</td>
-                            <td/>
-                            {bancosEnFiltro.map(b=>(
-                              <td key={b} style={{padding:"7px 12px",textAlign:"right",fontSize:12,color:(c.banco||"Sin banco")===b?"#2E7D32":C.muted}}>
-                                {(c.banco||"Sin banco")===b?`${sym}${fmt(c.monto)}`:""}
-                              </td>
-                            ))}
-                            <td style={{padding:"7px 16px",textAlign:"right",fontSize:12,color:"#388E3C"}}>{sym}{fmt(c.monto)}</td>
-                          </tr>
-                        ))}
-                      </React.Fragment>
-                    ))}
-                    {/* Fila totales */}
-                    <tr style={{background:"#E8F5E9",borderTop:`2px solid #A5D6A7`}}>
-                      <td style={{padding:"11px 16px",fontWeight:800,color:"#1B5E20",fontSize:13}}>TOTAL ({clientesSorted.length} clientes)</td>
-                      <td style={{padding:"11px 12px",textAlign:"center",fontWeight:700,color:"#1B5E20"}}>{cobrosFiltrados.length}</td>
-                      {bancosEnFiltro.map(b=>{
-                        const tot=cobrosFiltrados.filter(c=>(c.banco||"Sin banco")===b).reduce((s,c)=>s+c.monto,0);
-                        return <td key={b} style={{padding:"11px 12px",textAlign:"right",fontWeight:800,color:"#1B5E20"}}>{tot>0?`${sym}${fmt(tot)}`:"—"}</td>;
-                      })}
-                      <td style={{padding:"11px 16px",textAlign:"right",fontWeight:900,color:"#1B5E20",fontSize:15}}>{sym}{fmt(grandTotal)}</td>
-                    </tr>
+                      );
+                    })}
                   </tbody>
+                  <tfoot>
+                    <tr style={{background:"#E8F5E9",borderTop:`2px solid #A5D6A7`}}>
+                      <td colSpan={8} style={{padding:"11px 14px",fontWeight:800,color:"#1B5E20",fontSize:13}}>
+                        TOTAL — {filas.length} cobro{filas.length!==1?"s":""} · {[...new Set(filas.map(c=>c.ing.cliente))].length} clientes
+                      </td>
+                      <td style={{padding:"11px 14px",textAlign:"right",fontWeight:900,color:"#1B5E20",fontSize:15}}>{sym}{fmt(grandTotal)}</td>
+                      <td colSpan={2}/>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             </div>
