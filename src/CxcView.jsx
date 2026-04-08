@@ -1697,7 +1697,7 @@ export default function CxcView({
           <div style={{position:"fixed",inset:0,background:"rgba(15,45,74,.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:3000,padding:20}}
             onClick={()=>setCalDayDetailLocal(null)}>
             <div onClick={e=>e.stopPropagation()}
-              style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:960,maxHeight:"88vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(74,0,130,.25)"}}>
+              style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:1500,maxHeight:"95vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(74,0,130,.25)"}}>
 
               {/* Header */}
               <div style={{background:"linear-gradient(135deg,#6A1B9A,#9C27B0)",borderRadius:"20px 20px 0 0",padding:"20px 28px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -2061,9 +2061,9 @@ export default function CxcView({
         const bancosEnFiltro = [...new Set(cobrosFiltrados.map(c=>c.banco||"Sin banco"))];
         const sym = monedaSym("MXN");
         return (
-          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:10}}
             onClick={()=>setCobrosMesModal(false)}>
-            <div style={{background:"#fff",borderRadius:18,width:"100%",maxWidth:960,maxHeight:"88vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
+            <div style={{background:"#fff",borderRadius:18,width:"100%",maxWidth:1500,maxHeight:"95vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
               onClick={e=>e.stopPropagation()}>
               {/* Header */}
               <div style={{padding:"18px 24px",borderBottom:`1px solid ${C.border}`,background:"#1B5E20",borderRadius:"18px 18px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -2155,9 +2155,9 @@ export default function CxcView({
         const totalCobrado = modalIngs.reduce((s,i)=>s+(metrics[i.id]?.totalCobrado||0),0);
         const totalPorCobrar = modalIngs.reduce((s,i)=>s+(metrics[i.id]?.porCobrar||0),0);
         return (
-          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:10}}
             onClick={()=>setAgingDetailModal(null)}>
-            <div style={{background:"#fff",borderRadius:18,width:"100%",maxWidth:1150,maxHeight:"88vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
+            <div style={{background:"#fff",borderRadius:18,width:"100%",maxWidth:1500,maxHeight:"95vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
               onClick={e=>e.stopPropagation()}>
               {/* Header */}
               <div style={{padding:"18px 26px",borderBottom:`1px solid ${C.border}`,background:C.navy,borderRadius:"18px 18px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -2230,9 +2230,9 @@ export default function CxcView({
         if(tipo === "_lista") {
           const ings = modalIngresos || [];
           return(
-            <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
+            <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:10}}
               onClick={()=>setKpiModal(null)}>
-              <div style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:1200,maxHeight:"85vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
+              <div style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:1500,maxHeight:"95vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
                 onClick={e=>e.stopPropagation()}>
                 <div style={{padding:"16px 24px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",background:C.navy,borderRadius:"16px 16px 0 0"}}>
                   <div>
@@ -3445,7 +3445,7 @@ function LimpiarTASModal({ empresaId, totalIngresos, conActividad, sinActividad,
   };
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:10}}
       onClick={onClose}>
       <div style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:520,boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
         onClick={e=>e.stopPropagation()}>
@@ -4010,7 +4010,7 @@ function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
     );
 
     return(
-      <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
+      <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:10}}
         onClick={()=>setDetailModal(null)}>
         <div style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:1300,maxHeight:"88vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
           onClick={e=>e.stopPropagation()}>
@@ -4382,9 +4382,9 @@ function PorFacturarModal({ empresaId, porFacturar, setPorFacturar, ingresos, in
   };
 
   return(
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:10}}
       onClick={onClose}>
-      <div style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:1000,maxHeight:"90vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
+      <div style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:1500,maxHeight:"95vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
         onClick={e=>e.stopPropagation()}>
 
         {/* Header */}
@@ -4632,9 +4632,9 @@ function OcultasModal({ ingresos, metrics, onRestore, onRestoreAll, onClose, fmt
   }, {});
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:10}}
       onClick={onClose}>
-      <div style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:1100,maxHeight:"85vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
+      <div style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:1500,maxHeight:"95vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
         onClick={e=>e.stopPropagation()}>
 
         {/* Header */}
