@@ -708,3 +708,44 @@ export async function deleteFinanciamientoPago(id) {
   const { error } = await supabase.from('financiamiento_pagos').delete().eq('id', id);
   if (error) console.error('deleteFinanciamientoPago:', error);
 }
+
+/* ── Tarjetas de Crédito ─────────────────────────────────────────── */
+export async function fetchTarjetas(empresaId) {
+  let q = supabase.from('tarjetas_credito').select('*').order('banco');
+  if (empresaId) q = q.eq('empresa_id', empresaId);
+  const { data, error } = await q;
+  if (error) { console.error('fetchTarjetas:', error); return []; }
+  return (data||[]).map(r => ({
+    id: r.id, empresaId: r.empresa_id, banco: r.banco||'',
+    titular: r.titular||'', contrato: r.contrato||'',
+    limite: +r.limite||0, saldoActual: +r.saldo_actual||0,
+    fechaCorte: r.fecha_corte||'', activo: r.activo!==false, notas: r.notas||'',
+  }));
+}
+
+export async function updateTarjetaSaldo(id, saldoActual) {
+  const { error } = await supabase.from('tarjetas_credito').update({ saldo_actual: saldoActual }).eq('id', id);
+  if (error) console.error('updateTarjetaSaldo:', error);
+}
+
+export async function fetchTarjetaMovimientos(empresaId) {
+  let q = supabase.from('tarjeta_movimientos').select('*').order('fecha', { ascending: false });
+  if (empresaId) q = q.eq('empresa_id', empresaId);
+  const { data, error } = await q;
+  if (error) { console.error('fetchTarjetaMovimientos:', error); return []; }
+  return (data||[]).map(r => ({
+    id: r.id, empresaId: r.empresa_id, tarjetaId: r.tarjeta_id,
+    fecha: r.fecha||'', descripcion: r.descripcion||'', monto: +r.monto||0,
+    tipo: r.tipo||'', integrante: r.integrante||'', noAutorizacion: r.no_autorizacion||'',
+    tarjetaNum: r.tarjeta_num||'', estatus: r.estatus||'', rfc: r.rfc||'',
+  }));
+}
+
+export async function bulkInsertMovimientos(rows) {
+  if (!rows.length) return { inserted: 0, dupes: 0 };
+  const { data, error } = await supabase.from('tarjeta_movimientos')
+    .upsert(rows, { onConflict: 'empresa_id,no_autorizacion', ignoreDuplicates: true })
+    .select();
+  if (error) { console.error('bulkInsertMovimientos:', error); return { inserted: 0, error }; }
+  return { inserted: (data||[]).length, dupes: rows.length - (data||[]).length };
+}

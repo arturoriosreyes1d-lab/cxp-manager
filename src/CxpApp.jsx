@@ -15,6 +15,7 @@ import {
   fetchPorFacturar, insertPorFacturar, updatePorFacturar, deletePorFacturar, bulkInsertPorFacturar,
   fetchFinanciamientos, insertFinanciamiento, updateFinanciamiento, deleteFinanciamiento,
   fetchFinanciamientoPagos, insertFinanciamientoPago, deleteFinanciamientoPago,
+  fetchTarjetas, updateTarjetaSaldo, fetchTarjetaMovimientos, bulkInsertMovimientos,
 } from "./db.js";
 import CxcView from "./CxcView.jsx";
 import { EMPRESAS } from "./empresas.js";
@@ -197,17 +198,26 @@ export default function CxpApp({ user, onLogout }) {
   const [financModalId, setFinancModalId] = useState(null);
   const [financImportPreview, setFinancImportPreview] = useState(null); // [{nombre,concepto,montoMensual,fechaInicio,fechaFin,diaPago,plazos}]
   const [financImportando, setFinancImportando] = useState(false); // which credit is open
+  const [tarjetas, setTarjetas] = useState([]);
+  const [tarjetaMovimientos, setTarjetaMovimientos] = useState([]);
+  const [tarjetaModalId, setTarjetaModalId] = useState(null);
+  const [tarjetaImportPreview, setTarjetaImportPreview] = useState(null);
+  const [tarjetaImportando, setTarjetaImportando] = useState(false);
+  const tarjetaImportRef = useRef();
+  const [editingSaldoId, setEditingSaldoId] = useState(null);
+  const [editingSaldoVal, setEditingSaldoVal] = useState("");
   const [vincularModal, setVincularModal] = useState(null); // {invoiceId, proveedor, folio, total, moneda}
 
   /* ── Load data from Supabase ────────────────────────────────────── */
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const [inv, sup, cls, pays, ings, cbs, invIngs, cats, clts, pf, fins, finPagos] = await Promise.all([
+      const [inv, sup, cls, pays, ings, cbs, invIngs, cats, clts, pf, fins, finPagos, tarjs, tarjMovs] = await Promise.all([
         fetchInvoices(empresaId), fetchSuppliers(empresaId), fetchClasificaciones(empresaId), fetchPayments(empresaId),
         fetchIngresos(empresaId), fetchCobros(empresaId), fetchInvoiceIngresos(empresaId), fetchCategoriasIngreso(empresaId),
         fetchClientes(empresaId), fetchPorFacturar(empresaId),
         fetchFinanciamientos(empresaId), fetchFinanciamientoPagos(empresaId),
+        fetchTarjetas(empresaId), fetchTarjetaMovimientos(empresaId),
       ]);
       setInvoices(inv);
       setSuppliers(sup.length > 0 ? sup : []);
@@ -221,6 +231,8 @@ export default function CxpApp({ user, onLogout }) {
       setPorFacturar(pf);
       setFinanciamientos(fins);
       setFinanciamientoPagos(finPagos);
+      setTarjetas(tarjs);
+      setTarjetaMovimientos(tarjMovs);
       setLoading(false);
     })();
   }, [empresaId]);
@@ -1310,14 +1322,79 @@ export default function CxpApp({ user, onLogout }) {
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
                     <span style={{fontSize:15}}>💳</span>
                     <span style={{fontWeight:800,fontSize:12,color:"#fff",textTransform:"uppercase",letterSpacing:.5}}>Tarjetas de Crédito</span>
+                    {tarjetas.filter(t=>t.activo).length>0&&<span style={{background:"rgba(255,255,255,.15)",color:"rgba(255,255,255,.9)",fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:20}}>{tarjetas.filter(t=>t.activo).length}</span>}
                   </div>
-                  <button style={{padding:"4px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,.25)",background:"rgba(255,255,255,.1)",color:"#fff",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>
-                    📥 Importar
-                  </button>
+                  <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                    <button onClick={()=>tarjetaImportRef.current?.click()}
+                      style={{padding:"4px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,.25)",background:"rgba(255,255,255,.1)",color:"#fff",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>
+                      📥 Importar CSV
+                    </button>
+                  </div>
                 </div>
-                <div style={{padding:"10px",background:"#F5F0FF",display:"flex",alignItems:"center",justifyContent:"center",minHeight:80}}>
-                  <span style={{fontSize:12,color:"#9C27B0",fontWeight:600,opacity:.7}}>Próximamente</span>
-                </div>
+                {tarjetas.filter(t=>t.activo).length>0 ? (
+                  <div style={{display:"flex",gap:8,padding:"8px 10px 12px",background:"#F5F0FF",flexWrap:"wrap"}}>
+                    {tarjetas.filter(t=>t.activo).map(t=>{
+                      const pct = t.limite>0 ? Math.round((t.saldoActual/t.limite)*100) : 0;
+                      const disponible = t.limite - t.saldoActual;
+                      const movT = tarjetaMovimientos.filter(m=>m.tarjetaId===t.id);
+                      const now = new Date();
+                      const mesPrefix = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+                      const cargosM = movT.filter(m=>m.monto>0&&m.tipo!=="PAGO"&&m.fecha?.startsWith(mesPrefix));
+                      const totalCargosM = cargosM.reduce((s,m)=>s+m.monto,0);
+                      return (
+                        <div key={t.id} onClick={()=>setTarjetaModalId(t.id)}
+                          style={{background:"#fff",border:"2px solid #7B1FA2",borderRadius:12,padding:"14px 16px",cursor:"pointer",flex:"1 1 0",minWidth:0,boxShadow:"0 2px 8px rgba(0,0,0,.08)",transition:"all .15s"}}
+                          onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 6px 16px rgba(0,0,0,.13)";}}
+                          onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 2px 8px rgba(0,0,0,.08)";}}>
+                        <div style={{fontWeight:900,fontSize:13,color:"#1A0533",marginBottom:1}}>{t.banco}</div>
+                          <div style={{fontSize:11,color:"#7B1FA2",marginBottom:8,fontWeight:600}}>{t.titular}</div>
+                          {/* Saldo editable */}
+                          {editingSaldoId===t.id ? (
+                            <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:3}} onClick={e=>e.stopPropagation()}>
+                              <span style={{fontSize:13,fontWeight:700,color:"#C62828"}}>$</span>
+                              <input autoFocus
+                                value={editingSaldoVal}
+                                onChange={e=>setEditingSaldoVal(e.target.value)}
+                                onKeyDown={async e=>{
+                                  if(e.key==="Enter"){
+                                    const nuevo = parseFloat(editingSaldoVal.replace(/,/g,""));
+                                    if(!isNaN(nuevo)){
+                                      await updateTarjetaSaldo(t.id, nuevo);
+                                      setTarjetas(prev=>prev.map(x=>x.id===t.id?{...x,saldoActual:nuevo}:x));
+                                    }
+                                    setEditingSaldoId(null);
+                                  }
+                                  if(e.key==="Escape") setEditingSaldoId(null);
+                                }}
+                                onBlur={()=>setEditingSaldoId(null)}
+                                placeholder={fmt(t.saldoActual)}
+                                style={{width:"100%",fontSize:18,fontWeight:900,color:"#C62828",border:"none",borderBottom:"2px solid #7B1FA2",outline:"none",background:"transparent",fontFamily:"inherit"}}/>
+                            </div>
+                          ) : (
+                            <div onClick={e=>{e.stopPropagation();setEditingSaldoId(t.id);setEditingSaldoVal(String(t.saldoActual));}}
+                              style={{fontSize:20,fontWeight:900,color:"#C62828",marginBottom:3,cursor:"text",borderBottom:"1px dashed #EF9A9A",display:"inline-block"}}
+                              title="Clic para editar saldo">
+                              ${fmt(t.saldoActual)} ✏️
+                            </div>
+                          )}
+                          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#666",marginBottom:6}}>
+                            <span>Disponible: <b style={{color:"#2E7D32"}}>${fmt(disponible)}</b></span>
+                            <span style={{fontWeight:800,color:"#7B1FA2"}}>{pct}% usado</span>
+                          </div>
+                          <div style={{height:6,borderRadius:3,background:"#EDE7F6",overflow:"hidden"}}>
+                            <div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:pct>80?"#C62828":pct>50?"#E65100":"#7B1FA2",borderRadius:3}}/>
+                          </div>
+                          {totalCargosM>0&&<div style={{fontSize:11,color:"#7B1FA2",marginTop:6,fontWeight:700}}>🛒 Este mes: ${fmt(totalCargosM)}</div>}
+                          <div style={{fontSize:10,color:"#999",marginTop:3}}>Corte día {t.fechaCorte} · Contrato {t.contrato}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div style={{padding:"12px 14px",background:"#F5F0FF",display:"flex",alignItems:"center",justifyContent:"center",minHeight:80}}>
+                    <span style={{fontSize:12,color:"#9C27B0",fontWeight:600,opacity:.7}}>Importa un CSV de Konfio para comenzar</span>
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -1569,6 +1646,246 @@ export default function CxpApp({ user, onLogout }) {
             </div>
           );
         })()}
+
+        {/* ── Tarjeta Import Preview Modal ── */}
+        {tarjetaImportPreview && (
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:10}}
+            onClick={()=>setTarjetaImportPreview(null)}>
+            <div style={{background:"#fff",borderRadius:18,width:"100%",maxWidth:"95vw",maxHeight:"94vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
+              onClick={e=>e.stopPropagation()}>
+              <div style={{padding:"18px 24px",background:"#1A0533",borderRadius:"18px 18px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontWeight:800,fontSize:17,color:"#fff"}}>💳 Importar Movimientos — {tarjetaImportPreview.fileName}</div>
+                  <div style={{fontSize:12,color:"#CE93D8",marginTop:2}}>{tarjetaImportPreview.movs.length} movimientos detectados</div>
+                </div>
+                <button onClick={()=>setTarjetaImportPreview(null)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",width:34,height:34,cursor:"pointer",fontSize:18}}>×</button>
+              </div>
+              {/* KPI preview */}
+              <div style={{padding:"14px 24px",background:"#F5F0FF",borderBottom:"1px solid #E1BEE7",display:"flex",gap:12,flexWrap:"wrap"}}>
+                {[
+                  {l:"Total movimientos", v:tarjetaImportPreview.movs.length, c:"#1A0533"},
+                  {l:"Cargos/Compras",    v:tarjetaImportPreview.cargos.length, c:"#C62828"},
+                  {l:"Total cargos",      v:`$${fmt(tarjetaImportPreview.cargos.reduce((s,m)=>s+m.monto,0))}`, c:"#C62828"},
+                  {l:"Pagos",            v:tarjetaImportPreview.pagos.length, c:"#1B5E20"},
+                  {l:"Total pagos",      v:`$${fmt(Math.abs(tarjetaImportPreview.pagos.reduce((s,m)=>s+m.monto,0)))}`, c:"#1B5E20"},
+                ].map(k=>(
+                  <div key={k.l} style={{background:"#fff",borderRadius:10,padding:"8px 14px",border:"1px solid #E1BEE7",flex:"1 1 120px"}}>
+                    <div style={{fontSize:10,color:"#7B1FA2",fontWeight:700,textTransform:"uppercase"}}>{k.l}</div>
+                    <div style={{fontSize:16,fontWeight:900,color:k.c,marginTop:2}}>{k.v}</div>
+                  </div>
+                ))}
+              </div>
+              {/* Preview table */}
+              <div style={{overflowY:"auto",flex:1}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead style={{position:"sticky",top:0}}>
+                    <tr style={{background:"#1A0533"}}>
+                      {["Fecha","Descripción","Integrante","Tipo","Monto"].map(h=>(
+                        <th key={h} style={{padding:"9px 12px",textAlign:h==="Monto"?"right":"left",color:"rgba(255,255,255,.85)",fontWeight:700,fontSize:11,textTransform:"uppercase"}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tarjetaImportPreview.movs.slice(0,50).map((m,i)=>(
+                      <tr key={i} style={{borderTop:"1px solid #F3E5F5",background:i%2===0?"#fff":"#FDF7FF"}}>
+                        <td style={{padding:"8px 12px",color:"#666",whiteSpace:"nowrap"}}>{m.fecha}</td>
+                        <td style={{padding:"8px 12px",maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.descripcion}</td>
+                        <td style={{padding:"8px 12px",color:"#7B1FA2",fontWeight:600}}>{m.integrante||"—"}</td>
+                        <td style={{padding:"8px 12px"}}>
+                          <span style={{background:m.tipo==="PAGO"?"#E8F5E9":m.tipo==="TRANSFERENCIA"?"#E3F2FD":"#FFF3E0",
+                            color:m.tipo==="PAGO"?"#1B5E20":m.tipo==="TRANSFERENCIA"?"#1565C0":"#E65100",
+                            fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20}}>{m.tipo}</span>
+                        </td>
+                        <td style={{padding:"8px 12px",textAlign:"right",fontWeight:700,color:m.monto<0?"#1B5E20":"#C62828"}}>{m.monto<0?"-":""}${fmt(Math.abs(m.monto))}</td>
+                      </tr>
+                    ))}
+                    {tarjetaImportPreview.movs.length>50&&(
+                      <tr><td colSpan={5} style={{padding:"10px",textAlign:"center",color:"#7B1FA2",fontStyle:"italic"}}>
+                        ... y {tarjetaImportPreview.movs.length-50} movimientos más
+                      </td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{padding:"14px 24px",borderTop:"1px solid #E1BEE7",display:"flex",gap:10,justifyContent:"flex-end",background:"#F5F0FF",borderRadius:"0 0 18px 18px"}}>
+                <button onClick={()=>setTarjetaImportPreview(null)}
+                  style={{padding:"9px 20px",borderRadius:10,border:"1px solid #E1BEE7",background:"#fff",color:"#333",cursor:"pointer",fontSize:13,fontFamily:"inherit",fontWeight:600}}>
+                  Cancelar
+                </button>
+                <button disabled={tarjetaImportando} onClick={async()=>{
+                  setTarjetaImportando(true);
+                  const {inserted, dupes} = await bulkInsertMovimientos(tarjetaImportPreview.movs);
+                  const nuevos = await fetchTarjetaMovimientos(empresaId);
+                  setTarjetaMovimientos(nuevos);
+                  setTarjetaImportPreview(null);
+                  setTarjetaImportando(false);
+                  alert(`✅ ${inserted} nuevos movimientos importados · ${dupes||0} duplicados ignorados`);
+                }} style={{padding:"9px 24px",borderRadius:10,border:"none",background:tarjetaImportando?"#CE93D8":"#7B1FA2",color:"#fff",cursor:tarjetaImportando?"wait":"pointer",fontSize:13,fontFamily:"inherit",fontWeight:700}}>
+                  {tarjetaImportando?"Importando…":"✅ Confirmar e importar"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Tarjeta Detail Modal ── */}
+        {tarjetaModalId && (()=>{
+          const t = tarjetas.find(x=>x.id===tarjetaModalId);
+          if (!t) return null;
+          const movT = tarjetaMovimientos.filter(m=>m.tarjetaId===t.id);
+          const [filtroInt, setFiltroInt] = React.useState("");
+          const [filtroTipo, setFiltroTipo] = React.useState("");
+          const [filtroMes, setFiltroMes] = React.useState("");
+          const integrantes = [...new Set(movT.map(m=>m.integrante).filter(Boolean))].sort();
+          const mesesDisp = [...new Set(movT.map(m=>m.fecha?.slice(0,7)).filter(Boolean))].sort().reverse();
+          const MESES_N = ["Enero","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+          const filtrados = movT.filter(m=>{
+            if(filtroInt && m.integrante!==filtroInt) return false;
+            if(filtroTipo && m.tipo!==filtroTipo) return false;
+            if(filtroMes && !m.fecha?.startsWith(filtroMes)) return false;
+            return true;
+          });
+          const cargosF = filtrados.filter(m=>m.monto>0&&m.tipo!=="PAGO");
+          const pagosF  = filtrados.filter(m=>m.monto<0||m.tipo==="PAGO");
+          const totalCargos = cargosF.reduce((s,m)=>s+m.monto,0);
+          const totalPagos  = Math.abs(pagosF.reduce((s,m)=>s+m.monto,0));
+          const pct = t.limite>0?Math.round((t.saldoActual/t.limite)*100):0;
+          // Por integrante
+          const porInt = {};
+          cargosF.forEach(m=>{ const k=m.integrante||"Sin asignar"; porInt[k]=(porInt[k]||0)+m.monto; });
+          const intSorted = Object.entries(porInt).sort((a,b)=>b[1]-a[1]);
+          return (
+            <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:10}}
+              onClick={()=>setTarjetaModalId(null)}>
+              <div style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:"98vw",maxHeight:"96vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
+                onClick={e=>e.stopPropagation()}>
+                {/* Header */}
+                <div style={{padding:"18px 28px",background:"#1A0533",borderRadius:"20px 20px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div>
+                    <div style={{fontSize:11,color:"#CE93D8",fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>💳 Tarjeta de Crédito</div>
+                    <div style={{fontWeight:900,fontSize:20,color:"#fff",marginTop:4}}>{t.banco} · {t.titular}</div>
+                    <div style={{fontSize:12,color:"rgba(255,255,255,.6)",marginTop:2}}>Contrato {t.contrato} · Corte día {t.fechaCorte}</div>
+                  </div>
+                  <button onClick={()=>setTarjetaModalId(null)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:10,color:"#fff",width:38,height:38,cursor:"pointer",fontSize:22}}>×</button>
+                </div>
+                {/* KPIs */}
+                <div style={{padding:"14px 24px",background:"#F5F0FF",borderBottom:"1px solid #E1BEE7",display:"flex",gap:10,flexWrap:"wrap"}}>
+                  {[
+                    {icon:"💳",l:"Límite",       v:`$${fmt(t.limite)}`,      c:"#1A0533"},
+                    {icon:"🔴",l:"Saldo Actual",  v:`$${fmt(t.saldoActual)}`, c:"#C62828"},
+                    {icon:"✅",l:"Disponible",    v:`$${fmt(t.limite-t.saldoActual)}`, c:"#1B5E20"},
+                    {icon:"📊",l:"% Utilizado",   v:`${pct}%`,               c:pct>80?"#C62828":pct>50?"#E65100":"#7B1FA2"},
+                    {icon:"🛒",l:"Cargos período",v:`$${fmt(totalCargos)}`,   c:"#C62828"},
+                    {icon:"💰",l:"Pagos período", v:`$${fmt(totalPagos)}`,    c:"#1B5E20"},
+                    {icon:"📋",l:"Movimientos",   v:filtrados.length,         c:"#1A0533"},
+                  ].map(k=>(
+                    <div key={k.l} style={{background:"#fff",borderRadius:12,padding:"10px 16px",border:"1px solid #E1BEE7",flex:"1 1 120px"}}>
+                      <div style={{fontSize:10,color:"#7B1FA2",fontWeight:700,textTransform:"uppercase",letterSpacing:.4,marginBottom:3}}>{k.icon} {k.l}</div>
+                      <div style={{fontSize:15,fontWeight:900,color:k.c}}>{k.v}</div>
+                    </div>
+                  ))}
+                </div>
+                {/* Barra utilización */}
+                <div style={{padding:"10px 28px",background:"#F5F0FF",borderBottom:"1px solid #E1BEE7"}}>
+                  <div style={{height:8,borderRadius:4,background:"#EDE7F6",overflow:"hidden"}}>
+                    <div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:pct>80?"#C62828":pct>50?"#E65100":"#7B1FA2",borderRadius:4,transition:"width .5s"}}/>
+                  </div>
+                </div>
+                {/* Filtros + por integrante */}
+                <div style={{padding:"12px 24px",borderBottom:"1px solid #E1BEE7",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",background:"#FAFAFA"}}>
+                  <select value={filtroInt} onChange={e=>setFiltroInt(e.target.value)}
+                    style={{padding:"6px 10px",borderRadius:8,border:"1px solid #E1BEE7",fontSize:12,fontFamily:"inherit"}}>
+                    <option value="">👥 Todos los integrantes</option>
+                    {integrantes.map(i=><option key={i}>{i}</option>)}
+                  </select>
+                  <select value={filtroTipo} onChange={e=>setFiltroTipo(e.target.value)}
+                    style={{padding:"6px 10px",borderRadius:8,border:"1px solid #E1BEE7",fontSize:12,fontFamily:"inherit"}}>
+                    <option value="">📋 Todos los tipos</option>
+                    {["COMPRA","CARGO","PAGO","TRANSFERENCIA"].map(t=><option key={t}>{t}</option>)}
+                  </select>
+                  <select value={filtroMes} onChange={e=>setFiltroMes(e.target.value)}
+                    style={{padding:"6px 10px",borderRadius:8,border:"1px solid #E1BEE7",fontSize:12,fontFamily:"inherit"}}>
+                    <option value="">📅 Todos los meses</option>
+                    {mesesDisp.map(m=>{const[y,mo]=m.split("-");return <option key={m} value={m}>{MESES_N[+mo-1]} {y}</option>;})}
+                  </select>
+                  {(filtroInt||filtroTipo||filtroMes)&&<button onClick={()=>{setFiltroInt("");setFiltroTipo("");setFiltroMes("");}}
+                    style={{padding:"6px 12px",borderRadius:8,border:"1px solid #E1BEE7",background:"#fff",cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>✕ Limpiar</button>}
+                  {/* Por integrante chips */}
+                  <div style={{marginLeft:"auto",display:"flex",gap:6,flexWrap:"wrap"}}>
+                    {intSorted.map(([k,v])=>(
+                      <span key={k} onClick={()=>setFiltroInt(filtroInt===k?"":k)}
+                        style={{background:filtroInt===k?"#7B1FA2":"#EDE7F6",color:filtroInt===k?"#fff":"#7B1FA2",
+                          fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:20,cursor:"pointer"}}>
+                        {k.split(" ")[0]}: ${fmt(v)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                {/* Tabla movimientos */}
+                <div style={{overflowY:"auto",flex:1}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                    <thead style={{position:"sticky",top:0}}>
+                      <tr style={{background:"#1A0533"}}>
+                        {["Fecha","Descripción","Integrante","Tipo","Tarjeta","Estatus","Monto"].map(h=>(
+                          <th key={h} style={{padding:"10px 14px",textAlign:h==="Monto"?"right":"left",color:"rgba(255,255,255,.85)",fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtrados.sort((a,b)=>b.fecha?.localeCompare(a.fecha||"")||0).map((m,i)=>(
+                        <tr key={m.id||i} style={{borderTop:"1px solid #F3E5F5",background:i%2===0?"#fff":"#FDF7FF"}}>
+                          <td style={{padding:"9px 14px",color:"#666",whiteSpace:"nowrap",fontSize:12}}>{m.fecha}</td>
+                          <td style={{padding:"9px 14px",maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.descripcion}</td>
+                          <td style={{padding:"9px 14px",color:"#7B1FA2",fontWeight:600,fontSize:12}}>{m.integrante||"—"}</td>
+                          <td style={{padding:"9px 14px"}}>
+                            <span style={{background:m.tipo==="PAGO"?"#E8F5E9":m.tipo==="TRANSFERENCIA"?"#E3F2FD":"#FFF3E0",
+                              color:m.tipo==="PAGO"?"#1B5E20":m.tipo==="TRANSFERENCIA"?"#1565C0":"#E65100",
+                              fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20}}>{m.tipo}</span>
+                          </td>
+                          <td style={{padding:"9px 14px",fontSize:12,color:"#999"}}>{m.tarjetaNum||"—"}</td>
+                          <td style={{padding:"9px 14px",fontSize:11,color:m.estatus==="Aplicada"?"#1B5E20":"#E65100"}}>{m.estatus||"—"}</td>
+                          <td style={{padding:"9px 14px",textAlign:"right",fontWeight:800,fontSize:14,color:m.monto<0?"#1B5E20":"#C62828"}}>
+                            {m.monto<0?"-":""}${fmt(Math.abs(m.monto))}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ── Input oculto tarjeta CSV ── */}
+        <input ref={tarjetaImportRef} type="file" accept=".csv" style={{display:"none"}}
+          onChange={async(e)=>{
+            const file = e.target.files[0];
+            if(!file) return;
+            e.target.value="";
+            const text = await file.text();
+            const lines = text.split("\n").filter(l=>l.trim());
+            const headers = lines[0].split(",").map(h=>h.trim().replace(/"/g,""));
+            const rows = lines.slice(1).map(line=>{
+              const cols=[]; let cur="",inQ=false;
+              for(let ch of line){if(ch==='"'){inQ=!inQ;}else if(ch===','&&!inQ){cols.push(cur);cur="";}else{cur+=ch;}}
+              cols.push(cur);
+              const r={}; headers.forEach((h,i)=>r[h]=cols[i]?.trim().replace(/"/g,"")||""); return r;
+            }).filter(r=>r["Fecha operacion"]);
+            const tarjetaId = tarjetas.find(t=>t.activo)?.id;
+            const movs = rows.map(r=>({
+              empresa_id: empresaId, tarjeta_id: tarjetaId||null,
+              fecha: r["Fecha operacion"]||null,
+              descripcion: r["Descripcion"]||"",
+              monto: parseFloat((r["Monto ($)"]||"0").replace(/,/g,"")),
+              tipo: r["Tipo"]||"", integrante: r["Integrante"]||"",
+              no_autorizacion: r["No autorizacion"]||"",
+              tarjeta_num: r["Número"]||"", estatus: r["Estatus"]||"", rfc: r["RFC"]||"",
+            }));
+            const cargos = movs.filter(m=>m.monto>0&&m.tipo!=="PAGO");
+            const pagos  = movs.filter(m=>m.monto<0||m.tipo==="PAGO");
+            setTarjetaImportPreview({movs, cargos, pagos, fileName:file.name});
+          }}/>
 
         {/* Duplicate folios alert */}
         {dupeCount>0 && (
