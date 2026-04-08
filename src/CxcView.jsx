@@ -2154,31 +2154,72 @@ export default function CxcView({
         const totalMonto  = modalIngs.reduce((s,i)=>s+i.monto,0);
         const totalCobrado = modalIngs.reduce((s,i)=>s+(metrics[i.id]?.totalCobrado||0),0);
         const totalPorCobrar = modalIngs.reduce((s,i)=>s+(metrics[i.id]?.porCobrar||0),0);
+        const [mSort, setMSort] = React.useState("vencimiento");
+        const [mDir,  setMDir]  = React.useState("asc");
+        const toggleMSort = col => { if(mSort===col) setMDir(d=>d==="asc"?"desc":"asc"); else {setMSort(col);setMDir("asc");} };
+        const arrow = col => mSort===col ? (mDir==="asc"?" ↑":" ↓") : "";
+        const sorted = [...modalIngs].sort((a,b)=>{
+          const ma=metrics[a.id]||{}, mb=metrics[b.id]||{};
+          let va,vb;
+          switch(mSort){
+            case "segmento":    va=a.segmento||"";   vb=b.segmento||""; break;
+            case "folio":       va=a.folio||"";       vb=b.folio||""; break;
+            case "concepto":    va=a.concepto||"";    vb=b.concepto||""; break;
+            case "fechaContable":va=a.fechaContable||"";vb=b.fechaContable||""; break;
+            case "fechaFactura": va=a.fecha||"";       vb=b.fecha||""; break;
+            case "vencimiento":  va=a.fechaVencimiento||"";vb=b.fechaVencimiento||""; break;
+            case "dias":        va=diasDiff(a.fechaVencimiento)??999;vb=diasDiff(b.fechaVencimiento)??999; break;
+            case "monto":       va=a.monto;            vb=b.monto; break;
+            case "cobrado":     va=ma.totalCobrado||0; vb=mb.totalCobrado||0; break;
+            case "porCobrar":   va=ma.porCobrar||0;    vb=mb.porCobrar||0; break;
+            default:            va=a.fechaVencimiento||"";vb=b.fechaVencimiento||"";
+          }
+          const cmp = typeof va==="number"?va-vb:String(va).localeCompare(String(vb));
+          return mDir==="asc"?cmp:-cmp;
+        });
+        const hBtn = (col,label,align="left") => (
+          <th key={col} onClick={()=>toggleMSort(col)}
+            style={{padding:"11px 14px",textAlign:align,color:mSort===col?"#90CAF9":"rgba(255,255,255,.8)",
+              fontWeight:800,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap",cursor:"pointer",
+              userSelect:"none",borderBottom:mSort===col?"2px solid #90CAF9":"2px solid transparent",
+              transition:"color .15s"}}
+            onMouseEnter={e=>e.currentTarget.style.color="#fff"}
+            onMouseLeave={e=>e.currentTarget.style.color=mSort===col?"#90CAF9":"rgba(255,255,255,.8)"}>
+            {label}{arrow(col)}
+          </th>
+        );
         return (
-          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:10}}
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:8}}
             onClick={()=>setAgingDetailModal(null)}>
-            <div style={{background:"#fff",borderRadius:18,width:"100%",maxWidth:1500,maxHeight:"95vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
+            <div style={{background:"#fff",borderRadius:18,width:"100%",maxWidth:"98vw",maxHeight:"96vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.35)"}}
               onClick={e=>e.stopPropagation()}>
               {/* Header */}
-              <div style={{padding:"18px 26px",borderBottom:`1px solid ${C.border}`,background:C.navy,borderRadius:"18px 18px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{padding:"18px 28px",background:C.navy,borderRadius:"18px 18px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div>
-                  <div style={{fontWeight:800,fontSize:17,color:"#fff"}}>📋 {titulo}</div>
+                  <div style={{fontWeight:800,fontSize:18,color:"#fff"}}>📋 {titulo}</div>
                   <div style={{fontSize:12,color:"#A5D6A7",marginTop:3}}>{modalIngs.length} factura{modalIngs.length!==1?"s":""} · Por cobrar: <b>{sym}{fmt(totalPorCobrar)}</b></div>
                 </div>
-                <button onClick={()=>setAgingDetailModal(null)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",width:34,height:34,cursor:"pointer",fontSize:18}}>×</button>
+                <button onClick={()=>setAgingDetailModal(null)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",width:36,height:36,cursor:"pointer",fontSize:20}}>×</button>
               </div>
               {/* Tabla */}
               <div style={{overflowY:"auto",flex:1}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
                   <thead style={{position:"sticky",top:0}}>
-                    <tr style={{background:"#EEF2FF"}}>
-                      {["Segmento","Folio","Concepto","F. Contable","F. Factura","Vencimiento","Días / Por Vencer","Monto","Cobrado","Por Cobrar"].map(h=>(
-                        <th key={h} style={{padding:"10px 12px",textAlign:["Monto","Cobrado","Por Cobrar"].includes(h)?"right":"left",color:C.navy,fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
-                      ))}
+                    <tr style={{background:"#1A2F4A"}}>
+                      {hBtn("segmento","Segmento")}
+                      {hBtn("folio","Folio")}
+                      {hBtn("concepto","Concepto")}
+                      {hBtn("fechaContable","F. Contable")}
+                      {hBtn("fechaFactura","F. Factura")}
+                      {hBtn("vencimiento","Vencimiento")}
+                      {hBtn("dias","Días / Por Vencer","center")}
+                      {hBtn("monto","Monto","right")}
+                      {hBtn("cobrado","Cobrado","right")}
+                      {hBtn("porCobrar","Por Cobrar","right")}
                     </tr>
                   </thead>
                   <tbody>
-                    {[...modalIngs].sort((a,b)=>(a.fechaVencimiento||"").localeCompare(b.fechaVencimiento||"")).map((ing,i)=>{
+                    {sorted.map((ing,i)=>{
                       const m = metrics[ing.id]||{};
                       const d = diasDiff(ing.fechaVencimiento);
                       return (
@@ -2186,30 +2227,30 @@ export default function CxcView({
                           onClick={()=>{setAgingDetailModal(null);setDetailIngreso(ing.id);}}
                           onMouseEnter={e=>e.currentTarget.style.background="#E8F0FE"}
                           onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"#fff":"#FAFBFC"}>
-                          <td style={{padding:"10px 12px",fontSize:11,color:C.muted}}>{ing.segmento||"—"}</td>
-                          <td style={{padding:"10px 12px",color:C.blue,fontWeight:600,whiteSpace:"nowrap",fontSize:12}}>{ing.folio||"—"}</td>
-                          <td style={{padding:"10px 12px",color:C.text,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.concepto||"—"}</td>
-                          <td style={{padding:"10px 12px",color:C.teal,whiteSpace:"nowrap",fontSize:12}}>{ing.fechaContable||"—"}</td>
-                          <td style={{padding:"10px 12px",color:C.muted,whiteSpace:"nowrap",fontSize:12}}>{ing.fecha||"—"}</td>
-                          <td style={{padding:"10px 12px",whiteSpace:"nowrap",fontSize:12,color:d!==null&&d<0?C.danger:C.text,fontWeight:d!==null&&d<0?700:400}}>{ing.fechaVencimiento||"—"}</td>
-                          <td style={{padding:"10px 12px",textAlign:"center"}}>
-                            {d===null ? <span style={{color:C.muted}}>—</span>
-                              : d<0 ? <span style={{background:"#FFEBEE",color:C.danger,fontWeight:800,fontSize:11,padding:"3px 8px",borderRadius:20}}>{Math.abs(d)}d venc.</span>
-                              : <span style={{background:d<=15?"#FFF3E0":d<=30?"#FFFDE7":"#E8F5E9",color:d<=15?C.danger:d<=30?C.warn:C.ok,fontWeight:700,fontSize:11,padding:"3px 8px",borderRadius:20}}>{d}d</span>}
+                          <td style={{padding:"11px 14px",fontSize:12,color:C.muted}}>{ing.segmento||"—"}</td>
+                          <td style={{padding:"11px 14px",color:C.blue,fontWeight:600,whiteSpace:"nowrap",fontSize:13}}>{ing.folio||"—"}</td>
+                          <td style={{padding:"11px 14px",color:C.text,maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:13}}>{ing.concepto||"—"}</td>
+                          <td style={{padding:"11px 14px",color:C.teal,whiteSpace:"nowrap",fontSize:13}}>{ing.fechaContable||"—"}</td>
+                          <td style={{padding:"11px 14px",color:C.muted,whiteSpace:"nowrap",fontSize:13}}>{ing.fecha||"—"}</td>
+                          <td style={{padding:"11px 14px",whiteSpace:"nowrap",fontSize:13,color:d!==null&&d<0?C.danger:C.text,fontWeight:d!==null&&d<0?700:400}}>{ing.fechaVencimiento||"—"}</td>
+                          <td style={{padding:"11px 14px",textAlign:"center"}}>
+                            {d===null?<span style={{color:C.muted}}>—</span>
+                              :d<0?<span style={{background:"#FFEBEE",color:C.danger,fontWeight:800,fontSize:12,padding:"3px 10px",borderRadius:20}}>{Math.abs(d)}d venc.</span>
+                              :<span style={{background:d<=15?"#FFF3E0":d<=30?"#FFFDE7":"#E8F5E9",color:d<=15?C.danger:d<=30?C.warn:C.ok,fontWeight:700,fontSize:12,padding:"3px 10px",borderRadius:20}}>{d}d</span>}
                           </td>
-                          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700}}>{sym}{fmt(ing.monto)}</td>
-                          <td style={{padding:"10px 12px",textAlign:"right",color:C.ok,fontWeight:600}}>{sym}{fmt(m.totalCobrado||0)}</td>
-                          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:800,color:(m.porCobrar||0)>0?C.warn:C.ok}}>{sym}{fmt(m.porCobrar||0)}</td>
+                          <td style={{padding:"11px 14px",textAlign:"right",fontWeight:700,fontSize:13}}>{sym}{fmt(ing.monto)}</td>
+                          <td style={{padding:"11px 14px",textAlign:"right",color:C.ok,fontWeight:600,fontSize:13}}>{sym}{fmt(m.totalCobrado||0)}</td>
+                          <td style={{padding:"11px 14px",textAlign:"right",fontWeight:800,fontSize:14,color:(m.porCobrar||0)>0?C.warn:C.ok}}>{sym}{fmt(m.porCobrar||0)}</td>
                         </tr>
                       );
                     })}
                   </tbody>
                   <tfoot>
                     <tr style={{background:"#EEF2FF",borderTop:`2px solid ${C.blue}`}}>
-                      <td colSpan={7} style={{padding:"10px 12px",fontWeight:800,color:C.navy}}>TOTAL ({modalIngs.length} facturas)</td>
-                      <td style={{padding:"10px 12px",textAlign:"right",fontWeight:800,color:C.navy}}>{sym}{fmt(totalMonto)}</td>
-                      <td style={{padding:"10px 12px",textAlign:"right",fontWeight:800,color:C.ok}}>{sym}{fmt(totalCobrado)}</td>
-                      <td style={{padding:"10px 12px",textAlign:"right",fontWeight:900,color:C.warn,fontSize:14}}>{sym}{fmt(totalPorCobrar)}</td>
+                      <td colSpan={7} style={{padding:"11px 14px",fontWeight:800,color:C.navy,fontSize:13}}>TOTAL ({modalIngs.length} facturas)</td>
+                      <td style={{padding:"11px 14px",textAlign:"right",fontWeight:800,color:C.navy,fontSize:13}}>{sym}{fmt(totalMonto)}</td>
+                      <td style={{padding:"11px 14px",textAlign:"right",fontWeight:800,color:C.ok,fontSize:13}}>{sym}{fmt(totalCobrado)}</td>
+                      <td style={{padding:"11px 14px",textAlign:"right",fontWeight:900,color:C.warn,fontSize:15}}>{sym}{fmt(totalPorCobrar)}</td>
                     </tr>
                   </tfoot>
                 </table>
