@@ -431,6 +431,16 @@ export async function deleteCobro(id) {
   if (error) console.error('deleteCobro:', error);
 }
 
+export async function updateCobro(id, fields) {
+  const row = {};
+  if ('monto'      in fields) row.monto       = +fields.monto;
+  if ('fechaCobro' in fields) row.fecha_cobro  = fields.fechaCobro;
+  if ('banco'      in fields) row.banco        = fields.banco;
+  if ('notas'      in fields) row.notas        = fields.notas;
+  const { error } = await supabase.from('cobros').update(row).eq('id', id);
+  if (error) console.error('updateCobro:', error);
+}
+
 /* ── Invoice-Ingresos ────────────────────────────────────────── */
 export async function fetchInvoiceIngresos(empresaId) {
   if (empresaId) {

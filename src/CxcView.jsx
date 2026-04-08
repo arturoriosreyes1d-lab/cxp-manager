@@ -6,7 +6,7 @@ import {
 } from "recharts";
 import {
   upsertIngreso, deleteIngreso as deleteIngresoDB,
-  insertCobro, deleteCobro as deleteCobro_DB,
+  insertCobro, deleteCobro as deleteCobro_DB, updateCobro,
   upsertInvoiceIngreso, deleteInvoiceIngreso as deleteInvoiceIngresoDB,
   upsertCategoriaIngreso, deleteCategoriaIngreso as deleteCategoriaIngresoDB,
   updateIngresoField,
@@ -876,6 +876,8 @@ export default function CxcView({
     const [cobroFecha, setCobroFecha] = useState(today());
     const [cobroNotas, setCobroNotas] = useState("");
     const [cobroBanco, setCobroBanco] = useState("Banamex");
+    const [editCobroId, setEditCobroId] = useState(null);
+    const [editCobroFields, setEditCobroFields] = useState({});
     const [invDetail, setInvDetail] = useState(null);
     const [sortFacturas, setSortFacturas] = useState("estatus"); // "estatus"|"proveedor"|"monto"|"fecha"
 
@@ -986,13 +988,61 @@ export default function CxcView({
             {ingCobros.filter(c=>c.tipo!=='proyectado').length === 0
               ? <div style={{textAlign:"center",color:C.muted,fontSize:12,padding:12}}>Sin cobros realizados</div>
               : ingCobros.filter(c=>c.tipo!=='proyectado').map(c=>(
-                <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 11px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:5,background:C.surface}}>
-                  <div>
-                    <div style={{fontWeight:700,color:C.ok,fontSize:13}}>{sym}{fmt(c.monto)}</div>
-                    <div style={{fontSize:11,color:C.muted}}>📅 {c.fechaCobro||"—"}{c.banco ? ` · 🏦 ${c.banco}` : ""}</div>
-                    {c.notas && <div style={{fontSize:10,color:C.muted,fontStyle:"italic"}}>{c.notas}</div>}
-                  </div>
-                  <button onClick={()=>removeCobro(c.id)} style={{...iconBtn,color:C.danger}}>🗑️</button>
+                <div key={c.id} style={{borderRadius:8,border:`1px solid ${editCobroId===c.id?C.blue:C.border}`,marginBottom:6,background:editCobroId===c.id?"#EEF4FF":C.surface,overflow:"hidden"}}>
+                  {editCobroId===c.id ? (
+                    /* ── Edit form ── */
+                    <div style={{padding:"10px 12px"}}>
+                      <div style={{fontSize:11,fontWeight:700,color:C.blue,marginBottom:8}}>✏️ Editar cobro</div>
+                      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end"}}>
+                        <div>
+                          <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}>Monto</div>
+                          <input type="number" value={editCobroFields.monto||""} onChange={e=>setEditCobroFields(p=>({...p,monto:e.target.value}))}
+                            style={{...inputStyle,width:110}} step="0.01"/>
+                        </div>
+                        <div>
+                          <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}>Fecha</div>
+                          <input type="date" value={editCobroFields.fechaCobro||""} onChange={e=>setEditCobroFields(p=>({...p,fechaCobro:e.target.value}))}
+                            style={{...inputStyle,width:140}}/>
+                        </div>
+                        <div>
+                          <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}>Banco</div>
+                          <select value={editCobroFields.banco||""} onChange={e=>setEditCobroFields(p=>({...p,banco:e.target.value}))}
+                            style={{...inputStyle,width:120}}>
+                            <option>Banamex</option>
+                            <option>Banorte</option>
+                          </select>
+                        </div>
+                        <div style={{flex:1,minWidth:80}}>
+                          <div style={{fontSize:10,color:C.muted,fontWeight:600,marginBottom:3}}>Notas</div>
+                          <input value={editCobroFields.notas||""} onChange={e=>setEditCobroFields(p=>({...p,notas:e.target.value}))}
+                            placeholder="Notas…" style={{...inputStyle}}/>
+                        </div>
+                      </div>
+                      <div style={{display:"flex",gap:8,marginTop:10}}>
+                        <button onClick={async()=>{
+                          await updateCobro(c.id, editCobroFields);
+                          setCobros(prev=>prev.map(x=>x.id===c.id?{...x,...editCobroFields}:x));
+                          setEditCobroId(null);
+                        }} style={{...btnStyle,background:C.blue,padding:"6px 16px",fontSize:12}}>💾 Guardar</button>
+                        <button onClick={()=>setEditCobroId(null)}
+                          style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"6px 12px",fontSize:12}}>Cancelar</button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* ── Normal row ── */
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 11px"}}>
+                      <div>
+                        <div style={{fontWeight:700,color:C.ok,fontSize:13}}>{sym}{fmt(c.monto)}</div>
+                        <div style={{fontSize:11,color:C.muted}}>📅 {c.fechaCobro||"—"}{c.banco ? ` · 🏦 ${c.banco}` : ""}</div>
+                        {c.notas && <div style={{fontSize:10,color:C.muted,fontStyle:"italic"}}>{c.notas}</div>}
+                      </div>
+                      <div style={{display:"flex",gap:4}}>
+                        {!esConsulta && <button onClick={()=>{setEditCobroId(c.id);setEditCobroFields({monto:c.monto,fechaCobro:c.fechaCobro,banco:c.banco||"Banamex",notas:c.notas||""});}}
+                          style={{...iconBtn,color:C.blue}} title="Editar cobro">✏️</button>}
+                        {!esConsulta && <button onClick={()=>removeCobro(c.id)} style={{...iconBtn,color:C.danger}} title="Eliminar cobro">🗑️</button>}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))
             }
