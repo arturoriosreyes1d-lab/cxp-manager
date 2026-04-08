@@ -3518,18 +3518,18 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
 
     // Column definitions for header
     const COL_DEFS = [
-      {k:"nombre",   l:"Proveedor",        align:"left"},
-      {k:"count",    l:"# Facturas",       align:"center"},
-      {k:"total",    l:"Total",            align:"right"},
-      {k:"pagado",   l:"Pagado",           align:"right"},
-      {k:"saldo",    l:"Saldo Total",      align:"right"},
-      {k:"corriente",l:"Corriente",        align:"right", hc:"#80CBC4"},
-      {k:"v7",       l:"Vencido 1-7 Días", align:"right", hc:"#FFCC80"},
-      {k:"v15",      l:"Vencido 8-15 Días",align:"right", hc:"#FF8A65"},
-      {k:"v30",      l:"Vencido 16-30 Días",align:"right",hc:"#F1948A"},
-      {k:"v60",      l:"Vencido 31-60 Días",align:"right",hc:"#E57373"},
-      {k:"vmas",     l:"Vencido +60 Días", align:"right", hc:"#FFCDD2"},
-      {k:"_",        l:"",                 align:"center"},
+      {k:"nombre",   l:"Proveedor",         align:"left"},
+      {k:"count",    l:"# Facturas",        align:"center"},
+      {k:"total",    l:"Total",             align:"center"},
+      {k:"pagado",   l:"Pagado",            align:"center"},
+      {k:"saldo",    l:"Saldo Total",       align:"center"},
+      {k:"corriente",l:"Corriente",         align:"center", hc:"#80CBC4"},
+      {k:"v7",       l:"Vencido 1-7 Días",  align:"center", hc:"#FFCC80"},
+      {k:"v15",      l:"Vencido 8-15 Días", align:"center", hc:"#FF8A65"},
+      {k:"v30",      l:"Vencido 16-30 Días",align:"center", hc:"#F1948A"},
+      {k:"v60",      l:"Vencido 31-60 Días",align:"center", hc:"#E57373"},
+      {k:"vmas",     l:"Vencido +60 Días",  align:"center", hc:"#FFCDD2"},
+      {k:"_",        l:"",                  align:"center"},
     ];
 
     return(
@@ -3583,15 +3583,15 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
                 <tr style={{background:"#1A2F4A",borderBottom:`2px solid #2D4A6B`}}>
                   <td style={{padding:"10px 14px",fontWeight:800,color:"#fff",fontSize:14}}>TOTAL ({provs.length} proveedores)</td>
                   <td style={{padding:"10px 10px",textAlign:"center",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{grand.count}</td>
-                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{sym}{fmt(grand.total)}</td>
-                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{sym}{fmt(grand.pagado)}</td>
-                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:900,color:"#fff",fontSize:15}}>{sym}{fmt(grand.saldo)}</td>
-                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{grand.corriente>0?`${sym}${fmt(grand.corriente)}`:""}</td>
-                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{grand.v7>0?`${sym}${fmt(grand.v7)}`:""}</td>
-                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{grand.v15>0?`${sym}${fmt(grand.v15)}`:""}</td>
-                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{grand.v30>0?`${sym}${fmt(grand.v30)}`:""}</td>
-                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{grand.v60>0?`${sym}${fmt(grand.v60)}`:""}</td>
-                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{grand.vmas>0?`${sym}${fmt(grand.vmas)}`:""}</td>
+                  <td style={{padding:"10px 10px",textAlign:"center",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{sym}{fmt(grand.total)}</td>
+                  <td style={{padding:"10px 10px",textAlign:"center",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{sym}{fmt(grand.pagado)}</td>
+                  <td style={{padding:"10px 10px",textAlign:"center",fontWeight:900,color:"#fff",fontSize:15}}>{sym}{fmt(grand.saldo)}</td>
+                  <td style={{padding:"10px 10px",textAlign:"center",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{grand.corriente>0?`${sym}${fmt(grand.corriente)}`:""}</td>
+                  <td style={{padding:"10px 10px",textAlign:"center",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{grand.v7>0?`${sym}${fmt(grand.v7)}`:""}</td>
+                  <td style={{padding:"10px 10px",textAlign:"center",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{grand.v15>0?`${sym}${fmt(grand.v15)}`:""}</td>
+                  <td style={{padding:"10px 10px",textAlign:"center",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{grand.v30>0?`${sym}${fmt(grand.v30)}`:""}</td>
+                  <td style={{padding:"10px 10px",textAlign:"center",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{grand.v60>0?`${sym}${fmt(grand.v60)}`:""}</td>
+                  <td style={{padding:"10px 10px",textAlign:"center",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{grand.vmas>0?`${sym}${fmt(grand.vmas)}`:""}</td>
                   <td/>
                 </tr>
               </thead>
@@ -3610,18 +3610,18 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
                         <span style={{marginRight:8,fontSize:11,color:C.blue,display:"inline-block",transform:expanded?"rotate(90deg)":"rotate(0deg)",transition:"transform .2s"}}>▶</span>
                         {p.nombre}
                       </td>
-                      <td style={{padding:"11px 10px",textAlign:"right",color:C.muted,fontSize:14}}>{p.count}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontWeight:600,fontSize:16}}>{sym}{fmt(p.total)}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",color:C.ok,fontWeight:600,fontSize:16}}>{sym}{fmt(p.pagado)}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>
+                      <td style={{padding:"11px 10px",textAlign:"center",color:C.muted,fontSize:14}}>{p.count}</td>
+                      <td style={{padding:"11px 10px",textAlign:"center",fontWeight:600,fontSize:15}}>{sym}{fmt(p.total)}</td>
+                      <td style={{padding:"11px 10px",textAlign:"center",color:C.ok,fontWeight:600,fontSize:15}}>{sym}{fmt(p.pagado)}</td>
+                      <td style={{padding:"11px 10px",textAlign:"center",fontSize:15}} onClick={e=>e.stopPropagation()}>
                         <span onClick={()=>openDetail(`${p.nombre} — Todas`,p.invoices)} style={{fontWeight:900,color:p.saldo>0?C.navy:C.muted,borderBottom:`1px dotted ${C.navy}`,cursor:"pointer"}}>{sym}{fmt(p.saldo)}</span>
                       </td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>{p.corriente>0?<span style={{color:"#2E7D32",fontWeight:600,cursor:"pointer",borderBottom:"1px dotted #2E7D32"}} onClick={()=>openDetail(`${p.nombre} — Corriente`,fi(d=>d!==null&&d>=0))}>{sym}{fmt(p.corriente)}</span>:<span style={{color:C.muted}}>—</span>}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>{vCell(p.v7,sym,fi(d=>d!==null&&d<0&&Math.abs(d)<=7),`${p.nombre} — Venc 1-7d`,"#E65100")}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>{vCell(p.v15,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=15),`${p.nombre} — Venc 8-15d`,"#BF360C")}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>{vCell(p.v30,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30),`${p.nombre} — Venc 16-30d`,"#C0392B")}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>{vCell(p.v60,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=60),`${p.nombre} — Venc 31-60d`,"#B71C1C")}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>{vCell(p.vmas,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>60),`${p.nombre} — Venc +60d`,"#6A0000")}</td>
+                      <td style={{padding:"11px 10px",textAlign:"center",fontSize:15}} onClick={e=>e.stopPropagation()}>{p.corriente>0?<span style={{color:"#2E7D32",fontWeight:600,cursor:"pointer",borderBottom:"1px dotted #2E7D32"}} onClick={()=>openDetail(`${p.nombre} — Corriente`,fi(d=>d!==null&&d>=0))}>{sym}{fmt(p.corriente)}</span>:<span style={{color:C.muted}}>—</span>}</td>
+                      <td style={{padding:"11px 10px",textAlign:"center",fontSize:15}} onClick={e=>e.stopPropagation()}>{vCell(p.v7,sym,fi(d=>d!==null&&d<0&&Math.abs(d)<=7),`${p.nombre} — Venc 1-7d`,"#E65100")}</td>
+                      <td style={{padding:"11px 10px",textAlign:"center",fontSize:15}} onClick={e=>e.stopPropagation()}>{vCell(p.v15,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=15),`${p.nombre} — Venc 8-15d`,"#BF360C")}</td>
+                      <td style={{padding:"11px 10px",textAlign:"center",fontSize:15}} onClick={e=>e.stopPropagation()}>{vCell(p.v30,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30),`${p.nombre} — Venc 16-30d`,"#C0392B")}</td>
+                      <td style={{padding:"11px 10px",textAlign:"center",fontSize:15}} onClick={e=>e.stopPropagation()}>{vCell(p.v60,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=60),`${p.nombre} — Venc 31-60d`,"#B71C1C")}</td>
+                      <td style={{padding:"11px 10px",textAlign:"center",fontSize:15}} onClick={e=>e.stopPropagation()}>{vCell(p.vmas,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>60),`${p.nombre} — Venc +60d`,"#6A0000")}</td>
                       <td style={{padding:"11px 10px",textAlign:"right"}} onClick={e=>e.stopPropagation()}>
                         <button onClick={()=>openDetail(`${p.nombre} — Todas`,p.invoices)}
                           style={{padding:"5px 12px",borderRadius:8,border:`1px solid ${C.blue}`,background:"#E8F0FE",color:C.blue,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>Ver →</button>
