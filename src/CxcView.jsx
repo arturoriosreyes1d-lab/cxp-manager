@@ -144,6 +144,7 @@ export default function CxcView({
   const [filtroBancoMes, setFiltroBancoMes] = useState("Todos");
   const [filtroSegmentoMes, setFiltroSegmentoMes] = useState("");
   const [filtroMesVentaMes, setFiltroMesVentaMes] = useState("");
+  const [vistaCobrosMes, setVistaCobrosMes] = useState("plana");
   const [porFacturarModal, setPorFacturarModal] = useState(false);
   const porFacturarRef = useRef();
 
@@ -2111,7 +2112,17 @@ export default function CxcView({
         }).sort((a,b) => a.ing.cliente.localeCompare(b.ing.cliente) || a.fechaCobro.localeCompare(b.fechaCobro));
 
         const grandTotal = filas.reduce((s,c)=>s+c.monto, 0);
+        const totalFacturado = filas.reduce((s,c)=>s+c.ing.monto, 0);
         const sym = monedaSym("MXN");
+        const clientesUnicos = [...new Set(filas.map(c=>c.ing.cliente))];
+        const porBanco = filas.reduce((m,c)=>{ const b=c.banco||"Sin banco"; m[b]=(m[b]||0)+c.monto; return m; },{});
+        const porSegmento = filas.reduce((m,c)=>{ const s=c.ing.segmento||"Sin seg"; m[s]=(m[s]||0)+c.monto; return m; },{});
+
+        // Agrupado por cliente
+        const porCliente = clientesUnicos.map(cli=>{
+          const rows = filas.filter(c=>c.ing.cliente===cli);
+          return { cli, rows, total: rows.reduce((s,c)=>s+c.monto,0) };
+        }).sort((a,b)=>b.total-a.total);
 
         return (
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:8}}
@@ -2125,12 +2136,43 @@ export default function CxcView({
                   <div style={{fontWeight:800,fontSize:18,color:"#fff"}}>💰 Cobranza de {mesNombre}</div>
                   <div style={{fontSize:12,color:"#A5D6A7",marginTop:2}}>{cobrosDelMes.length} cobros registrados · mostrando {filas.length}</div>
                 </div>
-                <button onClick={()=>setCobrosMesModal(false)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",width:36,height:36,cursor:"pointer",fontSize:20}}>×</button>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <button onClick={()=>{
+                    const ws = XLSX.utils.json_to_sheet(filas.map(c=>({
+                      Cliente: c.ing.cliente, Segmento: c.ing.segmento||"", Folio: c.ing.folio||"",
+                      Concepto: c.ing.concepto||"", "F.Contable": c.ing.fechaContable||"",
+                      "F.Factura": c.ing.fecha||"", "F.Cobro": c.fechaCobro||"",
+                      "Monto Factura": c.ing.monto, Cobrado: c.monto, Banco: c.banco||"", Notas: c.notas||""
+                    })));
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "Cobranza");
+                    XLSX.writeFile(wb, `Cobranza_${mesNombre.replace(/ /g,"_")}.xlsx`);
+                  }} style={{padding:"6px 14px",borderRadius:8,border:"1px solid rgba(255,255,255,.3)",background:"rgba(255,255,255,.15)",color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>
+                    📊 Excel
+                  </button>
+                  <button onClick={()=>setCobrosMesModal(false)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",width:36,height:36,cursor:"pointer",fontSize:20}}>×</button>
+                </div>
               </div>
 
-              {/* Filtros */}
-              <div style={{padding:"12px 24px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",background:"#F8FAFC"}}>
-                {/* Banco */}
+              {/* KPIs */}
+              <div style={{padding:"12px 24px",background:"#F1FFF4",borderBottom:`1px solid #C8E6C9`,display:"flex",gap:10,flexWrap:"wrap"}}>
+                {[
+                  {icon:"💰",l:"Total Cobrado",  v:`${sym}${fmt(grandTotal)}`,        c:"#1B5E20",  bg:"#E8F5E9"},
+                  {icon:"🧾",l:"Total Facturado", v:`${sym}${fmt(totalFacturado)}`,    c:C.navy,    bg:"#EEF2FF"},
+                  {icon:"👥",l:"Clientes",        v:`${clientesUnicos.length}`,        c:"#1565C0",  bg:"#E3F2FD"},
+                  {icon:"📋",l:"Facturas",        v:`${filas.length}`,                 c:C.muted,   bg:"#F8FAFC"},
+                  ...Object.entries(porBanco).map(([b,v])=>({icon:"🏦",l:b, v:`${sym}${fmt(v)}`, c:"#2E7D32", bg:"#E8F5E9"})),
+                  ...Object.entries(porSegmento).map(([s,v])=>({icon:"✈️",l:s, v:`${sym}${fmt(v)}`, c:"#7B1FA2", bg:"#F3E5F5"})),
+                ].map(k=>(
+                  <div key={k.l} style={{background:k.bg,borderRadius:12,padding:"8px 16px",border:`1px solid ${C.border}`,flex:"1 1 120px",minWidth:120}}>
+                    <div style={{fontSize:10,color:C.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:.4,marginBottom:2}}>{k.icon} {k.l}</div>
+                    <div style={{fontSize:15,fontWeight:900,color:k.c}}>{k.v}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Filtros + toggle vista */}
+              <div style={{padding:"10px 24px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",background:"#F8FAFC"}}>
                 <div style={{display:"flex",alignItems:"center",gap:6}}>
                   <span style={{fontSize:11,color:C.muted,fontWeight:700}}>🏦 BANCO</span>
                   <div style={{display:"flex",gap:4}}>
@@ -2143,7 +2185,6 @@ export default function CxcView({
                     ))}
                   </div>
                 </div>
-                {/* Segmento */}
                 {segmentosOpts.length > 2 && (
                   <div style={{display:"flex",alignItems:"center",gap:6}}>
                     <span style={{fontSize:11,color:C.muted,fontWeight:700}}>✈️ SEGMENTO</span>
@@ -2153,7 +2194,6 @@ export default function CxcView({
                     </select>
                   </div>
                 )}
-                {/* Mes de Venta */}
                 {mesesVentaOpts.length > 2 && (
                   <div style={{display:"flex",alignItems:"center",gap:6}}>
                     <span style={{fontSize:11,color:C.muted,fontWeight:700}}>📅 MES VENTA</span>
@@ -2167,66 +2207,121 @@ export default function CxcView({
                     </select>
                   </div>
                 )}
-                {/* Limpiar */}
                 {(filtroBancoMes!=="Todos"||filtroSegmentoMes||filtroMesVentaMes) && (
                   <button onClick={()=>{setFiltroBancoMes("Todos");setFiltroSegmentoMes("");setFiltroMesVentaMes("");}}
                     style={{padding:"4px 12px",borderRadius:20,border:"none",cursor:"pointer",fontWeight:700,fontSize:12,fontFamily:"inherit",background:"#F1F5F9",color:C.text}}>
                     ✕ Limpiar
                   </button>
                 )}
-                <div style={{marginLeft:"auto",fontSize:14,fontWeight:900,color:"#1B5E20"}}>
-                  Total: {sym}{fmt(grandTotal)}
+                {/* Toggle vista */}
+                <div style={{marginLeft:"auto",display:"flex",gap:4,background:"#E8F5E9",borderRadius:20,padding:3}}>
+                  {[{k:"plana",l:"📋 Plana"},{k:"cliente",l:"👥 Por cliente"}].map(v=>(
+                    <button key={v.k} onClick={()=>setVistaCobrosMes(v.k)}
+                      style={{padding:"4px 14px",borderRadius:18,border:"none",cursor:"pointer",fontWeight:700,fontSize:12,fontFamily:"inherit",
+                        background:vistaCobrosMes===v.k?"#1B5E20":"transparent",color:vistaCobrosMes===v.k?"#fff":"#2E7D32",transition:"all .15s"}}>
+                      {v.l}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* Tabla plana */}
+              {/* Tabla */}
               <div style={{overflowY:"auto",flex:1}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                  <thead style={{position:"sticky",top:0}}>
-                    <tr style={{background:"#1B5E20"}}>
-                      {["Cliente","Segmento","Folio","Concepto","F. Contable","F. Factura","F. Cobro","Monto Fact.","Cobrado","Banco","Notas"].map(h=>(
-                        <th key={h} style={{padding:"11px 14px",textAlign:["Monto Fact.","Cobrado"].includes(h)?"right":"left",
-                          color:"rgba(255,255,255,.85)",fontWeight:800,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filas.map((c,i)=>{
-                      const ing = c.ing;
-                      return (
-                        <tr key={c.id} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#fff":"#F8FFF8",cursor:"pointer"}}
-                          onClick={()=>{setCobrosMesModal(false);setDetailIngreso(ing.id);}}
-                          onMouseEnter={e=>e.currentTarget.style.background="#E8F5E9"}
-                          onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"#fff":"#F8FFF8"}>
-                          <td style={{padding:"10px 14px",fontWeight:700,color:C.navy,whiteSpace:"nowrap"}}>{ing.cliente}</td>
-                          <td style={{padding:"10px 14px",fontSize:12,color:C.muted}}>{ing.segmento||"—"}</td>
-                          <td style={{padding:"10px 14px",color:C.blue,fontWeight:600,whiteSpace:"nowrap",fontSize:12}}>{ing.folio||"—"}</td>
-                          <td style={{padding:"10px 14px",color:C.text,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.concepto||"—"}</td>
-                          <td style={{padding:"10px 14px",color:C.teal,whiteSpace:"nowrap",fontSize:12}}>{ing.fechaContable||"—"}</td>
-                          <td style={{padding:"10px 14px",color:C.muted,whiteSpace:"nowrap",fontSize:12}}>{ing.fecha||"—"}</td>
-                          <td style={{padding:"10px 14px",color:"#1B5E20",fontWeight:600,whiteSpace:"nowrap",fontSize:12}}>{c.fechaCobro}</td>
-                          <td style={{padding:"10px 14px",textAlign:"right",fontWeight:600,color:C.navy}}>{sym}{fmt(ing.monto)}</td>
-                          <td style={{padding:"10px 14px",textAlign:"right",fontWeight:800,color:"#1B5E20",fontSize:14}}>{sym}{fmt(c.monto)}</td>
-                          <td style={{padding:"10px 14px",whiteSpace:"nowrap"}}>
-                            <span style={{background:"#E8F5E9",color:"#2E7D32",fontWeight:700,fontSize:11,padding:"2px 8px",borderRadius:12}}>{c.banco||"—"}</span>
-                          </td>
-                          <td style={{padding:"10px 14px",color:C.muted,fontSize:12,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.notas||"—"}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr style={{background:"#E8F5E9",borderTop:`2px solid #A5D6A7`}}>
-                      <td colSpan={8} style={{padding:"11px 14px",fontWeight:800,color:"#1B5E20",fontSize:13}}>
-                        TOTAL — {filas.length} cobro{filas.length!==1?"s":""} · {[...new Set(filas.map(c=>c.ing.cliente))].length} clientes
-                      </td>
-                      <td style={{padding:"11px 14px",textAlign:"right",fontWeight:900,color:"#1B5E20",fontSize:15}}>{sym}{fmt(grandTotal)}</td>
-                      <td colSpan={2}/>
-                    </tr>
-                  </tfoot>
-                </table>
+                {vistaCobrosMes==="cliente" ? (
+                  /* ── Vista agrupada por cliente ── */
+                  <div style={{padding:"12px 16px"}}>
+                    {porCliente.map(({cli, rows, total})=>(
+                      <div key={cli} style={{marginBottom:10,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
+                        <div style={{background:"#E8F5E9",padding:"10px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}
+                          onClick={()=>{
+                            const el=document.getElementById(`cobro-cli-${cli.replace(/\s/g,"-")}`);
+                            if(el) el.style.display=el.style.display==="none"?"block":"none";
+                          }}>
+                          <div style={{fontWeight:800,fontSize:14,color:C.navy}}>{cli}</div>
+                          <div style={{display:"flex",gap:16,alignItems:"center"}}>
+                            <span style={{fontSize:12,color:C.muted}}>{rows.length} cobro{rows.length!==1?"s":""}</span>
+                            <span style={{fontWeight:900,fontSize:16,color:"#1B5E20"}}>{sym}{fmt(total)}</span>
+                          </div>
+                        </div>
+                        <div id={`cobro-cli-${cli.replace(/\s/g,"-")}`}>
+                          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                            <thead>
+                              <tr style={{background:"#F1FFF4"}}>
+                                {["Segmento","Folio","Concepto","F.Cobro","Cobrado","Banco","Notas"].map(h=>(
+                                  <th key={h} style={{padding:"7px 14px",textAlign:["Cobrado"].includes(h)?"right":"left",color:"#1B5E20",fontWeight:700,fontSize:11,textTransform:"uppercase"}}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {rows.map((c,ri)=>(
+                                <tr key={c.id} style={{borderTop:`1px solid #E8F5E9`,background:ri%2===0?"#fff":"#F8FFF8",cursor:"pointer"}}
+                                  onClick={()=>{setCobrosMesModal(false);setDetailIngreso(c.ing.id);}}
+                                  onMouseEnter={e=>e.currentTarget.style.background="#E8F5E9"}
+                                  onMouseLeave={e=>e.currentTarget.style.background=ri%2===0?"#fff":"#F8FFF8"}>
+                                  <td style={{padding:"8px 14px",fontSize:12,color:C.muted}}>{c.ing.segmento||"—"}</td>
+                                  <td style={{padding:"8px 14px",color:C.blue,fontWeight:600,fontSize:12}}>{c.ing.folio||"—"}</td>
+                                  <td style={{padding:"8px 14px",color:C.text,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.ing.concepto||"—"}</td>
+                                  <td style={{padding:"8px 14px",color:"#1B5E20",fontWeight:600,fontSize:12,whiteSpace:"nowrap"}}>{c.fechaCobro}</td>
+                                  <td style={{padding:"8px 14px",textAlign:"right",fontWeight:800,color:"#1B5E20",fontSize:14}}>{sym}{fmt(c.monto)}</td>
+                                  <td style={{padding:"8px 14px"}}><span style={{background:"#E8F5E9",color:"#2E7D32",fontWeight:700,fontSize:11,padding:"2px 8px",borderRadius:12}}>{c.banco||"—"}</span></td>
+                                  <td style={{padding:"8px 14px",color:C.muted,fontSize:12}}>{c.notas||"—"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  /* ── Vista plana ── */
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                    <thead style={{position:"sticky",top:0}}>
+                      <tr style={{background:"#1B5E20"}}>
+                        {["Cliente","Segmento","Folio","Concepto","F. Contable","F. Factura","F. Cobro","Monto Fact.","Cobrado","Banco","Notas"].map(h=>(
+                          <th key={h} style={{padding:"11px 14px",textAlign:["Monto Fact.","Cobrado"].includes(h)?"right":"left",
+                            color:"rgba(255,255,255,.85)",fontWeight:800,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filas.map((c,i)=>{
+                        const ing = c.ing;
+                        return (
+                          <tr key={c.id} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#fff":"#F8FFF8",cursor:"pointer"}}
+                            onClick={()=>{setCobrosMesModal(false);setDetailIngreso(ing.id);}}
+                            onMouseEnter={e=>e.currentTarget.style.background="#E8F5E9"}
+                            onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"#fff":"#F8FFF8"}>
+                            <td style={{padding:"10px 14px",fontWeight:700,color:C.navy,whiteSpace:"nowrap"}}>{ing.cliente}</td>
+                            <td style={{padding:"10px 14px",fontSize:12,color:C.muted}}>{ing.segmento||"—"}</td>
+                            <td style={{padding:"10px 14px",color:C.blue,fontWeight:600,whiteSpace:"nowrap",fontSize:12}}>{ing.folio||"—"}</td>
+                            <td style={{padding:"10px 14px",color:C.text,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.concepto||"—"}</td>
+                            <td style={{padding:"10px 14px",color:C.teal,whiteSpace:"nowrap",fontSize:12}}>{ing.fechaContable||"—"}</td>
+                            <td style={{padding:"10px 14px",color:C.muted,whiteSpace:"nowrap",fontSize:12}}>{ing.fecha||"—"}</td>
+                            <td style={{padding:"10px 14px",color:"#1B5E20",fontWeight:600,whiteSpace:"nowrap",fontSize:12}}>{c.fechaCobro}</td>
+                            <td style={{padding:"10px 14px",textAlign:"right",fontWeight:600,color:C.navy}}>{sym}{fmt(ing.monto)}</td>
+                            <td style={{padding:"10px 14px",textAlign:"right",fontWeight:800,color:"#1B5E20",fontSize:14}}>{sym}{fmt(c.monto)}</td>
+                            <td style={{padding:"10px 14px",whiteSpace:"nowrap"}}>
+                              <span style={{background:"#E8F5E9",color:"#2E7D32",fontWeight:700,fontSize:11,padding:"2px 8px",borderRadius:12}}>{c.banco||"—"}</span>
+                            </td>
+                            <td style={{padding:"10px 14px",color:C.muted,fontSize:12,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.notas||"—"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{background:"#E8F5E9",borderTop:`2px solid #A5D6A7`}}>
+                        <td colSpan={8} style={{padding:"11px 14px",fontWeight:800,color:"#1B5E20",fontSize:13}}>
+                          TOTAL — {filas.length} cobro{filas.length!==1?"s":""} · {clientesUnicos.length} clientes
+                        </td>
+                        <td style={{padding:"11px 14px",textAlign:"right",fontWeight:900,color:"#1B5E20",fontSize:15}}>{sym}{fmt(grandTotal)}</td>
+                        <td colSpan={2}/>
+                      </tr>
+                    </tfoot>
+                  </table>
+                )}
               </div>
             </div>
           </div>
