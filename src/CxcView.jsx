@@ -1943,6 +1943,7 @@ export default function CxcView({
           C={C}
           monedaSym={monedaSym}
           MESES_NOMBRES={MESES_NOMBRES}
+          onIngresoClick={(ingresoId)=>setDetailIngreso(ingresoId)}
         />
       )}
 
@@ -4280,7 +4281,7 @@ function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
 }
 
 /* ── CobrosCxC ───────────────────────────────────────────────────────── */
-function CobrosCxC({ cobros, ingresos, fmt, C, monedaSym, MESES_NOMBRES }) {
+function CobrosCxC({ cobros, ingresos, fmt, C, monedaSym, MESES_NOMBRES, onIngresoClick }) {
   const [filtroBanco, setFiltroBanco] = React.useState("");
   const [filtroMonedaC, setFiltroMonedaC] = React.useState("");
   const [filtroDesde, setFiltroDesde] = React.useState("");
@@ -4500,7 +4501,12 @@ function CobrosCxC({ cobros, ingresos, fmt, C, monedaSym, MESES_NOMBRES }) {
                       const dVencColor=dVenc===null?C.muted:dVenc<=0?"#2E7D32":"#C62828";
                       const dVencLabel=dVenc===null?"—":dVenc<=0?`${Math.abs(dVenc)}d antes`:`+${dVenc}d tarde`;
                       return(
-                        <tr key={c.id} style={{borderTop:`1px solid ${C.border}`,background:ci%2===0?"#fff":"#FAFBFF"}}>
+                        <tr key={c.id}
+                          onClick={()=>onIngresoClick&&ing&&onIngresoClick(ing.id)}
+                          style={{borderTop:`1px solid ${C.border}`,background:ci%2===0?"#fff":"#FAFBFF",
+                            cursor:onIngresoClick&&ing?"pointer":"default",transition:"background .1s"}}
+                          onMouseEnter={e=>{if(onIngresoClick&&ing)e.currentTarget.style.background="#EEF4FF";}}
+                          onMouseLeave={e=>{e.currentTarget.style.background=ci%2===0?"#fff":"#FAFBFF";}}>
                           <td style={{padding:"9px 12px",fontSize:12,color:C.muted}}>{ing?.segmento||"—"}</td>
                           <td style={{padding:"9px 12px",whiteSpace:"nowrap",color:C.muted,fontSize:12}}>{ing?.fecha||"—"}</td>
                           <td style={{padding:"9px 12px",fontWeight:700,color:C.navy,whiteSpace:"nowrap"}}>{ing?.cliente||"—"}</td>
