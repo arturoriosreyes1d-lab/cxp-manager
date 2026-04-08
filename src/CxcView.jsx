@@ -120,8 +120,6 @@ export default function CxcView({
   const [clientesExpanded, setClientesExpanded] = useState(new Set());
   const [clienteSortCol, setClienteSortCol] = useState("fechaContable");
   const [clienteSortDir, setClienteSortDir] = useState("desc");
-  const [clienteSortCol, setClienteSortCol] = useState("cliente");
-  const [clienteSortDir, setClienteSortDir] = useState("asc");
   const [importModal, setImportModal] = useState(false);
   const [importPreview, setImportPreview] = useState(null); // { rows, dupes, catDefault }
   const [importCatDefault, setImportCatDefault] = useState("");
