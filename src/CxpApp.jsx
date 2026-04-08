@@ -212,13 +212,15 @@ export default function CxpApp({ user, onLogout }) {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const [inv, sup, cls, pays, ings, cbs, invIngs, cats, clts, pf, fins, finPagos, tarjs, tarjMovs] = await Promise.all([
+      const results = await Promise.allSettled([
         fetchInvoices(empresaId), fetchSuppliers(empresaId), fetchClasificaciones(empresaId), fetchPayments(empresaId),
         fetchIngresos(empresaId), fetchCobros(empresaId), fetchInvoiceIngresos(empresaId), fetchCategoriasIngreso(empresaId),
         fetchClientes(empresaId), fetchPorFacturar(empresaId),
         fetchFinanciamientos(empresaId), fetchFinanciamientoPagos(empresaId),
         fetchTarjetas(empresaId), fetchTarjetaMovimientos(empresaId),
       ]);
+      const [inv, sup, cls, pays, ings, cbs, invIngs, cats, clts, pf, fins, finPagos, tarjs, tarjMovs] =
+        results.map(r => r.status==="fulfilled" ? r.value : []);
       setInvoices(inv);
       setSuppliers(sup.length > 0 ? sup : []);
       setClases(cls.length > 0 ? cls : DEFAULT_CLASES);
