@@ -3526,7 +3526,7 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
       {k:"corriente",l:"Corriente",        align:"right", hc:"#80CBC4"},
       {k:"v7",       l:"Vencido 1-7 Días", align:"right", hc:"#FFCC80"},
       {k:"v15",      l:"Vencido 8-15 Días",align:"right", hc:"#FF8A65"},
-      {k:"v30",      l:"Vencido 16-30 Días",align:"right",hc:"#EF9A9A"},
+      {k:"v30",      l:"Vencido 16-30 Días",align:"right",hc:"#F1948A"},
       {k:"v60",      l:"Vencido 31-60 Días",align:"right",hc:"#E57373"},
       {k:"vmas",     l:"Vencido +60 Días", align:"right", hc:"#FFCDD2"},
       {k:"_",        l:"",                 align:"center"},
@@ -3546,7 +3546,7 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
             {l:"Corriente",         v:grand.corriente, c:"#1B5E20", bg:"#E8F5E9", border:"#A5D6A7", inv:filterInvs(d=>d!==null&&d>=0)},
             {l:"Vencido 1-7 Días",  v:grand.v7,        c:"#E65100", bg:"#FFF3E0", border:"#FFCC80", inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)<=7)},
             {l:"Vencido 8-15 Días", v:grand.v15,       c:"#BF360C", bg:"#FBE9E7", border:"#FF8A65", inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=15)},
-            {l:"Vencido 16-30 Días",v:grand.v30,       c:"#fff",    bg:"#E53935", border:"#E53935", inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30)},
+            {l:"Vencido 16-30 Días",v:grand.v30,       c:"#fff",    bg:"#C0392B", border:"#C0392B", inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30)},
             {l:"Vencido 31-60 Días",v:grand.v60,       c:"#fff",    bg:"#B71C1C", border:"#B71C1C", inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=60)},
             {l:"Vencido +60 Días",  v:grand.vmas,      c:"#fff",    bg:"#4A0000", border:"#4A0000", inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>60)},
           ].filter(k=>k.v>0).map(k=>(
@@ -3582,16 +3582,16 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
                 {/* Totals row */}
                 <tr style={{background:"#1A2F4A",borderBottom:`2px solid #2D4A6B`}}>
                   <td style={{padding:"10px 14px",fontWeight:800,color:"#fff",fontSize:14}}>TOTAL ({provs.length} proveedores)</td>
-                  <td style={{padding:"10px 10px",textAlign:"center",fontWeight:700,color:"rgba(255,255,255,.7)",fontSize:13}}>{grand.count}</td>
-                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:"rgba(255,255,255,.85)",fontSize:13}}>{sym}{fmt(grand.total)}</td>
-                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:"#80CBC4",fontSize:13}}>{sym}{fmt(grand.pagado)}</td>
+                  <td style={{padding:"10px 10px",textAlign:"center",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{grand.count}</td>
+                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{sym}{fmt(grand.total)}</td>
+                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{sym}{fmt(grand.pagado)}</td>
                   <td style={{padding:"10px 10px",textAlign:"right",fontWeight:900,color:"#fff",fontSize:15}}>{sym}{fmt(grand.saldo)}</td>
-                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:"#80CBC4",fontSize:13}}>{grand.corriente>0?`${sym}${fmt(grand.corriente)}`:""}</td>
-                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:"#FFCC80",fontSize:13}}>{grand.v7>0?`${sym}${fmt(grand.v7)}`:""}</td>
-                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:"#FF8A65",fontSize:13}}>{grand.v15>0?`${sym}${fmt(grand.v15)}`:""}</td>
-                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:"#EF9A9A",fontSize:13}}>{grand.v30>0?`${sym}${fmt(grand.v30)}`:""}</td>
-                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:"#E57373",fontSize:13}}>{grand.v60>0?`${sym}${fmt(grand.v60)}`:""}</td>
-                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:"#FFCDD2",fontSize:13}}>{grand.vmas>0?`${sym}${fmt(grand.vmas)}`:""}</td>
+                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{grand.corriente>0?`${sym}${fmt(grand.corriente)}`:""}</td>
+                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{grand.v7>0?`${sym}${fmt(grand.v7)}`:""}</td>
+                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{grand.v15>0?`${sym}${fmt(grand.v15)}`:""}</td>
+                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{grand.v30>0?`${sym}${fmt(grand.v30)}`:""}</td>
+                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{grand.v60>0?`${sym}${fmt(grand.v60)}`:""}</td>
+                  <td style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:"rgba(255,255,255,.75)",fontSize:13}}>{grand.vmas>0?`${sym}${fmt(grand.vmas)}`:""}</td>
                   <td/>
                 </tr>
               </thead>
