@@ -144,7 +144,8 @@ export default function CxcView({
   const [filtroBancoMes, setFiltroBancoMes] = useState("Todos");
   const [filtroSegmentoMes, setFiltroSegmentoMes] = useState("");
   const [filtroMesVentaMes, setFiltroMesVentaMes] = useState("");
-  const [vistaCobrosMes, setVistaCobrosMes] = useState("plana");
+  const [vistaCobrosMes, setVistaCobrosMes] = useState("cliente");
+  const [expandedCobrosClientes, setExpandedCobrosClientes] = useState(new Set());
   const [porFacturarModal, setPorFacturarModal] = useState(false);
   const porFacturarRef = useRef();
 
@@ -2126,7 +2127,7 @@ export default function CxcView({
 
         return (
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:8}}
-            onClick={()=>setCobrosMesModal(false)}>
+            onClick={()=>{setCobrosMesModal(false);setExpandedCobrosClientes(new Set());}}>
             <div style={{background:"#fff",borderRadius:18,width:"100%",maxWidth:"98vw",maxHeight:"96vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
               onClick={e=>e.stopPropagation()}>
 
@@ -2150,7 +2151,7 @@ export default function CxcView({
                   }} style={{padding:"6px 14px",borderRadius:8,border:"1px solid rgba(255,255,255,.3)",background:"rgba(255,255,255,.15)",color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>
                     📊 Excel
                   </button>
-                  <button onClick={()=>setCobrosMesModal(false)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",width:36,height:36,cursor:"pointer",fontSize:20}}>×</button>
+                  <button onClick={()=>{setCobrosMesModal(false);setExpandedCobrosClientes(new Set());}} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",width:36,height:36,cursor:"pointer",fontSize:20}}>×</button>
                 </div>
               </div>
 
@@ -2230,8 +2231,7 @@ export default function CxcView({
                 {vistaCobrosMes==="cliente" ? (
                   /* ── Vista agrupada por cliente ── */
                   (()=>{
-                    const [expandedClis, setExpandedClis] = React.useState(new Set());
-                    const toggleCli = cli => setExpandedClis(prev=>{const n=new Set(prev);n.has(cli)?n.delete(cli):n.add(cli);return n;});
+                    const toggleCli = cli => setExpandedCobrosClientes(prev=>{const n=new Set(prev);n.has(cli)?n.delete(cli):n.add(cli);return n;});
                     // Extract destino from concepto: text in parens or known cities
                     const getDestino = concepto => {
                       if(!concepto) return "—";
@@ -2253,7 +2253,7 @@ export default function CxcView({
                     return (
                       <div style={{padding:"12px 16px"}}>
                         {porCliente.map(({cli, rows, total})=>{
-                          const expanded = expandedClis.has(cli);
+                          const expanded = expandedCobrosClientes.has(cli);
                           return (
                             <div key={cli} style={{marginBottom:8,border:`1px solid ${expanded?"#A5D6A7":C.border}`,borderRadius:12,overflow:"hidden",transition:"border-color .2s"}}>
                               <div style={{background:expanded?"#D0EDD4":"#E8F5E9",padding:"11px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",transition:"background .15s"}}
