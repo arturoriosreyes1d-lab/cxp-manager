@@ -206,6 +206,9 @@ export default function CxpApp({ user, onLogout }) {
   const tarjetaImportRef = useRef();
   const [editingSaldoId, setEditingSaldoId] = useState(null);
   const [editingSaldoVal, setEditingSaldoVal] = useState("");
+  const [tarjetaFiltroInt, setTarjetaFiltroInt] = useState("");
+  const [tarjetaFiltroTipo, setTarjetaFiltroTipo] = useState("");
+  const [tarjetaFiltroMes, setTarjetaFiltroMes] = useState("");
   const [vincularModal, setVincularModal] = useState(null); // {invoiceId, proveedor, folio, total, moneda}
 
   /* ── Load data from Supabase ────────────────────────────────────── */
@@ -1348,46 +1351,41 @@ export default function CxpApp({ user, onLogout }) {
                           style={{background:"#fff",border:"2px solid #7B1FA2",borderRadius:12,padding:"14px 16px",cursor:"pointer",flex:"1 1 0",minWidth:0,boxShadow:"0 2px 8px rgba(0,0,0,.08)",transition:"all .15s"}}
                           onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 6px 16px rgba(0,0,0,.13)";}}
                           onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 2px 8px rgba(0,0,0,.08)";}}>
-                        <div style={{fontWeight:900,fontSize:13,color:"#1A0533",marginBottom:1}}>{t.banco}</div>
-                          <div style={{fontSize:11,color:"#7B1FA2",marginBottom:8,fontWeight:600}}>{t.titular}</div>
-                          {/* Saldo editable */}
+                        <div style={{fontWeight:900,fontSize:15,color:"#1A0533",marginBottom:1}}>{t.banco}</div>
+                          <div style={{fontSize:12,color:"#7B1FA2",marginBottom:8,fontWeight:600}}>{t.titular}</div>
                           {editingSaldoId===t.id ? (
-                            <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:3}} onClick={e=>e.stopPropagation()}>
-                              <span style={{fontSize:13,fontWeight:700,color:"#C62828"}}>$</span>
-                              <input autoFocus
-                                value={editingSaldoVal}
+                            <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:4}} onClick={e=>e.stopPropagation()}>
+                              <span style={{fontSize:15,fontWeight:700,color:"#C62828"}}>$</span>
+                              <input autoFocus value={editingSaldoVal}
                                 onChange={e=>setEditingSaldoVal(e.target.value)}
                                 onKeyDown={async e=>{
                                   if(e.key==="Enter"){
-                                    const nuevo = parseFloat(editingSaldoVal.replace(/,/g,""));
-                                    if(!isNaN(nuevo)){
-                                      await updateTarjetaSaldo(t.id, nuevo);
-                                      setTarjetas(prev=>prev.map(x=>x.id===t.id?{...x,saldoActual:nuevo}:x));
-                                    }
+                                    const nuevo=parseFloat(editingSaldoVal.replace(/,/g,""));
+                                    if(!isNaN(nuevo)){await updateTarjetaSaldo(t.id,nuevo);setTarjetas(prev=>prev.map(x=>x.id===t.id?{...x,saldoActual:nuevo}:x));}
                                     setEditingSaldoId(null);
                                   }
                                   if(e.key==="Escape") setEditingSaldoId(null);
                                 }}
                                 onBlur={()=>setEditingSaldoId(null)}
                                 placeholder={fmt(t.saldoActual)}
-                                style={{width:"100%",fontSize:18,fontWeight:900,color:"#C62828",border:"none",borderBottom:"2px solid #7B1FA2",outline:"none",background:"transparent",fontFamily:"inherit"}}/>
+                                style={{width:"100%",fontSize:22,fontWeight:900,color:"#C62828",border:"none",borderBottom:"2px solid #7B1FA2",outline:"none",background:"transparent",fontFamily:"inherit"}}/>
                             </div>
                           ) : (
                             <div onClick={e=>{e.stopPropagation();setEditingSaldoId(t.id);setEditingSaldoVal(String(t.saldoActual));}}
-                              style={{fontSize:20,fontWeight:900,color:"#C62828",marginBottom:3,cursor:"text",borderBottom:"1px dashed #EF9A9A",display:"inline-block"}}
+                              style={{fontSize:22,fontWeight:900,color:"#C62828",marginBottom:6,cursor:"text",borderBottom:"1px dashed #EF9A9A",display:"inline-block"}}
                               title="Clic para editar saldo">
                               ${fmt(t.saldoActual)} ✏️
                             </div>
                           )}
-                          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#666",marginBottom:6}}>
-                            <span>Disponible: <b style={{color:"#2E7D32"}}>${fmt(disponible)}</b></span>
-                            <span style={{fontWeight:800,color:"#7B1FA2"}}>{pct}% usado</span>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
+                            <span style={{fontSize:13,color:"#666"}}>Disponible: <b style={{color:"#2E7D32"}}>${fmt(disponible)}</b></span>
+                            <span style={{fontSize:13,fontWeight:800,color:"#7B1FA2"}}>{pct}% usado</span>
                           </div>
                           <div style={{height:6,borderRadius:3,background:"#EDE7F6",overflow:"hidden"}}>
                             <div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:pct>80?"#C62828":pct>50?"#E65100":"#7B1FA2",borderRadius:3}}/>
                           </div>
-                          {totalCargosM>0&&<div style={{fontSize:11,color:"#7B1FA2",marginTop:6,fontWeight:700}}>🛒 Este mes: ${fmt(totalCargosM)}</div>}
-                          <div style={{fontSize:10,color:"#999",marginTop:3}}>Corte día {t.fechaCorte} · Contrato {t.contrato}</div>
+                          {totalCargosM>0&&<div style={{fontSize:12,color:"#7B1FA2",marginTop:6,fontWeight:700}}>🛒 Este mes: ${fmt(totalCargosM)}</div>}
+                          <div style={{fontSize:11,color:"#999",marginTop:4}}>Corte día {t.fechaCorte} · Contrato {t.contrato}</div>
                         </div>
                       );
                     })}
@@ -1735,9 +1733,12 @@ export default function CxpApp({ user, onLogout }) {
           const t = tarjetas.find(x=>x.id===tarjetaModalId);
           if (!t) return null;
           const movT = tarjetaMovimientos.filter(m=>m.tarjetaId===t.id);
-          const [filtroInt, setFiltroInt] = React.useState("");
-          const [filtroTipo, setFiltroTipo] = React.useState("");
-          const [filtroMes, setFiltroMes] = React.useState("");
+          const filtroInt = tarjetaFiltroInt;
+          const setFiltroInt = setTarjetaFiltroInt;
+          const filtroTipo = tarjetaFiltroTipo;
+          const setFiltroTipo = setTarjetaFiltroTipo;
+          const filtroMes = tarjetaFiltroMes;
+          const setFiltroMes = setTarjetaFiltroMes;
           const integrantes = [...new Set(movT.map(m=>m.integrante).filter(Boolean))].sort();
           const mesesDisp = [...new Set(movT.map(m=>m.fecha?.slice(0,7)).filter(Boolean))].sort().reverse();
           const MESES_N = ["Enero","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
@@ -1758,7 +1759,7 @@ export default function CxpApp({ user, onLogout }) {
           const intSorted = Object.entries(porInt).sort((a,b)=>b[1]-a[1]);
           return (
             <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:10}}
-              onClick={()=>setTarjetaModalId(null)}>
+              onClick={()=>{setTarjetaModalId(null);setTarjetaFiltroInt("");setTarjetaFiltroTipo("");setTarjetaFiltroMes("");}}>
               <div style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:"98vw",maxHeight:"96vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
                 onClick={e=>e.stopPropagation()}>
                 {/* Header */}
@@ -1768,7 +1769,7 @@ export default function CxpApp({ user, onLogout }) {
                     <div style={{fontWeight:900,fontSize:20,color:"#fff",marginTop:4}}>{t.banco} · {t.titular}</div>
                     <div style={{fontSize:12,color:"rgba(255,255,255,.6)",marginTop:2}}>Contrato {t.contrato} · Corte día {t.fechaCorte}</div>
                   </div>
-                  <button onClick={()=>setTarjetaModalId(null)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:10,color:"#fff",width:38,height:38,cursor:"pointer",fontSize:22}}>×</button>
+                  <button onClick={()=>{setTarjetaModalId(null);setTarjetaFiltroInt("");setTarjetaFiltroTipo("");setTarjetaFiltroMes("");}} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:10,color:"#fff",width:38,height:38,cursor:"pointer",fontSize:22}}>×</button>
                 </div>
                 {/* KPIs */}
                 <div style={{padding:"14px 24px",background:"#F5F0FF",borderBottom:"1px solid #E1BEE7",display:"flex",gap:10,flexWrap:"wrap"}}>
