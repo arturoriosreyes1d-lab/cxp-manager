@@ -2182,12 +2182,12 @@ export default function CxcView({
         });
         const hBtn = (col,label,align="left") => (
           <th key={col} onClick={()=>toggleMSort(col)}
-            style={{padding:"11px 14px",textAlign:align,color:mSort===col?"#90CAF9":"rgba(255,255,255,.8)",
+            style={{padding:"11px 14px",textAlign:align,color:modalSortCol===col?"#90CAF9":"rgba(255,255,255,.8)",
               fontWeight:800,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap",cursor:"pointer",
-              userSelect:"none",borderBottom:mSort===col?"2px solid #90CAF9":"2px solid transparent",
+              userSelect:"none",borderBottom:modalSortCol===col?"2px solid #90CAF9":"2px solid transparent",
               transition:"color .15s"}}
             onMouseEnter={e=>e.currentTarget.style.color="#fff"}
-            onMouseLeave={e=>e.currentTarget.style.color=mSort===col?"#90CAF9":"rgba(255,255,255,.8)"}>
+            onMouseLeave={e=>e.currentTarget.style.color=modalSortCol===col?"#90CAF9":"rgba(255,255,255,.8)"}>
             {label}{arrow(col)}
           </th>
         );
