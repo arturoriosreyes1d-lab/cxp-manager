@@ -4207,6 +4207,7 @@ function CobrosCxC({ cobros, ingresos, fmt, C, monedaSym, MESES_NOMBRES }) {
   const [filtroDesde, setFiltroDesde] = React.useState("");
   const [filtroHasta, setFiltroHasta] = React.useState("");
   const [filtroMesRapido, setFiltroMesRapido] = React.useState("");
+  const [busqueda, setBusqueda] = React.useState("");
   const [expandedMeses, setExpandedMeses] = React.useState(new Set());
   const toggleMes = k => setExpandedMeses(prev=>{const n=new Set(prev);n.has(k)?n.delete(k):n.add(k);return n;});
 
@@ -4239,6 +4240,7 @@ function CobrosCxC({ cobros, ingresos, fmt, C, monedaSym, MESES_NOMBRES }) {
 
   // Filtered cobros
   const filtered = React.useMemo(()=>{
+    const q = busqueda.trim().toLowerCase();
     return cobros.filter(c=>{
       const ing=ingresoMap[c.ingresoId];
       const mon=ing?.moneda||"MXN";
@@ -4246,9 +4248,17 @@ function CobrosCxC({ cobros, ingresos, fmt, C, monedaSym, MESES_NOMBRES }) {
       if(filtroMonedaC && mon!==filtroMonedaC) return false;
       if(filtroDesde && c.fechaCobro<filtroDesde) return false;
       if(filtroHasta && c.fechaCobro>filtroHasta) return false;
+      if(q){
+        const haystack = [
+          ing?.cliente||"", ing?.folio||"", ing?.concepto||"",
+          String(c.monto||""), c.banco||"", c.notas||"",
+          c.fechaCobro||"", ing?.segmento||""
+        ].join(" ").toLowerCase();
+        if(!haystack.includes(q)) return false;
+      }
       return true;
     });
-  },[cobros,ingresoMap,filtroBanco,filtroMonedaC,filtroDesde,filtroHasta]);
+  },[cobros,ingresoMap,filtroBanco,filtroMonedaC,filtroDesde,filtroHasta,busqueda]);
 
   // Group by mes + banco
   const grouped = React.useMemo(()=>{
@@ -4288,18 +4298,36 @@ function CobrosCxC({ cobros, ingresos, fmt, C, monedaSym, MESES_NOMBRES }) {
     <div>
       {/* Filters */}
       <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:14,padding:16,marginBottom:20}}>
+        {/* Fila 1: buscador */}
+        <div style={{marginBottom:10}}>
+          <div style={{position:"relative",maxWidth:480}}>
+            <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:14,color:C.muted,pointerEvents:"none"}}>🔍</span>
+            <input
+              value={busqueda}
+              onChange={e=>setBusqueda(e.target.value)}
+              placeholder="Buscar por cliente, folio, concepto, importe, banco, notas…"
+              style={{...inputStyle2,width:"100%",paddingLeft:36,paddingRight:busqueda?32:12,boxSizing:"border-box",
+                border:`1.5px solid ${busqueda?C.blue:C.border}`,background:busqueda?"#EEF4FF":"#fff"}}
+            />
+            {busqueda && (
+              <button onClick={()=>setBusqueda("")}
+                style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:16,color:C.muted,padding:0}}>×</button>
+            )}
+          </div>
+        </div>
+        {/* Fila 2: filtros */}
         <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
-          <select value={filtroBanco} onChange={e=>setFiltroBanco(e.target.value)} style={{...inputStyle2,maxWidth:150}}>
+          <select value={filtroBanco} onChange={e=>setFiltroBanco(e.target.value)} style={{...inputStyle2,minWidth:180}}>
             <option value="">🏦 Todos los bancos</option>
             <option>Banamex</option>
             <option>Banorte</option>
           </select>
-          <select value={filtroMonedaC} onChange={e=>setFiltroMonedaC(e.target.value)} style={{...inputStyle2,maxWidth:130}}>
+          <select value={filtroMonedaC} onChange={e=>setFiltroMonedaC(e.target.value)} style={{...inputStyle2,minWidth:170}}>
             <option value="">💵 Todas las monedas</option>
             <option value="MXN">🇲🇽 MXN</option>
             <option value="USD">🇺🇸 USD</option>
           </select>
-          <select value={filtroMesRapido} onChange={e=>handleMesRapido(e.target.value)} style={{...inputStyle2,maxWidth:180}}>
+          <select value={filtroMesRapido} onChange={e=>handleMesRapido(e.target.value)} style={{...inputStyle2,minWidth:190}}>
             <option value="">📆 Mes rápido</option>
             {mesesDisponibles.map(m=>{
               const [y,mo]=m.split("-");
@@ -4308,17 +4336,22 @@ function CobrosCxC({ cobros, ingresos, fmt, C, monedaSym, MESES_NOMBRES }) {
           </select>
           <div style={{display:"flex",alignItems:"center",gap:6}}>
             <span style={{fontSize:12,color:C.muted,fontWeight:600}}>Desde</span>
-            <input type="date" value={filtroDesde} onChange={e=>{setFiltroDesde(e.target.value);setFiltroMesRapido("");}} style={{...inputStyle2,maxWidth:150}}/>
+            <input type="date" value={filtroDesde} onChange={e=>{setFiltroDesde(e.target.value);setFiltroMesRapido("");}} style={{...inputStyle2}}/>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:6}}>
             <span style={{fontSize:12,color:C.muted,fontWeight:600}}>Hasta</span>
-            <input type="date" value={filtroHasta} onChange={e=>{setFiltroHasta(e.target.value);setFiltroMesRapido("");}} style={{...inputStyle2,maxWidth:150}}/>
+            <input type="date" value={filtroHasta} onChange={e=>{setFiltroHasta(e.target.value);setFiltroMesRapido("");}} style={{...inputStyle2}}/>
           </div>
-          {(filtroBanco||filtroMonedaC||filtroDesde||filtroHasta) && (
-            <button onClick={()=>{setFiltroBanco("");setFiltroMonedaC("");setFiltroDesde("");setFiltroHasta("");setFiltroMesRapido("");}}
+          {(filtroBanco||filtroMonedaC||filtroDesde||filtroHasta||busqueda) && (
+            <button onClick={()=>{setFiltroBanco("");setFiltroMonedaC("");setFiltroDesde("");setFiltroHasta("");setFiltroMesRapido("");setBusqueda("");}}
               style={{padding:"8px 14px",borderRadius:8,border:`1px solid ${C.border}`,background:"#F1F5F9",color:C.text,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>✕ Limpiar</button>
           )}
         </div>
+        {busqueda && (
+          <div style={{marginTop:8,fontSize:12,color:C.blue,fontWeight:600}}>
+            🔍 {filtered.length} resultado{filtered.length!==1?"s":""} para "<b>{busqueda}</b>"
+          </div>
+        )}
       </div>
 
       {/* Grand totals chips */}
