@@ -139,6 +139,8 @@ export default function CxcView({
   const [cxcTab, setCxcTab] = useState("activas"); // "activas" | "resumen" | "cobros"
   const [cobrosMesModal, setCobrosMesModal] = useState(false);
   const [agingDetailModal, setAgingDetailModal] = useState(null); // {titulo, ings}
+  const [modalSortCol, setModalSortCol] = useState("vencimiento");
+  const [modalSortDir, setModalSortDir] = useState("asc");
   const [porFacturarModal, setPorFacturarModal] = useState(false);
   const porFacturarRef = useRef();
 
@@ -2151,31 +2153,32 @@ export default function CxcView({
       {agingDetailModal && (()=>{
         const { titulo, ings: modalIngs, moneda } = agingDetailModal;
         const sym = monedaSym(moneda);
-        const totalMonto  = modalIngs.reduce((s,i)=>s+i.monto,0);
-        const totalCobrado = modalIngs.reduce((s,i)=>s+(metrics[i.id]?.totalCobrado||0),0);
+        const totalMonto     = modalIngs.reduce((s,i)=>s+i.monto,0);
+        const totalCobrado   = modalIngs.reduce((s,i)=>s+(metrics[i.id]?.totalCobrado||0),0);
         const totalPorCobrar = modalIngs.reduce((s,i)=>s+(metrics[i.id]?.porCobrar||0),0);
-        const [mSort, setMSort] = React.useState("vencimiento");
-        const [mDir,  setMDir]  = React.useState("asc");
-        const toggleMSort = col => { if(mSort===col) setMDir(d=>d==="asc"?"desc":"asc"); else {setMSort(col);setMDir("asc");} };
-        const arrow = col => mSort===col ? (mDir==="asc"?" ↑":" ↓") : "";
+        const toggleMSort = col => {
+          if(modalSortCol===col) setModalSortDir(d=>d==="asc"?"desc":"asc");
+          else { setModalSortCol(col); setModalSortDir("asc"); }
+        };
+        const arrow = col => modalSortCol===col ? (modalSortDir==="asc"?" ↑":" ↓") : "";
         const sorted = [...modalIngs].sort((a,b)=>{
           const ma=metrics[a.id]||{}, mb=metrics[b.id]||{};
           let va,vb;
-          switch(mSort){
-            case "segmento":    va=a.segmento||"";   vb=b.segmento||""; break;
-            case "folio":       va=a.folio||"";       vb=b.folio||""; break;
-            case "concepto":    va=a.concepto||"";    vb=b.concepto||""; break;
-            case "fechaContable":va=a.fechaContable||"";vb=b.fechaContable||""; break;
-            case "fechaFactura": va=a.fecha||"";       vb=b.fecha||""; break;
+          switch(modalSortCol){
+            case "segmento":     va=a.segmento||"";        vb=b.segmento||""; break;
+            case "folio":        va=a.folio||"";           vb=b.folio||""; break;
+            case "concepto":     va=a.concepto||"";        vb=b.concepto||""; break;
+            case "fechaContable":va=a.fechaContable||"";   vb=b.fechaContable||""; break;
+            case "fechaFactura": va=a.fecha||"";           vb=b.fecha||""; break;
             case "vencimiento":  va=a.fechaVencimiento||"";vb=b.fechaVencimiento||""; break;
-            case "dias":        va=diasDiff(a.fechaVencimiento)??999;vb=diasDiff(b.fechaVencimiento)??999; break;
-            case "monto":       va=a.monto;            vb=b.monto; break;
-            case "cobrado":     va=ma.totalCobrado||0; vb=mb.totalCobrado||0; break;
-            case "porCobrar":   va=ma.porCobrar||0;    vb=mb.porCobrar||0; break;
-            default:            va=a.fechaVencimiento||"";vb=b.fechaVencimiento||"";
+            case "dias":         va=diasDiff(a.fechaVencimiento)??999;vb=diasDiff(b.fechaVencimiento)??999; break;
+            case "monto":        va=a.monto;               vb=b.monto; break;
+            case "cobrado":      va=ma.totalCobrado||0;    vb=mb.totalCobrado||0; break;
+            case "porCobrar":    va=ma.porCobrar||0;       vb=mb.porCobrar||0; break;
+            default:             va=a.fechaVencimiento||"";vb=b.fechaVencimiento||"";
           }
           const cmp = typeof va==="number"?va-vb:String(va).localeCompare(String(vb));
-          return mDir==="asc"?cmp:-cmp;
+          return modalSortDir==="asc"?cmp:-cmp;
         });
         const hBtn = (col,label,align="left") => (
           <th key={col} onClick={()=>toggleMSort(col)}
@@ -2637,6 +2640,8 @@ export default function CxcView({
                             onClick={col.v>0 ? e=>{
                               e.stopPropagation();
                               const ingsMon = ings.filter(ing => ing.moneda===mon);
+                              setModalSortCol("vencimiento");
+                              setModalSortDir("asc");
                               setAgingDetailModal({
                                 titulo:`${cliente} — ${col.label}`,
                                 ings: ingsMon.filter(col.fn),
