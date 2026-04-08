@@ -1264,7 +1264,7 @@ export default function CxpApp({ user, onLogout }) {
               return plazos;
             };
             return (
-              <div style={{background:"#0F2D4A",borderRadius:12,overflow:"hidden",minWidth:320,maxWidth:700,flex:"0 1 auto"}}>
+              <div style={{background:"#0F2D4A",borderRadius:12,overflow:"hidden",flex:"1 1 0",minWidth:0}}>
                 {/* Header */}
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 14px"}}>
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -1283,7 +1283,7 @@ export default function CxpApp({ user, onLogout }) {
                 </div>
                 {/* Chips */}
                 {activos.length>0 && (
-                  <div style={{display:"flex",gap:8,padding:"8px 10px 10px",background:"#F0F4FF",flexWrap:"wrap"}}>
+                  <div style={{display:"flex",gap:8,padding:"10px 10px 12px",background:"#F0F4FF",flexWrap:"wrap"}}>
                     {activos.map(f=>{
                       const plazos = getPlazos(f);
                       const pagosF = financiamientoPagos.filter(p=>p.financiamientoId===f.id);
@@ -1298,19 +1298,22 @@ export default function CxpApp({ user, onLogout }) {
                       return (
                         <div key={f.id} onClick={()=>setFinancModalId(f.id)}
                           style={{background:"#fff",border:`2px solid ${vencidos>0?"#C62828":"#1565C0"}`,borderRadius:12,
-                            padding:"10px 14px",cursor:"pointer",minWidth:155,flex:"1 1 155px",
+                            padding:"12px 16px",cursor:"pointer",flex:"1 1 0",minWidth:0,
                             boxShadow:"0 2px 8px rgba(0,0,0,.08)",transition:"all .15s",position:"relative"}}
-                          onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-1px)";e.currentTarget.style.boxShadow="0 5px 14px rgba(0,0,0,.13)";}}
+                          onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 6px 16px rgba(0,0,0,.13)";}}
                           onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 2px 8px rgba(0,0,0,.08)";}}>
-                          {vencidos>0 && <div style={{position:"absolute",top:6,right:6,background:"#FFEBEE",color:"#C62828",fontSize:9,fontWeight:800,padding:"1px 6px",borderRadius:20}}>⚠️{vencidos}</div>}
-                          <div style={{fontWeight:800,fontSize:12,color:"#0F2D4A",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginBottom:1}}>{f.nombre}</div>
-                          <div style={{fontSize:10,color:C.muted,marginBottom:6}}>{f.concepto}</div>
-                          <div style={{fontSize:15,fontWeight:900,color:saldo>0?"#C62828":"#2E7D32",marginBottom:3}}>{sym(f.moneda)}{fmt(saldo)}</div>
-                          <div style={{fontSize:10,color:C.muted,marginBottom:5}}>{pagados}/{totalPlazos} meses</div>
-                          <div style={{height:4,borderRadius:2,background:"#EEF2FF",overflow:"hidden"}}>
-                            <div style={{height:"100%",width:`${pct}%`,background:pct>=100?"#2E7D32":"#1565C0",borderRadius:2}}/>
+                          {vencidos>0 && <div style={{position:"absolute",top:6,right:6,background:"#FFEBEE",color:"#C62828",fontSize:9,fontWeight:800,padding:"1px 6px",borderRadius:20}}>⚠️ {vencidos}</div>}
+                          <div style={{fontWeight:800,fontSize:12,color:"#0F2D4A",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:2,paddingRight:vencidos>0?40:0}}>{f.nombre}</div>
+                          <div style={{fontSize:10,color:C.muted,marginBottom:8,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.concepto}</div>
+                          <div style={{fontSize:17,fontWeight:900,color:saldo>0?"#C62828":"#2E7D32",marginBottom:2}}>${fmt(saldo)}</div>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                            <span style={{fontSize:10,color:C.muted}}>{pagados}/{totalPlazos} meses</span>
+                            <span style={{fontSize:10,fontWeight:700,color:"#1565C0"}}>{pct}%</span>
                           </div>
-                          <div style={{fontSize:9,color:C.muted,marginTop:2}}>{pct}%{proxPlazo?` · ${proxPlazo}`:""}</div>
+                          <div style={{height:5,borderRadius:3,background:"#EEF2FF",overflow:"hidden"}}>
+                            <div style={{height:"100%",width:`${pct}%`,background:pct>=100?"#2E7D32":"#1565C0",borderRadius:3,transition:"width .4s"}}/>
+                          </div>
+                          {proxPlazo && <div style={{fontSize:9,color:"#1565C0",marginTop:4,fontWeight:600}}>Próx: {proxPlazo}</div>}
                         </div>
                       );
                     })}
