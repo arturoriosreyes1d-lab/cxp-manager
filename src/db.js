@@ -621,3 +621,90 @@ export async function bulkInsertPorFacturar(rows) {
   if (error) { console.error('bulkInsertPorFacturar:', error); return { inserted: 0, error }; }
   return { inserted: (data || []).length };
 }
+
+/* ── Financiamientos ─────────────────────────────────────────────── */
+export async function fetchFinanciamientos(empresaId) {
+  let q = supabase.from('financiamientos').select('*').order('fecha_inicio');
+  if (empresaId) q = q.eq('empresa_id', empresaId);
+  const { data, error } = await q;
+  if (error) { console.error('fetchFinanciamientos:', error); return []; }
+  return (data||[]).map(r => ({
+    id: r.id,
+    empresaId: r.empresa_id,
+    nombre: r.nombre || '',
+    concepto: r.concepto || '',
+    moneda: r.moneda || 'MXN',
+    montoMensual: +r.monto_mensual || 0,
+    fechaInicio: r.fecha_inicio || '',
+    fechaFin: r.fecha_fin || '',
+    diaPago: r.dia_pago || 15,
+    activo: r.activo !== false,
+    notas: r.notas || '',
+  }));
+}
+
+export async function insertFinanciamiento(f) {
+  const row = {
+    empresa_id: f.empresaId,
+    nombre: f.nombre || '',
+    concepto: f.concepto || '',
+    moneda: f.moneda || 'MXN',
+    monto_mensual: +f.montoMensual || 0,
+    fecha_inicio: f.fechaInicio || null,
+    fecha_fin: f.fechaFin || null,
+    dia_pago: +f.diaPago || 15,
+    activo: f.activo !== false,
+    notas: f.notas || '',
+  };
+  const { data, error } = await supabase.from('financiamientos').insert(row).select().single();
+  if (error) { console.error('insertFinanciamiento:', error); return null; }
+  return { id: data.id, ...f };
+}
+
+export async function updateFinanciamiento(id, fields) {
+  const map = { nombre:'nombre', concepto:'concepto', moneda:'moneda', montoMensual:'monto_mensual',
+    fechaInicio:'fecha_inicio', fechaFin:'fecha_fin', diaPago:'dia_pago', activo:'activo', notas:'notas' };
+  const row = {};
+  Object.entries(fields).forEach(([k,v]) => { if (map[k]) row[map[k]] = v; });
+  const { error } = await supabase.from('financiamientos').update(row).eq('id', id);
+  if (error) console.error('updateFinanciamiento:', error);
+}
+
+export async function deleteFinanciamiento(id) {
+  const { error } = await supabase.from('financiamientos').delete().eq('id', id);
+  if (error) console.error('deleteFinanciamiento:', error);
+}
+
+export async function fetchFinanciamientoPagos(empresaId) {
+  // Fetch all pagos for this empresa's financiamientos
+  const fins = await fetchFinanciamientos(empresaId);
+  if (!fins.length) return [];
+  const ids = fins.map(f => f.id);
+  const { data, error } = await supabase.from('financiamiento_pagos')
+    .select('*').in('financiamiento_id', ids).order('fecha_pago');
+  if (error) { console.error('fetchFinanciamientoPagos:', error); return []; }
+  return (data||[]).map(r => ({
+    id: r.id,
+    financiamientoId: r.financiamiento_id,
+    fechaPago: r.fecha_pago || '',
+    monto: +r.monto || 0,
+    notas: r.notas || '',
+  }));
+}
+
+export async function insertFinanciamientoPago(p) {
+  const row = {
+    financiamiento_id: p.financiamientoId,
+    fecha_pago: p.fechaPago || null,
+    monto: +p.monto || 0,
+    notas: p.notas || '',
+  };
+  const { data, error } = await supabase.from('financiamiento_pagos').insert(row).select().single();
+  if (error) { console.error('insertFinanciamientoPago:', error); return null; }
+  return { id: data.id, ...p };
+}
+
+export async function deleteFinanciamientoPago(id) {
+  const { error } = await supabase.from('financiamiento_pagos').delete().eq('id', id);
+  if (error) console.error('deleteFinanciamientoPago:', error);
+}
