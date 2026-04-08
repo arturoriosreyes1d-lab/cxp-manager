@@ -3326,9 +3326,9 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
 
   const openDetail=(title,invList,grouped=true)=>{ if(!invList||!invList.length) return; setDetailModal({title,invoices:invList,grouped}); };
 
-  const vCell=(v,sym,invList,label,intense=false)=>v>0?(
+  const vCell=(v,sym,invList,label,color=C.danger)=>v>0?(
     <span onClick={()=>openDetail(label,invList,true)}
-      style={{fontWeight:700,color:intense?"#B71C1C":C.danger,cursor:"pointer",borderBottom:`1px dotted ${intense?"#B71C1C":C.danger}`}}>
+      style={{fontWeight:700,color,cursor:"pointer",borderBottom:`1px dotted ${color}`}}>
       {sym}{fmt(v)}
     </span>
   ):<span style={{color:C.muted}}>—</span>;
@@ -3525,9 +3525,20 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
               <thead>
                 <tr style={{background:C.navy}}>
                   <th style={{padding:"11px 14px",textAlign:"center",color:"#fff",fontWeight:700,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap"}}>Proveedor</th>
-                  {COLS.map((h,ci)=>(
-                    <th key={h||ci} style={{padding:"11px 10px",textAlign:"center",color:["Corriente","# Facturas","Total","Pagado","Saldo Total"].includes(h)?"#A5D6A7":h.startsWith("Vencido")?"#FFCDD2":"#fff",fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
-                  ))}
+                  {COLS.map((h,ci)=>{
+                    const hColor =
+                      ["# Facturas","Total","Pagado","Saldo Total"].includes(h) ? "#A5D6A7" :
+                      h==="Corriente"          ? "#80CBC4" :
+                      h==="Vencido 1-7 Días"   ? "#FFCC80" :
+                      h==="Vencido 8-15 Días"  ? "#FF8A65" :
+                      h==="Vencido 16-30 Días" ? "#EF9A9A" :
+                      h==="Vencido 31-60 Días" ? "#E57373" :
+                      h==="Vencido +60 Días"   ? "#FFCDD2" :
+                      "#fff";
+                    return (
+                      <th key={h||ci} style={{padding:"11px 10px",textAlign:"center",color:hColor,fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                    );
+                  })}
                 </tr>
                 {/* Totals row */}
                 <tr style={{background:"#EEF2FF",borderBottom:`2px solid ${C.blue}`}}>
@@ -3536,12 +3547,12 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
                   <td style={{padding:"9px 10px",textAlign:"right",fontWeight:700,fontSize:13}}>{sym}{fmt(grand.total)}</td>
                   <td style={{padding:"9px 10px",textAlign:"right",fontWeight:700,color:C.ok,fontSize:13}}>{sym}{fmt(grand.pagado)}</td>
                   <td style={{padding:"9px 10px",textAlign:"right",fontWeight:800,color:C.navy,fontSize:14}}>{sym}{fmt(grand.saldo)}</td>
-                  <td style={{padding:"9px 10px",textAlign:"right",fontWeight:700,color:C.ok,fontSize:13}}>{grand.corriente>0?`${sym}${fmt(grand.corriente)}`:""}</td>
-                  <td style={{padding:"9px 10px",textAlign:"right",fontWeight:700,color:C.danger,fontSize:13}}>{grand.v7>0?`${sym}${fmt(grand.v7)}`:""}</td>
-                  <td style={{padding:"9px 10px",textAlign:"right",fontWeight:700,color:C.danger,fontSize:13}}>{grand.v15>0?`${sym}${fmt(grand.v15)}`:""}</td>
+                  <td style={{padding:"9px 10px",textAlign:"right",fontWeight:700,color:"#2E7D32",fontSize:13}}>{grand.corriente>0?`${sym}${fmt(grand.corriente)}`:""}</td>
+                  <td style={{padding:"9px 10px",textAlign:"right",fontWeight:700,color:"#E65100",fontSize:13}}>{grand.v7>0?`${sym}${fmt(grand.v7)}`:""}</td>
+                  <td style={{padding:"9px 10px",textAlign:"right",fontWeight:700,color:"#BF360C",fontSize:13}}>{grand.v15>0?`${sym}${fmt(grand.v15)}`:""}</td>
                   <td style={{padding:"9px 10px",textAlign:"right",fontWeight:700,color:"#C62828",fontSize:13}}>{grand.v30>0?`${sym}${fmt(grand.v30)}`:""}</td>
                   <td style={{padding:"9px 10px",textAlign:"right",fontWeight:700,color:"#B71C1C",fontSize:13}}>{grand.v60>0?`${sym}${fmt(grand.v60)}`:""}</td>
-                  <td style={{padding:"9px 10px",textAlign:"right",fontWeight:700,color:"#4A0000",fontSize:13}}>{grand.vmas>0?`${sym}${fmt(grand.vmas)}`:""}</td>
+                  <td style={{padding:"9px 10px",textAlign:"right",fontWeight:700,color:"#6A0000",fontSize:13}}>{grand.vmas>0?`${sym}${fmt(grand.vmas)}`:""}</td>
                 </tr>
               </thead>
               <tbody>
@@ -3565,12 +3576,12 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
                       <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>
                         <span onClick={()=>openDetail(`${p.nombre} — Todas`,p.invoices)} style={{fontWeight:900,color:p.saldo>0?C.navy:C.muted,borderBottom:`1px dotted ${C.navy}`,cursor:"pointer"}}>{sym}{fmt(p.saldo)}</span>
                       </td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>{p.corriente>0?<span style={{color:C.ok,fontWeight:600,cursor:"pointer",borderBottom:`1px dotted ${C.ok}`}} onClick={()=>openDetail(`${p.nombre} — Corriente`,fi(d=>d!==null&&d>=0))}>{sym}{fmt(p.corriente)}</span>:<span style={{color:C.muted}}>—</span>}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>{vCell(p.v7,sym,fi(d=>d!==null&&d<0&&Math.abs(d)<=7),`${p.nombre} — Venc 1-7d`)}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>{vCell(p.v15,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=15),`${p.nombre} — Venc 8-15d`)}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>{vCell(p.v30,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30),`${p.nombre} — Venc 16-30d`,true)}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>{vCell(p.v60,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=60),`${p.nombre} — Venc 31-60d`,true)}</td>
-                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>{vCell(p.vmas,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>60),`${p.nombre} — Venc +60d`,true)}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>{p.corriente>0?<span style={{color:"#2E7D32",fontWeight:600,cursor:"pointer",borderBottom:"1px dotted #2E7D32"}} onClick={()=>openDetail(`${p.nombre} — Corriente`,fi(d=>d!==null&&d>=0))}>{sym}{fmt(p.corriente)}</span>:<span style={{color:C.muted}}>—</span>}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>{vCell(p.v7,sym,fi(d=>d!==null&&d<0&&Math.abs(d)<=7),`${p.nombre} — Venc 1-7d`,"#E65100")}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>{vCell(p.v15,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=15),`${p.nombre} — Venc 8-15d`,"#BF360C")}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>{vCell(p.v30,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30),`${p.nombre} — Venc 16-30d`,"#C62828")}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>{vCell(p.v60,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=60),`${p.nombre} — Venc 31-60d`,"#B71C1C")}</td>
+                      <td style={{padding:"11px 10px",textAlign:"right",fontSize:16}} onClick={e=>e.stopPropagation()}>{vCell(p.vmas,sym,fi(d=>d!==null&&d<0&&Math.abs(d)>60),`${p.nombre} — Venc +60d`,"#6A0000")}</td>
                       <td style={{padding:"11px 10px",textAlign:"right"}} onClick={e=>e.stopPropagation()}>
                         <button onClick={()=>openDetail(`${p.nombre} — Todas`,p.invoices)}
                           style={{padding:"5px 12px",borderRadius:8,border:`1px solid ${C.blue}`,background:"#E8F0FE",color:C.blue,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>Ver →</button>
