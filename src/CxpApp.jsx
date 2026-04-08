@@ -1249,12 +1249,13 @@ export default function CxpApp({ user, onLogout }) {
           {tabBtn("resumen","Resumen","📊")}
         </div>
 
-        {/* ── Financiamientos chips ── */}
-        {financiamientos.filter(f=>f.activo).length > 0 && (()=>{
+        {/* ── Financiamientos section ── */}
+        {(()=>{
+          const activos = financiamientos.filter(f=>f.activo);
           const today = new Date(); today.setHours(0,0,0,0);
           const sym = m => m==="USD"?"$":"$";
+          const importRef = React.useRef();
 
-          // Generate all scheduled payment dates for a financiamiento
           const getPlazos = (f) => {
             const plazos = [];
             if (!f.fechaInicio || !f.fechaFin) return plazos;
@@ -1268,44 +1269,80 @@ export default function CxpApp({ user, onLogout }) {
           };
 
           return (
-            <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16,alignItems:"stretch"}}>
-              {financiamientos.filter(f=>f.activo).map(f=>{
-                const plazos = getPlazos(f);
-                const pagosF = financiamientoPagos.filter(p=>p.financiamientoId===f.id);
-                const pagosFechas = new Set(pagosF.map(p=>p.fechaPago));
-                const totalPlazos = plazos.length;
-                const pagados = plazos.filter(pl=>pagosFechas.has(pl)).length;
-                const pendientes = totalPlazos - pagados;
-                const totalPagado = pagosF.reduce((s,p)=>s+p.monto, 0);
-                const saldo = f.montoMensual * pendientes;
-                const pct = totalPlazos > 0 ? Math.round((pagados/totalPlazos)*100) : 0;
-                const proxPlazo = plazos.find(pl => !pagosFechas.has(pl) && new Date(pl+"T12:00:00") >= today);
-                const vencidos = plazos.filter(pl => !pagosFechas.has(pl) && new Date(pl+"T12:00:00") < today).length;
+            <div style={{marginBottom:20}}>
+              {/* Header bar */}
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                background:"#0F2D4A",borderRadius:activos.length>0?"12px 12px 0 0":"12px",
+                padding:"10px 18px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <span style={{fontSize:16}}>🏦</span>
+                  <span style={{fontWeight:800,fontSize:14,color:"#fff",textTransform:"uppercase",letterSpacing:.5}}>Financiamientos</span>
+                  {activos.length>0 && (
+                    <span style={{background:"rgba(255,255,255,.15)",color:"rgba(255,255,255,.9)",fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:20}}>
+                      {activos.length} activo{activos.length!==1?"s":""}
+                    </span>
+                  )}
+                </div>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  {activos.length===0 && <span style={{fontSize:12,color:"rgba(255,255,255,.5)"}}>Sin financiamientos registrados</span>}
+                  <input ref={importRef} type="file" accept=".xlsx,.xls" style={{display:"none"}}
+                    onChange={async(e)=>{
+                      const file = e.target.files[0];
+                      if(!file) return;
+                      // Import will be handled in next update
+                      alert("Importador próximamente — por ahora usa el SQL para insertar registros");
+                      e.target.value="";
+                    }}/>
+                  <button onClick={()=>importRef.current?.click()}
+                    style={{padding:"6px 14px",borderRadius:8,border:"1px solid rgba(255,255,255,.3)",background:"rgba(255,255,255,.12)",
+                      color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
+                    📥 Importar Excel
+                  </button>
+                </div>
+              </div>
 
-                return (
-                  <div key={f.id} onClick={()=>setFinancModalId(f.id)}
-                    style={{background:"#fff",border:`2px solid ${vencidos>0?"#C62828":"#1565C0"}`,borderRadius:16,
-                      padding:"14px 18px",cursor:"pointer",minWidth:200,flex:"1 1 200px",maxWidth:280,
-                      boxShadow:`0 2px 10px rgba(0,0,0,.08)`,transition:"all .15s",position:"relative",overflow:"hidden"}}
-                    onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 6px 20px rgba(0,0,0,.14)";}}
-                    onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 2px 10px rgba(0,0,0,.08)";}}>
-                    {vencidos>0 && <div style={{position:"absolute",top:8,right:8,background:"#FFEBEE",color:"#C62828",fontSize:10,fontWeight:800,padding:"2px 7px",borderRadius:20}}>⚠️ {vencidos} vencido{vencidos!==1?"s":""}</div>}
-                    <div style={{fontSize:11,color:"#1565C0",fontWeight:800,textTransform:"uppercase",letterSpacing:.4,marginBottom:2}}>🏦 Financiamiento</div>
-                    <div style={{fontWeight:900,fontSize:14,color:"#0F2D4A",marginBottom:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.nombre}</div>
-                    <div style={{fontSize:11,color:C.muted,marginBottom:8}}>{f.concepto}</div>
-                    <div style={{fontSize:18,fontWeight:900,color:saldo>0?"#C62828":"#2E7D32",marginBottom:6}}>{sym(f.moneda)}{fmt(saldo)}</div>
-                    <div style={{fontSize:11,color:C.muted,marginBottom:6}}>{pagados}/{totalPlazos} meses · {sym(f.moneda)}{fmt(f.montoMensual)}/mes</div>
-                    {/* Progress bar */}
-                    <div style={{height:5,borderRadius:3,background:"#EEF2FF",overflow:"hidden"}}>
-                      <div style={{height:"100%",width:`${pct}%`,background:pct>=100?"#2E7D32":"#1565C0",borderRadius:3,transition:"width .4s"}}/>
-                    </div>
-                    <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
-                      <span style={{fontSize:10,color:C.muted}}>{pct}% pagado</span>
-                      {proxPlazo && <span style={{fontSize:10,color:"#1565C0",fontWeight:600}}>Próx: {proxPlazo}</span>}
-                    </div>
-                  </div>
-                );
-              })}
+              {/* Chips */}
+              {activos.length>0 && (
+                <div style={{display:"flex",gap:10,flexWrap:"wrap",padding:"12px",
+                  background:"#F0F4FF",border:"1px solid #C5D3F0",borderTop:"none",
+                  borderRadius:"0 0 12px 12px"}}>
+                  {activos.map(f=>{
+                    const plazos = getPlazos(f);
+                    const pagosF = financiamientoPagos.filter(p=>p.financiamientoId===f.id);
+                    const pagosFechas = new Set(pagosF.map(p=>p.fechaPago));
+                    const totalPlazos = plazos.length;
+                    const pagados = plazos.filter(pl=>pagosFechas.has(pl)).length;
+                    const pendientes = totalPlazos - pagados;
+                    const saldo = f.montoMensual * pendientes;
+                    const pct = totalPlazos > 0 ? Math.round((pagados/totalPlazos)*100) : 0;
+                    const proxPlazo = plazos.find(pl => !pagosFechas.has(pl) && new Date(pl+"T12:00:00") >= today);
+                    const vencidos = plazos.filter(pl => !pagosFechas.has(pl) && new Date(pl+"T12:00:00") < today).length;
+
+                    return (
+                      <div key={f.id} onClick={()=>setFinancModalId(f.id)}
+                        style={{background:"#fff",border:`2px solid ${vencidos>0?"#C62828":"#1565C0"}`,borderRadius:16,
+                          padding:"14px 18px",cursor:"pointer",minWidth:200,flex:"1 1 200px",maxWidth:280,
+                          boxShadow:"0 2px 10px rgba(0,0,0,.08)",transition:"all .15s",position:"relative",overflow:"hidden"}}
+                        onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 6px 20px rgba(0,0,0,.14)";}}
+                        onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 2px 10px rgba(0,0,0,.08)";}}>
+                        {vencidos>0 && <div style={{position:"absolute",top:8,right:8,background:"#FFEBEE",color:"#C62828",fontSize:10,fontWeight:800,padding:"2px 7px",borderRadius:20}}>⚠️ {vencidos} venc.</div>}
+                        <div style={{fontSize:11,color:"#1565C0",fontWeight:800,textTransform:"uppercase",letterSpacing:.4,marginBottom:2}}>🏦</div>
+                        <div style={{fontWeight:900,fontSize:14,color:"#0F2D4A",marginBottom:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.nombre}</div>
+                        <div style={{fontSize:11,color:C.muted,marginBottom:8}}>{f.concepto}</div>
+                        <div style={{fontSize:18,fontWeight:900,color:saldo>0?"#C62828":"#2E7D32",marginBottom:4}}>{sym(f.moneda)}{fmt(saldo)}</div>
+                        <div style={{fontSize:11,color:C.muted,marginBottom:6}}>{pagados}/{totalPlazos} meses · {sym(f.moneda)}{fmt(f.montoMensual)}/mes</div>
+                        <div style={{height:5,borderRadius:3,background:"#EEF2FF",overflow:"hidden"}}>
+                          <div style={{height:"100%",width:`${pct}%`,background:pct>=100?"#2E7D32":"#1565C0",borderRadius:3,transition:"width .4s"}}/>
+                        </div>
+                        <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
+                          <span style={{fontSize:10,color:C.muted}}>{pct}% pagado</span>
+                          {proxPlazo && <span style={{fontSize:10,color:"#1565C0",fontWeight:600}}>Próx: {proxPlazo}</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           );
         })()}
