@@ -138,6 +138,7 @@ export default function CxcView({
   const [tasImportando, setTasImportando] = useState(false);
   const [cxcTab, setCxcTab] = useState("activas"); // "activas" | "resumen" | "cobros"
   const [cobrosMesModal, setCobrosMesModal] = useState(false);
+  const [agingDetailModal, setAgingDetailModal] = useState(null); // {titulo, ings}
   const [porFacturarModal, setPorFacturarModal] = useState(false);
   const porFacturarRef = useRef();
 
@@ -1447,8 +1448,10 @@ export default function CxcView({
               }} placeholder="—" style={{padding:"3px 7px",fontSize:11,border:`1px solid ${C.border}`,borderRadius:6,width:70,fontFamily:"inherit",background:"#FAFBFC"}}/>
           }
         </td>
-        {/* Cliente */}
-        <td style={{padding:"10px 10px",fontWeight:700,color:C.navy,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.cliente}</td>
+        {/* Cliente — oculto en empresa_2 (ya está agrupado por cliente) */}
+        {empresaId !== "empresa_2" && (
+          <td style={{padding:"10px 10px",fontWeight:700,color:C.navy,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.cliente}</td>
+        )}
         {/* Folio */}
         <td style={{padding:"10px 8px",fontSize:11,color:C.blue,fontWeight:600,whiteSpace:"nowrap"}}>{ing.folio||"—"}</td>
         {/* Concepto */}
@@ -2144,6 +2147,78 @@ export default function CxcView({
         );
       })()}
 
+      {/* ── Modal Detalle Aging (TAS) ── */}
+      {agingDetailModal && (()=>{
+        const { titulo, ings: modalIngs, moneda } = agingDetailModal;
+        const sym = monedaSym(moneda);
+        const totalMonto  = modalIngs.reduce((s,i)=>s+i.monto,0);
+        const totalCobrado = modalIngs.reduce((s,i)=>s+(metrics[i.id]?.totalCobrado||0),0);
+        const totalPorCobrar = modalIngs.reduce((s,i)=>s+(metrics[i.id]?.porCobrar||0),0);
+        return (
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
+            onClick={()=>setAgingDetailModal(null)}>
+            <div style={{background:"#fff",borderRadius:18,width:"100%",maxWidth:1150,maxHeight:"88vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
+              onClick={e=>e.stopPropagation()}>
+              {/* Header */}
+              <div style={{padding:"18px 26px",borderBottom:`1px solid ${C.border}`,background:C.navy,borderRadius:"18px 18px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontWeight:800,fontSize:17,color:"#fff"}}>📋 {titulo}</div>
+                  <div style={{fontSize:12,color:"#A5D6A7",marginTop:3}}>{modalIngs.length} factura{modalIngs.length!==1?"s":""} · Por cobrar: <b>{sym}{fmt(totalPorCobrar)}</b></div>
+                </div>
+                <button onClick={()=>setAgingDetailModal(null)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",width:34,height:34,cursor:"pointer",fontSize:18}}>×</button>
+              </div>
+              {/* Tabla */}
+              <div style={{overflowY:"auto",flex:1}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                  <thead style={{position:"sticky",top:0}}>
+                    <tr style={{background:"#EEF2FF"}}>
+                      {["Segmento","Folio","Concepto","F. Contable","F. Factura","Vencimiento","Días / Por Vencer","Monto","Cobrado","Por Cobrar"].map(h=>(
+                        <th key={h} style={{padding:"10px 12px",textAlign:["Monto","Cobrado","Por Cobrar"].includes(h)?"right":"left",color:C.navy,fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...modalIngs].sort((a,b)=>(a.fechaVencimiento||"").localeCompare(b.fechaVencimiento||"")).map((ing,i)=>{
+                      const m = metrics[ing.id]||{};
+                      const d = diasDiff(ing.fechaVencimiento);
+                      return (
+                        <tr key={ing.id} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFC",cursor:"pointer"}}
+                          onClick={()=>{setAgingDetailModal(null);setDetailIngreso(ing.id);}}
+                          onMouseEnter={e=>e.currentTarget.style.background="#E8F0FE"}
+                          onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"#fff":"#FAFBFC"}>
+                          <td style={{padding:"10px 12px",fontSize:11,color:C.muted}}>{ing.segmento||"—"}</td>
+                          <td style={{padding:"10px 12px",color:C.blue,fontWeight:600,whiteSpace:"nowrap",fontSize:12}}>{ing.folio||"—"}</td>
+                          <td style={{padding:"10px 12px",color:C.text,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.concepto||"—"}</td>
+                          <td style={{padding:"10px 12px",color:C.teal,whiteSpace:"nowrap",fontSize:12}}>{ing.fechaContable||"—"}</td>
+                          <td style={{padding:"10px 12px",color:C.muted,whiteSpace:"nowrap",fontSize:12}}>{ing.fecha||"—"}</td>
+                          <td style={{padding:"10px 12px",whiteSpace:"nowrap",fontSize:12,color:d!==null&&d<0?C.danger:C.text,fontWeight:d!==null&&d<0?700:400}}>{ing.fechaVencimiento||"—"}</td>
+                          <td style={{padding:"10px 12px",textAlign:"center"}}>
+                            {d===null ? <span style={{color:C.muted}}>—</span>
+                              : d<0 ? <span style={{background:"#FFEBEE",color:C.danger,fontWeight:800,fontSize:11,padding:"3px 8px",borderRadius:20}}>{Math.abs(d)}d venc.</span>
+                              : <span style={{background:d<=15?"#FFF3E0":d<=30?"#FFFDE7":"#E8F5E9",color:d<=15?C.danger:d<=30?C.warn:C.ok,fontWeight:700,fontSize:11,padding:"3px 8px",borderRadius:20}}>{d}d</span>}
+                          </td>
+                          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700}}>{sym}{fmt(ing.monto)}</td>
+                          <td style={{padding:"10px 12px",textAlign:"right",color:C.ok,fontWeight:600}}>{sym}{fmt(m.totalCobrado||0)}</td>
+                          <td style={{padding:"10px 12px",textAlign:"right",fontWeight:800,color:(m.porCobrar||0)>0?C.warn:C.ok}}>{sym}{fmt(m.porCobrar||0)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{background:"#EEF2FF",borderTop:`2px solid ${C.blue}`}}>
+                      <td colSpan={7} style={{padding:"10px 12px",fontWeight:800,color:C.navy}}>TOTAL ({modalIngs.length} facturas)</td>
+                      <td style={{padding:"10px 12px",textAlign:"right",fontWeight:800,color:C.navy}}>{sym}{fmt(totalMonto)}</td>
+                      <td style={{padding:"10px 12px",textAlign:"right",fontWeight:800,color:C.ok}}>{sym}{fmt(totalCobrado)}</td>
+                      <td style={{padding:"10px 12px",textAlign:"right",fontWeight:900,color:C.warn,fontSize:14}}>{sym}{fmt(totalPorCobrar)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── Por Facturar chips (solo empresa_2) — movido a fila 1, solo legacy fallback ── */}
       {empresaId === "empresa_2" && false && porFacturar.length > 0 && (()=>{ return null; })()}
 
@@ -2507,11 +2582,33 @@ export default function CxcView({
                         <div style={{textAlign:"center",padding:"0 4px"}}>
                           <span style={{background:monBg,color:monCol,fontWeight:800,fontSize:11,padding:"2px 8px",borderRadius:20}}>{mon}</span>
                         </div>
-                        {/* Valores numéricos */}
-                        {vals.map((v,i)=>(
-                          <div key={i} style={{textAlign:"center",padding:"0 6px"}}>
-                            <span style={{fontSize:14,fontWeight:800,whiteSpace:"nowrap",color:v>0?cols[i]:"#CFD8DC"}}>
-                              {v>0?`${sym}${fmt(v)}`:"—"}
+                        {/* Valores numéricos — clickeables para ver detalle */}
+                        {[
+                          {v:ag.total,       c:"#1A237E", label:"Total",             fn: i => (metrics[i.id]?.porCobrar||0)>0},
+                          {v:ag.cobradoParcial,c:"#2E7D32",label:"Cobrado",          fn: i => (metrics[i.id]?.totalCobrado||0)>0 && (metrics[i.id]?.porCobrar||0)>0},
+                          {v:ag.vencido,     c:"#B71C1C", label:"Vencido",           fn: i => { const d=diasDiff(i.fechaVencimiento); return (metrics[i.id]?.porCobrar||0)>0 && d!==null && d<0; }},
+                          {v:ag.pv15,        c:"#33691E", label:"Por Vencer 1-15d",  fn: i => { const d=diasDiff(i.fechaVencimiento); return (metrics[i.id]?.porCobrar||0)>0 && (d===null||(d>=0&&d<=15)); }},
+                          {v:ag.pv30,        c:"#388E3C", label:"Por Vencer 16-30d", fn: i => { const d=diasDiff(i.fechaVencimiento); return (metrics[i.id]?.porCobrar||0)>0 && d!==null && d>15 && d<=30; }},
+                          {v:ag.pv60,        c:"#43A047", label:"Por Vencer 31-60d", fn: i => { const d=diasDiff(i.fechaVencimiento); return (metrics[i.id]?.porCobrar||0)>0 && d!==null && d>30 && d<=60; }},
+                          {v:ag.pvmas,       c:"#66BB6A", label:"Por Vencer +60d",   fn: i => { const d=diasDiff(i.fechaVencimiento); return (metrics[i.id]?.porCobrar||0)>0 && d!==null && d>60; }},
+                        ].map((col,i)=>(
+                          <div key={i} style={{textAlign:"center",padding:"0 6px"}}
+                            onClick={col.v>0 ? e=>{
+                              e.stopPropagation();
+                              const ingsMon = ings.filter(ing => ing.moneda===mon);
+                              setAgingDetailModal({
+                                titulo:`${cliente} — ${col.label}`,
+                                ings: ingsMon.filter(col.fn),
+                                moneda: mon,
+                              });
+                            } : undefined}>
+                            <span style={{
+                              fontSize:14,fontWeight:800,whiteSpace:"nowrap",
+                              color:col.v>0?col.c:"#CFD8DC",
+                              cursor:col.v>0?"pointer":"default",
+                              borderBottom:col.v>0?`1px dotted ${col.c}`:"none",
+                            }}>
+                              {col.v>0?`${sym}${fmt(col.v)}`:"—"}
                             </span>
                           </div>
                         ))}
@@ -2537,7 +2634,7 @@ export default function CxcView({
                                   });
                                 }}/>
                             </th>
-                            {["Segmento","Cliente","Folio","Concepto","Moneda","Fecha Contable","Fecha Factura","Vencimiento","Días Vencidos","Por Vencer","Fecha Ficticia","Monto","Cobrado","Por Cobrar","Acciones"].map(h=>(
+                            {["Segmento","Folio","Concepto","Moneda","Fecha Contable","Fecha Factura","Vencimiento","Días Vencidos","Por Vencer","Fecha Ficticia","Monto","Cobrado","Por Cobrar","Acciones"].map(h=>(
                               <th key={h} style={{padding:"10px 10px",textAlign:["Monto","Cobrado","Por Cobrar"].includes(h)?"right":["Días Vencidos","Por Vencer"].includes(h)?"center":"left",color:C.blue,fontWeight:700,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                             ))}
                           </tr>
