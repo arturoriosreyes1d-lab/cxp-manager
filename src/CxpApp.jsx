@@ -3501,20 +3501,20 @@ function ResumenCartera({ invoices, suppliers, currency, filtroGrupo, setFiltroG
         {/* Chips — grande con paleta de urgencia */}
         <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
           {[
-            {l:"Saldo Total",      v:grand.saldo,   c:"#fff", bg:"#0F2D4A", border:"#0F2D4A", inv:allInvs},
-            {l:"Corriente",  v:grand.corriente,c:"#1B5E20",bg:"#E8F5E9",border:"#A5D6A7",inv:filterInvs(d=>d!==null&&d>=0)},
-            {l:"Vencido 1-7 Días",  v:grand.v7,      c:"#E65100",bg:"#FFF3E0",border:"#FFCC80",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)<=7)},
-            {l:"Vencido 8-15 Días", v:grand.v15,     c:"#BF360C",bg:"#FBE9E7",border:"#FF8A65",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=15)},
-            {l:"Vencido 16-30 Días",v:grand.v30,     c:"#fff",   bg:"#E53935",border:"#E53935",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30)},
-            {l:"Vencido 31-60 Días",v:grand.v60,     c:"#fff",   bg:"#B71C1C",border:"#B71C1C",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=60)},
-            {l:"Vencido +60 Días",  v:grand.vmas,    c:"#fff",   bg:"#4A0000",border:"#4A0000",inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>60)},
+            {l:"Saldo Total",       v:grand.saldo,     c:"#fff",    bg:"#0F2D4A", border:"#0F2D4A", inv:allInvs},
+            {l:"Corriente",         v:grand.corriente, c:"#1B5E20", bg:"#E8F5E9", border:"#A5D6A7", inv:filterInvs(d=>d!==null&&d>=0)},
+            {l:"Vencido 1-7 Días",  v:grand.v7,        c:"#E65100", bg:"#FFF3E0", border:"#FFCC80", inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)<=7)},
+            {l:"Vencido 8-15 Días", v:grand.v15,       c:"#BF360C", bg:"#FBE9E7", border:"#FF8A65", inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>7&&Math.abs(d)<=15)},
+            {l:"Vencido 16-30 Días",v:grand.v30,       c:"#fff",    bg:"#E53935", border:"#E53935", inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>15&&Math.abs(d)<=30)},
+            {l:"Vencido 31-60 Días",v:grand.v60,       c:"#fff",    bg:"#B71C1C", border:"#B71C1C", inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>30&&Math.abs(d)<=60)},
+            {l:"Vencido +60 Días",  v:grand.vmas,      c:"#fff",    bg:"#4A0000", border:"#4A0000", inv:filterInvs(d=>d!==null&&d<0&&Math.abs(d)>60)},
           ].filter(k=>k.v>0).map(k=>(
             <div key={k.l} onClick={()=>openDetail(`${mon} — ${k.l}`,k.inv,true)}
-              style={{background:k.bg,border:`2px solid ${k.border}`,borderRadius:14,padding:"14px 20px",cursor:"pointer",minWidth:130,transition:"all .15s",boxShadow:"0 2px 6px rgba(0,0,0,.08)"}}
-              onMouseEnter={e=>{e.currentTarget.style.transform="scale(1.04)";e.currentTarget.style.boxShadow="0 6px 18px rgba(0,0,0,.15)";}}
+              style={{background:k.bg,border:`2px solid ${k.border}`,borderRadius:16,padding:"16px 22px",cursor:"pointer",minWidth:150,flex:"1 1 150px",transition:"all .15s",boxShadow:"0 2px 6px rgba(0,0,0,.08)"}}
+              onMouseEnter={e=>{e.currentTarget.style.transform="scale(1.03)";e.currentTarget.style.boxShadow="0 6px 18px rgba(0,0,0,.15)";}}
               onMouseLeave={e=>{e.currentTarget.style.transform="scale(1)";e.currentTarget.style.boxShadow="0 2px 6px rgba(0,0,0,.08)";}}>
-              <div style={{fontSize:11,color:k.c,fontWeight:700,textTransform:"uppercase",opacity:.85,marginBottom:4,letterSpacing:.5}}>{k.l}</div>
-              <div style={{fontSize:20,fontWeight:900,color:k.c}}>{sym}{fmt(k.v)}</div>
+              <div style={{fontSize:12,color:k.c,fontWeight:800,textTransform:"uppercase",opacity:.9,marginBottom:6,letterSpacing:.5}}>{k.l}</div>
+              <div style={{fontSize:24,fontWeight:900,color:k.c,letterSpacing:-.5}}>{sym}{fmt(k.v)}</div>
             </div>
           ))}
         </div>

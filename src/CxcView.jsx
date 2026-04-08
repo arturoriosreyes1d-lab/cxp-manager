@@ -4207,38 +4207,38 @@ function CobrosCxC({ cobros, ingresos, fmt, C, monedaSym, MESES_NOMBRES }) {
   const [filtroDesde, setFiltroDesde] = React.useState("");
   const [filtroHasta, setFiltroHasta] = React.useState("");
   const [filtroMesRapido, setFiltroMesRapido] = React.useState("");
+  const [filtroSegmento, setFiltroSegmento] = React.useState("");
+  const [filtroMesVenta, setFiltroMesVenta] = React.useState("");
   const [busqueda, setBusqueda] = React.useState("");
   const [expandedMeses, setExpandedMeses] = React.useState(new Set());
   const toggleMes = k => setExpandedMeses(prev=>{const n=new Set(prev);n.has(k)?n.delete(k):n.add(k);return n;});
 
-  // Get ingreso info
-  const ingresoMap = React.useMemo(()=>{
-    const m={};
-    ingresos.forEach(i=>m[i.id]=i);
-    return m;
-  },[ingresos]);
+  const ingresoMap = React.useMemo(()=>{ const m={}; ingresos.forEach(i=>m[i.id]=i); return m; },[ingresos]);
 
-  // Meses with cobros for quick selector
   const mesesDisponibles = React.useMemo(()=>{
-    const s=new Set();
-    cobros.forEach(c=>{ if(c.fechaCobro) s.add(c.fechaCobro.slice(0,7)); });
-    return [...s].sort().reverse();
+    const s=new Set(); cobros.forEach(c=>{ if(c.fechaCobro) s.add(c.fechaCobro.slice(0,7)); }); return [...s].sort().reverse();
   },[cobros]);
 
-  // Apply quick month
+  const segmentosDisponibles = React.useMemo(()=>{
+    const s=new Set(); cobros.forEach(c=>{ const seg=ingresoMap[c.ingresoId]?.segmento; if(seg) s.add(seg); }); return [...s].sort();
+  },[cobros,ingresoMap]);
+
+  const mesesVentaDisponibles = React.useMemo(()=>{
+    const s=new Set(); cobros.forEach(c=>{ const fc=ingresoMap[c.ingresoId]?.fechaContable; if(fc) s.add(fc.slice(0,7)); }); return [...s].sort().reverse();
+  },[cobros,ingresoMap]);
+
   const handleMesRapido = (mes) => {
     setFiltroMesRapido(mes);
-    if(mes){
-      setFiltroDesde(`${mes}-01`);
-      const [y,m]=mes.split("-").map(Number);
-      const lastDay=new Date(y,m,0).getDate();
-      setFiltroHasta(`${mes}-${String(lastDay).padStart(2,"0")}`);
-    } else {
-      setFiltroDesde(""); setFiltroHasta("");
-    }
+    if(mes){ setFiltroDesde(`${mes}-01`); const [y,m]=mes.split("-").map(Number); const ld=new Date(y,m,0).getDate(); setFiltroHasta(`${mes}-${String(ld).padStart(2,"0")}`); }
+    else { setFiltroDesde(""); setFiltroHasta(""); }
   };
 
-  // Filtered cobros
+  // Helper: días entre dos fechas
+  const daysBetween = (d1, d2) => {
+    if(!d1||!d2) return null;
+    return Math.round((new Date(d2+"T12:00:00") - new Date(d1+"T12:00:00")) / 86400000);
+  };
+
   const filtered = React.useMemo(()=>{
     const q = busqueda.trim().toLowerCase();
     return cobros.filter(c=>{
@@ -4248,19 +4248,39 @@ function CobrosCxC({ cobros, ingresos, fmt, C, monedaSym, MESES_NOMBRES }) {
       if(filtroMonedaC && mon!==filtroMonedaC) return false;
       if(filtroDesde && c.fechaCobro<filtroDesde) return false;
       if(filtroHasta && c.fechaCobro>filtroHasta) return false;
+      if(filtroSegmento && (ing?.segmento||"")!==filtroSegmento) return false;
+      if(filtroMesVenta && !(ing?.fechaContable||"").startsWith(filtroMesVenta)) return false;
       if(q){
-        const haystack = [
-          ing?.cliente||"", ing?.folio||"", ing?.concepto||"",
-          String(c.monto||""), c.banco||"", c.notas||"",
-          c.fechaCobro||"", ing?.segmento||""
-        ].join(" ").toLowerCase();
+        const haystack=[ing?.cliente||"",ing?.folio||"",ing?.concepto||"",String(c.monto||""),c.banco||"",c.notas||"",c.fechaCobro||"",ing?.segmento||""].join(" ").toLowerCase();
         if(!haystack.includes(q)) return false;
       }
       return true;
     });
-  },[cobros,ingresoMap,filtroBanco,filtroMonedaC,filtroDesde,filtroHasta,busqueda]);
+  },[cobros,ingresoMap,filtroBanco,filtroMonedaC,filtroDesde,filtroHasta,filtroSegmento,filtroMesVenta,busqueda]);
 
-  // Group by mes + banco
+  // KPIs
+  const kpis = React.useMemo(()=>{
+    const totalCobrado = filtered.reduce((s,c)=>s+c.monto,0);
+    const rows = filtered.map(c=>{
+      const ing=ingresoMap[c.ingresoId];
+      const dFact = daysBetween(ing?.fecha, c.fechaCobro);
+      const dVenc = daysBetween(ing?.fechaVencimiento, c.fechaCobro);
+      return {...c, ing, dFact, dVenc};
+    }).filter(r=>r.ing);
+    const conVenc = rows.filter(r=>r.dVenc!==null);
+    const aTiempo = conVenc.filter(r=>r.dVenc<=0);
+    const tarde   = conVenc.filter(r=>r.dVenc>0);
+    const avgDiasFact = rows.filter(r=>r.dFact!==null).length>0 ? Math.round(rows.filter(r=>r.dFact!==null).reduce((s,r)=>s+r.dFact,0)/rows.filter(r=>r.dFact!==null).length) : null;
+    const avgRetraso  = tarde.length>0 ? Math.round(tarde.reduce((s,r)=>s+r.dVenc,0)/tarde.length) : null;
+    // Por cliente: promedio días desde factura
+    const porCliente={};
+    rows.filter(r=>r.dFact!==null).forEach(r=>{ const cl=r.ing.cliente; if(!porCliente[cl]) porCliente[cl]={sum:0,n:0}; porCliente[cl].sum+=r.dFact; porCliente[cl].n++; });
+    const clienteEntries=Object.entries(porCliente).map(([cl,d])=>({cl,avg:Math.round(d.sum/d.n)})).filter(e=>e.n>0||true);
+    const masPuntual = clienteEntries.sort((a,b)=>a.avg-b.avg)[0];
+    const masTardio  = clienteEntries.sort((a,b)=>b.avg-a.avg)[0];
+    return { totalCobrado, total:filtered.length, aTiempo:aTiempo.length, tarde:tarde.length, conVenc:conVenc.length, avgDiasFact, avgRetraso, masPuntual, masTardio };
+  },[filtered,ingresoMap]);
+
   const grouped = React.useMemo(()=>{
     const map={};
     filtered.forEach(c=>{
@@ -4268,110 +4288,90 @@ function CobrosCxC({ cobros, ingresos, fmt, C, monedaSym, MESES_NOMBRES }) {
       const ing=ingresoMap[c.ingresoId];
       const mon=ing?.moneda||"MXN";
       const banco=c.banco||"Sin banco";
-      const key=mes;
-      if(!map[key]) map[key]={mes,cobros:[],byBancoMon:{}};
-      map[key].cobros.push({...c,ing,moneda:mon});
+      if(!map[mes]) map[mes]={mes,cobros:[],byBancoMon:{}};
+      map[mes].cobros.push({...c,ing,moneda:mon});
       const bk=`${banco}|${mon}`;
-      if(!map[key].byBancoMon[bk]) map[key].byBancoMon[bk]={banco,moneda:mon,total:0};
-      map[key].byBancoMon[bk].total+=c.monto;
+      if(!map[mes].byBancoMon[bk]) map[mes].byBancoMon[bk]={banco,moneda:mon,total:0};
+      map[mes].byBancoMon[bk].total+=c.monto;
     });
     return Object.values(map).sort((a,b)=>b.mes.localeCompare(a.mes));
   },[filtered,ingresoMap]);
 
-  // Grand totals by banco+moneda
-  const grandTotals = React.useMemo(()=>{
-    const map={};
-    filtered.forEach(c=>{
-      const ing=ingresoMap[c.ingresoId];
-      const mon=ing?.moneda||"MXN";
-      const banco=c.banco||"Sin banco";
-      const k=`${banco}|${mon}`;
-      if(!map[k]) map[k]={banco,moneda:mon,total:0};
-      map[k].total+=c.monto;
-    });
-    return Object.values(map).sort((a,b)=>a.banco.localeCompare(b.banco));
-  },[filtered,ingresoMap]);
-
   const inputStyle2={padding:"8px 12px",borderRadius:8,border:`1px solid ${C.border}`,fontSize:13,fontFamily:"inherit",background:"#fff"};
+  const limpiar=()=>{setFiltroBanco("");setFiltroMonedaC("");setFiltroDesde("");setFiltroHasta("");setFiltroMesRapido("");setFiltroSegmento("");setFiltroMesVenta("");setBusqueda("");};
+  const hayFiltros=filtroBanco||filtroMonedaC||filtroDesde||filtroHasta||busqueda||filtroSegmento||filtroMesVenta;
 
   return(
     <div>
-      {/* Filters */}
+      {/* ── Filtros ── */}
       <div style={{background:"#fff",border:`1px solid ${C.border}`,borderRadius:14,padding:16,marginBottom:20}}>
-        {/* Fila 1: buscador */}
         <div style={{marginBottom:10}}>
-          <div style={{position:"relative",maxWidth:480}}>
+          <div style={{position:"relative",maxWidth:520}}>
             <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:14,color:C.muted,pointerEvents:"none"}}>🔍</span>
-            <input
-              value={busqueda}
-              onChange={e=>setBusqueda(e.target.value)}
+            <input value={busqueda} onChange={e=>setBusqueda(e.target.value)}
               placeholder="Buscar por cliente, folio, concepto, importe, banco, notas…"
-              style={{...inputStyle2,width:"100%",paddingLeft:36,paddingRight:busqueda?32:12,boxSizing:"border-box",
-                border:`1.5px solid ${busqueda?C.blue:C.border}`,background:busqueda?"#EEF4FF":"#fff"}}
-            />
-            {busqueda && (
-              <button onClick={()=>setBusqueda("")}
-                style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:16,color:C.muted,padding:0}}>×</button>
-            )}
+              style={{...inputStyle2,width:"100%",paddingLeft:36,paddingRight:busqueda?32:12,boxSizing:"border-box",border:`1.5px solid ${busqueda?C.blue:C.border}`,background:busqueda?"#EEF4FF":"#fff"}}/>
+            {busqueda&&<button onClick={()=>setBusqueda("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:16,color:C.muted,padding:0}}>×</button>}
           </div>
         </div>
-        {/* Fila 2: filtros */}
         <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
           <select value={filtroBanco} onChange={e=>setFiltroBanco(e.target.value)} style={{...inputStyle2,minWidth:180}}>
             <option value="">🏦 Todos los bancos</option>
-            <option>Banamex</option>
-            <option>Banorte</option>
+            <option>Banamex</option><option>Banorte</option>
           </select>
           <select value={filtroMonedaC} onChange={e=>setFiltroMonedaC(e.target.value)} style={{...inputStyle2,minWidth:170}}>
             <option value="">💵 Todas las monedas</option>
-            <option value="MXN">🇲🇽 MXN</option>
-            <option value="USD">🇺🇸 USD</option>
+            <option value="MXN">🇲🇽 MXN</option><option value="USD">🇺🇸 USD</option>
+          </select>
+          {segmentosDisponibles.length>0&&(
+            <select value={filtroSegmento} onChange={e=>setFiltroSegmento(e.target.value)} style={{...inputStyle2,minWidth:160}}>
+              <option value="">✈️ Todos los segmentos</option>
+              {segmentosDisponibles.map(s=><option key={s}>{s}</option>)}
+            </select>
+          )}
+          <select value={filtroMesVenta} onChange={e=>setFiltroMesVenta(e.target.value)} style={{...inputStyle2,minWidth:190}}>
+            <option value="">📅 Mes de venta</option>
+            {mesesVentaDisponibles.map(m=>{ const[y,mo]=m.split("-"); return <option key={m} value={m}>{MESES_NOMBRES[+mo-1]} {y}</option>; })}
           </select>
           <select value={filtroMesRapido} onChange={e=>handleMesRapido(e.target.value)} style={{...inputStyle2,minWidth:190}}>
-            <option value="">📆 Mes rápido</option>
-            {mesesDisponibles.map(m=>{
-              const [y,mo]=m.split("-");
-              return <option key={m} value={m}>{MESES_NOMBRES[+mo-1]} {y}</option>;
-            })}
+            <option value="">📆 Mes de cobro</option>
+            {mesesDisponibles.map(m=>{ const[y,mo]=m.split("-"); return <option key={m} value={m}>{MESES_NOMBRES[+mo-1]} {y}</option>; })}
           </select>
           <div style={{display:"flex",alignItems:"center",gap:6}}>
             <span style={{fontSize:12,color:C.muted,fontWeight:600}}>Desde</span>
-            <input type="date" value={filtroDesde} onChange={e=>{setFiltroDesde(e.target.value);setFiltroMesRapido("");}} style={{...inputStyle2}}/>
+            <input type="date" value={filtroDesde} onChange={e=>{setFiltroDesde(e.target.value);setFiltroMesRapido("");}} style={inputStyle2}/>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:6}}>
             <span style={{fontSize:12,color:C.muted,fontWeight:600}}>Hasta</span>
-            <input type="date" value={filtroHasta} onChange={e=>{setFiltroHasta(e.target.value);setFiltroMesRapido("");}} style={{...inputStyle2}}/>
+            <input type="date" value={filtroHasta} onChange={e=>{setFiltroHasta(e.target.value);setFiltroMesRapido("");}} style={inputStyle2}/>
           </div>
-          {(filtroBanco||filtroMonedaC||filtroDesde||filtroHasta||busqueda) && (
-            <button onClick={()=>{setFiltroBanco("");setFiltroMonedaC("");setFiltroDesde("");setFiltroHasta("");setFiltroMesRapido("");setBusqueda("");}}
-              style={{padding:"8px 14px",borderRadius:8,border:`1px solid ${C.border}`,background:"#F1F5F9",color:C.text,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>✕ Limpiar</button>
-          )}
+          {hayFiltros&&<button onClick={limpiar} style={{padding:"8px 14px",borderRadius:8,border:`1px solid ${C.border}`,background:"#F1F5F9",color:C.text,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>✕ Limpiar</button>}
         </div>
-        {busqueda && (
-          <div style={{marginTop:8,fontSize:12,color:C.blue,fontWeight:600}}>
-            🔍 {filtered.length} resultado{filtered.length!==1?"s":""} para "<b>{busqueda}</b>"
-          </div>
-        )}
+        {busqueda&&<div style={{marginTop:8,fontSize:12,color:C.blue,fontWeight:600}}>🔍 {filtered.length} resultado{filtered.length!==1?"s":""} para "<b>{busqueda}</b>"</div>}
       </div>
 
-      {/* Grand totals chips */}
-      {grandTotals.length>0 && (
+      {/* ── KPIs ── */}
+      {filtered.length>0&&(
         <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
-          {grandTotals.map(t=>(
-            <div key={`${t.banco}-${t.moneda}`} style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9"}[t.moneda]||"#F8FAFC",borderRadius:12,padding:"12px 18px"}}>
-              <div style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>🏦 {t.banco} · {t.moneda}</div>
-              <div style={{fontSize:20,fontWeight:900,color:{MXN:C.mxn,USD:C.usd}[t.moneda]||C.navy}}>{monedaSym(t.moneda)}{fmt(t.total)}</div>
+          {[
+            {icon:"💰",label:"Total Cobrado",   val:`$${fmt(kpis.totalCobrado)}`,      bg:"#E3F2FD", c:C.mxn},
+            {icon:"📋",label:"Total Cobros",    val:kpis.total,                        bg:"#EEF2FF", c:C.navy},
+            {icon:"⏱️",label:"Prom. días cobro", val:kpis.avgDiasFact!=null?`${kpis.avgDiasFact}d`:"—", bg:"#F3E5F5", c:"#7B1FA2"},
+            {icon:"✅",label:"Pagaron a tiempo", val:kpis.conVenc>0?`${kpis.aTiempo} (${Math.round(kpis.aTiempo/kpis.conVenc*100)}%)`:"—", bg:"#E8F5E9", c:"#1B5E20"},
+            {icon:"⚠️",label:"Pagaron tarde",   val:kpis.conVenc>0?`${kpis.tarde} · +${kpis.avgRetraso??0}d prom`:"—", bg:"#FFF3E0", c:"#E65100"},
+            {icon:"🏆",label:"Más puntual",     val:kpis.masPuntual?`${kpis.masPuntual.cl.split(" ")[0]} (${kpis.masPuntual.avg}d)`:"—", bg:"#E8F5E9", c:"#2E7D32"},
+            {icon:"🐌",label:"Más tardío",      val:kpis.masTardio?`${kpis.masTardio.cl.split(" ")[0]} (${kpis.masTardio.avg}d)`:"—",  bg:"#FFEBEE", c:"#C62828"},
+          ].map(k=>(
+            <div key={k.label} style={{background:k.bg,borderRadius:14,padding:"12px 18px",border:`1px solid ${C.border}`,flex:"1 1 140px",minWidth:140}}>
+              <div style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:.4,marginBottom:4}}>{k.icon} {k.label}</div>
+              <div style={{fontSize:15,fontWeight:900,color:k.c,lineHeight:1.2}}>{k.val}</div>
             </div>
           ))}
-          <div style={{background:"#EEF2FF",borderRadius:12,padding:"12px 18px"}}>
-            <div style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>📋 Total cobros</div>
-            <div style={{fontSize:20,fontWeight:900,color:C.navy}}>{filtered.length}</div>
-          </div>
         </div>
       )}
 
-      {/* Grouped by mes */}
-      {grouped.length===0 && (
+      {/* ── Agrupado por mes ── */}
+      {grouped.length===0&&(
         <div style={{textAlign:"center",padding:60,color:C.muted,background:"#fff",borderRadius:14,border:`1px solid ${C.border}`}}>
           <div style={{fontSize:48,marginBottom:12}}>💰</div>
           <div style={{fontSize:16}}>Sin cobros en este periodo</div>
@@ -4379,12 +4379,10 @@ function CobrosCxC({ cobros, ingresos, fmt, C, monedaSym, MESES_NOMBRES }) {
       )}
       {grouped.map(g=>{
         const [y,mo]=g.mes.split("-");
-        const label=g.mes==="Sin fecha"?"Sin fecha":` ${MESES_NOMBRES[+mo-1]} ${y}`;
+        const label=g.mes==="Sin fecha"?"Sin fecha":`${MESES_NOMBRES[+mo-1]} ${y}`;
         const expanded=expandedMeses.has(g.mes);
-        const totalMes=g.cobros.reduce((s,c)=>s+c.monto,0);
         return(
           <div key={g.mes} style={{background:"#fff",border:`1px solid ${expanded?C.blue:C.border}`,borderRadius:14,overflow:"hidden",marginBottom:10}}>
-            {/* Mes header */}
             <div onClick={()=>toggleMes(g.mes)}
               style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 18px",background:expanded?"#E8F0FE":"#F8FAFC",cursor:"pointer"}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -4392,7 +4390,6 @@ function CobrosCxC({ cobros, ingresos, fmt, C, monedaSym, MESES_NOMBRES }) {
                 <span style={{fontWeight:800,fontSize:15,color:C.navy}}>📅 {label}</span>
                 <span style={{fontSize:12,color:C.muted}}>{g.cobros.length} cobro{g.cobros.length!==1?"s":""}</span>
               </div>
-              {/* Totals by banco */}
               <div style={{display:"flex",gap:16,flexWrap:"wrap",alignItems:"center"}}>
                 {Object.values(g.byBancoMon).map(bm=>(
                   <div key={`${bm.banco}-${bm.moneda}`} style={{textAlign:"right"}}>
@@ -4402,36 +4399,53 @@ function CobrosCxC({ cobros, ingresos, fmt, C, monedaSym, MESES_NOMBRES }) {
                 ))}
               </div>
             </div>
-            {/* Cobros detail */}
-            {expanded && (
+            {expanded&&(
               <div style={{overflowX:"auto"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:1400}}>
                   <thead>
-                    <tr style={{background:"#EEF2FF"}}>
-                      {["Fecha","Cliente","Folio","Concepto","Banco","Moneda","Monto","Notas"].map(h=>(
-                        <th key={h} style={{padding:"9px 12px",textAlign:h==="Monto"?"right":"left",color:C.navy,fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                    <tr style={{background:C.navy}}>
+                      {["Segmento","F. Factura","Cliente","Folio","Concepto","Importe","Mes Venta","F. Cobro","Banco","Moneda","Días Fact→Cobro","Días Venc→Cobro","Notas"].map(h=>(
+                        <th key={h} style={{padding:"10px 12px",textAlign:["Importe"].includes(h)?"right":"left",
+                          color:h==="Días Venc→Cobro"?"#FFCC80":h==="Días Fact→Cobro"?"#A5D6A7":"rgba(255,255,255,.85)",
+                          fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {g.cobros.sort((a,b)=>(a.fechaCobro||"").localeCompare(b.fechaCobro||"")).map((c,ci)=>(
-                      <tr key={c.id} style={{borderTop:`1px solid ${C.border}`,background:ci%2===0?"#fff":"#FAFBFF"}}>
-                        <td style={{padding:"9px 12px",whiteSpace:"nowrap",color:C.muted,fontSize:12}}>{c.fechaCobro||"—"}</td>
-                        <td style={{padding:"9px 12px",fontWeight:600}}>{c.ing?.cliente||"—"}</td>
-                        <td style={{padding:"9px 12px",color:C.blue,fontWeight:600}}>{c.ing?.folio||"—"}</td>
-                        <td style={{padding:"9px 12px",color:C.muted,fontSize:12,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.ing?.concepto||"—"}</td>
-                        <td style={{padding:"9px 12px"}}>
-                          <span style={{background:c.banco==="Banamex"?"#E3F2FD":"#E8F5E9",color:c.banco==="Banamex"?C.mxn:C.usd,padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>
-                            🏦 {c.banco||"—"}
-                          </span>
-                        </td>
-                        <td style={{padding:"9px 12px"}}>
-                          <span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9"}[c.moneda]||"#F8FAFC",color:{MXN:C.mxn,USD:C.usd}[c.moneda]||C.navy,padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{c.moneda}</span>
-                        </td>
-                        <td style={{padding:"9px 12px",textAlign:"right",fontWeight:700,color:C.ok,fontSize:14}}>{monedaSym(c.moneda)}{fmt(c.monto)}</td>
-                        <td style={{padding:"9px 12px",color:C.muted,fontSize:12}}>{c.notas||"—"}</td>
-                      </tr>
-                    ))}
+                    {g.cobros.sort((a,b)=>(a.ing?.cliente||"").localeCompare(b.ing?.cliente||"")||(a.fechaCobro||"").localeCompare(b.fechaCobro||"")).map((c,ci)=>{
+                      const ing=c.ing;
+                      const dFact=daysBetween(ing?.fecha, c.fechaCobro);
+                      const dVenc=daysBetween(ing?.fechaVencimiento, c.fechaCobro);
+                      const [mvY,mvM]=(ing?.fechaContable||"").slice(0,7).split("-");
+                      const mesVentaLabel=mvY&&mvM?`${MESES_NOMBRES[+mvM-1]} ${mvY}`:"—";
+                      const dVencColor=dVenc===null?C.muted:dVenc<=0?"#2E7D32":"#C62828";
+                      const dVencLabel=dVenc===null?"—":dVenc<=0?`${Math.abs(dVenc)}d antes`:`+${dVenc}d tarde`;
+                      return(
+                        <tr key={c.id} style={{borderTop:`1px solid ${C.border}`,background:ci%2===0?"#fff":"#FAFBFF"}}>
+                          <td style={{padding:"9px 12px",fontSize:12,color:C.muted}}>{ing?.segmento||"—"}</td>
+                          <td style={{padding:"9px 12px",whiteSpace:"nowrap",color:C.muted,fontSize:12}}>{ing?.fecha||"—"}</td>
+                          <td style={{padding:"9px 12px",fontWeight:700,color:C.navy,whiteSpace:"nowrap"}}>{ing?.cliente||"—"}</td>
+                          <td style={{padding:"9px 12px",color:C.blue,fontWeight:600,whiteSpace:"nowrap"}}>{ing?.folio||"—"}</td>
+                          <td style={{padding:"9px 12px",color:C.text,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing?.concepto||"—"}</td>
+                          <td style={{padding:"9px 12px",textAlign:"right",fontWeight:700,color:C.ok,fontSize:13}}>{monedaSym(c.moneda)}{fmt(c.monto)}</td>
+                          <td style={{padding:"9px 12px",color:C.teal,whiteSpace:"nowrap",fontSize:12}}>{mesVentaLabel}</td>
+                          <td style={{padding:"9px 12px",whiteSpace:"nowrap",color:"#1B5E20",fontWeight:600,fontSize:12}}>{c.fechaCobro||"—"}</td>
+                          <td style={{padding:"9px 12px"}}>
+                            <span style={{background:c.banco==="Banamex"?"#E3F2FD":"#E8F5E9",color:c.banco==="Banamex"?C.mxn:"#2E7D32",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>🏦 {c.banco||"—"}</span>
+                          </td>
+                          <td style={{padding:"9px 12px"}}>
+                            <span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9"}[c.moneda]||"#F8FAFC",color:{MXN:C.mxn,USD:C.usd}[c.moneda]||C.navy,padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{c.moneda}</span>
+                          </td>
+                          <td style={{padding:"9px 12px",textAlign:"center"}}>
+                            {dFact===null?<span style={{color:C.muted}}>—</span>:<span style={{background:"#E8F5E9",color:"#2E7D32",fontWeight:700,fontSize:11,padding:"2px 8px",borderRadius:20}}>{dFact}d</span>}
+                          </td>
+                          <td style={{padding:"9px 12px",textAlign:"center"}}>
+                            {dVenc===null?<span style={{color:C.muted}}>—</span>:<span style={{background:dVenc<=0?"#E8F5E9":"#FFEBEE",color:dVencColor,fontWeight:700,fontSize:11,padding:"2px 8px",borderRadius:20}}>{dVencLabel}</span>}
+                          </td>
+                          <td style={{padding:"9px 12px",color:C.muted,fontSize:12}}>{c.notas||"—"}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
