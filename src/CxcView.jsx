@@ -2229,50 +2229,86 @@ export default function CxcView({
               <div style={{overflowY:"auto",flex:1}}>
                 {vistaCobrosMes==="cliente" ? (
                   /* ── Vista agrupada por cliente ── */
-                  <div style={{padding:"12px 16px"}}>
-                    {porCliente.map(({cli, rows, total})=>(
-                      <div key={cli} style={{marginBottom:10,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
-                        <div style={{background:"#E8F5E9",padding:"10px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}
-                          onClick={()=>{
-                            const el=document.getElementById(`cobro-cli-${cli.replace(/\s/g,"-")}`);
-                            if(el) el.style.display=el.style.display==="none"?"block":"none";
-                          }}>
-                          <div style={{fontWeight:800,fontSize:14,color:C.navy}}>{cli}</div>
-                          <div style={{display:"flex",gap:16,alignItems:"center"}}>
-                            <span style={{fontSize:12,color:C.muted}}>{rows.length} cobro{rows.length!==1?"s":""}</span>
-                            <span style={{fontWeight:900,fontSize:16,color:"#1B5E20"}}>{sym}{fmt(total)}</span>
-                          </div>
-                        </div>
-                        <div id={`cobro-cli-${cli.replace(/\s/g,"-")}`}>
-                          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                            <thead>
-                              <tr style={{background:"#F1FFF4"}}>
-                                {["Segmento","Folio","Concepto","F.Cobro","Cobrado","Banco","Notas"].map(h=>(
-                                  <th key={h} style={{padding:"7px 14px",textAlign:["Cobrado"].includes(h)?"right":"left",color:"#1B5E20",fontWeight:700,fontSize:11,textTransform:"uppercase"}}>{h}</th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {rows.map((c,ri)=>(
-                                <tr key={c.id} style={{borderTop:`1px solid #E8F5E9`,background:ri%2===0?"#fff":"#F8FFF8",cursor:"pointer"}}
-                                  onClick={()=>{setCobrosMesModal(false);setDetailIngreso(c.ing.id);}}
-                                  onMouseEnter={e=>e.currentTarget.style.background="#E8F5E9"}
-                                  onMouseLeave={e=>e.currentTarget.style.background=ri%2===0?"#fff":"#F8FFF8"}>
-                                  <td style={{padding:"8px 14px",fontSize:12,color:C.muted}}>{c.ing.segmento||"—"}</td>
-                                  <td style={{padding:"8px 14px",color:C.blue,fontWeight:600,fontSize:12}}>{c.ing.folio||"—"}</td>
-                                  <td style={{padding:"8px 14px",color:C.text,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.ing.concepto||"—"}</td>
-                                  <td style={{padding:"8px 14px",color:"#1B5E20",fontWeight:600,fontSize:12,whiteSpace:"nowrap"}}>{c.fechaCobro}</td>
-                                  <td style={{padding:"8px 14px",textAlign:"right",fontWeight:800,color:"#1B5E20",fontSize:14}}>{sym}{fmt(c.monto)}</td>
-                                  <td style={{padding:"8px 14px"}}><span style={{background:"#E8F5E9",color:"#2E7D32",fontWeight:700,fontSize:11,padding:"2px 8px",borderRadius:12}}>{c.banco||"—"}</span></td>
-                                  <td style={{padding:"8px 14px",color:C.muted,fontSize:12}}>{c.notas||"—"}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                  (()=>{
+                    const [expandedClis, setExpandedClis] = React.useState(new Set());
+                    const toggleCli = cli => setExpandedClis(prev=>{const n=new Set(prev);n.has(cli)?n.delete(cli):n.add(cli);return n;});
+                    // Extract destino from concepto: text in parens or known cities
+                    const getDestino = concepto => {
+                      if(!concepto) return "—";
+                      const m = concepto.match(/\(([^)]+)\)/);
+                      if(m) return m[1];
+                      const lower = concepto.toLowerCase();
+                      if(lower.includes("tulum")) return "TUL";
+                      if(lower.includes("cancun")||lower.includes("cancún")) return "CUN";
+                      if(lower.includes("cabos")) return "SJD";
+                      if(lower.includes("cozumel")) return "CZM";
+                      if(lower.includes("merida")||lower.includes("mérida")) return "MID";
+                      if(lower.includes("vallarta")) return "PVR";
+                      return "—";
+                    };
+                    const DESTINO_COLORS = {
+                      CUN:"#E3F2FD",SJD:"#E8F5E9",TQO:"#FFF3E0",TUL:"#F3E5F5",
+                      CZM:"#E0F7FA",MID:"#FFF8E1",PVR:"#FCE4EC"
+                    };
+                    return (
+                      <div style={{padding:"12px 16px"}}>
+                        {porCliente.map(({cli, rows, total})=>{
+                          const expanded = expandedClis.has(cli);
+                          return (
+                            <div key={cli} style={{marginBottom:8,border:`1px solid ${expanded?"#A5D6A7":C.border}`,borderRadius:12,overflow:"hidden",transition:"border-color .2s"}}>
+                              <div style={{background:expanded?"#D0EDD4":"#E8F5E9",padding:"11px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",transition:"background .15s"}}
+                                onClick={()=>toggleCli(cli)}
+                                onMouseEnter={e=>{if(!expanded)e.currentTarget.style.background="#C8E6C9";}}
+                                onMouseLeave={e=>{if(!expanded)e.currentTarget.style.background="#E8F5E9";}}>
+                                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                                  <span style={{fontSize:13,color:"#1B5E20",transform:expanded?"rotate(90deg)":"rotate(0deg)",display:"inline-block",transition:"transform .2s"}}>▶</span>
+                                  <span style={{fontWeight:800,fontSize:14,color:C.navy}}>{cli}</span>
+                                </div>
+                                <div style={{display:"flex",gap:16,alignItems:"center"}}>
+                                  <span style={{fontSize:12,color:C.muted}}>{rows.length} cobro{rows.length!==1?"s":""}</span>
+                                  <span style={{fontWeight:900,fontSize:16,color:"#1B5E20"}}>{sym}{fmt(total)}</span>
+                                </div>
+                              </div>
+                              {expanded && (
+                                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                                  <thead>
+                                    <tr style={{background:"#F1FFF4"}}>
+                                      {["Segmento","Destino","Folio","Concepto","F.Cobro","Cobrado","Banco","Notas"].map(h=>(
+                                        <th key={h} style={{padding:"7px 14px",textAlign:["Cobrado"].includes(h)?"right":"left",color:"#1B5E20",fontWeight:700,fontSize:11,textTransform:"uppercase"}}>{h}</th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {rows.map((c,ri)=>{
+                                      const destino = getDestino(c.ing.concepto);
+                                      const destBg = DESTINO_COLORS[destino]||"#F8FAFC";
+                                      return (
+                                        <tr key={c.id} style={{borderTop:`1px solid #E8F5E9`,background:ri%2===0?"#fff":"#F8FFF8",cursor:"pointer"}}
+                                          onClick={()=>{setCobrosMesModal(false);setDetailIngreso(c.ing.id);}}
+                                          onMouseEnter={e=>e.currentTarget.style.background="#E8F5E9"}
+                                          onMouseLeave={e=>e.currentTarget.style.background=ri%2===0?"#fff":"#F8FFF8"}>
+                                          <td style={{padding:"8px 14px",fontSize:12,color:C.muted}}>{c.ing.segmento||"—"}</td>
+                                          <td style={{padding:"8px 14px"}}>
+                                            <span style={{background:destBg,color:C.navy,fontWeight:800,fontSize:11,padding:"2px 8px",borderRadius:12,whiteSpace:"nowrap"}}>{destino}</span>
+                                          </td>
+                                          <td style={{padding:"8px 14px",color:C.blue,fontWeight:600,fontSize:12}}>{c.ing.folio||"—"}</td>
+                                          <td style={{padding:"8px 14px",color:C.text,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.ing.concepto||"—"}</td>
+                                          <td style={{padding:"8px 14px",color:"#1B5E20",fontWeight:600,fontSize:12,whiteSpace:"nowrap"}}>{c.fechaCobro}</td>
+                                          <td style={{padding:"8px 14px",textAlign:"right",fontWeight:800,color:"#1B5E20",fontSize:14}}>{sym}{fmt(c.monto)}</td>
+                                          <td style={{padding:"8px 14px"}}><span style={{background:"#E8F5E9",color:"#2E7D32",fontWeight:700,fontSize:11,padding:"2px 8px",borderRadius:12}}>{c.banco||"—"}</span></td>
+                                          <td style={{padding:"8px 14px",color:C.muted,fontSize:12}}>{c.notas||"—"}</td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })()
                 ) : (
                   /* ── Vista plana ── */
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
