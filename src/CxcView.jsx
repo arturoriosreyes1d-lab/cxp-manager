@@ -2175,15 +2175,22 @@ export default function CxcView({
               {(()=>{
                 const getDestino = concepto => {
                   if(!concepto) return null;
+                  // 1. Text in parentheses: (CUN), (SJD), (TQO), etc.
                   const m = concepto.match(/\(([^)]+)\)/);
                   if(m) return m[1];
+                  // 2. Code anywhere in text: "Snack SJD", "Foraneo TQO", etc.
+                  const codes = ["CUN","SJD","TQO","CZM","MID","PVR","HUX","MZT","GDL"];
+                  const upper = concepto.toUpperCase();
+                  for(const code of codes){ if(upper.includes(code)) return code; }
+                  // 3. City keywords
                   const lower = concepto.toLowerCase();
-                  if(lower.includes("tulum")) return "TUL";
+                  if(lower.includes("tulum")) return "TQO";
                   if(lower.includes("cancun")||lower.includes("cancún")) return "CUN";
                   if(lower.includes("cabos")) return "SJD";
                   if(lower.includes("cozumel")) return "CZM";
                   if(lower.includes("merida")||lower.includes("mérida")) return "MID";
                   if(lower.includes("vallarta")) return "PVR";
+                  if(lower.includes("huatulco")) return "HUX";
                   return null;
                 };
                 const segmentos = [...new Set(filas.map(c=>c.ing.segmento).filter(Boolean))].sort();
@@ -2281,13 +2288,17 @@ export default function CxcView({
                       if(!concepto) return "—";
                       const m = concepto.match(/\(([^)]+)\)/);
                       if(m) return m[1];
+                      const codes = ["CUN","SJD","TQO","CZM","MID","PVR","HUX","MZT","GDL"];
+                      const upper = concepto.toUpperCase();
+                      for(const code of codes){ if(upper.includes(code)) return code; }
                       const lower = concepto.toLowerCase();
-                      if(lower.includes("tulum")) return "TUL";
+                      if(lower.includes("tulum")) return "TQO";
                       if(lower.includes("cancun")||lower.includes("cancún")) return "CUN";
                       if(lower.includes("cabos")) return "SJD";
                       if(lower.includes("cozumel")) return "CZM";
                       if(lower.includes("merida")||lower.includes("mérida")) return "MID";
                       if(lower.includes("vallarta")) return "PVR";
+                      if(lower.includes("huatulco")) return "HUX";
                       return "—";
                     };
                     const DESTINO_COLORS = {
