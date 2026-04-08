@@ -308,7 +308,7 @@ export default function CxcView({
     return ingresos.filter(ing => {
       if (filtroSearch) {
         const q = filtroSearch.toLowerCase();
-        if (!(ing.cliente+ing.concepto+ing.categoria+(ing.segmento||"")).toLowerCase().includes(q)) return false;
+        if (!(ing.cliente+(ing.folio||"")+(ing.concepto||"")+(ing.categoria||"")+(ing.segmento||"")).toLowerCase().includes(q)) return false;
       }
       if (filtroCliente && ing.cliente !== filtroCliente) return false;
       if (filtroCategoria && ing.categoria !== filtroCategoria) return false;
@@ -1941,7 +1941,7 @@ export default function CxcView({
             const pfFiltradoChip = porFacturar.filter(r=>r.moneda===mon
               && (!filtroDestino || r.destino===filtroDestino)
               && (!filtroCliente || r.cliente===filtroCliente)
-              && (!filtroSearch || r.cliente.toLowerCase().includes(filtroSearch.toLowerCase()) || (r.concepto||"").toLowerCase().includes(filtroSearch.toLowerCase()))
+              && (!filtroSearch || r.cliente.toLowerCase().includes(filtroSearch.toLowerCase()) || (r.concepto||"").toLowerCase().includes(filtroSearch.toLowerCase()) || (r.folio||"").toLowerCase().includes(filtroSearch.toLowerCase()))
             );
             const pfTotal = pfFiltradoChip.reduce((s,r)=>s+r.importe,0);
             const totalCxC = v.porCobrar + pfTotal;
