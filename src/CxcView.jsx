@@ -118,6 +118,8 @@ export default function CxcView({
   const [kpiModal, setKpiModal] = useState(null); // { titulo, tipo, moneda }
   const [vistaGrupo, setVistaGrupo] = useState("cliente"); // "ingreso" | "cliente"
   const [clientesExpanded, setClientesExpanded] = useState(new Set());
+  const [clienteSortCol, setClienteSortCol] = useState("fechaContable");
+  const [clienteSortDir, setClienteSortDir] = useState("desc");
   const [clienteSortCol, setClienteSortCol] = useState("cliente");
   const [clienteSortDir, setClienteSortDir] = useState("asc");
   const [importModal, setImportModal] = useState(false);
@@ -2699,9 +2701,9 @@ export default function CxcView({
                     <div style={{borderTop:`1px solid ${C.border}`,overflowX:"auto"}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:1200}}>
                         <thead>
-                          <tr style={{background:"#EEF2FF"}}>
+                          <tr style={{background:C.navy}}>
                             <th style={{padding:"8px 6px",width:36,textAlign:"center"}}>
-                              <input type="checkbox" style={{cursor:"pointer",accentColor:C.blue}}
+                              <input type="checkbox" style={{cursor:"pointer",accentColor:"#fff"}}
                                 checked={ings.every(i=>selectedIngresos.has(i.id))}
                                 onChange={()=>{
                                   const allSelected = ings.every(i=>selectedIngresos.has(i.id));
@@ -2713,13 +2715,45 @@ export default function CxcView({
                                   });
                                 }}/>
                             </th>
-                            {["Segmento","Folio","Concepto","Moneda","Fecha Contable","Fecha Factura","Vencimiento","Días Vencidos","Por Vencer","Fecha Ficticia","Monto","Cobrado","Por Cobrar","Acciones"].map(h=>(
-                              <th key={h} style={{padding:"10px 10px",textAlign:["Monto","Cobrado","Por Cobrar"].includes(h)?"right":["Días Vencidos","Por Vencer"].includes(h)?"center":"left",color:C.blue,fontWeight:700,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                            {[
+                              {k:"segmento",    l:"Segmento"},
+                              {k:"folio",       l:"Folio"},
+                              {k:"concepto",    l:"Concepto"},
+                              {k:"moneda",      l:"Moneda"},
+                              {k:"fechaContable",l:"Fecha Contable"},
+                              {k:"fecha",       l:"Fecha Factura"},
+                              {k:"fechaVencimiento",l:"Vencimiento"},
+                              {k:"diasVencidos",l:"Días Vencidos"},
+                              {k:"porVencer",   l:"Por Vencer"},
+                              {k:"_ficticia",   l:"Fecha Ficticia"},
+                              {k:"total",       l:"Monto"},
+                              {k:"montoPagado", l:"Cobrado"},
+                              {k:"porCobrar",   l:"Por Cobrar"},
+                              {k:"_acc",        l:"Acciones"},
+                            ].map(col=>(
+                              <th key={col.k}
+                                onClick={col.k.startsWith("_")?undefined:()=>{
+                                  if(clienteSortCol===col.k) setClienteSortDir(d=>d==="asc"?"desc":"asc");
+                                  else{setClienteSortCol(col.k);setClienteSortDir("asc");}
+                                }}
+                                style={{padding:"10px 10px",
+                                  textAlign:["total","montoPagado","porCobrar"].includes(col.k)?"right":["diasVencidos","porVencer"].includes(col.k)?"center":"left",
+                                  color:clienteSortCol===col.k?"#90CAF9":"rgba(255,255,255,.85)",
+                                  fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap",
+                                  cursor:col.k.startsWith("_")?"default":"pointer",userSelect:"none",
+                                  borderBottom:clienteSortCol===col.k?"2px solid #90CAF9":"2px solid transparent"}}>
+                                {col.l}{clienteSortCol===col.k?(clienteSortDir==="asc"?" ↑":" ↓"):""}
+                              </th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
-                          {ings.map((ing,idx) => <IngresoRow key={ing.id} ing={ing} idx={idx}/>)}
+                          {[...ings].sort((a,b)=>{
+                            const col=clienteSortCol, dir=clienteSortDir==="asc"?1:-1;
+                            const va=a[col]??"", vb=b[col]??"";
+                            if(["total","montoPagado","porCobrar"].includes(col)) return ((+va||0)-(+vb||0))*dir;
+                            return String(va).localeCompare(String(vb))*dir;
+                          }).map((ing,idx) => <IngresoRow key={ing.id} ing={ing} idx={idx}/>)}
                         </tbody>
                       </table>
                     </div>
