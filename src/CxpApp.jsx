@@ -1548,7 +1548,6 @@ export default function CxpApp({ user, onLogout }) {
                 <div>
                   {data.invoices ? (
                     <>
-                      <GroupHeader label={g1} invs={data.invoices}/>
                       <InvoiceTable invs={data.invoices}/>
                     </>
                   ) : (
