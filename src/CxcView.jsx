@@ -1502,16 +1502,18 @@ export default function CxcView({
         <td style={{padding:"10px 10px",fontWeight:700,textAlign:"right",whiteSpace:"nowrap"}}>{sym}{fmt(ing.monto)}</td>
         <td style={{padding:"10px 10px",fontWeight:600,color:C.ok,textAlign:"right",whiteSpace:"nowrap"}}>{sym}{fmt(m.totalCobrado||0)}</td>
         <td style={{padding:"10px 10px",fontWeight:600,color:(m.porCobrar||0)>0?C.warn:C.ok,textAlign:"right",whiteSpace:"nowrap"}}>{sym}{fmt(m.porCobrar||0)}</td>
-        <td style={{padding:"10px 10px",fontWeight:600,color:C.danger,textAlign:"right",whiteSpace:"nowrap"}}>{sym}{fmt(m.consumido||0)}</td>
-        <td style={{padding:"10px 10px",textAlign:"right",whiteSpace:"nowrap"}}>
-          <span style={{fontWeight:700,color:"#E65100",background:(m.porPagar||0)>0?"#FFF3E0":"transparent",padding:(m.porPagar||0)>0?"2px 6px":"0",borderRadius:6}}>{sym}{fmt(m.porPagar||0)}</span>
-        </td>
-        <td style={{padding:"10px 10px",textAlign:"right",whiteSpace:"nowrap"}}>
-          <span style={{fontWeight:800,color:disponColor}}>{sym}{fmt(m.disponible||0)}</span>
-        </td>
-        <td style={{padding:"10px 10px",textAlign:"right",whiteSpace:"nowrap"}}>
-          <span style={{fontWeight:800,color:(m.disponibleNeto||0)>=0?C.green:C.danger,background:(m.disponibleNeto||0)>=0?"#E8F5E9":"#FFEBEE",padding:"2px 7px",borderRadius:6}}>{sym}{fmt(m.disponibleNeto||0)}</span>
-        </td>
+        {empresaId !== "empresa_2" && <>
+          <td style={{padding:"10px 10px",fontWeight:600,color:C.danger,textAlign:"right",whiteSpace:"nowrap"}}>{sym}{fmt(m.consumido||0)}</td>
+          <td style={{padding:"10px 10px",textAlign:"right",whiteSpace:"nowrap"}}>
+            <span style={{fontWeight:700,color:"#E65100",background:(m.porPagar||0)>0?"#FFF3E0":"transparent",padding:(m.porPagar||0)>0?"2px 6px":"0",borderRadius:6}}>{sym}{fmt(m.porPagar||0)}</span>
+          </td>
+          <td style={{padding:"10px 10px",textAlign:"right",whiteSpace:"nowrap"}}>
+            <span style={{fontWeight:800,color:disponColor}}>{sym}{fmt(m.disponible||0)}</span>
+          </td>
+          <td style={{padding:"10px 10px",textAlign:"right",whiteSpace:"nowrap"}}>
+            <span style={{fontWeight:800,color:(m.disponibleNeto||0)>=0?C.green:C.danger,background:(m.disponibleNeto||0)>=0?"#E8F5E9":"#FFEBEE",padding:"2px 7px",borderRadius:6}}>{sym}{fmt(m.disponibleNeto||0)}</span>
+          </td>
+        </>}
         <td style={{padding:"10px 8px",whiteSpace:"nowrap"}} onClick={e=>e.stopPropagation()}>
           <button onClick={()=>setDetailIngreso(ing.id)} style={{...iconBtn,color:C.sky}} title="Ver detalle">🔍</button>
           {!esConsulta && <button onClick={()=>setModalIngreso({...ing})} style={{...iconBtn,color:C.blue}} title="Editar">✏️</button>}
@@ -2535,7 +2537,7 @@ export default function CxcView({
                                   });
                                 }}/>
                             </th>
-                            {["Segmento","Folio Factura","Concepto","Fecha Contable","Fecha Factura","Vencimiento","Días Vencidos","Por Vencer","Fecha Ficticia","Monto","Cobrado","Por Cobrar","Acciones"].map(h=>(
+                            {["Segmento","Cliente","Folio","Concepto","Moneda","Fecha Contable","Fecha Factura","Vencimiento","Días Vencidos","Por Vencer","Fecha Ficticia","Monto","Cobrado","Por Cobrar","Acciones"].map(h=>(
                               <th key={h} style={{padding:"10px 10px",textAlign:["Monto","Cobrado","Por Cobrar"].includes(h)?"right":["Días Vencidos","Por Vencer"].includes(h)?"center":"left",color:C.blue,fontWeight:700,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                             ))}
                           </tr>
