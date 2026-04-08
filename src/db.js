@@ -743,9 +743,22 @@ export async function fetchTarjetaMovimientos(empresaId) {
 
 export async function bulkInsertMovimientos(rows) {
   if (!rows.length) return { inserted: 0, dupes: 0 };
-  const { data, error } = await supabase.from('tarjeta_movimientos')
-    .upsert(rows, { onConflict: 'empresa_id,no_autorizacion', ignoreDuplicates: true })
-    .select();
-  if (error) { console.error('bulkInsertMovimientos:', error); return { inserted: 0, error }; }
-  return { inserted: (data||[]).length, dupes: rows.length - (data||[]).length };
+  // Split: rows with auth number vs without
+  const conAuth = rows.filter(r => r.no_autorizacion && r.no_autorizacion !== '');
+  const sinAuth = rows.filter(r => !r.no_autorizacion || r.no_autorizacion === '');
+  let inserted = 0;
+  // Rows with auth: upsert by empresa_id + no_autorizacion
+  if (conAuth.length) {
+    const { data, error } = await supabase.from('tarjeta_movimientos')
+      .upsert(conAuth, { onConflict: 'empresa_id,no_autorizacion', ignoreDuplicates: true })
+      .select();
+    if (!error) inserted += (data||[]).length;
+    else console.error('bulkInsert conAuth:', error);
+  }
+  // Rows without auth (pagos/transferencias): plain insert, ignore errors per row
+  for (const r of sinAuth) {
+    const { error } = await supabase.from('tarjeta_movimientos').insert(r);
+    if (!error) inserted++;
+  }
+  return { inserted, dupes: rows.length - inserted };
 }
