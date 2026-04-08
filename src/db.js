@@ -743,22 +743,16 @@ export async function fetchTarjetaMovimientos(empresaId) {
 
 export async function bulkInsertMovimientos(rows) {
   if (!rows.length) return { inserted: 0, dupes: 0 };
-  // Split: rows with auth number vs without
-  const conAuth = rows.filter(r => r.no_autorizacion && r.no_autorizacion !== '');
-  const sinAuth = rows.filter(r => !r.no_autorizacion || r.no_autorizacion === '');
-  let inserted = 0;
-  // Rows with auth: upsert by empresa_id + no_autorizacion
-  if (conAuth.length) {
-    const { data, error } = await supabase.from('tarjeta_movimientos')
-      .upsert(conAuth, { onConflict: 'empresa_id,no_autorizacion', ignoreDuplicates: true })
-      .select();
-    if (!error) inserted += (data||[]).length;
-    else console.error('bulkInsert conAuth:', error);
-  }
-  // Rows without auth (pagos/transferencias): plain insert, ignore errors per row
-  for (const r of sinAuth) {
+  let inserted = 0, dupes = 0;
+  for (const r of rows) {
     const { error } = await supabase.from('tarjeta_movimientos').insert(r);
-    if (!error) inserted++;
+    if (!error) {
+      inserted++;
+    } else if (error.code === '23505') {
+      dupes++; // unique constraint violation = duplicate
+    } else {
+      console.error('bulkInsert row error:', error, r);
+    }
   }
-  return { inserted, dupes: rows.length - inserted };
+  return { inserted, dupes };
 }
