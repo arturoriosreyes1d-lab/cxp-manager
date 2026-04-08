@@ -183,6 +183,7 @@ export default function CxpApp({ user, onLogout }) {
   const [pagosFechaTo, setPagosFechaTo] = useState("");
   const fileRef = useRef();
   const searchRef = useRef();
+  const financImportRef = useRef();
 
   /* ── CxC State ──────────────────────────────────────────────────────── */
   const [ingresos, setIngresos] = useState([]);
@@ -1254,7 +1255,6 @@ export default function CxpApp({ user, onLogout }) {
           const activos = financiamientos.filter(f=>f.activo);
           const today = new Date(); today.setHours(0,0,0,0);
           const sym = m => m==="USD"?"$":"$";
-          const importRef = React.useRef();
 
           const getPlazos = (f) => {
             const plazos = [];
@@ -1285,15 +1285,14 @@ export default function CxpApp({ user, onLogout }) {
                 </div>
                 <div style={{display:"flex",gap:8,alignItems:"center"}}>
                   {activos.length===0 && <span style={{fontSize:12,color:"rgba(255,255,255,.5)"}}>Sin financiamientos registrados</span>}
-                  <input ref={importRef} type="file" accept=".xlsx,.xls" style={{display:"none"}}
+                  <input ref={financImportRef} type="file" accept=".xlsx,.xls" style={{display:"none"}}
                     onChange={async(e)=>{
                       const file = e.target.files[0];
                       if(!file) return;
-                      // Import will be handled in next update
                       alert("Importador próximamente — por ahora usa el SQL para insertar registros");
                       e.target.value="";
                     }}/>
-                  <button onClick={()=>importRef.current?.click()}
+                  <button onClick={()=>financImportRef.current?.click()}
                     style={{padding:"6px 14px",borderRadius:8,border:"1px solid rgba(255,255,255,.3)",background:"rgba(255,255,255,.12)",
                       color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
                     📥 Importar Excel
