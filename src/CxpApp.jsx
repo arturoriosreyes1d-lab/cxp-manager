@@ -1235,100 +1235,109 @@ export default function CxpApp({ user, onLogout }) {
 
     return (
       <div>
-        {/* Currency tabs + Financiamientos en la misma fila */}
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:16}}>
-          {/* Monedas */}
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {["MXN","USD","EUR"].map(cur=>(
-              <button key={cur} onClick={()=>setCurrency(cur)} style={{padding:"8px 24px",borderRadius:40,border:"2px solid",borderColor:currency===cur?{MXN:C.mxn,USD:C.usd,EUR:C.eur}[cur]:C.border,background:currency===cur?{MXN:C.mxn,USD:C.usd,EUR:C.eur}[cur]:C.surface,color:currency===cur?"#fff":C.text,fontWeight:700,cursor:"pointer",fontSize:14}}>
-                {cur==="MXN"?"🇲🇽":cur==="USD"?"🇺🇸":"🇪🇺"} {cur}
-                <span style={{marginLeft:8,fontSize:12,opacity:.8}}>({invoices[cur]?.length||0})</span>
-              </button>
-            ))}
-          </div>
-
-          {/* Financiamientos — esquina superior derecha */}
-          {(()=>{
-            const activos = financiamientos.filter(f=>f.activo);
-            const today = new Date(); today.setHours(0,0,0,0);
-            const sym = m => m==="USD"?"$":"$";
-            const getPlazos = (f) => {
-              const plazos = [];
-              if (!f.fechaInicio || !f.fechaFin) return plazos;
-              let d = new Date(f.fechaInicio+"T12:00:00");
-              const fin = new Date(f.fechaFin+"T12:00:00");
-              while (d <= fin) {
-                plazos.push(d.toISOString().slice(0,10));
-                d = new Date(d.getFullYear(), d.getMonth()+1, d.getDate());
-              }
-              return plazos;
-            };
+        {/* ── Financiamientos + Tarjetas de Crédito ── */}
+        {(()=>{
+          const activos = financiamientos.filter(f=>f.activo);
+          const today = new Date(); today.setHours(0,0,0,0);
+          const getPlazos = (f) => {
+            const plazos = [];
+            if (!f.fechaInicio || !f.fechaFin) return plazos;
+            let d = new Date(f.fechaInicio+"T12:00:00");
+            const fin = new Date(f.fechaFin+"T12:00:00");
+            while (d <= fin) { plazos.push(d.toISOString().slice(0,10)); d = new Date(d.getFullYear(), d.getMonth()+1, d.getDate()); }
+            return plazos;
+          };
+          const ChipFinanc = ({f}) => {
+            const plazos = getPlazos(f);
+            const pagosF = financiamientoPagos.filter(p=>p.financiamientoId===f.id);
+            const pagosFechas = new Set(pagosF.map(p=>p.fechaPago));
+            const totalPlazos = plazos.length;
+            const pagados = plazos.filter(pl=>pagosFechas.has(pl)).length;
+            const pendientes = totalPlazos - pagados;
+            const saldo = f.montoMensual * pendientes;
+            const pct = totalPlazos>0 ? Math.round((pagados/totalPlazos)*100) : 0;
+            const proxPlazo = plazos.find(pl=>!pagosFechas.has(pl)&&new Date(pl+"T12:00:00")>=today);
+            const vencidos = plazos.filter(pl=>!pagosFechas.has(pl)&&new Date(pl+"T12:00:00")<today).length;
             return (
-              <div style={{background:"#0F2D4A",borderRadius:12,overflow:"hidden",flex:"1 1 0",minWidth:0}}>
-                {/* Header */}
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 14px"}}>
+              <div onClick={()=>setFinancModalId(f.id)}
+                style={{background:"#fff",border:`2px solid ${vencidos>0?"#C62828":"#1565C0"}`,borderRadius:12,
+                  padding:"14px 16px",cursor:"pointer",flex:"1 1 0",minWidth:0,
+                  boxShadow:"0 2px 8px rgba(0,0,0,.08)",transition:"all .15s",position:"relative"}}
+                onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 6px 16px rgba(0,0,0,.13)";}}
+                onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 2px 8px rgba(0,0,0,.08)";}}>
+                {vencidos>0&&<div style={{position:"absolute",top:8,right:8,background:"#FFEBEE",color:"#C62828",fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:20}}>⚠️ {vencidos}</div>}
+                <div style={{fontWeight:900,fontSize:14,color:"#0F2D4A",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:3,paddingRight:vencidos>0?50:0}}>{f.nombre}</div>
+                <div style={{fontSize:11,color:C.muted,marginBottom:10,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.concepto}</div>
+                <div style={{fontSize:20,fontWeight:900,color:saldo>0?"#C62828":"#2E7D32",marginBottom:4}}>${fmt(saldo)}</div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                  <span style={{fontSize:11,color:C.muted}}>{pagados}/{totalPlazos} meses · ${fmt(f.montoMensual)}/mes</span>
+                  <span style={{fontSize:11,fontWeight:800,color:"#1565C0"}}>{pct}%</span>
+                </div>
+                <div style={{height:6,borderRadius:3,background:"#EEF2FF",overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${pct}%`,background:pct>=100?"#2E7D32":"#1565C0",borderRadius:3,transition:"width .4s"}}/>
+                </div>
+                {proxPlazo&&<div style={{fontSize:10,color:"#1565C0",marginTop:5,fontWeight:600}}>📅 Próx. pago: {proxPlazo}</div>}
+              </div>
+            );
+          };
+          return (
+            <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+              {/* Financiamientos */}
+              <div style={{background:"#0F2D4A",borderRadius:12,overflow:"hidden",flex:"3 1 0",minWidth:0}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 14px"}}>
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <span style={{fontSize:14}}>🏦</span>
+                    <span style={{fontSize:15}}>🏦</span>
                     <span style={{fontWeight:800,fontSize:12,color:"#fff",textTransform:"uppercase",letterSpacing:.5}}>Financiamientos</span>
-                    {activos.length>0 && <span style={{background:"rgba(255,255,255,.15)",color:"rgba(255,255,255,.9)",fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:20}}>{activos.length} activo{activos.length!==1?"s":""}</span>}
+                    {activos.length>0&&<span style={{background:"rgba(255,255,255,.15)",color:"rgba(255,255,255,.9)",fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:20}}>{activos.length} activo{activos.length!==1?"s":""}</span>}
                   </div>
                   <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                    {activos.length===0 && <span style={{fontSize:11,color:"rgba(255,255,255,.45)"}}>Sin registros</span>}
+                    {activos.length===0&&<span style={{fontSize:11,color:"rgba(255,255,255,.4)"}}>Sin registros</span>}
                     <button onClick={()=>financImportRef.current?.click()}
-                      style={{padding:"4px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,.25)",background:"rgba(255,255,255,.1)",
-                        color:"#fff",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>
+                      style={{padding:"4px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,.25)",background:"rgba(255,255,255,.1)",color:"#fff",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>
                       📥 Importar
                     </button>
                   </div>
                 </div>
-                {/* Chips */}
-                {activos.length>0 && (
-                  <div style={{display:"flex",gap:8,padding:"10px 10px 12px",background:"#F0F4FF",flexWrap:"wrap"}}>
-                    {activos.map(f=>{
-                      const plazos = getPlazos(f);
-                      const pagosF = financiamientoPagos.filter(p=>p.financiamientoId===f.id);
-                      const pagosFechas = new Set(pagosF.map(p=>p.fechaPago));
-                      const totalPlazos = plazos.length;
-                      const pagados = plazos.filter(pl=>pagosFechas.has(pl)).length;
-                      const pendientes = totalPlazos - pagados;
-                      const saldo = f.montoMensual * pendientes;
-                      const pct = totalPlazos > 0 ? Math.round((pagados/totalPlazos)*100) : 0;
-                      const proxPlazo = plazos.find(pl => !pagosFechas.has(pl) && new Date(pl+"T12:00:00") >= today);
-                      const vencidos = plazos.filter(pl => !pagosFechas.has(pl) && new Date(pl+"T12:00:00") < today).length;
-                      return (
-                        <div key={f.id} onClick={()=>setFinancModalId(f.id)}
-                          style={{background:"#fff",border:`2px solid ${vencidos>0?"#C62828":"#1565C0"}`,borderRadius:12,
-                            padding:"12px 16px",cursor:"pointer",flex:"1 1 0",minWidth:0,
-                            boxShadow:"0 2px 8px rgba(0,0,0,.08)",transition:"all .15s",position:"relative"}}
-                          onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 6px 16px rgba(0,0,0,.13)";}}
-                          onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 2px 8px rgba(0,0,0,.08)";}}>
-                          {vencidos>0 && <div style={{position:"absolute",top:6,right:6,background:"#FFEBEE",color:"#C62828",fontSize:9,fontWeight:800,padding:"1px 6px",borderRadius:20}}>⚠️ {vencidos}</div>}
-                          <div style={{fontWeight:800,fontSize:12,color:"#0F2D4A",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:2,paddingRight:vencidos>0?40:0}}>{f.nombre}</div>
-                          <div style={{fontSize:10,color:C.muted,marginBottom:8,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.concepto}</div>
-                          <div style={{fontSize:17,fontWeight:900,color:saldo>0?"#C62828":"#2E7D32",marginBottom:2}}>${fmt(saldo)}</div>
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                            <span style={{fontSize:10,color:C.muted}}>{pagados}/{totalPlazos} meses</span>
-                            <span style={{fontSize:10,fontWeight:700,color:"#1565C0"}}>{pct}%</span>
-                          </div>
-                          <div style={{height:5,borderRadius:3,background:"#EEF2FF",overflow:"hidden"}}>
-                            <div style={{height:"100%",width:`${pct}%`,background:pct>=100?"#2E7D32":"#1565C0",borderRadius:3,transition:"width .4s"}}/>
-                          </div>
-                          {proxPlazo && <div style={{fontSize:9,color:"#1565C0",marginTop:4,fontWeight:600}}>Próx: {proxPlazo}</div>}
-                        </div>
-                      );
-                    })}
+                {activos.length>0&&(
+                  <div style={{display:"flex",gap:8,padding:"8px 10px 12px",background:"#F0F4FF"}}>
+                    {activos.map(f=><ChipFinanc key={f.id} f={f}/>)}
                   </div>
                 )}
               </div>
-            );
-          })()}
-        </div>
+              {/* Tarjetas de Crédito */}
+              <div style={{background:"#1A0533",borderRadius:12,overflow:"hidden",flex:"1 1 0",minWidth:220}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 14px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:15}}>💳</span>
+                    <span style={{fontWeight:800,fontSize:12,color:"#fff",textTransform:"uppercase",letterSpacing:.5}}>Tarjetas de Crédito</span>
+                  </div>
+                  <button style={{padding:"4px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,.25)",background:"rgba(255,255,255,.1)",color:"#fff",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>
+                    📥 Importar
+                  </button>
+                </div>
+                <div style={{padding:"10px",background:"#F5F0FF",display:"flex",alignItems:"center",justifyContent:"center",minHeight:80}}>
+                  <span style={{fontSize:12,color:"#9C27B0",fontWeight:600,opacity:.7}}>Próximamente</span>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Internal tabs: Activas / Pagadas / Resumen */}
-        <div style={{display:"flex",borderBottom:`1px solid ${C.border}`,marginBottom:20,background:C.surface,borderRadius:"12px 12px 0 0",paddingLeft:8}}>
+        <div style={{display:"flex",borderBottom:`1px solid ${C.border}`,marginBottom:12,background:C.surface,borderRadius:"12px 12px 0 0",paddingLeft:8}}>
           {tabBtn("activas","Activas","📋")}
           {tabBtn("pagadas","Pagadas","✅")}
           {tabBtn("resumen","Resumen","📊")}
+        </div>
+
+        {/* Monedas — debajo de los tabs */}
+        <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+          {["MXN","USD","EUR"].map(cur=>(
+            <button key={cur} onClick={()=>setCurrency(cur)} style={{padding:"8px 24px",borderRadius:40,border:"2px solid",borderColor:currency===cur?{MXN:C.mxn,USD:C.usd,EUR:C.eur}[cur]:C.border,background:currency===cur?{MXN:C.mxn,USD:C.usd,EUR:C.eur}[cur]:C.surface,color:currency===cur?"#fff":C.text,fontWeight:700,cursor:"pointer",fontSize:14}}>
+              {cur==="MXN"?"🇲🇽":cur==="USD"?"🇺🇸":"🇪🇺"} {cur}
+              <span style={{marginLeft:8,fontSize:12,opacity:.8}}>({invoices[cur]?.length||0})</span>
+            </button>
+          ))}
         </div>
 
         {/* ── Input oculto para importar Excel de financiamientos ── */}
