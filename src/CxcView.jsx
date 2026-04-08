@@ -1445,12 +1445,12 @@ export default function CxcView({
         {/* Segmento */}
         <td style={{padding:"8px 8px"}} onClick={e=>e.stopPropagation()}>
           {esConsulta
-            ? <span style={{fontSize:12,color:C.text,padding:"3px 7px"}}>{ing.segmento||"—"}</span>
+            ? <span style={{fontSize:13,color:C.text,padding:"3px 7px"}}>{ing.segmento||"—"}</span>
             : <input value={ing.segmento||""} onChange={e=>{
                 const v=e.target.value;
                 setIngresos(prev=>prev.map(i=>i.id===ing.id?{...i,segmento:v}:i));
                 updateIngresoField(ing.id,{segmento:v});
-              }} placeholder="—" style={{padding:"3px 7px",fontSize:11,border:`1px solid ${C.border}`,borderRadius:6,width:70,fontFamily:"inherit",background:"#FAFBFC"}}/>
+              }} placeholder="—" style={{padding:"3px 7px",fontSize:12,border:`1px solid ${C.border}`,borderRadius:6,width:70,fontFamily:"inherit",background:"#FAFBFC"}}/>
           }
         </td>
         {/* Cliente — oculto en empresa_2 (ya está agrupado por cliente) */}
@@ -1458,53 +1458,53 @@ export default function CxcView({
           <td style={{padding:"10px 10px",fontWeight:700,color:C.navy,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.cliente}</td>
         )}
         {/* Folio */}
-        <td style={{padding:"10px 8px",fontSize:11,color:C.blue,fontWeight:600,whiteSpace:"nowrap"}}>{ing.folio||"—"}</td>
+        <td style={{padding:"10px 8px",fontSize:13,color:C.blue,fontWeight:600,whiteSpace:"nowrap"}}>{ing.folio||"—"}</td>
         {/* Concepto */}
-        <td style={{padding:"10px 10px",color:ing.concepto?C.text:C.muted,fontStyle:ing.concepto?"normal":"italic",minWidth:150,maxWidth:200,whiteSpace:"normal",lineHeight:1.4,wordBreak:"break-word",fontSize:12}}>{ing.concepto||"—"}</td>
+        <td style={{padding:"10px 10px",color:ing.concepto?C.text:C.muted,fontStyle:ing.concepto?"normal":"italic",minWidth:150,maxWidth:200,whiteSpace:"normal",lineHeight:1.4,wordBreak:"break-word",fontSize:13}}>{ing.concepto||"—"}</td>
         {/* Moneda — fixed width, no wrap */}
         <td style={{padding:"10px 8px",whiteSpace:"nowrap"}}>
-          <span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[ing.moneda]||"#F8FAFC",color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[ing.moneda]||C.navy,padding:"3px 8px",borderRadius:20,fontSize:11,fontWeight:700,display:"inline-block",minWidth:40,textAlign:"center"}}>
+          <span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[ing.moneda]||"#F8FAFC",color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[ing.moneda]||C.navy,padding:"3px 8px",borderRadius:20,fontSize:12,fontWeight:700,display:"inline-block",minWidth:40,textAlign:"center"}}>
             {ing.moneda}
           </span>
         </td>
         {/* Fecha Contable */}
         <td style={{padding:"8px 8px"}} onClick={e=>e.stopPropagation()}>
           {esConsulta
-            ? <span style={{fontSize:11,color:C.teal}}>{ing.fechaContable||"—"}</span>
+            ? <span style={{fontSize:13,color:C.teal}}>{ing.fechaContable||"—"}</span>
             : <input type="date" value={ing.fechaContable||""} onChange={e=>{
                 const v=e.target.value;
                 setIngresos(prev=>prev.map(i=>i.id===ing.id?{...i,fechaContable:v}:i));
                 updateIngresoField(ing.id,{fechaContable:v});
-              }} style={{padding:"3px 6px",fontSize:11,border:`1px solid ${ing.fechaContable?C.teal:C.border}`,borderRadius:6,color:ing.fechaContable?C.teal:C.text,width:125,fontFamily:"inherit"}}/>
+              }} style={{padding:"3px 6px",fontSize:12,border:`1px solid ${ing.fechaContable?C.teal:C.border}`,borderRadius:6,color:ing.fechaContable?C.teal:C.text,width:125,fontFamily:"inherit"}}/>
           }
         </td>
         {/* Fecha Factura */}
-        <td style={{padding:"10px 10px",whiteSpace:"nowrap",fontSize:13,color:C.muted}}>{ing.fecha||"—"}</td>
+        <td style={{padding:"10px 10px",whiteSpace:"nowrap",fontSize:14,color:C.muted}}>{ing.fecha||"—"}</td>
         {/* Vencimiento */}
-        <td style={{padding:"10px 10px",whiteSpace:"nowrap",fontSize:11,color:venceProx?C.danger:ing.fechaVencimiento?C.text:C.muted,fontWeight:ing.fechaVencimiento?600:400}}>
+        <td style={{padding:"10px 10px",whiteSpace:"nowrap",fontSize:13,color:venceProx?C.danger:ing.fechaVencimiento?C.text:C.muted,fontWeight:ing.fechaVencimiento?600:400}}>
           {ing.fechaVencimiento||"—"}
         </td>
         {/* Días Vencidos */}
         <td style={{padding:"8px 8px",textAlign:"center"}}>
           {diffDias!==null && diffDias<0 ? (
-            <span style={{background:"#FFEBEE",color:C.danger,fontWeight:800,fontSize:11,padding:"3px 8px",borderRadius:20,whiteSpace:"nowrap"}}>{Math.abs(diffDias)}d</span>
+            <span style={{background:"#FFEBEE",color:C.danger,fontWeight:800,fontSize:13,padding:"3px 8px",borderRadius:20,whiteSpace:"nowrap"}}>{Math.abs(diffDias)}d</span>
           ) : <span style={{color:C.muted,fontSize:11}}>—</span>}
         </td>
         {/* Por Vencer */}
         <td style={{padding:"8px 8px",textAlign:"center"}}>
           {diffDias!==null && diffDias>=0 ? (
-            <span style={{background:diffDias<=7?"#FFF3E0":diffDias<=30?"#FFFDE7":"#E8F5E9",color:diffDias<=7?C.danger:diffDias<=30?C.warn:C.ok,fontWeight:800,fontSize:11,padding:"3px 8px",borderRadius:20,whiteSpace:"nowrap"}}>{diffDias}d</span>
+            <span style={{background:diffDias<=7?"#FFF3E0":diffDias<=30?"#FFFDE7":"#E8F5E9",color:diffDias<=7?C.danger:diffDias<=30?C.warn:C.ok,fontWeight:800,fontSize:13,padding:"3px 8px",borderRadius:20,whiteSpace:"nowrap"}}>{diffDias}d</span>
           ) : <span style={{color:C.muted,fontSize:11}}>—</span>}
         </td>
         {/* Fecha Ficticia */}
         <td style={{padding:"8px 8px"}} onClick={e=>e.stopPropagation()}>
           {esConsulta
-            ? <span style={{fontSize:11,color:ing.fechaFicticia?"#7B1FA2":C.muted}}>{ing.fechaFicticia||"—"}</span>
+            ? <span style={{fontSize:13,color:ing.fechaFicticia?"#7B1FA2":C.muted}}>{ing.fechaFicticia||"—"}</span>
             : <input type="date" value={ing.fechaFicticia||""} onChange={e=>{
                 const v=e.target.value;
                 setIngresos(prev=>prev.map(i=>i.id===ing.id?{...i,fechaFicticia:v}:i));
                 updateIngresoField(ing.id,{fechaFicticia:v});
-              }} style={{padding:"3px 6px",fontSize:11,width:125,border:`1px solid ${ing.fechaFicticia?"#7B1FA2":C.border}`,borderRadius:6,color:ing.fechaFicticia?"#7B1FA2":C.text,fontFamily:"inherit"}}/>
+              }} style={{padding:"3px 6px",fontSize:12,width:125,border:`1px solid ${ing.fechaFicticia?"#7B1FA2":C.border}`,borderRadius:6,color:ing.fechaFicticia?"#7B1FA2":C.text,fontFamily:"inherit"}}/>
           }
         </td>
         <td style={{padding:"10px 10px",fontWeight:700,textAlign:"right",whiteSpace:"nowrap"}}>{sym}{fmt(ing.monto)}</td>
@@ -2870,7 +2870,7 @@ export default function CxcView({
                                   : <input type="date" value={ing.fechaContable||""} onChange={e=>{const v=e.target.value;setIngresos(prev=>prev.map(i=>i.id===ing.id?{...i,fechaContable:v}:i));updateIngresoField(ing.id,{fechaContable:v});}} style={{padding:"2px 5px",fontSize:13,border:`1px solid ${ing.fechaContable?C.teal:C.border}`,borderRadius:5,color:ing.fechaContable?C.teal:C.text,width:112,fontFamily:"inherit"}}/>
                                 }
                               </td>
-                              <td style={{padding:"9px 8px",whiteSpace:"nowrap",fontSize:13,color:C.muted}}>{ing.fecha||"—"}</td>
+                              <td style={{padding:"9px 8px",whiteSpace:"nowrap",fontSize:14,color:C.muted}}>{ing.fecha||"—"}</td>
                               <td style={{padding:"9px 8px",whiteSpace:"nowrap",fontSize:13,color:venceProx?C.danger:C.text,fontWeight:ing.fechaVencimiento?600:400}}>{ing.fechaVencimiento||"—"}</td>
                               {/* Días Vencidos */}
                               <td style={{padding:"9px 6px",textAlign:"center"}}>{(() => { const d=diasDiff(ing.fechaVencimiento); return d!==null&&d<0?<span style={{background:"#FFEBEE",color:C.danger,fontWeight:800,fontSize:11,padding:"2px 6px",borderRadius:20}}>{Math.abs(d)}d</span>:<span style={{color:C.muted,fontSize:11}}>—</span>; })()}</td>
