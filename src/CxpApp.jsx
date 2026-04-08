@@ -1266,17 +1266,17 @@ export default function CxpApp({ user, onLogout }) {
                 onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 6px 16px rgba(0,0,0,.13)";}}
                 onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 2px 8px rgba(0,0,0,.08)";}}>
                 {vencidos>0&&<div style={{position:"absolute",top:8,right:8,background:"#FFEBEE",color:"#C62828",fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:20}}>⚠️ {vencidos}</div>}
-                <div style={{fontWeight:900,fontSize:14,color:"#0F2D4A",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:3,paddingRight:vencidos>0?50:0}}>{f.nombre}</div>
-                <div style={{fontSize:11,color:C.muted,marginBottom:10,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.concepto}</div>
-                <div style={{fontSize:20,fontWeight:900,color:saldo>0?"#C62828":"#2E7D32",marginBottom:4}}>${fmt(saldo)}</div>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                  <span style={{fontSize:11,color:C.muted}}>{pagados}/{totalPlazos} meses · ${fmt(f.montoMensual)}/mes</span>
-                  <span style={{fontSize:11,fontWeight:800,color:"#1565C0"}}>{pct}%</span>
+                <div style={{fontWeight:900,fontSize:15,color:"#0F2D4A",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:3,paddingRight:vencidos>0?50:0}}>{f.nombre}</div>
+                <div style={{fontSize:12,color:C.muted,marginBottom:10,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.concepto}</div>
+                <div style={{fontSize:22,fontWeight:900,color:saldo>0?"#C62828":"#2E7D32",marginBottom:6}}>${fmt(saldo)}</div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
+                  <span style={{fontSize:13,color:C.muted,fontWeight:600}}>{pagados}/{totalPlazos} meses · ${fmt(f.montoMensual)}/mes</span>
+                  <span style={{fontSize:13,fontWeight:800,color:"#1565C0"}}>{pct}%</span>
                 </div>
-                <div style={{height:6,borderRadius:3,background:"#EEF2FF",overflow:"hidden"}}>
-                  <div style={{height:"100%",width:`${pct}%`,background:pct>=100?"#2E7D32":"#1565C0",borderRadius:3,transition:"width .4s"}}/>
+                <div style={{height:7,borderRadius:4,background:"#EEF2FF",overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${pct}%`,background:pct>=100?"#2E7D32":"#1565C0",borderRadius:4,transition:"width .4s"}}/>
                 </div>
-                {proxPlazo&&<div style={{fontSize:10,color:"#1565C0",marginTop:5,fontWeight:600}}>📅 Próx. pago: {proxPlazo}</div>}
+                {proxPlazo&&<div style={{fontSize:12,color:"#1565C0",marginTop:7,fontWeight:700}}>📅 Próx. pago: {proxPlazo}</div>}
               </div>
             );
           };
