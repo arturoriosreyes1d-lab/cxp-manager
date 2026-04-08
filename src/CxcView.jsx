@@ -2155,15 +2155,14 @@ export default function CxcView({
                 </div>
               </div>
 
-              {/* KPIs */}
-              <div style={{padding:"12px 24px",background:"#F1FFF4",borderBottom:`1px solid #C8E6C9`,display:"flex",gap:10,flexWrap:"wrap"}}>
+              {/* KPIs — Fila 1: totales generales */}
+              <div style={{padding:"12px 24px 8px",background:"#F1FFF4",display:"flex",gap:10,flexWrap:"wrap"}}>
                 {[
-                  {icon:"💰",l:"Total Cobrado",  v:`${sym}${fmt(grandTotal)}`,        c:"#1B5E20",  bg:"#E8F5E9"},
-                  {icon:"🧾",l:"Total Facturado", v:`${sym}${fmt(totalFacturado)}`,    c:C.navy,    bg:"#EEF2FF"},
-                  {icon:"👥",l:"Clientes",        v:`${clientesUnicos.length}`,        c:"#1565C0",  bg:"#E3F2FD"},
-                  {icon:"📋",l:"Facturas",        v:`${filas.length}`,                 c:C.muted,   bg:"#F8FAFC"},
+                  {icon:"💰",l:"Total Cobrado",  v:`${sym}${fmt(grandTotal)}`,      c:"#1B5E20", bg:"#E8F5E9"},
+                  {icon:"🧾",l:"Total Facturado", v:`${sym}${fmt(totalFacturado)}`,  c:C.navy,   bg:"#EEF2FF"},
+                  {icon:"👥",l:"Clientes",        v:`${clientesUnicos.length}`,      c:"#1565C0", bg:"#E3F2FD"},
+                  {icon:"📋",l:"Facturas",        v:`${filas.length}`,               c:C.muted,  bg:"#F8FAFC"},
                   ...Object.entries(porBanco).map(([b,v])=>({icon:"🏦",l:b, v:`${sym}${fmt(v)}`, c:"#2E7D32", bg:"#E8F5E9"})),
-                  ...Object.entries(porSegmento).map(([s,v])=>({icon:"✈️",l:s, v:`${sym}${fmt(v)}`, c:"#7B1FA2", bg:"#F3E5F5"})),
                 ].map(k=>(
                   <div key={k.l} style={{background:k.bg,borderRadius:12,padding:"8px 16px",border:`1px solid ${C.border}`,flex:"1 1 120px",minWidth:120}}>
                     <div style={{fontSize:10,color:C.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:.4,marginBottom:2}}>{k.icon} {k.l}</div>
@@ -2171,6 +2170,51 @@ export default function CxcView({
                   </div>
                 ))}
               </div>
+
+              {/* KPIs — Fila 2: por segmento + destino */}
+              {(()=>{
+                const getDestino = concepto => {
+                  if(!concepto) return null;
+                  const m = concepto.match(/\(([^)]+)\)/);
+                  if(m) return m[1];
+                  const lower = concepto.toLowerCase();
+                  if(lower.includes("tulum")) return "TUL";
+                  if(lower.includes("cancun")||lower.includes("cancún")) return "CUN";
+                  if(lower.includes("cabos")) return "SJD";
+                  if(lower.includes("cozumel")) return "CZM";
+                  if(lower.includes("merida")||lower.includes("mérida")) return "MID";
+                  if(lower.includes("vallarta")) return "PVR";
+                  return null;
+                };
+                const segmentos = [...new Set(filas.map(c=>c.ing.segmento).filter(Boolean))].sort();
+                if(!segmentos.length) return null;
+                return (
+                  <div style={{padding:"8px 24px 12px",background:"#F1FFF4",borderBottom:`1px solid #C8E6C9`,display:"flex",flexDirection:"column",gap:6}}>
+                    {segmentos.map(seg=>{
+                      const rowsSeg = filas.filter(c=>c.ing.segmento===seg);
+                      const porDest = {};
+                      rowsSeg.forEach(c=>{
+                        const d = getDestino(c.ing.concepto)||"Otros";
+                        porDest[d]=(porDest[d]||0)+c.monto;
+                      });
+                      const destSorted = Object.entries(porDest).sort((a,b)=>b[1]-a[1]);
+                      const DEST_COLORS = {CUN:"#E3F2FD",SJD:"#E8F5E9",TQO:"#FFF3E0",TUL:"#F3E5F5",CZM:"#E0F7FA",MID:"#FFF8E1",PVR:"#FCE4EC",Otros:"#F8FAFC"};
+                      return (
+                        <div key={seg} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                          <span style={{fontSize:11,fontWeight:800,color:"#7B1FA2",minWidth:36,textTransform:"uppercase"}}>{seg}</span>
+                          <span style={{fontSize:11,color:C.muted}}>→</span>
+                          {destSorted.map(([d,v])=>(
+                            <div key={d} style={{background:DEST_COLORS[d]||"#F8FAFC",borderRadius:20,padding:"3px 12px",border:`1px solid ${C.border}`,display:"flex",gap:6,alignItems:"center"}}>
+                              <span style={{fontSize:11,fontWeight:800,color:C.navy}}>{d}</span>
+                              <span style={{fontSize:12,fontWeight:900,color:"#1B5E20"}}>{sym}{fmt(v)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
 
               {/* Filtros + toggle vista */}
               <div style={{padding:"10px 24px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",background:"#F8FAFC"}}>
