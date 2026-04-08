@@ -138,9 +138,10 @@ export default function CxcView({
   const [tasImportando, setTasImportando] = useState(false);
   const [cxcTab, setCxcTab] = useState("activas"); // "activas" | "resumen" | "cobros"
   const [cobrosMesModal, setCobrosMesModal] = useState(false);
-  const [agingDetailModal, setAgingDetailModal] = useState(null); // {titulo, ings}
+  const [agingDetailModal, setAgingDetailModal] = useState(null);
   const [modalSortCol, setModalSortCol] = useState("vencimiento");
   const [modalSortDir, setModalSortDir] = useState("asc");
+  const [filtroBancoMes, setFiltroBancoMes] = useState("Todos");
   const [porFacturarModal, setPorFacturarModal] = useState(false);
   const porFacturarRef = useRef();
 
@@ -2044,7 +2045,6 @@ export default function CxcView({
         );
         // Bancos disponibles
         const bancos = ["Todos",...[...new Set(cobrosDelMes.map(c=>c.banco||"Sin banco").filter(Boolean))]];
-        const [filtroBancoMes, setFiltroBancoMes] = React.useState("Todos");
         const cobrosFiltrados = filtroBancoMes === "Todos" ? cobrosDelMes : cobrosDelMes.filter(c=>(c.banco||"Sin banco")===filtroBancoMes);
         // Agrupar por cliente
         const porCliente = {};
