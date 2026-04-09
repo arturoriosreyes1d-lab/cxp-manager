@@ -801,44 +801,44 @@ export default function CxpApp({ user, onLogout }) {
         <td style={{padding:"10px 4px",textAlign:"center",width:32}}>
           <input type="checkbox" checked={selectedIds.has(inv.id)} onChange={()=>toggleSelect(inv.id)} style={{cursor:"pointer",width:16,height:16,accentColor:C.blue}}/>
         </td>
-        <td style={{padding:"10px 8px"}}>{inv.tipo}</td>
-        <td style={{padding:"10px 8px",whiteSpace:"nowrap"}}>{inv.fecha}</td>
+        <td style={{padding:"11px 8px",fontSize:14}}>{inv.tipo}</td>
+        <td style={{padding:"11px 8px",whiteSpace:"nowrap",fontSize:14}}>{inv.fecha}</td>
         {/* Folio — red if duplicate */}
-        <td style={{padding:"10px 8px",background:isDupe?"#FFEBEE":"transparent",color:isDupe?C.danger:C.text,fontWeight:isDupe?700:400,borderLeft:isDupe?`3px solid ${C.danger}`:"none"}}>
+        <td style={{padding:"11px 8px",background:isDupe?"#FFEBEE":"transparent",color:isDupe?C.danger:C.text,fontWeight:isDupe?700:600,fontSize:14,borderLeft:isDupe?`3px solid ${C.danger}`:"none"}}>
           {inv.serie}{inv.folio}
-          {isDupe && <span style={{fontSize:10,marginLeft:4}} title="Folio duplicado">⚠️</span>}
+          {isDupe && <span style={{fontSize:11,marginLeft:4}} title="Folio duplicado">⚠️</span>}
         </td>
-        <td style={{padding:"10px 8px",fontWeight:600,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{inv.proveedor}</td>
+        <td style={{padding:"11px 8px",fontWeight:700,fontSize:14,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{inv.proveedor}</td>
         {/* Concepto — editable inline */}
-        <td style={{padding:"10px 8px",minWidth:120,maxWidth:180}} onClick={()=>{if(!esConsulta&&!editingConcepto){setEditingConcepto(true);setTempConcepto(inv.concepto||"");}}}>
+        <td style={{padding:"11px 8px",minWidth:120,maxWidth:180}} onClick={()=>{if(!esConsulta&&!editingConcepto){setEditingConcepto(true);setTempConcepto(inv.concepto||"");}}}>
           {editingConcepto ? (
             <input autoFocus value={tempConcepto} onChange={e=>setTempConcepto(e.target.value)}
               onBlur={()=>{updateConcepto(inv.id,tempConcepto);setEditingConcepto(false);}}
               onKeyDown={e=>{if(e.key==="Enter"){updateConcepto(inv.id,tempConcepto);setEditingConcepto(false);}if(e.key==="Escape")setEditingConcepto(false);}}
-              style={{...inputStyle,padding:"4px 8px",fontSize:12,width:"100%"}} />
+              style={{...inputStyle,padding:"4px 8px",fontSize:13,width:"100%"}} />
           ) : (
-            <span style={{cursor:"pointer",color:inv.concepto?C.text:C.muted,fontSize:12,fontStyle:inv.concepto?"normal":"italic",display:"block",minHeight:20,padding:"4px 0",borderBottom:`1px dashed ${C.border}`}}>
+            <span style={{cursor:"pointer",color:inv.concepto?C.text:C.muted,fontSize:13,fontStyle:inv.concepto?"normal":"italic",display:"block",minHeight:20,padding:"4px 0",borderBottom:`1px dashed ${C.border}`}}>
               {inv.concepto || (esConsulta ? "—" : "Clic para agregar…")}
             </span>
           )}
         </td>
         {/* Clasificación — editable inline with dropdown */}
-        <td style={{padding:"10px 8px",minWidth:100}} onClick={()=>{if(!editingClasif) setEditingClasif(true);}}>
+        <td style={{padding:"11px 8px",minWidth:100}} onClick={()=>{if(!editingClasif) setEditingClasif(true);}}>
           {editingClasif ? (
             <select autoFocus value={inv.clasificacion} onChange={e=>{updateClasificacion(inv.id,e.target.value);setEditingClasif(false);}}
               onBlur={()=>setEditingClasif(false)}
-              style={{...selectStyle,padding:"4px 6px",fontSize:12,width:"100%"}}>
+              style={{...selectStyle,padding:"4px 6px",fontSize:13,width:"100%"}}>
               {clases.map(c=><option key={c}>{c}</option>)}
             </select>
           ) : (
-            <span style={{background:"#EEF2FF",color:C.blue,padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:600,cursor:"pointer",display:"inline-block",borderBottom:`1px dashed ${C.blue}44`}}>{inv.clasificacion}</span>
+            <span style={{background:"#EEF2FF",color:C.blue,padding:"2px 8px",borderRadius:20,fontSize:12,fontWeight:600,cursor:"pointer",display:"inline-block",borderBottom:`1px dashed ${C.blue}44`}}>{inv.clasificacion}</span>
           )}
         </td>
-        <td style={{padding:"10px 8px",fontWeight:700}}>${fmt(inv.total)}</td>
-        <td style={{padding:"10px 8px",fontWeight:600,color:pagado>0?C.ok:C.muted}}>${fmt(pagado)}</td>
-        <td style={{padding:"10px 8px",fontWeight:700,color:saldo>0?(overdue?C.danger:C.warn):C.ok}}>${fmt(saldo)}</td>
+        <td style={{padding:"11px 8px",fontWeight:700,fontSize:15}}>${fmt(inv.total)}</td>
+        <td style={{padding:"11px 8px",fontWeight:600,fontSize:15,color:pagado>0?C.ok:C.muted}}>${fmt(pagado)}</td>
+        <td style={{padding:"11px 8px",fontWeight:700,fontSize:15,color:saldo>0?(overdue?C.danger:C.warn):C.ok}}>${fmt(saldo)}</td>
         {/* Pago/Programación — informativo desde tabla payments */}
-        <td style={{padding:"10px 8px",whiteSpace:"nowrap",fontSize:11}}>
+        <td style={{padding:"11px 8px",whiteSpace:"nowrap",fontSize:12}}>
           {(()=>{
             const invPays = paymentsFor(inv.id);
             const lastRealized = invPays.filter(p=>p.tipo==='realizado').sort((a,b)=>b.fechaPago.localeCompare(a.fechaPago))[0];
@@ -850,25 +850,25 @@ export default function CxpApp({ user, onLogout }) {
             return <span style={{color:C.muted}}>—</span>;
           })()}
         </td>
-        <td style={{padding:"10px 8px",whiteSpace:"nowrap",color:overdue?C.danger:C.text}}>{inv.vencimiento||"—"}</td>
-        <td style={{padding:"10px 8px",whiteSpace:"nowrap"}}>
+        <td style={{padding:"11px 8px",whiteSpace:"nowrap",fontSize:14,color:overdue?C.danger:C.text}}>{inv.vencimiento||"—"}</td>
+        <td style={{padding:"11px 8px",whiteSpace:"nowrap"}}>
           {inv.estatus === "Pagado" || days===null ? <span style={{color:C.muted}}>—</span> : days >= 0 ? (
             <span style={{
               background: days<=7?"#FFF3E0":days<=30?"#FFFDE7":"#E8F5E9",
               color: days<=7?C.warn:days<=30?"#F57F17":C.ok,
-              fontWeight:700, fontSize:11, padding:"2px 8px", borderRadius:20, whiteSpace:"nowrap"
+              fontWeight:700, fontSize:13, padding:"3px 9px", borderRadius:20, whiteSpace:"nowrap"
             }}>{days}d</span>
           ) : (
             <span style={{
               background: Math.abs(days)<=7?"#FFF5F5":Math.abs(days)<=15?"#FFEBEE":Math.abs(days)<=30?"#FFCDD2":Math.abs(days)<=60?"#EF9A9A":"#E57373",
               color: Math.abs(days)<=7?"#E57373":Math.abs(days)<=15?C.danger:Math.abs(days)<=30?"#C62828":Math.abs(days)<=60?"#B71C1C":"#7F0000",
-              fontWeight:800, fontSize:11, padding:"2px 8px", borderRadius:20, whiteSpace:"nowrap"
+              fontWeight:800, fontSize:13, padding:"3px 9px", borderRadius:20, whiteSpace:"nowrap"
             }}>{Math.abs(days)}d venc.</span>
           )}
         </td>
-        <td style={{padding:"10px 8px"}}>
+        <td style={{padding:"11px 8px"}}>
           <select value={inv.estatus} onChange={e=>!esConsulta&&updateEstatus(inv.id,e.target.value)} disabled={esConsulta}
-            style={{padding:"3px 8px",borderRadius:20,border:`2px solid ${statusColor(inv.estatus)}`,background:`${statusColor(inv.estatus)}22`,color:statusColor(inv.estatus),fontWeight:700,fontSize:12,cursor:"pointer"}}>
+            style={{padding:"4px 9px",borderRadius:20,border:`2px solid ${statusColor(inv.estatus)}`,background:`${statusColor(inv.estatus)}22`,color:statusColor(inv.estatus),fontWeight:700,fontSize:13,cursor:"pointer"}}>
             {["Pendiente","Pagado","Vencido","Parcial"].map(s=><option key={s}>{s}</option>)}
           </select>
         </td>
@@ -2059,27 +2059,27 @@ export default function CxpApp({ user, onLogout }) {
           const selTotal = selInvs.reduce((s,i)=>s+(+i.total||0),0);
           const selSaldo = selInvs.reduce((s,i)=>s+((+i.total||0)-(+i.montoPagado||0)),0);
           return (
-          <div style={{background:"#E8F0FE",border:`2px solid ${C.blue}`,borderRadius:14,padding:"14px 20px",marginBottom:20,display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",position:"sticky",top:0,zIndex:10,boxShadow:"0 4px 16px rgba(0,0,0,.1)"}}>
-            <div style={{fontWeight:700,color:C.blue,fontSize:14,marginRight:8}}>
+          <div style={{background:"#E8F0FE",border:`2px solid ${C.blue}`,borderRadius:14,padding:"16px 22px",marginBottom:20,display:"flex",gap:14,alignItems:"center",flexWrap:"wrap",position:"sticky",top:0,zIndex:10,boxShadow:"0 4px 16px rgba(0,0,0,.1)"}}>
+            <div style={{fontWeight:800,color:C.blue,fontSize:16,marginRight:8}}>
               ✅ {selectedIds.size} factura{selectedIds.size!==1?"s":""} seleccionada{selectedIds.size!==1?"s":""}
-              <span style={{fontWeight:600,fontSize:12,color:C.navy,marginLeft:10}}>Total: ${fmt(selTotal)} · Saldo: ${fmt(selSaldo)}</span>
+              <span style={{fontWeight:700,fontSize:14,color:C.navy,marginLeft:12}}>Total: ${fmt(selTotal)} · Saldo: ${fmt(selSaldo)}</span>
             </div>
-            <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",flex:1}}>
-              <select value={bulkClasif} onChange={e=>!esConsulta&&setBulkClasif(e.target.value)} style={{...selectStyle,maxWidth:160,padding:"6px 10px",fontSize:12}}>
+            <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",flex:1}}>
+              <select value={bulkClasif} onChange={e=>!esConsulta&&setBulkClasif(e.target.value)} style={{...selectStyle,maxWidth:160,padding:"8px 12px",fontSize:13}}>
                 <option value="">Clasificación…</option>
                 {clases.map(c=><option key={c}>{c}</option>)}
               </select>
-              <select value={bulkEstatus} onChange={e=>setBulkEstatus(e.target.value)} style={{...selectStyle,maxWidth:140,padding:"6px 10px",fontSize:12}}>
+              <select value={bulkEstatus} onChange={e=>setBulkEstatus(e.target.value)} style={{...selectStyle,maxWidth:140,padding:"8px 12px",fontSize:13}}>
                 <option value="">Estatus…</option>
                 {["Pendiente","Pagado","Vencido","Parcial"].map(s=><option key={s}>{s}</option>)}
               </select>
-              {!esConsulta && <button onClick={applyBulkEdit} disabled={!bulkClasif&&!bulkEstatus} style={{...btnStyle,padding:"7px 18px",fontSize:13,opacity:(!bulkClasif&&!bulkEstatus)?0.5:1}}>
+              {!esConsulta && <button onClick={applyBulkEdit} disabled={!bulkClasif&&!bulkEstatus} style={{...btnStyle,padding:"9px 20px",fontSize:14,opacity:(!bulkClasif&&!bulkEstatus)?0.5:1}}>
                 Aplicar cambios
               </button>}
-              {!esConsulta && <span style={{width:1,height:24,background:C.border,margin:"0 4px"}}/>}
-              {!esConsulta && <button onClick={()=>setBulkPayModal("programado")} style={{...btnStyle,padding:"7px 14px",fontSize:12,background:"#F57F17",color:"#fff"}}>📅 Programar pago</button>}
-              {!esConsulta && <button onClick={()=>setBulkPayModal("realizado")} style={{...btnStyle,padding:"7px 14px",fontSize:12,background:C.ok,color:"#fff"}}>💰 Registrar pago</button>}
-              <button onClick={()=>{setSelectedIds(new Set());setBulkClasif("");setBulkEstatus("");setBulkPayModal(null);}} style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"7px 14px",fontSize:13}}>
+              {!esConsulta && <span style={{width:1,height:28,background:C.border,margin:"0 4px"}}/>}
+              {!esConsulta && <button onClick={()=>setBulkPayModal("programado")} style={{...btnStyle,padding:"9px 18px",fontSize:13,background:"#F57F17",color:"#fff"}}>📅 Programar pago</button>}
+              {!esConsulta && <button onClick={()=>setBulkPayModal("realizado")} style={{...btnStyle,padding:"9px 18px",fontSize:13,background:C.ok,color:"#fff"}}>💰 Registrar pago</button>}
+              <button onClick={()=>{setSelectedIds(new Set());setBulkClasif("");setBulkEstatus("");setBulkPayModal(null);}} style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"9px 16px",fontSize:14,fontWeight:700}}>
                 Cancelar
               </button>
             </div>
