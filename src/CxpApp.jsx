@@ -997,10 +997,11 @@ export default function CxpApp({ user, onLogout }) {
     const MESES_PREV_YEAR = ["Noviembre","Diciembre"]; // si hay meses de año actual, estos son del año anterior
     const pendMesMoneda = pendAll.filter(i=>i.moneda===dashMesMoneda);
     const mesClasiMap = {};
+    const sinMesItems = []; // facturas sin mes detectable en concepto
     pendMesMoneda.forEach(i=>{
       const mes = detectarMesCxP(i.concepto);
-      if(!mes) return;
-      const clas = i.clasificacion||"Otros";
+      if(!mes) { sinMesItems.push(i); return; }
+      const clas = i.clasificacion||"Sin clasificar";
       if(!mesClasiMap[mes]) mesClasiMap[mes]={};
       if(!mesClasiMap[mes][clas]) mesClasiMap[mes][clas]={sum:0,items:[]};
       mesClasiMap[mes][clas].sum+=saldoOf(i);
@@ -1012,7 +1013,7 @@ export default function CxpApp({ user, onLogout }) {
     const mesesPresentes = hayMesesActuales
       ? [...mesesRaw.filter(m=>MESES_PREV_YEAR.includes(m)), ...mesesRaw.filter(m=>!MESES_PREV_YEAR.includes(m))]
       : mesesRaw;
-    const clasifPresentes = [...new Set(pendMesMoneda.filter(i=>detectarMesCxP(i.concepto)).map(i=>i.clasificacion||"Otros"))];
+    const clasifPresentes = [...new Set(pendMesMoneda.filter(i=>detectarMesCxP(i.concepto)).map(i=>i.clasificacion||"Sin clasificar"))];
 
     return (
       <div>
@@ -1178,6 +1179,14 @@ export default function CxpApp({ user, onLogout }) {
                         </div>
                       </th>
                     ))}
+                    {sinMesItems.length>0 && (
+                      <th style={{padding:"16px 16px",textAlign:"center",color:"#CE93D8",fontWeight:600,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap",letterSpacing:.3,borderLeft:`1px solid #4A2060`}}>
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                          <div style={{width:8,height:8,borderRadius:3,background:"#9C27B0",flexShrink:0}}/>
+                          Sin mes en concepto
+                        </div>
+                      </th>
+                    )}
                     <th style={{padding:"16px 16px",textAlign:"center",color:"#94A3B8",fontWeight:600,fontSize:12,whiteSpace:"nowrap",letterSpacing:.3}}>Total Mes</th>
                   </tr>
                   {/* Totals row */}
@@ -1187,8 +1196,9 @@ export default function CxpApp({ user, onLogout }) {
                       const totalClasif = mesesPresentes.reduce((s,m)=>s+(mesClasiMap[m]?.[c]?.sum||0),0);
                       return <td key={c} style={{padding:"12px 16px",textAlign:"center",fontWeight:700,color:"#4527A0",fontSize:15}}>{totalClasif>0?`$${fmt(totalClasif)}`:""}</td>;
                     })}
+                    {sinMesItems.length>0 && <td style={{padding:"12px 16px",textAlign:"center",fontWeight:700,color:"#7B1FA2",fontSize:15}}>${fmt(sinMesItems.reduce((s,i)=>s+saldoOf(i),0))}</td>}
                     <td style={{padding:"12px 16px",textAlign:"center",fontWeight:800,color:"#4527A0",fontSize:17,borderLeft:`1px solid #B39DDB`}}>
-                      ${fmt(mesesPresentes.reduce((s,m)=>s+clasifPresentes.reduce((ss,c)=>ss+(mesClasiMap[m]?.[c]?.sum||0),0),0))}
+                      ${fmt(mesesPresentes.reduce((s,m)=>s+clasifPresentes.reduce((ss,c)=>ss+(mesClasiMap[m]?.[c]?.sum||0),0),0) + sinMesItems.reduce((s,i)=>s+saldoOf(i),0))}
                     </td>
                   </tr>
                 </thead>
@@ -1219,12 +1229,35 @@ export default function CxpApp({ user, onLogout }) {
                             </td>
                           );
                         })}
+                        {sinMesItems.length>0 && <td style={{padding:"14px 16px",textAlign:"center",borderLeft:`1px solid ${C.border}`}}><span style={{color:"#E2E8F0",fontSize:14}}>—</span></td>}
                         <td style={{padding:"14px 16px",textAlign:"center",fontWeight:900,color:C.navy,fontSize:17,borderLeft:`2px solid ${C.border}`}}>
                           {totalMes>0?`$${fmt(totalMes)}`:"—"}
                         </td>
                       </tr>
                     );
                   })}
+                  {/* Fila: Sin mes en concepto */}
+                  {sinMesItems.length>0 && (
+                    <tr style={{borderTop:`2px solid #CE93D8`,background:"#F9F0FF"}}
+                      onMouseEnter={e=>e.currentTarget.style.background="#EDE7F6"}
+                      onMouseLeave={e=>e.currentTarget.style.background="#F9F0FF"}>
+                      <td style={{padding:"14px 20px",fontWeight:700,color:"#7B1FA2",fontSize:14}}>
+                        ⚠️ Sin mes en concepto
+                        <div style={{fontSize:11,color:"#9C27B0",marginTop:2,fontWeight:400}}>No se detectó mes en el concepto</div>
+                      </td>
+                      {clasifPresentes.map(c=><td key={c} style={{padding:"14px 16px",textAlign:"center"}}><span style={{color:"#E2E8F0"}}>—</span></td>)}
+                      <td style={{padding:"14px 16px",textAlign:"center",borderLeft:`1px solid #CE93D8`}}>
+                        <span onClick={()=>openDetailGrouped("Sin mes en concepto",sinMesItems)}
+                          style={{cursor:"pointer",display:"inline-block",textAlign:"center"}}>
+                          <div style={{fontWeight:800,fontSize:16,color:"#7B1FA2",borderBottom:`1px dotted #9C27B0`}}>${fmt(sinMesItems.reduce((s,i)=>s+saldoOf(i),0))}</div>
+                          <div style={{fontSize:11,color:"#9C27B0",marginTop:2}}>{sinMesItems.length} fact.</div>
+                        </span>
+                      </td>
+                      <td style={{padding:"14px 16px",textAlign:"center",fontWeight:900,color:"#7B1FA2",fontSize:17,borderLeft:`2px solid #CE93D8`}}>
+                        ${fmt(sinMesItems.reduce((s,i)=>s+saldoOf(i),0))}
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

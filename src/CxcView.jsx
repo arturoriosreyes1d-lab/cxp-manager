@@ -1591,32 +1591,54 @@ export default function CxcView({
     const [calMonth, setCalMonth] = useState(() => new Date().getMonth());
     const [calDayDetailLocal, setCalDayDetailLocal] = useState(null);
     const [buscarCliente, setBuscarCliente] = useState("");
+    const [clientesSeleccionados, setClientesSeleccionados] = useState(new Set());
 
     const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
     const DIAS  = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
 
+    // Lista de clientes únicos con cobros pendientes
+    const clientesDisponibles = useMemo(()=>{
+      const set = new Set();
+      ingresos.filter(i=>!i.oculta&&(metrics[i.id]?.porCobrar||0)>0).forEach(i=>set.add(i.cliente));
+      cobros.filter(c=>c.tipo==="proyectado").forEach(c=>{
+        const ing=ingresos.find(i=>i.id===c.ingresoId);
+        if(ing&&!ing.oculta) set.add(ing.cliente);
+      });
+      return [...set].sort();
+    },[ingresos,cobros,metrics]);
+
+    const toggleCliente = cli => setClientesSeleccionados(prev=>{
+      const n=new Set(prev); n.has(cli)?n.delete(cli):n.add(cli); return n;
+    });
+
+    const clientesFiltradosBusqueda = buscarCliente.trim()
+      ? clientesDisponibles.filter(c=>c.toLowerCase().includes(buscarCliente.toLowerCase()))
+      : clientesDisponibles;
+
     // Build map: "YYYY-MM-DD" → [ { ing, cobro?, tipo } ]
     const calMap = useMemo(() => {
       const map = {};
-      const q = buscarCliente.trim().toLowerCase();
+      const filtrar = ing => {
+        if(!ing||ing.oculta) return false;
+        if(clientesSeleccionados.size>0 && !clientesSeleccionados.has(ing.cliente)) return false;
+        return true;
+      };
       // 1. Cobros proyectados manuales (prioridad)
       cobros.filter(c => c.tipo === 'proyectado' && c.fechaCobro).forEach(c => {
         const ing = ingresos.find(i => i.id === c.ingresoId);
-        if (!ing) return;
-        if (ing.oculta) return; // excluir ocultas
-        if (q && !ing.cliente.toLowerCase().includes(q)) return; // filtro búsqueda
+        if (!filtrar(ing)) return;
         if (!map[c.fechaCobro]) map[c.fechaCobro] = [];
         map[c.fechaCobro].push({ ing, cobro: c, tipo: 'proyectado' });
       });
       // 2. Ingresos con fecha ficticia o vencimiento (sin cobros proyectados)
-      ingresos.filter(i => !i.oculta).forEach(ing => { // excluir ocultas
-        if (q && !ing.cliente.toLowerCase().includes(q)) return; // filtro búsqueda
+      ingresos.filter(i => !i.oculta).forEach(ing => {
+        if (!filtrar(ing)) return;
         const tieneCobrosProy = cobros.some(c => c.ingresoId === ing.id && c.tipo === 'proyectado');
-        if (tieneCobrosProy) return; // ya está cubierto arriba
+        if (tieneCobrosProy) return;
         const fecha = ing.fechaFicticia || ing.fechaVencimiento;
         if (!fecha) return;
         const porCobrar = (metrics[ing.id]?.porCobrar || 0);
-        if (porCobrar <= 0) return; // ya cobrado
+        if (porCobrar <= 0) return;
         if (!map[fecha]) map[fecha] = [];
         map[fecha].push({
           ing,
@@ -1625,7 +1647,7 @@ export default function CxcView({
         });
       });
       return map;
-    }, [cobros, ingresos, metrics, buscarCliente]);
+    }, [cobros, ingresos, metrics, clientesSeleccionados]);
 
     const firstDay    = new Date(calYear, calMonth, 1).getDay();
     const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
@@ -1651,26 +1673,44 @@ export default function CxcView({
           <button onClick={()=>setProyeccionView(false)} style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"7px 14px",fontSize:12}}>← Volver</button>
         </div>
 
-        {/* Barra buscadora cliente */}
-        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
-          <div style={{position:"relative",flex:"0 0 300px"}}>
-            <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:14,color:C.muted,pointerEvents:"none"}}>🔍</span>
-            <input
-              value={buscarCliente}
-              onChange={e=>setBuscarCliente(e.target.value)}
-              placeholder="Buscar cliente…"
-              style={{width:"100%",paddingLeft:32,paddingRight:buscarCliente?30:10,paddingTop:8,paddingBottom:8,border:`1.5px solid ${buscarCliente?C.blue:C.border}`,borderRadius:20,fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box",background:buscarCliente?"#EEF4FF":"#fff",color:C.text,transition:"border-color .15s"}}
-            />
-            {buscarCliente && (
-              <button onClick={()=>setBuscarCliente("")}
-                style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:15,color:C.muted,padding:0,lineHeight:1}}>×</button>
+        {/* Barra buscadora + chips de clientes */}
+        <div style={{marginBottom:14}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+            <div style={{position:"relative",flex:"0 0 300px"}}>
+              <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:14,color:C.muted,pointerEvents:"none"}}>🔍</span>
+              <input
+                value={buscarCliente}
+                onChange={e=>setBuscarCliente(e.target.value)}
+                placeholder="Buscar cliente…"
+                style={{width:"100%",paddingLeft:32,paddingRight:buscarCliente?30:10,paddingTop:8,paddingBottom:8,border:`1.5px solid ${buscarCliente?C.blue:C.border}`,borderRadius:20,fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box",background:buscarCliente?"#EEF4FF":"#fff",color:C.text,transition:"border-color .15s"}}
+              />
+              {buscarCliente && (
+                <button onClick={()=>setBuscarCliente("")}
+                  style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:15,color:C.muted,padding:0,lineHeight:1}}>×</button>
+              )}
+            </div>
+            {clientesSeleccionados.size>0 && (
+              <button onClick={()=>setClientesSeleccionados(new Set())}
+                style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${C.border}`,background:"#F1F5F9",color:C.text,cursor:"pointer",fontSize:12,fontFamily:"inherit",fontWeight:600}}>
+                ✕ Limpiar selección ({clientesSeleccionados.size})
+              </button>
             )}
           </div>
-          {buscarCliente && (
-            <span style={{fontSize:12,color:C.blue,fontWeight:600,background:"#EEF4FF",padding:"4px 10px",borderRadius:12}}>
-              Filtrando: <b>{buscarCliente}</b>
-            </span>
-          )}
+          {/* Chips de clientes */}
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {clientesFiltradosBusqueda.map(cli=>{
+              const sel = clientesSeleccionados.has(cli);
+              return (
+                <button key={cli} onClick={()=>toggleCliente(cli)}
+                  style={{padding:"5px 14px",borderRadius:20,border:`1.5px solid ${sel?"#7B1FA2":C.border}`,
+                    background:sel?"#7B1FA2":"#fff",color:sel?"#fff":C.text,
+                    cursor:"pointer",fontSize:12,fontWeight:sel?700:400,fontFamily:"inherit",
+                    transition:"all .15s",boxShadow:sel?"0 2px 8px rgba(123,31,162,.25)":"none"}}>
+                  {sel?"✓ ":""}{cli}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {Object.keys(monthTotals).length > 0 && (
