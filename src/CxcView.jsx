@@ -146,6 +146,8 @@ export default function CxcView({
   const [filtroMesVentaMes, setFiltroMesVentaMes] = useState("");
   const [vistaCobrosMes, setVistaCobrosMes] = useState("cliente");
   const [expandedCobrosClientes, setExpandedCobrosClientes] = useState(new Set());
+  const [mostrarReporteCobranza, setMostrarReporteCobranza] = useState(false);
+  const [reporteDims, setReporteDims] = useState(new Set(["mesVenta","segmento","destino"]));
   const [porFacturarModal, setPorFacturarModal] = useState(false);
   const porFacturarRef = useRef();
 
@@ -2167,7 +2169,7 @@ export default function CxcView({
 
         return (
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:8}}
-            onClick={()=>{setCobrosMesModal(false);setExpandedCobrosClientes(new Set());}}>
+            onClick={()=>{setCobrosMesModal(false);setExpandedCobrosClientes(new Set());setMostrarReporteCobranza(false);}}>
             <div style={{background:"#fff",borderRadius:18,width:"100%",maxWidth:"98vw",maxHeight:"96vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
               onClick={e=>e.stopPropagation()}>
 
@@ -2178,6 +2180,12 @@ export default function CxcView({
                   <div style={{fontSize:12,color:"#A5D6A7",marginTop:2}}>{cobrosDelMes.length} cobros registrados · mostrando {filas.length}</div>
                 </div>
                 <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  {empresaId==="empresa_2" && (
+                    <button onClick={()=>setMostrarReporteCobranza(true)}
+                      style={{padding:"6px 14px",borderRadius:8,border:"1px solid rgba(255,255,255,.3)",background:"rgba(255,255,255,.15)",color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>
+                      📊 Reporte
+                    </button>
+                  )}
                   <button onClick={()=>{
                     const ws = XLSX.utils.json_to_sheet(filas.map(c=>({
                       Cliente: c.ing.cliente, Segmento: c.ing.segmento||"", Folio: c.ing.folio||"",
@@ -2453,6 +2461,154 @@ export default function CxcView({
                     </tfoot>
                   </table>
                 )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Reporte Cobranza (TAS only) ── */}
+      {mostrarReporteCobranza && empresaId==="empresa_2" && cobrosMesModal && (()=>{
+        const now = new Date(cobrosMesModal.year, cobrosMesModal.month);
+        const mesPrefix = `${cobrosMesModal.year}-${String(cobrosMesModal.month+1).padStart(2,"0")}`;
+        const mesNombreR = `${MESES_ES[cobrosMesModal.month]} ${cobrosMesModal.year}`;
+        const cobrosR = cobros
+          .filter(c=>c.tipo==="realizado"&&c.fechaCobro?.startsWith(mesPrefix))
+          .map(c=>{const ing=ingresos.find(i=>i.id===c.ingresoId);return ing&&!ing.oculta?{...c,ing}:null;})
+          .filter(Boolean);
+
+        const getDestinoR = concepto=>{
+          if(!concepto) return "—";
+          const m=concepto.match(/\(([^)]+)\)/); if(m) return m[1];
+          const codes=["CUN","SJD","TQO","CZM","MID","PVR","HUX","MZT","GDL"];
+          const u=concepto.toUpperCase(); for(const c of codes){if(u.includes(c))return c;}
+          const l=concepto.toLowerCase();
+          if(l.includes("tulum")) return "TQO";
+          if(l.includes("cancun")||l.includes("cancún")) return "CUN";
+          if(l.includes("cabos")) return "SJD";
+          return "—";
+        };
+
+        const toggleDim = dim => setReporteDims(prev=>{const n=new Set(prev);n.has(dim)?n.delete(dim):n.add(dim);return n;});
+        const allDims = ["mesVenta","segmento","destino"];
+        const allOn = allDims.every(d=>reporteDims.has(d));
+
+        // Build columns from active dims
+        const cols = [];
+        if(reporteDims.has("mesVenta")){
+          const meses=[...new Set(cobrosR.map(c=>c.ing.fechaContable?.slice(0,7)).filter(Boolean))].sort();
+          meses.forEach(m=>{const[y,mo]=m.split("-");cols.push({id:`mv_${m}`,label:`${MESES_ES[+mo-1].slice(0,3)} '${y.slice(2)}`,fn:c=>c.ing.fechaContable?.startsWith(m)});});
+        }
+        if(reporteDims.has("segmento")){
+          const segs=[...new Set(cobrosR.map(c=>c.ing.segmento).filter(Boolean))].sort();
+          segs.forEach(s=>cols.push({id:`seg_${s}`,label:s,fn:c=>c.ing.segmento===s}));
+        }
+        if(reporteDims.has("destino")){
+          const dests=[...new Set(cobrosR.map(c=>getDestinoR(c.ing.concepto)).filter(d=>d!=="—"))].sort();
+          dests.forEach(d=>cols.push({id:`dest_${d}`,label:d,fn:c=>getDestinoR(c.ing.concepto)===d}));
+        }
+
+        const clientes=[...new Set(cobrosR.map(c=>c.ing.cliente))].sort();
+        const sym="$";
+
+        return (
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:2100,display:"flex",alignItems:"center",justifyContent:"center",padding:10}}
+            onClick={()=>setMostrarReporteCobranza(false)}>
+            <div style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:"99vw",maxHeight:"96vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.4)"}}
+              onClick={e=>e.stopPropagation()}>
+
+              {/* Header */}
+              <div style={{padding:"16px 24px",background:"#1B5E20",borderRadius:"20px 20px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontWeight:900,fontSize:18,color:"#fff"}}>📊 Reporte Cobranza — {mesNombreR}</div>
+                  <div style={{fontSize:12,color:"#A5D6A7",marginTop:2}}>{cobrosR.length} cobros · {clientes.length} clientes</div>
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={()=>setMostrarReporteCobranza(false)}
+                    style={{padding:"6px 14px",borderRadius:8,border:"1px solid rgba(255,255,255,.3)",background:"rgba(255,255,255,.15)",color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>
+                    ← Volver
+                  </button>
+                  <button onClick={()=>setMostrarReporteCobranza(false)}
+                    style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",width:34,height:34,cursor:"pointer",fontSize:20}}>×</button>
+                </div>
+              </div>
+
+              {/* Dimensiones toggle */}
+              <div style={{padding:"12px 24px",background:"#F1FFF4",borderBottom:"1px solid #C8E6C9",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                <span style={{fontSize:12,fontWeight:700,color:"#1B5E20"}}>Columnas:</span>
+                {[
+                  {k:"mesVenta", l:"📅 Mes de Venta"},
+                  {k:"segmento", l:"✈️ Segmento"},
+                  {k:"destino",  l:"📍 Destino"},
+                ].map(({k,l})=>(
+                  <button key={k} onClick={()=>toggleDim(k)}
+                    style={{padding:"5px 14px",borderRadius:20,border:`1.5px solid ${reporteDims.has(k)?"#1B5E20":"#C8E6C9"}`,
+                      background:reporteDims.has(k)?"#1B5E20":"#fff",color:reporteDims.has(k)?"#fff":"#2E7D32",
+                      cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",transition:"all .15s"}}>
+                    {reporteDims.has(k)?"✓ ":""}{l}
+                  </button>
+                ))}
+                <div style={{width:1,height:20,background:"#C8E6C9",margin:"0 4px"}}/>
+                <button onClick={()=>setReporteDims(allOn?new Set():new Set(allDims))}
+                  style={{padding:"5px 14px",borderRadius:20,border:"1.5px solid #2E7D32",background:allOn?"#E8F5E9":"#fff",color:"#1B5E20",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>
+                  {allOn?"✗ Limpiar todo":"✓ Todo"}
+                </button>
+                <span style={{marginLeft:"auto",fontSize:13,fontWeight:900,color:"#1B5E20"}}>${fmt(cobrosR.reduce((s,c)=>s+c.monto,0))} total</span>
+              </div>
+
+              {/* Tabla */}
+              <div style={{overflowY:"auto",overflowX:"auto",flex:1}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                  <thead style={{position:"sticky",top:0}}>
+                    <tr style={{background:"#1B5E20"}}>
+                      <th style={{padding:"12px 16px",textAlign:"left",color:"rgba(255,255,255,.85)",fontWeight:700,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap",minWidth:220}}>Cliente</th>
+                      {cols.map(col=>(
+                        <th key={col.id} style={{padding:"12px 14px",textAlign:"center",color:"rgba(255,255,255,.85)",fontWeight:700,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap",minWidth:110}}>{col.label}</th>
+                      ))}
+                      <th style={{padding:"12px 16px",textAlign:"right",color:"#A5D6A7",fontWeight:700,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap",borderLeft:"2px solid rgba(255,255,255,.2)"}}>TOTAL</th>
+                    </tr>
+                    {/* Fila totales generales */}
+                    <tr style={{background:"#2E7D32"}}>
+                      <td style={{padding:"10px 16px",fontWeight:800,color:"#fff",fontSize:13}}>TOTAL GENERAL</td>
+                      {cols.map(col=>{
+                        const t=cobrosR.filter(c=>col.fn(c)).reduce((s,c)=>s+c.monto,0);
+                        return <td key={col.id} style={{padding:"10px 14px",textAlign:"center",fontWeight:700,color:"#fff",fontSize:13}}>{t>0?`${sym}${fmt(t)}`:""}</td>;
+                      })}
+                      <td style={{padding:"10px 16px",textAlign:"right",fontWeight:900,color:"#fff",fontSize:15,borderLeft:"2px solid rgba(255,255,255,.2)"}}>
+                        {sym}{fmt(cobrosR.reduce((s,c)=>s+c.monto,0))}
+                      </td>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {clientes.map((cli,ci)=>{
+                      const rowsCli = cobrosR.filter(c=>c.ing.cliente===cli);
+                      const totalCli = rowsCli.reduce((s,c)=>s+c.monto,0);
+                      return (
+                        <tr key={cli} style={{borderTop:"1px solid #E8F5E9",background:ci%2===0?"#fff":"#F8FFF8"}}
+                          onMouseEnter={e=>e.currentTarget.style.background="#E8F5E9"}
+                          onMouseLeave={e=>e.currentTarget.style.background=ci%2===0?"#fff":"#F8FFF8"}>
+                          <td style={{padding:"12px 16px",fontWeight:700,color:C.navy,fontSize:14}}>{cli}</td>
+                          {cols.map(col=>{
+                            const t=rowsCli.filter(c=>col.fn(c)).reduce((s,c)=>s+c.monto,0);
+                            return (
+                              <td key={col.id} style={{padding:"12px 14px",textAlign:"center"}}>
+                                {t>0 ? (
+                                  <span onClick={()=>{setMostrarReporteCobranza(false);setDetailIngreso(rowsCli.find(c=>col.fn(c))?.ing?.id);}}
+                                    style={{cursor:"pointer",fontWeight:800,color:"#1B5E20",fontSize:14,borderBottom:"1px dotted #2E7D32"}}>
+                                    {sym}{fmt(t)}
+                                  </span>
+                                ) : <span style={{color:"#E2E8F0"}}>—</span>}
+                              </td>
+                            );
+                          })}
+                          <td style={{padding:"12px 16px",textAlign:"right",fontWeight:900,color:C.navy,fontSize:15,borderLeft:"2px solid #E8F5E9"}}>
+                            {sym}{fmt(totalCli)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
