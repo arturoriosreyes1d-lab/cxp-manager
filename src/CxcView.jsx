@@ -2204,7 +2204,7 @@ export default function CxcView({
               </div>
 
               {/* ── REPORTE PIVOTE ── */}
-              {mostrarReporteCobranza ? (()=>{
+              {mostrarReporteCobranza && (()=>{
                 const getDestino = concepto => {
                   if(!concepto) return null;
                   const m = concepto.match(/\(([^)]+)\)/);
@@ -2374,7 +2374,8 @@ export default function CxcView({
                     </div>
                   </div>
                 );
-              })() : (
+              })()}
+              {!mostrarReporteCobranza && <>
               <div style={{padding:"12px 24px 8px",background:"#F1FFF4",display:"flex",gap:10,flexWrap:"wrap"}}>
                 {[
                   {icon:"💰",l:"Total Cobrado",  v:`${sym}${fmt(grandTotal)}`,      c:"#1B5E20", bg:"#E8F5E9"},
@@ -2633,6 +2634,8 @@ export default function CxcView({
                   </table>
                 )}
               </div>
+              </>
+              }
             </div>
           </div>
         );
