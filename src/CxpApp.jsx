@@ -196,9 +196,11 @@ export default function CxpApp({ user, onLogout }) {
   const [financiamientos, setFinanciamientos] = useState([]);
   const [financiamientoPagos, setFinanciamientoPagos] = useState([]);
   const [financModalId, setFinancModalId] = useState(null);
-  const [financImportPreview, setFinancImportPreview] = useState(null); // [{nombre,concepto,montoMensual,fechaInicio,fechaFin,diaPago,plazos}]
-  const [financImportando, setFinancImportando] = useState(false); // which credit is open
+  const [financCollapsed, setFinancCollapsed] = useState(false);
+  const [financImportPreview, setFinancImportPreview] = useState(null);
+  const [financImportando, setFinancImportando] = useState(false);
   const [tarjetas, setTarjetas] = useState([]);
+  const [tarjetasCollapsed, setTarjetasCollapsed] = useState(false);
   const [tarjetaMovimientos, setTarjetaMovimientos] = useState([]);
   const [tarjetaModalId, setTarjetaModalId] = useState(null);
   const [tarjetaImportPreview, setTarjetaImportPreview] = useState(null);
@@ -1334,21 +1336,24 @@ export default function CxpApp({ user, onLogout }) {
             <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap"}}>
               {/* Financiamientos */}
               <div style={{background:"#0F2D4A",borderRadius:12,overflow:"hidden",flex:"3 1 0",minWidth:0}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 14px"}}>
+                <div onClick={()=>setFinancCollapsed(c=>!c)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 14px",cursor:"pointer",userSelect:"none"}}>
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
                     <span style={{fontSize:15}}>🏦</span>
                     <span style={{fontWeight:800,fontSize:12,color:"#fff",textTransform:"uppercase",letterSpacing:.5}}>Financiamientos</span>
                     {activos.length>0&&<span style={{background:"rgba(255,255,255,.15)",color:"rgba(255,255,255,.9)",fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:20}}>{activos.length} activo{activos.length!==1?"s":""}</span>}
                   </div>
                   <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                    {activos.length===0&&<span style={{fontSize:11,color:"rgba(255,255,255,.4)"}}>Sin registros</span>}
-                    <button onClick={()=>financImportRef.current?.click()}
-                      style={{padding:"4px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,.25)",background:"rgba(255,255,255,.1)",color:"#fff",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>
-                      📥 Importar
-                    </button>
+                    <div style={{display:"flex",gap:6,alignItems:"center"}} onClick={e=>e.stopPropagation()}>
+                      {activos.length===0&&<span style={{fontSize:11,color:"rgba(255,255,255,.4)"}}>Sin registros</span>}
+                      <button onClick={()=>financImportRef.current?.click()}
+                        style={{padding:"4px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,.25)",background:"rgba(255,255,255,.1)",color:"#fff",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>
+                        📥 Importar
+                      </button>
+                    </div>
+                    <span style={{color:"rgba(255,255,255,.6)",fontSize:16,marginLeft:4,transition:"transform .2s",display:"inline-block",transform:financCollapsed?"rotate(-90deg)":"rotate(0deg)"}}>▼</span>
                   </div>
                 </div>
-                {activos.length>0&&(
+                {!financCollapsed && activos.length>0&&(
                   <div style={{display:"flex",gap:8,padding:"8px 10px 12px",background:"#F0F4FF"}}>
                     {activos.map(f=><ChipFinanc key={f.id} f={f}/>)}
                   </div>
@@ -1356,20 +1361,23 @@ export default function CxpApp({ user, onLogout }) {
               </div>
               {/* Tarjetas de Crédito */}
               <div style={{background:"#1A0533",borderRadius:12,overflow:"hidden",flex:"1 1 0",minWidth:220}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 14px"}}>
+                <div onClick={()=>setTarjetasCollapsed(c=>!c)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 14px",cursor:"pointer",userSelect:"none"}}>
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
                     <span style={{fontSize:15}}>💳</span>
                     <span style={{fontWeight:800,fontSize:12,color:"#fff",textTransform:"uppercase",letterSpacing:.5}}>Tarjetas de Crédito</span>
                     {tarjetas.filter(t=>t.activo).length>0&&<span style={{background:"rgba(255,255,255,.15)",color:"rgba(255,255,255,.9)",fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:20}}>{tarjetas.filter(t=>t.activo).length}</span>}
                   </div>
                   <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                    <button onClick={()=>tarjetaImportRef.current?.click()}
-                      style={{padding:"4px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,.25)",background:"rgba(255,255,255,.1)",color:"#fff",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>
-                      📥 Importar CSV
-                    </button>
+                    <div style={{display:"flex",gap:6,alignItems:"center"}} onClick={e=>e.stopPropagation()}>
+                      <button onClick={()=>tarjetaImportRef.current?.click()}
+                        style={{padding:"4px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,.25)",background:"rgba(255,255,255,.1)",color:"#fff",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>
+                        📥 Importar CSV
+                      </button>
+                    </div>
+                    <span style={{color:"rgba(255,255,255,.6)",fontSize:16,marginLeft:4,transition:"transform .2s",display:"inline-block",transform:tarjetasCollapsed?"rotate(-90deg)":"rotate(0deg)"}}>▼</span>
                   </div>
                 </div>
-                {tarjetas.filter(t=>t.activo).length>0 ? (
+                {!tarjetasCollapsed && (tarjetas.filter(t=>t.activo).length>0 ? (
                   <div style={{display:"flex",gap:8,padding:"8px 10px 12px",background:"#F5F0FF",flexWrap:"wrap"}}>
                     {tarjetas.filter(t=>t.activo).map(t=>{
                       const pct = t.limite>0 ? Math.round((t.saldoActual/t.limite)*100) : 0;
@@ -1427,7 +1435,7 @@ export default function CxpApp({ user, onLogout }) {
                   <div style={{padding:"12px 14px",background:"#F5F0FF",display:"flex",alignItems:"center",justifyContent:"center",minHeight:80}}>
                     <span style={{fontSize:12,color:"#9C27B0",fontWeight:600,opacity:.7}}>Importa un CSV de Konfio para comenzar</span>
                   </div>
-                )}
+                ))}
               </div>
             </div>
           );
