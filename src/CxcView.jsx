@@ -147,7 +147,7 @@ export default function CxcView({
   const [vistaCobrosMes, setVistaCobrosMes] = useState("cliente");
   const [expandedCobrosClientes, setExpandedCobrosClientes] = useState(new Set());
   const [mostrarReporteCobranza, setMostrarReporteCobranza] = useState(false);
-  const [reporteDims, setReporteDims] = useState(new Set(["mesVenta","segmento","destino"]));
+  const [reporteDims, setReporteDims] = useState(["mesVenta","destino","segmento"]);
   const [porFacturarModal, setPorFacturarModal] = useState(false);
   const porFacturarRef = useRef();
 
@@ -2205,6 +2205,7 @@ export default function CxcView({
 
               {/* ── REPORTE PIVOTE ── */}
               {mostrarReporteCobranza && (()=>{
+                const MESES_ES2 = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
                 const getDestino = concepto => {
                   if(!concepto) return null;
                   const m = concepto.match(/\(([^)]+)\)/);
@@ -2218,78 +2219,129 @@ export default function CxcView({
                   if(lower.includes("cabos")) return "SJD";
                   return null;
                 };
-                const toggleDim = d => setReporteDims(prev=>{const n=new Set(prev);n.has(d)?n.delete(d):n.add(d);return n;});
-                const allDims = reporteDims.size===3;
 
-                // Build columns based on active dims
-                const cols = [];
-                if(reporteDims.has("mesVenta")){
-                  const meses=[...new Set(filas.map(c=>c.ing.fechaContable?.slice(0,7)).filter(Boolean))].sort();
-                  meses.forEach(m=>{ const [y,mo]=m.split("-"); cols.push({key:`mv_${m}`,label:`${MESES_ES[+mo-1].slice(0,3)} '${y.slice(2)}`,dim:"mesVenta",val:m}); });
-                }
-                if(reporteDims.has("segmento")){
-                  const segs=[...new Set(filas.map(c=>c.ing.segmento).filter(Boolean))].sort();
-                  segs.forEach(s=>cols.push({key:`seg_${s}`,label:s,dim:"segmento",val:s}));
-                }
-                if(reporteDims.has("destino")){
-                  const dests=[...new Set(filas.map(c=>getDestino(c.ing.concepto)).filter(Boolean))].sort();
-                  dests.forEach(d=>cols.push({key:`dest_${d}`,label:d,dim:"destino",val:d}));
-                }
+                const ALL_DIMS = ["mesVenta","destino","segmento"];
+                const DIM_LABEL = {mesVenta:"📅 Mes de Venta", destino:"📍 Destino", segmento:"✈️ Segmento"};
+                const DIM_COLOR = {mesVenta:"#1565C0", destino:"#00695C", segmento:"#7B1FA2"};
+                const DIM_BG    = {mesVenta:"#DBEAFE",  destino:"#CCFBF1",  segmento:"#EDE9FE"};
 
-                // Group by cliente
+                // Active dims in user-defined order
+                const activeDims = reporteDims.filter(d => ALL_DIMS.includes(d));
+
+                const toggleDim = d => setReporteDims(prev => {
+                  if(prev.includes(d)) return prev.filter(x=>x!==d);
+                  return [...prev, d];
+                });
+                const moveDim = (d, dir) => setReporteDims(prev => {
+                  const arr=[...prev]; const i=arr.indexOf(d);
+                  if(i<0) return prev;
+                  const j=i+dir;
+                  if(j<0||j>=arr.length) return prev;
+                  [arr[i],arr[j]]=[arr[j],arr[i]]; return arr;
+                });
+
+                // Get unique values for each dim from filas
+                const dimVals = {
+                  mesVenta: [...new Set(filas.map(c=>c.ing.fechaContable?.slice(0,7)).filter(Boolean))].sort(),
+                  destino:  [...new Set(filas.map(c=>getDestino(c.ing.concepto)).filter(Boolean))].sort(),
+                  segmento: [...new Set(filas.map(c=>c.ing.segmento).filter(Boolean))].sort(),
+                };
+                const dimValLabel = (dim, val) => {
+                  if(dim==="mesVenta"){const[y,mo]=val.split("-");return `${MESES_ES2[+mo-1].slice(0,3).toUpperCase()} '${y.slice(2)}`;}
+                  return val;
+                };
+                const matchDim = (c, dim, val) => {
+                  if(dim==="mesVenta") return c.ing.fechaContable?.startsWith(val);
+                  if(dim==="destino")  return getDestino(c.ing.concepto)===val;
+                  if(dim==="segmento") return c.ing.segmento===val;
+                };
+
+                // Build leaf columns recursively from activeDims
+                const buildLeaves = (dims, prefix=[]) => {
+                  if(!dims.length) return [prefix];
+                  const [d,...rest] = dims;
+                  const vals = dimVals[d];
+                  if(!vals.length) return buildLeaves(rest, prefix);
+                  return vals.flatMap(v => buildLeaves(rest, [...prefix, {dim:d, val:v}]));
+                };
+                const leaves = buildLeaves(activeDims); // each leaf = array of {dim,val} filters
+
+                // Filter filas for a leaf
+                const filterLeaf = (rows, leaf) => leaf.reduce((acc, {dim,val}) => acc.filter(c=>matchDim(c,dim,val)), rows);
+
                 const clienteRows = clientesUnicos.map(cli=>{
                   const rowFilas = filas.filter(c=>c.ing.cliente===cli);
                   const total = rowFilas.reduce((s,c)=>s+c.monto,0);
-                  const colVals = {};
-                  cols.forEach(col=>{
-                    let subset;
-                    if(col.dim==="mesVenta") subset=rowFilas.filter(c=>c.ing.fechaContable?.startsWith(col.val));
-                    else if(col.dim==="segmento") subset=rowFilas.filter(c=>c.ing.segmento===col.val);
-                    else if(col.dim==="destino") subset=rowFilas.filter(c=>getDestino(c.ing.concepto)===col.val);
-                    colVals[col.key]={sum:subset.reduce((s,c)=>s+c.monto,0),items:subset};
+                  const cells = leaves.map(leaf => {
+                    const subset = filterLeaf(rowFilas, leaf);
+                    return {sum: subset.reduce((s,c)=>s+c.monto,0), n: subset.length};
                   });
-                  return {cli,total,colVals,rowFilas};
+                  return {cli, total, cells, rowFilas};
                 }).sort((a,b)=>b.total-a.total);
 
-                // Column totals
-                const colTotals={};
-                cols.forEach(col=>{
-                  colTotals[col.key]=filas.filter(c=>{
-                    if(col.dim==="mesVenta") return c.ing.fechaContable?.startsWith(col.val);
-                    if(col.dim==="segmento") return c.ing.segmento===col.val;
-                    if(col.dim==="destino") return getDestino(c.ing.concepto)===col.val;
-                  }).reduce((s,c)=>s+c.monto,0);
+                const colTotals = leaves.map(leaf => {
+                  const subset = filterLeaf(filas, leaf);
+                  return subset.reduce((s,c)=>s+c.monto,0);
                 });
 
-                const DIM_COLORS={mesVenta:"#1565C0",segmento:"#7B1FA2",destino:"#00695C"};
-                const DIM_BG={mesVenta:"#E3F2FD",segmento:"#F3E5F5",destino:"#E0F2F1"};
+                // Build spanning header rows
+                // For each level of activeDims, compute colSpan groups
+                const headerRows = activeDims.map((dim, level) => {
+                  // At this level, each group = one value of this dim, spanning all combos below
+                  const dimsAbove = activeDims.slice(0, level);
+                  const dimsBelow = activeDims.slice(level+1);
+                  const vals = dimVals[dim];
+                  const spanSize = dimsBelow.reduce((acc,d)=>acc*(dimVals[d].length||1), 1) || 1;
+
+                  // Group consecutive leaves by this dim's value
+                  const groups = [];
+                  if(dimsAbove.length===0){
+                    vals.forEach(v=>{ if(dimVals[dim].includes(v)) groups.push({val:v, span:spanSize}); });
+                  } else {
+                    // Need to track groups accounting for upper levels
+                    const upperCombos = buildLeaves(dimsAbove);
+                    upperCombos.forEach(()=>{
+                      vals.forEach(v=>groups.push({val:v, span:spanSize}));
+                    });
+                  }
+                  return {dim, groups};
+                });
 
                 return (
                   <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
-                    {/* Reporte toolbar */}
-                    <div style={{padding:"12px 24px",background:"#F8FAFC",borderBottom:`1px solid ${C.border}`,display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
-                      <span style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:.4}}>Columnas:</span>
-                      {[
-                        {k:"mesVenta",l:"📅 Mes de Venta"},
-                        {k:"segmento",l:"✈️ Segmento"},
-                        {k:"destino", l:"📍 Destino"},
-                      ].map(d=>(
-                        <button key={d.k} onClick={()=>toggleDim(d.k)}
-                          style={{padding:"5px 14px",borderRadius:20,border:`1.5px solid ${reporteDims.has(d.k)?DIM_COLORS[d.k]:C.border}`,
-                            background:reporteDims.has(d.k)?DIM_BG[d.k]:"#fff",
-                            color:reporteDims.has(d.k)?DIM_COLORS[d.k]:C.muted,
-                            fontWeight:reporteDims.has(d.k)?700:400,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all .15s"}}>
-                          {reporteDims.has(d.k)?"✓ ":""}{d.l}
-                        </button>
-                      ))}
-                      <div style={{height:20,width:1,background:C.border}}/>
-                      <button onClick={()=>setReporteDims(new Set(["mesVenta","segmento","destino"]))}
-                        style={{padding:"5px 14px",borderRadius:20,border:`1px solid ${C.border}`,background:allDims?"#0F2D4A":"#fff",color:allDims?"#fff":C.text,fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:allDims?700:400}}>
-                        {allDims?"✓ Todo":"+ Todo"}
+                    {/* Toolbar */}
+                    <div style={{padding:"10px 20px",background:"#F8FAFC",borderBottom:`1px solid ${C.border}`,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                      <span style={{fontSize:11,fontWeight:800,color:C.muted,textTransform:"uppercase",letterSpacing:.5}}>Dimensiones:</span>
+                      {ALL_DIMS.map(d=>{
+                        const active = activeDims.includes(d);
+                        const pos = activeDims.indexOf(d);
+                        return (
+                          <div key={d} style={{display:"flex",alignItems:"center",gap:3}}>
+                            <button onClick={()=>toggleDim(d)}
+                              style={{padding:"4px 12px",borderRadius:20,border:`1.5px solid ${active?DIM_COLOR[d]:C.border}`,
+                                background:active?DIM_BG[d]:"#fff",color:active?DIM_COLOR[d]:C.muted,
+                                fontWeight:active?700:400,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all .15s"}}>
+                              {active?`${pos+1}. `:""}{DIM_LABEL[d]}
+                            </button>
+                            {active && pos>0 && (
+                              <button onClick={()=>moveDim(d,-1)}
+                                style={{background:"none",border:"none",cursor:"pointer",fontSize:13,padding:"2px 4px",color:DIM_COLOR[d],lineHeight:1}}>↑</button>
+                            )}
+                            {active && pos<activeDims.length-1 && (
+                              <button onClick={()=>moveDim(d,1)}
+                                style={{background:"none",border:"none",cursor:"pointer",fontSize:13,padding:"2px 4px",color:DIM_COLOR[d],lineHeight:1}}>↓</button>
+                            )}
+                          </div>
+                        );
+                      })}
+                      <div style={{height:20,width:1,background:C.border,margin:"0 4px"}}/>
+                      <button onClick={()=>setReporteDims([...ALL_DIMS])}
+                        style={{padding:"4px 12px",borderRadius:20,border:`1px solid ${C.border}`,background:"#fff",color:C.text,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+                        ✓ Todo
                       </button>
-                      <button onClick={()=>setReporteDims(new Set())}
-                        style={{padding:"5px 14px",borderRadius:20,border:`1px solid ${C.border}`,background:"#fff",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
-                        ✕ Limpiar
+                      <button onClick={()=>setReporteDims([])}
+                        style={{padding:"4px 12px",borderRadius:20,border:`1px solid ${C.border}`,background:"#fff",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+                        ✗ Limpiar
                       </button>
                       <button onClick={()=>setMostrarReporteCobranza(false)}
                         style={{marginLeft:"auto",padding:"5px 14px",borderRadius:20,border:`1px solid ${C.border}`,background:"#fff",color:C.text,fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>
@@ -2299,72 +2351,52 @@ export default function CxcView({
 
                     {/* Pivot table */}
                     <div style={{overflowY:"auto",overflowX:"auto",flex:1}}>
-                      <table style={{borderCollapse:"collapse",fontSize:13,minWidth:"100%"}}>
+                      <table style={{borderCollapse:"collapse",fontSize:12,minWidth:"100%"}}>
                         <thead style={{position:"sticky",top:0,zIndex:2}}>
-                          {/* Dim group headers */}
-                          {reporteDims.size>0 && (
-                            <tr style={{background:"#0F2D4A"}}>
-                              <th style={{padding:"8px 20px",textAlign:"left",color:"rgba(255,255,255,.5)",fontSize:11,fontWeight:600,minWidth:220,whiteSpace:"nowrap"}}>CLIENTE</th>
-                              {["mesVenta","segmento","destino"].filter(d=>reporteDims.has(d)).map(d=>{
-                                const dCols=cols.filter(c=>c.dim===d);
-                                const label={mesVenta:"MES DE VENTA",segmento:"SEGMENTO",destino:"DESTINO"}[d];
-                                return <th key={d} colSpan={dCols.length}
-                                  style={{padding:"8px 12px",textAlign:"center",color:DIM_BG[d],fontWeight:800,fontSize:11,textTransform:"uppercase",
-                                    borderLeft:"2px solid rgba(255,255,255,.1)",letterSpacing:.5}}>
-                                  {label}
-                                </th>;
-                              })}
-                              <th style={{padding:"8px 16px",textAlign:"center",color:"rgba(255,255,255,.7)",fontSize:11,fontWeight:700,borderLeft:"2px solid rgba(255,255,255,.2)",whiteSpace:"nowrap"}}>TOTAL</th>
+                          {/* One header row per active dim */}
+                          {headerRows.map(({dim, groups}, level)=>(
+                            <tr key={dim} style={{background: level===0?"#1B2A4A": level===1?"#1E3A5A":"#243F60"}}>
+                              {level===0 && <th rowSpan={activeDims.length+1} style={{padding:"8px 16px",textAlign:"left",color:"rgba(255,255,255,.7)",fontWeight:700,fontSize:11,minWidth:200,verticalAlign:"bottom",borderRight:"2px solid rgba(255,255,255,.15)"}}>CLIENTE</th>}
+                              {groups.map((g,gi)=>(
+                                <th key={gi} colSpan={g.span}
+                                  style={{padding:"6px 8px",textAlign:"center",fontWeight:800,fontSize:11,textTransform:"uppercase",
+                                    color:DIM_BG[dim],whiteSpace:"nowrap",
+                                    borderLeft: gi===0 || gi%g.span===0 ?"2px solid rgba(255,255,255,.15)":"1px solid rgba(255,255,255,.06)",
+                                    letterSpacing:.3}}>
+                                  {dimValLabel(dim, g.val)}
+                                </th>
+                              ))}
+                              {level===0 && <th rowSpan={activeDims.length+1} style={{padding:"8px 12px",textAlign:"center",color:"#A5D6A7",fontWeight:800,fontSize:11,borderLeft:"3px solid rgba(255,255,255,.2)",whiteSpace:"nowrap",verticalAlign:"bottom"}}>TOTAL</th>}
                             </tr>
-                          )}
-                          {/* Column labels */}
-                          <tr style={{background:"#1A2F4A"}}>
-                            <th style={{padding:"10px 20px",textAlign:"left",color:"rgba(255,255,255,.8)",fontSize:12,fontWeight:700,minWidth:220}}>Cliente</th>
-                            {cols.map(col=>(
-                              <th key={col.key} style={{padding:"10px 12px",textAlign:"center",color:DIM_BG[col.dim],fontSize:12,fontWeight:700,
-                                whiteSpace:"nowrap",borderLeft:col===cols.find(c=>c.dim===col.dim)?"2px solid rgba(255,255,255,.1)":"none"}}>
-                                {col.label}
-                              </th>
-                            ))}
-                            <th style={{padding:"10px 16px",textAlign:"center",color:"#fff",fontSize:13,fontWeight:800,borderLeft:"2px solid rgba(255,255,255,.2)"}}>Total</th>
-                          </tr>
-                          {/* Column totals row */}
-                          <tr style={{background:"#E8F5E9",borderBottom:`2px solid #A5D6A7`}}>
-                            <td style={{padding:"9px 20px",fontWeight:800,color:"#1B5E20",fontSize:12}}>TOTAL GENERAL</td>
-                            {cols.map(col=>(
-                              <td key={col.key} style={{padding:"9px 12px",textAlign:"center",fontWeight:700,color:"#1B5E20",fontSize:13,
-                                borderLeft:col===cols.find(c=>c.dim===col.dim)?"2px solid #A5D6A7":"none"}}>
-                                {colTotals[col.key]>0?`${sym}${fmt(colTotals[col.key])}`:"—"}
+                          ))}
+                          {/* TOTAL GENERAL row */}
+                          <tr style={{background:"#E8F5E9",borderBottom:`2px solid #81C784`}}>
+                            {colTotals.map((t,i)=>(
+                              <td key={i} style={{padding:"7px 8px",textAlign:"center",fontWeight:700,color:"#1B5E20",fontSize:12,
+                                borderLeft:i===0?"3px solid #81C784":"1px solid #C8E6C9",whiteSpace:"nowrap"}}>
+                                {t>0?`${sym}${fmt(t)}`:<span style={{color:"#D1FAE5"}}>—</span>}
                               </td>
                             ))}
-                            <td style={{padding:"9px 16px",textAlign:"center",fontWeight:900,color:"#1B5E20",fontSize:15,borderLeft:"2px solid #A5D6A7"}}>
-                              {sym}{fmt(grandTotal)}
-                            </td>
                           </tr>
                         </thead>
                         <tbody>
                           {clienteRows.map((row,ri)=>(
-                            <tr key={row.cli} style={{borderTop:`1px solid ${C.border}`,background:ri%2===0?"#fff":"#F8FFF8"}}
-                              onMouseEnter={e=>e.currentTarget.style.background="#E8F5E9"}
+                            <tr key={row.cli} style={{borderBottom:`1px solid ${C.border}`,background:ri%2===0?"#fff":"#F8FFF8"}}
+                              onMouseEnter={e=>e.currentTarget.style.background="#ECFDF5"}
                               onMouseLeave={e=>e.currentTarget.style.background=ri%2===0?"#fff":"#F8FFF8"}>
-                              <td style={{padding:"12px 20px",fontWeight:700,color:C.navy,fontSize:13,whiteSpace:"nowrap"}}>{row.cli}</td>
-                              {cols.map(col=>{
-                                const cell=row.colVals[col.key];
-                                return (
-                                  <td key={col.key} style={{padding:"12px 12px",textAlign:"center",
-                                    borderLeft:col===cols.find(c=>c.dim===col.dim)?"2px solid #E2E8F0":"none"}}>
-                                    {cell&&cell.sum>0 ? (
-                                      <span onClick={()=>{setCobrosMesModal(false);setDetailIngreso&&setDetailIngreso(null);}}
-                                        style={{display:"inline-block",cursor:"pointer"}}
-                                        title={`${cell.items.length} cobro${cell.items.length!==1?"s":""}`}>
-                                        <div style={{fontWeight:800,fontSize:14,color:"#1B5E20"}}>{sym}{fmt(cell.sum)}</div>
-                                        <div style={{fontSize:10,color:C.muted}}>{cell.items.length} cobro{cell.items.length!==1?"s":""}</div>
-                                      </span>
-                                    ):<span style={{color:"#E2E8F0",fontSize:13}}>—</span>}
-                                  </td>
-                                );
-                              })}
-                              <td style={{padding:"12px 16px",textAlign:"center",fontWeight:900,color:"#1B5E20",fontSize:15,borderLeft:"2px solid #E2E8F0"}}>
+                              <td style={{padding:"10px 16px",fontWeight:700,color:C.navy,fontSize:13,whiteSpace:"nowrap",borderRight:"2px solid #E2E8F0",position:"sticky",left:0,background:ri%2===0?"#fff":"#F8FFF8"}}>{row.cli}</td>
+                              {row.cells.map((cell,i)=>(
+                                <td key={i} style={{padding:"10px 8px",textAlign:"center",
+                                  borderLeft:i===0?"3px solid #E2E8F0":"1px solid #F1F5F9"}}>
+                                  {cell.sum>0 ? (
+                                    <div style={{fontWeight:800,fontSize:13,color:"#1B5E20"}}>
+                                      {sym}{fmt(cell.sum)}
+                                      <div style={{fontSize:9,color:C.muted,fontWeight:400}}>{cell.n} cobro{cell.n!==1?"s":""}</div>
+                                    </div>
+                                  ):<span style={{color:"#E2E8F0"}}>—</span>}
+                                </td>
+                              ))}
+                              <td style={{padding:"10px 12px",textAlign:"center",fontWeight:900,color:"#1B5E20",fontSize:14,borderLeft:"3px solid #E2E8F0",whiteSpace:"nowrap"}}>
                                 {sym}{fmt(row.total)}
                               </td>
                             </tr>
