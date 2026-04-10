@@ -2203,7 +2203,178 @@ export default function CxcView({
                 </div>
               </div>
 
-              {/* KPIs — Fila 1: totales generales */}
+              {/* ── REPORTE PIVOTE ── */}
+              {mostrarReporteCobranza ? (()=>{
+                const getDestino = concepto => {
+                  if(!concepto) return null;
+                  const m = concepto.match(/\(([^)]+)\)/);
+                  if(m) return m[1];
+                  const codes=["CUN","SJD","TQO","CZM","MID","PVR","HUX","MZT","GDL"];
+                  const upper=concepto.toUpperCase();
+                  for(const code of codes) if(upper.includes(code)) return code;
+                  const lower=concepto.toLowerCase();
+                  if(lower.includes("tulum")) return "TQO";
+                  if(lower.includes("cancun")||lower.includes("cancún")) return "CUN";
+                  if(lower.includes("cabos")) return "SJD";
+                  return null;
+                };
+                const toggleDim = d => setReporteDims(prev=>{const n=new Set(prev);n.has(d)?n.delete(d):n.add(d);return n;});
+                const allDims = reporteDims.size===3;
+
+                // Build columns based on active dims
+                const cols = [];
+                if(reporteDims.has("mesVenta")){
+                  const meses=[...new Set(filas.map(c=>c.ing.fechaContable?.slice(0,7)).filter(Boolean))].sort();
+                  meses.forEach(m=>{ const [y,mo]=m.split("-"); cols.push({key:`mv_${m}`,label:`${MESES_ES[+mo-1].slice(0,3)} '${y.slice(2)}`,dim:"mesVenta",val:m}); });
+                }
+                if(reporteDims.has("segmento")){
+                  const segs=[...new Set(filas.map(c=>c.ing.segmento).filter(Boolean))].sort();
+                  segs.forEach(s=>cols.push({key:`seg_${s}`,label:s,dim:"segmento",val:s}));
+                }
+                if(reporteDims.has("destino")){
+                  const dests=[...new Set(filas.map(c=>getDestino(c.ing.concepto)).filter(Boolean))].sort();
+                  dests.forEach(d=>cols.push({key:`dest_${d}`,label:d,dim:"destino",val:d}));
+                }
+
+                // Group by cliente
+                const clienteRows = clientesUnicos.map(cli=>{
+                  const rowFilas = filas.filter(c=>c.ing.cliente===cli);
+                  const total = rowFilas.reduce((s,c)=>s+c.monto,0);
+                  const colVals = {};
+                  cols.forEach(col=>{
+                    let subset;
+                    if(col.dim==="mesVenta") subset=rowFilas.filter(c=>c.ing.fechaContable?.startsWith(col.val));
+                    else if(col.dim==="segmento") subset=rowFilas.filter(c=>c.ing.segmento===col.val);
+                    else if(col.dim==="destino") subset=rowFilas.filter(c=>getDestino(c.ing.concepto)===col.val);
+                    colVals[col.key]={sum:subset.reduce((s,c)=>s+c.monto,0),items:subset};
+                  });
+                  return {cli,total,colVals,rowFilas};
+                }).sort((a,b)=>b.total-a.total);
+
+                // Column totals
+                const colTotals={};
+                cols.forEach(col=>{
+                  colTotals[col.key]=filas.filter(c=>{
+                    if(col.dim==="mesVenta") return c.ing.fechaContable?.startsWith(col.val);
+                    if(col.dim==="segmento") return c.ing.segmento===col.val;
+                    if(col.dim==="destino") return getDestino(c.ing.concepto)===col.val;
+                  }).reduce((s,c)=>s+c.monto,0);
+                });
+
+                const DIM_COLORS={mesVenta:"#1565C0",segmento:"#7B1FA2",destino:"#00695C"};
+                const DIM_BG={mesVenta:"#E3F2FD",segmento:"#F3E5F5",destino:"#E0F2F1"};
+
+                return (
+                  <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
+                    {/* Reporte toolbar */}
+                    <div style={{padding:"12px 24px",background:"#F8FAFC",borderBottom:`1px solid ${C.border}`,display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
+                      <span style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:.4}}>Columnas:</span>
+                      {[
+                        {k:"mesVenta",l:"📅 Mes de Venta"},
+                        {k:"segmento",l:"✈️ Segmento"},
+                        {k:"destino", l:"📍 Destino"},
+                      ].map(d=>(
+                        <button key={d.k} onClick={()=>toggleDim(d.k)}
+                          style={{padding:"5px 14px",borderRadius:20,border:`1.5px solid ${reporteDims.has(d.k)?DIM_COLORS[d.k]:C.border}`,
+                            background:reporteDims.has(d.k)?DIM_BG[d.k]:"#fff",
+                            color:reporteDims.has(d.k)?DIM_COLORS[d.k]:C.muted,
+                            fontWeight:reporteDims.has(d.k)?700:400,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all .15s"}}>
+                          {reporteDims.has(d.k)?"✓ ":""}{d.l}
+                        </button>
+                      ))}
+                      <div style={{height:20,width:1,background:C.border}}/>
+                      <button onClick={()=>setReporteDims(new Set(["mesVenta","segmento","destino"]))}
+                        style={{padding:"5px 14px",borderRadius:20,border:`1px solid ${C.border}`,background:allDims?"#0F2D4A":"#fff",color:allDims?"#fff":C.text,fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:allDims?700:400}}>
+                        {allDims?"✓ Todo":"+ Todo"}
+                      </button>
+                      <button onClick={()=>setReporteDims(new Set())}
+                        style={{padding:"5px 14px",borderRadius:20,border:`1px solid ${C.border}`,background:"#fff",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+                        ✕ Limpiar
+                      </button>
+                      <button onClick={()=>setMostrarReporteCobranza(false)}
+                        style={{marginLeft:"auto",padding:"5px 14px",borderRadius:20,border:`1px solid ${C.border}`,background:"#fff",color:C.text,fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>
+                        ← Volver
+                      </button>
+                    </div>
+
+                    {/* Pivot table */}
+                    <div style={{overflowY:"auto",overflowX:"auto",flex:1}}>
+                      <table style={{borderCollapse:"collapse",fontSize:13,minWidth:"100%"}}>
+                        <thead style={{position:"sticky",top:0,zIndex:2}}>
+                          {/* Dim group headers */}
+                          {reporteDims.size>0 && (
+                            <tr style={{background:"#0F2D4A"}}>
+                              <th style={{padding:"8px 20px",textAlign:"left",color:"rgba(255,255,255,.5)",fontSize:11,fontWeight:600,minWidth:220,whiteSpace:"nowrap"}}>CLIENTE</th>
+                              {["mesVenta","segmento","destino"].filter(d=>reporteDims.has(d)).map(d=>{
+                                const dCols=cols.filter(c=>c.dim===d);
+                                const label={mesVenta:"MES DE VENTA",segmento:"SEGMENTO",destino:"DESTINO"}[d];
+                                return <th key={d} colSpan={dCols.length}
+                                  style={{padding:"8px 12px",textAlign:"center",color:DIM_BG[d],fontWeight:800,fontSize:11,textTransform:"uppercase",
+                                    borderLeft:"2px solid rgba(255,255,255,.1)",letterSpacing:.5}}>
+                                  {label}
+                                </th>;
+                              })}
+                              <th style={{padding:"8px 16px",textAlign:"center",color:"rgba(255,255,255,.7)",fontSize:11,fontWeight:700,borderLeft:"2px solid rgba(255,255,255,.2)",whiteSpace:"nowrap"}}>TOTAL</th>
+                            </tr>
+                          )}
+                          {/* Column labels */}
+                          <tr style={{background:"#1A2F4A"}}>
+                            <th style={{padding:"10px 20px",textAlign:"left",color:"rgba(255,255,255,.8)",fontSize:12,fontWeight:700,minWidth:220}}>Cliente</th>
+                            {cols.map(col=>(
+                              <th key={col.key} style={{padding:"10px 12px",textAlign:"center",color:DIM_BG[col.dim],fontSize:12,fontWeight:700,
+                                whiteSpace:"nowrap",borderLeft:col===cols.find(c=>c.dim===col.dim)?"2px solid rgba(255,255,255,.1)":"none"}}>
+                                {col.label}
+                              </th>
+                            ))}
+                            <th style={{padding:"10px 16px",textAlign:"center",color:"#fff",fontSize:13,fontWeight:800,borderLeft:"2px solid rgba(255,255,255,.2)"}}>Total</th>
+                          </tr>
+                          {/* Column totals row */}
+                          <tr style={{background:"#E8F5E9",borderBottom:`2px solid #A5D6A7`}}>
+                            <td style={{padding:"9px 20px",fontWeight:800,color:"#1B5E20",fontSize:12}}>TOTAL GENERAL</td>
+                            {cols.map(col=>(
+                              <td key={col.key} style={{padding:"9px 12px",textAlign:"center",fontWeight:700,color:"#1B5E20",fontSize:13,
+                                borderLeft:col===cols.find(c=>c.dim===col.dim)?"2px solid #A5D6A7":"none"}}>
+                                {colTotals[col.key]>0?`${sym}${fmt(colTotals[col.key])}`:"—"}
+                              </td>
+                            ))}
+                            <td style={{padding:"9px 16px",textAlign:"center",fontWeight:900,color:"#1B5E20",fontSize:15,borderLeft:"2px solid #A5D6A7"}}>
+                              {sym}{fmt(grandTotal)}
+                            </td>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {clienteRows.map((row,ri)=>(
+                            <tr key={row.cli} style={{borderTop:`1px solid ${C.border}`,background:ri%2===0?"#fff":"#F8FFF8"}}
+                              onMouseEnter={e=>e.currentTarget.style.background="#E8F5E9"}
+                              onMouseLeave={e=>e.currentTarget.style.background=ri%2===0?"#fff":"#F8FFF8"}>
+                              <td style={{padding:"12px 20px",fontWeight:700,color:C.navy,fontSize:13,whiteSpace:"nowrap"}}>{row.cli}</td>
+                              {cols.map(col=>{
+                                const cell=row.colVals[col.key];
+                                return (
+                                  <td key={col.key} style={{padding:"12px 12px",textAlign:"center",
+                                    borderLeft:col===cols.find(c=>c.dim===col.dim)?"2px solid #E2E8F0":"none"}}>
+                                    {cell&&cell.sum>0 ? (
+                                      <span onClick={()=>{setCobrosMesModal(false);setDetailIngreso&&setDetailIngreso(null);}}
+                                        style={{display:"inline-block",cursor:"pointer"}}
+                                        title={`${cell.items.length} cobro${cell.items.length!==1?"s":""}`}>
+                                        <div style={{fontWeight:800,fontSize:14,color:"#1B5E20"}}>{sym}{fmt(cell.sum)}</div>
+                                        <div style={{fontSize:10,color:C.muted}}>{cell.items.length} cobro{cell.items.length!==1?"s":""}</div>
+                                      </span>
+                                    ):<span style={{color:"#E2E8F0",fontSize:13}}>—</span>}
+                                  </td>
+                                );
+                              })}
+                              <td style={{padding:"12px 16px",textAlign:"center",fontWeight:900,color:"#1B5E20",fontSize:15,borderLeft:"2px solid #E2E8F0"}}>
+                                {sym}{fmt(row.total)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })() : (
               <div style={{padding:"12px 24px 8px",background:"#F1FFF4",display:"flex",gap:10,flexWrap:"wrap"}}>
                 {[
                   {icon:"💰",l:"Total Cobrado",  v:`${sym}${fmt(grandTotal)}`,      c:"#1B5E20", bg:"#E8F5E9"},
@@ -2467,267 +2638,6 @@ export default function CxcView({
         );
       })()}
 
-      {/* ── Reporte Cobranza (TAS only) ── */}
-      {mostrarReporteCobranza && empresaId==="empresa_2" && cobrosMesModal && (()=>{
-        const now = new Date(cobrosMesModal.year, cobrosMesModal.month);
-        const mesPrefix = `${cobrosMesModal.year}-${String(cobrosMesModal.month+1).padStart(2,"0")}`;
-        const mesNombreR = `${MESES_ES[cobrosMesModal.month]} ${cobrosMesModal.year}`;
-        const cobrosR = cobros
-          .filter(c=>c.tipo==="realizado"&&c.fechaCobro?.startsWith(mesPrefix))
-          .map(c=>{const ing=ingresos.find(i=>i.id===c.ingresoId);return ing&&!ing.oculta?{...c,ing}:null;})
-          .filter(Boolean);
-
-        const getDestinoR = concepto=>{
-          if(!concepto) return "—";
-          const m=concepto.match(/\(([^)]+)\)/); if(m) return m[1];
-          const codes=["CUN","SJD","TQO","CZM","MID","PVR","HUX","MZT","GDL"];
-          const u=concepto.toUpperCase(); for(const c of codes){if(u.includes(c))return c;}
-          const l=concepto.toLowerCase();
-          if(l.includes("tulum")) return "TQO";
-          if(l.includes("cancun")||l.includes("cancún")) return "CUN";
-          if(l.includes("cabos")) return "SJD";
-          return "—";
-        };
-
-        const toggleDim = dim => setReporteDims(prev=>{const n=new Set(prev);n.has(dim)?n.delete(dim):n.add(dim);return n;});
-        const allDims = ["mesVenta","segmento","destino"];
-        const allOn = allDims.every(d=>reporteDims.has(d));
-
-        // Build columns from active dims
-        const cols = [];
-        if(reporteDims.has("mesVenta")){
-          const meses=[...new Set(cobrosR.map(c=>c.ing.fechaContable?.slice(0,7)).filter(Boolean))].sort();
-          meses.forEach(m=>{const[y,mo]=m.split("-");cols.push({id:`mv_${m}`,label:`${MESES_ES[+mo-1].slice(0,3)} '${y.slice(2)}`,fn:c=>c.ing.fechaContable?.startsWith(m)});});
-        }
-        if(reporteDims.has("segmento")){
-          const segs=[...new Set(cobrosR.map(c=>c.ing.segmento).filter(Boolean))].sort();
-          segs.forEach(s=>cols.push({id:`seg_${s}`,label:s,fn:c=>c.ing.segmento===s}));
-        }
-        if(reporteDims.has("destino")){
-          const dests=[...new Set(cobrosR.map(c=>getDestinoR(c.ing.concepto)).filter(d=>d!=="—"))].sort();
-          dests.forEach(d=>cols.push({id:`dest_${d}`,label:d,fn:c=>getDestinoR(c.ing.concepto)===d}));
-        }
-
-        const clientes=[...new Set(cobrosR.map(c=>c.ing.cliente))].sort();
-        const sym="$";
-
-        return (
-          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:2100,display:"flex",alignItems:"center",justifyContent:"center",padding:10}}
-            onClick={()=>setMostrarReporteCobranza(false)}>
-            <div style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:"99vw",maxHeight:"96vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.4)"}}
-              onClick={e=>e.stopPropagation()}>
-
-              {/* Header */}
-              <div style={{padding:"16px 24px",background:"#1B5E20",borderRadius:"20px 20px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div>
-                  <div style={{fontWeight:900,fontSize:18,color:"#fff"}}>📊 Reporte Cobranza — {mesNombreR}</div>
-                  <div style={{fontSize:12,color:"#A5D6A7",marginTop:2}}>{cobrosR.length} cobros · {clientes.length} clientes</div>
-                </div>
-                <div style={{display:"flex",gap:8}}>
-                  <button onClick={()=>setMostrarReporteCobranza(false)}
-                    style={{padding:"6px 14px",borderRadius:8,border:"1px solid rgba(255,255,255,.3)",background:"rgba(255,255,255,.15)",color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>
-                    ← Volver
-                  </button>
-                  <button onClick={()=>setMostrarReporteCobranza(false)}
-                    style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",width:34,height:34,cursor:"pointer",fontSize:20}}>×</button>
-                </div>
-              </div>
-
-              {/* Dimensiones toggle */}
-              <div style={{padding:"12px 24px",background:"#F1FFF4",borderBottom:"1px solid #C8E6C9",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                <span style={{fontSize:12,fontWeight:700,color:"#1B5E20"}}>Columnas:</span>
-                {[
-                  {k:"mesVenta", l:"📅 Mes de Venta"},
-                  {k:"segmento", l:"✈️ Segmento"},
-                  {k:"destino",  l:"📍 Destino"},
-                ].map(({k,l})=>(
-                  <button key={k} onClick={()=>toggleDim(k)}
-                    style={{padding:"5px 14px",borderRadius:20,border:`1.5px solid ${reporteDims.has(k)?"#1B5E20":"#C8E6C9"}`,
-                      background:reporteDims.has(k)?"#1B5E20":"#fff",color:reporteDims.has(k)?"#fff":"#2E7D32",
-                      cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",transition:"all .15s"}}>
-                    {reporteDims.has(k)?"✓ ":""}{l}
-                  </button>
-                ))}
-                <div style={{width:1,height:20,background:"#C8E6C9",margin:"0 4px"}}/>
-                <button onClick={()=>setReporteDims(allOn?new Set():new Set(allDims))}
-                  style={{padding:"5px 14px",borderRadius:20,border:"1.5px solid #2E7D32",background:allOn?"#E8F5E9":"#fff",color:"#1B5E20",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>
-                  {allOn?"✗ Limpiar todo":"✓ Todo"}
-                </button>
-                <span style={{marginLeft:"auto",fontSize:13,fontWeight:900,color:"#1B5E20"}}>${fmt(cobrosR.reduce((s,c)=>s+c.monto,0))} total</span>
-              </div>
-
-              {/* Tabla */}
-              <div style={{overflowY:"auto",overflowX:"auto",flex:1}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                  <thead style={{position:"sticky",top:0}}>
-                    <tr style={{background:"#1B5E20"}}>
-                      <th style={{padding:"12px 16px",textAlign:"left",color:"rgba(255,255,255,.85)",fontWeight:700,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap",minWidth:220}}>Cliente</th>
-                      {cols.map(col=>(
-                        <th key={col.id} style={{padding:"12px 14px",textAlign:"center",color:"rgba(255,255,255,.85)",fontWeight:700,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap",minWidth:110}}>{col.label}</th>
-                      ))}
-                      <th style={{padding:"12px 16px",textAlign:"right",color:"#A5D6A7",fontWeight:700,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap",borderLeft:"2px solid rgba(255,255,255,.2)"}}>TOTAL</th>
-                    </tr>
-                    {/* Fila totales generales */}
-                    <tr style={{background:"#2E7D32"}}>
-                      <td style={{padding:"10px 16px",fontWeight:800,color:"#fff",fontSize:13}}>TOTAL GENERAL</td>
-                      {cols.map(col=>{
-                        const t=cobrosR.filter(c=>col.fn(c)).reduce((s,c)=>s+c.monto,0);
-                        return <td key={col.id} style={{padding:"10px 14px",textAlign:"center",fontWeight:700,color:"#fff",fontSize:13}}>{t>0?`${sym}${fmt(t)}`:""}</td>;
-                      })}
-                      <td style={{padding:"10px 16px",textAlign:"right",fontWeight:900,color:"#fff",fontSize:15,borderLeft:"2px solid rgba(255,255,255,.2)"}}>
-                        {sym}{fmt(cobrosR.reduce((s,c)=>s+c.monto,0))}
-                      </td>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {clientes.map((cli,ci)=>{
-                      const rowsCli = cobrosR.filter(c=>c.ing.cliente===cli);
-                      const totalCli = rowsCli.reduce((s,c)=>s+c.monto,0);
-                      return (
-                        <tr key={cli} style={{borderTop:"1px solid #E8F5E9",background:ci%2===0?"#fff":"#F8FFF8"}}
-                          onMouseEnter={e=>e.currentTarget.style.background="#E8F5E9"}
-                          onMouseLeave={e=>e.currentTarget.style.background=ci%2===0?"#fff":"#F8FFF8"}>
-                          <td style={{padding:"12px 16px",fontWeight:700,color:C.navy,fontSize:14}}>{cli}</td>
-                          {cols.map(col=>{
-                            const t=rowsCli.filter(c=>col.fn(c)).reduce((s,c)=>s+c.monto,0);
-                            return (
-                              <td key={col.id} style={{padding:"12px 14px",textAlign:"center"}}>
-                                {t>0 ? (
-                                  <span onClick={()=>{setMostrarReporteCobranza(false);setDetailIngreso(rowsCli.find(c=>col.fn(c))?.ing?.id);}}
-                                    style={{cursor:"pointer",fontWeight:800,color:"#1B5E20",fontSize:14,borderBottom:"1px dotted #2E7D32"}}>
-                                    {sym}{fmt(t)}
-                                  </span>
-                                ) : <span style={{color:"#E2E8F0"}}>—</span>}
-                              </td>
-                            );
-                          })}
-                          <td style={{padding:"12px 16px",textAlign:"right",fontWeight:900,color:C.navy,fontSize:15,borderLeft:"2px solid #E8F5E9"}}>
-                            {sym}{fmt(totalCli)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ── Modal Detalle Aging (TAS) ── */}
-      {agingDetailModal && (()=>{
-        const { titulo, ings: modalIngs, moneda } = agingDetailModal;
-        const sym = monedaSym(moneda);
-        const totalMonto     = modalIngs.reduce((s,i)=>s+i.monto,0);
-        const totalCobrado   = modalIngs.reduce((s,i)=>s+(metrics[i.id]?.totalCobrado||0),0);
-        const totalPorCobrar = modalIngs.reduce((s,i)=>s+(metrics[i.id]?.porCobrar||0),0);
-        const toggleMSort = col => {
-          if(modalSortCol===col) setModalSortDir(d=>d==="asc"?"desc":"asc");
-          else { setModalSortCol(col); setModalSortDir("asc"); }
-        };
-        const arrow = col => modalSortCol===col ? (modalSortDir==="asc"?" ↑":" ↓") : "";
-        const sorted = [...modalIngs].sort((a,b)=>{
-          const ma=metrics[a.id]||{}, mb=metrics[b.id]||{};
-          let va,vb;
-          switch(modalSortCol){
-            case "segmento":     va=a.segmento||"";        vb=b.segmento||""; break;
-            case "folio":        va=a.folio||"";           vb=b.folio||""; break;
-            case "concepto":     va=a.concepto||"";        vb=b.concepto||""; break;
-            case "fechaContable":va=a.fechaContable||"";   vb=b.fechaContable||""; break;
-            case "fechaFactura": va=a.fecha||"";           vb=b.fecha||""; break;
-            case "vencimiento":  va=a.fechaVencimiento||"";vb=b.fechaVencimiento||""; break;
-            case "dias":         va=diasDiff(a.fechaVencimiento)??999;vb=diasDiff(b.fechaVencimiento)??999; break;
-            case "monto":        va=a.monto;               vb=b.monto; break;
-            case "cobrado":      va=ma.totalCobrado||0;    vb=mb.totalCobrado||0; break;
-            case "porCobrar":    va=ma.porCobrar||0;       vb=mb.porCobrar||0; break;
-            default:             va=a.fechaVencimiento||"";vb=b.fechaVencimiento||"";
-          }
-          const cmp = typeof va==="number"?va-vb:String(va).localeCompare(String(vb));
-          return modalSortDir==="asc"?cmp:-cmp;
-        });
-        const hBtn = (col,label,align="left") => (
-          <th key={col} onClick={()=>toggleMSort(col)}
-            style={{padding:"11px 14px",textAlign:align,color:modalSortCol===col?"#90CAF9":"rgba(255,255,255,.8)",
-              fontWeight:800,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap",cursor:"pointer",
-              userSelect:"none",borderBottom:modalSortCol===col?"2px solid #90CAF9":"2px solid transparent",
-              transition:"color .15s"}}
-            onMouseEnter={e=>e.currentTarget.style.color="#fff"}
-            onMouseLeave={e=>e.currentTarget.style.color=modalSortCol===col?"#90CAF9":"rgba(255,255,255,.8)"}>
-            {label}{arrow(col)}
-          </th>
-        );
-        return (
-          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:8}}
-            onClick={()=>setAgingDetailModal(null)}>
-            <div style={{background:"#fff",borderRadius:18,width:"100%",maxWidth:"98vw",maxHeight:"96vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.35)"}}
-              onClick={e=>e.stopPropagation()}>
-              {/* Header */}
-              <div style={{padding:"18px 28px",background:C.navy,borderRadius:"18px 18px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div>
-                  <div style={{fontWeight:800,fontSize:18,color:"#fff"}}>📋 {titulo}</div>
-                  <div style={{fontSize:12,color:"#A5D6A7",marginTop:3}}>{modalIngs.length} factura{modalIngs.length!==1?"s":""} · Por cobrar: <b>{sym}{fmt(totalPorCobrar)}</b></div>
-                </div>
-                <button onClick={()=>setAgingDetailModal(null)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",width:36,height:36,cursor:"pointer",fontSize:20}}>×</button>
-              </div>
-              {/* Tabla */}
-              <div style={{overflowY:"auto",flex:1}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                  <thead style={{position:"sticky",top:0}}>
-                    <tr style={{background:"#1A2F4A"}}>
-                      {hBtn("segmento","Segmento")}
-                      {hBtn("folio","Folio")}
-                      {hBtn("concepto","Concepto")}
-                      {hBtn("fechaContable","F. Contable")}
-                      {hBtn("fechaFactura","F. Factura")}
-                      {hBtn("vencimiento","Vencimiento")}
-                      {hBtn("dias","Días / Por Vencer","center")}
-                      {hBtn("monto","Monto","right")}
-                      {hBtn("cobrado","Cobrado","right")}
-                      {hBtn("porCobrar","Por Cobrar","right")}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sorted.map((ing,i)=>{
-                      const m = metrics[ing.id]||{};
-                      const d = diasDiff(ing.fechaVencimiento);
-                      return (
-                        <tr key={ing.id} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFC",cursor:"pointer"}}
-                          onClick={()=>{setAgingDetailModal(null);setDetailIngreso(ing.id);}}
-                          onMouseEnter={e=>e.currentTarget.style.background="#E8F0FE"}
-                          onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"#fff":"#FAFBFC"}>
-                          <td style={{padding:"11px 14px",fontSize:12,color:C.muted}}>{ing.segmento||"—"}</td>
-                          <td style={{padding:"11px 14px",color:C.blue,fontWeight:600,whiteSpace:"nowrap",fontSize:13}}>{ing.folio||"—"}</td>
-                          <td style={{padding:"11px 14px",color:C.text,maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:13}}>{ing.concepto||"—"}</td>
-                          <td style={{padding:"11px 14px",color:C.teal,whiteSpace:"nowrap",fontSize:13}}>{ing.fechaContable||"—"}</td>
-                          <td style={{padding:"11px 14px",color:C.muted,whiteSpace:"nowrap",fontSize:13}}>{ing.fecha||"—"}</td>
-                          <td style={{padding:"11px 14px",whiteSpace:"nowrap",fontSize:13,color:d!==null&&d<0?C.danger:C.text,fontWeight:d!==null&&d<0?700:400}}>{ing.fechaVencimiento||"—"}</td>
-                          <td style={{padding:"11px 14px",textAlign:"center"}}>
-                            {d===null?<span style={{color:C.muted}}>—</span>
-                              :d<0?<span style={{background:"#FFEBEE",color:C.danger,fontWeight:800,fontSize:12,padding:"3px 10px",borderRadius:20}}>{Math.abs(d)}d venc.</span>
-                              :<span style={{background:d<=15?"#FFF3E0":d<=30?"#FFFDE7":"#E8F5E9",color:d<=15?C.danger:d<=30?C.warn:C.ok,fontWeight:700,fontSize:12,padding:"3px 10px",borderRadius:20}}>{d}d</span>}
-                          </td>
-                          <td style={{padding:"11px 14px",textAlign:"right",fontWeight:700,fontSize:13}}>{sym}{fmt(ing.monto)}</td>
-                          <td style={{padding:"11px 14px",textAlign:"right",color:C.ok,fontWeight:600,fontSize:13}}>{sym}{fmt(m.totalCobrado||0)}</td>
-                          <td style={{padding:"11px 14px",textAlign:"right",fontWeight:800,fontSize:14,color:(m.porCobrar||0)>0?C.warn:C.ok}}>{sym}{fmt(m.porCobrar||0)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr style={{background:"#EEF2FF",borderTop:`2px solid ${C.blue}`}}>
-                      <td colSpan={7} style={{padding:"11px 14px",fontWeight:800,color:C.navy,fontSize:13}}>TOTAL ({modalIngs.length} facturas)</td>
-                      <td style={{padding:"11px 14px",textAlign:"right",fontWeight:800,color:C.navy,fontSize:13}}>{sym}{fmt(totalMonto)}</td>
-                      <td style={{padding:"11px 14px",textAlign:"right",fontWeight:800,color:C.ok,fontSize:13}}>{sym}{fmt(totalCobrado)}</td>
-                      <td style={{padding:"11px 14px",textAlign:"right",fontWeight:900,color:C.warn,fontSize:15}}>{sym}{fmt(totalPorCobrar)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
 
       {/* ── Por Facturar chips (solo empresa_2) — movido a fila 1, solo legacy fallback ── */}
       {empresaId === "empresa_2" && false && porFacturar.length > 0 && (()=>{ return null; })()}
