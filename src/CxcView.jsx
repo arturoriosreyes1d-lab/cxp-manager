@@ -2356,52 +2356,57 @@ export default function CxcView({
                           {/* One header row per active dim */}
                           {headerRows.map(({dim, groups}, level)=>(
                             <tr key={dim} style={{background: level===0?"#1B2A4A": level===1?"#1E3A5A":"#243F60"}}>
-                              {level===0 && <th rowSpan={activeDims.length+1} style={{padding:"8px 16px",textAlign:"left",color:"rgba(255,255,255,.7)",fontWeight:700,fontSize:11,minWidth:200,verticalAlign:"bottom",borderRight:"2px solid rgba(255,255,255,.15)"}}>CLIENTE</th>}
+                              {level===0 && <th rowSpan={activeDims.length+1} style={{padding:"8px 16px",textAlign:"left",color:"rgba(255,255,255,.7)",fontWeight:700,fontSize:13,minWidth:200,verticalAlign:"bottom",borderRight:"2px solid rgba(255,255,255,.15)"}}>CLIENTE</th>}
                               {groups.map((g,gi)=>(
                                 <th key={gi} colSpan={g.span}
-                                  style={{padding:"6px 8px",textAlign:"center",fontWeight:800,fontSize:11,textTransform:"uppercase",
+                                  style={{padding:"8px 10px",textAlign:"center",fontWeight:800,fontSize:13,textTransform:"uppercase",
                                     color:DIM_BG[dim],whiteSpace:"nowrap",
                                     borderLeft: gi===0 || gi%g.span===0 ?"2px solid rgba(255,255,255,.15)":"1px solid rgba(255,255,255,.06)",
                                     letterSpacing:.3}}>
                                   {dimValLabel(dim, g.val)}
                                 </th>
                               ))}
-                              {level===0 && <th rowSpan={activeDims.length+1} style={{padding:"8px 12px",textAlign:"center",color:"#A5D6A7",fontWeight:800,fontSize:11,borderLeft:"3px solid rgba(255,255,255,.2)",whiteSpace:"nowrap",verticalAlign:"bottom"}}>TOTAL</th>}
+                              {level===0 && <th rowSpan={activeDims.length+1} style={{padding:"8px 12px",textAlign:"center",color:"#A5D6A7",fontWeight:800,fontSize:13,borderLeft:"3px solid rgba(255,255,255,.2)",whiteSpace:"nowrap",verticalAlign:"bottom"}}>TOTAL</th>}
                             </tr>
                           ))}
-                          {/* TOTAL GENERAL row */}
-                          <tr style={{background:"#E8F5E9",borderBottom:`2px solid #81C784`}}>
-                            {colTotals.map((t,i)=>(
-                              <td key={i} style={{padding:"7px 8px",textAlign:"center",fontWeight:700,color:"#1B5E20",fontSize:12,
-                                borderLeft:i===0?"3px solid #81C784":"1px solid #C8E6C9",whiteSpace:"nowrap"}}>
-                                {t>0?`${sym}${fmt(t)}`:<span style={{color:"#D1FAE5"}}>—</span>}
-                              </td>
-                            ))}
-                          </tr>
                         </thead>
                         <tbody>
                           {clienteRows.map((row,ri)=>(
                             <tr key={row.cli} style={{borderBottom:`1px solid ${C.border}`,background:ri%2===0?"#fff":"#F8FFF8"}}
                               onMouseEnter={e=>e.currentTarget.style.background="#ECFDF5"}
                               onMouseLeave={e=>e.currentTarget.style.background=ri%2===0?"#fff":"#F8FFF8"}>
-                              <td style={{padding:"10px 16px",fontWeight:700,color:C.navy,fontSize:13,whiteSpace:"nowrap",borderRight:"2px solid #E2E8F0",position:"sticky",left:0,background:ri%2===0?"#fff":"#F8FFF8"}}>{row.cli}</td>
+                              <td style={{padding:"10px 16px",fontWeight:700,color:C.navy,fontSize:14,whiteSpace:"nowrap",borderRight:"2px solid #E2E8F0",position:"sticky",left:0,background:ri%2===0?"#fff":"#F8FFF8"}}>{row.cli}</td>
                               {row.cells.map((cell,i)=>(
                                 <td key={i} style={{padding:"10px 8px",textAlign:"center",
                                   borderLeft:i===0?"3px solid #E2E8F0":"1px solid #F1F5F9"}}>
                                   {cell.sum>0 ? (
-                                    <div style={{fontWeight:800,fontSize:13,color:"#1B5E20"}}>
+                                    <div style={{fontWeight:800,fontSize:15,color:"#1B5E20"}}>
                                       {sym}{fmt(cell.sum)}
                                       <div style={{fontSize:9,color:C.muted,fontWeight:400}}>{cell.n} cobro{cell.n!==1?"s":""}</div>
                                     </div>
                                   ):<span style={{color:"#E2E8F0"}}>—</span>}
                                 </td>
                               ))}
-                              <td style={{padding:"10px 12px",textAlign:"center",fontWeight:900,color:"#1B5E20",fontSize:14,borderLeft:"3px solid #E2E8F0",whiteSpace:"nowrap"}}>
+                              <td style={{padding:"10px 12px",textAlign:"center",fontWeight:900,color:"#1B5E20",fontSize:17,borderLeft:"3px solid #E2E8F0",whiteSpace:"nowrap"}}>
                                 {sym}{fmt(row.total)}
                               </td>
                             </tr>
                           ))}
                         </tbody>
+                        <tfoot>
+                          <tr style={{background:"#E8F5E9",borderTop:`3px solid #43A047`}}>
+                            <td style={{padding:"12px 16px",fontWeight:900,color:"#1B5E20",fontSize:14,position:"sticky",left:0,background:"#E8F5E9",borderRight:"2px solid #81C784",whiteSpace:"nowrap"}}>TOTAL GENERAL</td>
+                            {colTotals.map((t,i)=>(
+                              <td key={i} style={{padding:"12px 10px",textAlign:"center",fontWeight:800,color:"#1B5E20",fontSize:14,
+                                borderLeft:i===0?"3px solid #81C784":"1px solid #C8E6C9",whiteSpace:"nowrap"}}>
+                                {t>0?`${sym}${fmt(t)}`:<span style={{color:"#A5D6A7"}}>—</span>}
+                              </td>
+                            ))}
+                            <td style={{padding:"12px 14px",textAlign:"center",fontWeight:900,color:"#1B5E20",fontSize:20,borderLeft:"3px solid #43A047",whiteSpace:"nowrap"}}>
+                              {sym}{fmt(grandTotal)}
+                            </td>
+                          </tr>
+                        </tfoot>
                       </table>
                     </div>
                   </div>
