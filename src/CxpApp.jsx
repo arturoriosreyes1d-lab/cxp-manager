@@ -2190,20 +2190,66 @@ export default function CxpApp({ user, onLogout }) {
                   // Próximos 3 pagos
                   const proximos = pendientes.slice(0,3);
 
+                  const calcFechas = (fechaInicio, frecuencia, n) => {
+                    const fechas = [];
+                    let d = new Date(fechaInicio + "T12:00:00");
+                    for(let i=0;i<n;i++){
+                      fechas.push(d.toISOString().split("T")[0]);
+                      const next = new Date(d);
+                      if(frecuencia==="mensual")    next.setMonth(next.getMonth()+1);
+                      else if(frecuencia==="bimestral") next.setMonth(next.getMonth()+2);
+                      else if(frecuencia==="trimestral") next.setMonth(next.getMonth()+3);
+                      else if(frecuencia==="semestral") next.setMonth(next.getMonth()+6);
+                      else if(frecuencia==="anual")  next.setFullYear(next.getFullYear()+1);
+                      d = next;
+                    }
+                    return fechas;
+                  };
+
                   const guardarProg = async () => {
                     if(!formProg?.descripcion||!formProg?.monto||!formProg?.fecha) return;
-                    const row = {...formProg, empresaId, tarjetaId: t.id, monto: parseFloat(String(formProg.monto).replace(/,/g,"")), estatus: formProg.estatus||"pendiente"};
-                    await upsertProgramado(row);
+                    const monto = parseFloat(String(formProg.monto).replace(/,/g,""));
+                    if(formProg.recurrente && !formProg.id) {
+                      // Generar serie
+                      const n = parseInt(formProg.numPagos)||1;
+                      const fechas = calcFechas(formProg.fecha, formProg.frecuencia||"trimestral", n);
+                      const serieId = `serie_${Date.now()}`;
+                      for(const fecha of fechas){
+                        await upsertProgramado({descripcion:formProg.descripcion, monto, fecha,
+                          categoria:formProg.categoria||"Seguros", notas:formProg.notas||"",
+                          estatus:"pendiente", empresaId, tarjetaId:t.id, serieId});
+                      }
+                    } else {
+                      const row = {...formProg, empresaId, tarjetaId:t.id, monto, estatus:formProg.estatus||"pendiente"};
+                      await upsertProgramado(row);
+                    }
                     const nuevos = await fetchProgramados(empresaId);
                     setProgramados(nuevos);
                     setFormProg(null);
                   };
 
+                  // Preview de fechas para recurrentes
+                  const previewFechas = formProg?.recurrente && formProg?.fecha && formProg?.numPagos
+                    ? calcFechas(formProg.fecha, formProg.frecuencia||"trimestral", Math.min(parseInt(formProg.numPagos)||1, 12))
+                    : null;
+
+                  // Agrupar pendientes por serie o descripción
+                  const seriesMap = {};
+                  progsT.forEach(p=>{
+                    const key = p.serieId || `solo_${p.id}`;
+                    if(!seriesMap[key]) seriesMap[key]={desc:p.descripcion, cat:p.categoria, pagos:[], totalPagado:0, totalPend:0, total:0, serieId:p.serieId};
+                    seriesMap[key].pagos.push(p);
+                    seriesMap[key].total += p.monto;
+                    if(p.estatus==="pagado") seriesMap[key].totalPagado += p.monto;
+                    else seriesMap[key].totalPend += p.monto;
+                  });
+                  const seriesSorted = Object.values(seriesMap).sort((a,b)=>b.total-a.total);
+
                   return (
                     <div style={{display:"flex",flex:1,overflow:"hidden"}}>
 
                       {/* ── PANEL IZQUIERDO: Resumen ── */}
-                      <div style={{width:280,borderRight:"1px solid #E1BEE7",background:"#FAF5FF",overflowY:"auto",padding:"16px 14px",flexShrink:0}}>
+                      <div style={{width:290,borderRight:"1px solid #E1BEE7",background:"#FAF5FF",overflowY:"auto",padding:"16px 14px",flexShrink:0}}>
                         {/* KPIs globales */}
                         <div style={{marginBottom:16}}>
                           <div style={{fontSize:11,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.4,marginBottom:10}}>Resumen total</div>
@@ -2211,7 +2257,7 @@ export default function CxpApp({ user, onLogout }) {
                             {l:"Total programado", v:`$${fmt(totalGlobal)}`,     c:"#4A148C", bg:"#EDE7F6"},
                             {l:"✅ Pagado",         v:`$${fmt(totalPagado)}`,     c:"#1B5E20", bg:"#E8F5E9"},
                             {l:"⏳ Pendiente",      v:`$${fmt(totalPend)}`,       c:"#7B1FA2", bg:"#F3E5F5"},
-                            {l:"# Pendientes",     v:`${pendientes.length} pago${pendientes.length!==1?"s":""}`, c:"#4A148C", bg:"#EDE7F6"},
+                            {l:"Pagos pendientes", v:`${pendientes.length}`,     c:"#4A148C", bg:"#EDE7F6"},
                           ].map((k,i)=>(
                             <div key={i} style={{background:k.bg,borderRadius:10,padding:"8px 12px",marginBottom:6,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                               <span style={{fontSize:11,color:"#666",fontWeight:600}}>{k.l}</span>
@@ -2231,7 +2277,7 @@ export default function CxpApp({ user, onLogout }) {
                                   <div style={{fontWeight:700,fontSize:12,color:"#4A148C",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.descripcion}</div>
                                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:3}}>
                                     <span style={{fontSize:10,color:dias<0?"#C62828":dias<=7?"#E65100":"#999",fontWeight:700}}>
-                                      {dias<0?`Vencido ${Math.abs(dias)}d`:dias===0?"Hoy":`En ${dias}d`}
+                                      {p.fecha} · {dias<0?`Vencido ${Math.abs(dias)}d`:dias===0?"Hoy":`En ${dias}d`}
                                     </span>
                                     <span style={{fontWeight:900,fontSize:13,color:"#7B1FA2"}}>${fmt(p.monto)}</span>
                                   </div>
@@ -2241,27 +2287,37 @@ export default function CxpApp({ user, onLogout }) {
                           </div>
                         )}
 
-                        {/* Por categoría */}
-                        {catsSorted.length>0 && (
+                        {/* Por serie/descripción */}
+                        {seriesSorted.length>0 && (
                           <div>
-                            <div style={{fontSize:11,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.4,marginBottom:8}}>Por categoría</div>
-                            {catsSorted.map(([cat,v])=>{
-                              const pctPag = v.total>0?Math.round((v.pagado/v.total)*100):0;
+                            <div style={{fontSize:11,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.4,marginBottom:8}}>Por concepto</div>
+                            {seriesSorted.map((s,si)=>{
+                              const nPagados  = s.pagos.filter(p=>p.estatus==="pagado").length;
+                              const nTotal    = s.pagos.length;
+                              const pctPag    = nTotal>0?Math.round((nPagados/nTotal)*100):0;
+                              const proxPago  = s.pagos.filter(p=>p.estatus==="pendiente").sort((a,b)=>a.fecha.localeCompare(b.fecha))[0];
+                              const diasProx  = proxPago?daysUntil(proxPago.fecha):null;
                               return (
-                                <div key={cat} style={{background:"#fff",borderRadius:10,border:"1px solid #E1BEE7",padding:"10px 12px",marginBottom:7}}>
-                                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                                    <span style={{fontWeight:700,fontSize:12,color:"#4A148C"}}>{cat}</span>
-                                    <span style={{fontWeight:900,fontSize:12,color:"#7B1FA2"}}>${fmt(v.total)}</span>
+                                <div key={si} style={{background:"#fff",borderRadius:11,border:"1px solid #E1BEE7",padding:"11px 12px",marginBottom:8}}>
+                                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:5,alignItems:"flex-start",gap:6}}>
+                                    <span style={{fontWeight:700,fontSize:12,color:"#4A148C",lineHeight:1.3}}>{s.desc}</span>
+                                    <span style={{fontWeight:900,fontSize:12,color:"#7B1FA2",flexShrink:0}}>${fmt(s.total)}</span>
                                   </div>
                                   {/* Barra progreso */}
-                                  <div style={{height:5,borderRadius:3,background:"#EDE7F6",marginBottom:5,overflow:"hidden"}}>
-                                    <div style={{height:"100%",width:`${pctPag}%`,background:"#7B1FA2",borderRadius:3,transition:"width .4s"}}/>
+                                  <div style={{height:6,borderRadius:3,background:"#EDE7F6",marginBottom:5,overflow:"hidden"}}>
+                                    <div style={{height:"100%",width:`${pctPag}%`,background:pctPag===100?"#43A047":"#7B1FA2",borderRadius:3,transition:"width .4s"}}/>
                                   </div>
-                                  <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"#999"}}>
-                                    <span style={{color:"#1B5E20",fontWeight:600}}>Pagado ${fmt(v.pagado)}</span>
-                                    <span style={{color:"#E65100",fontWeight:600}}>Pendiente ${fmt(v.pendiente)}</span>
+                                  <div style={{fontSize:10,color:"#666",marginBottom:3}}>
+                                    {nPagados} de {nTotal} pagos · {pctPag}% cubierto
+                                    {nTotal>1 && <span style={{color:"#9C27B0",marginLeft:4}}>(serie)</span>}
                                   </div>
-                                  <div style={{fontSize:10,color:"#7B1FA2",marginTop:2}}>{v.pagos.length} pago{v.pagos.length!==1?"s":""} · {pctPag}% cubierto</div>
+                                  <div style={{display:"flex",justifyContent:"space-between",fontSize:10}}>
+                                    <span style={{color:"#1B5E20",fontWeight:600}}>Pag. ${fmt(s.totalPagado)}</span>
+                                    <span style={{color:"#E65100",fontWeight:600}}>Pend. ${fmt(s.totalPend)}</span>
+                                  </div>
+                                  {proxPago && <div style={{fontSize:10,color:diasProx<0?"#C62828":diasProx<=7?"#E65100":"#9C27B0",fontWeight:600,marginTop:4}}>
+                                    Próx: {proxPago.fecha} · {diasProx<0?`Vencido ${Math.abs(diasProx)}d`:diasProx===0?"Hoy":`En ${diasProx}d`}
+                                  </div>}
                                 </div>
                               );
                             })}
@@ -2273,7 +2329,7 @@ export default function CxpApp({ user, onLogout }) {
                       <div style={{flex:1,overflowY:"auto",padding:"16px 20px"}}>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
                           <span style={{fontWeight:800,fontSize:15,color:"#1A0533"}}>🔮 Detalle de pagos</span>
-                          <button onClick={()=>setFormProg({descripcion:"",monto:"",fecha:"",categoria:"Seguros",notas:"",estatus:"pendiente"})}
+                          <button onClick={()=>setFormProg({descripcion:"",monto:"",fecha:"",categoria:"Seguros",notas:"",estatus:"pendiente",recurrente:false,numPagos:4,frecuencia:"trimestral"})}
                             style={{padding:"7px 16px",borderRadius:10,border:"none",background:"#7B1FA2",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
                             + Agregar
                           </button>
@@ -2284,20 +2340,15 @@ export default function CxpApp({ user, onLogout }) {
                           <div style={{background:"#F3E5F5",borderRadius:14,border:"2px solid #7B1FA2",padding:"16px",marginBottom:16}}>
                             <div style={{fontWeight:800,fontSize:13,color:"#1A0533",marginBottom:12}}>{formProg.id?"Editar pago":"Nuevo pago programado"}</div>
                             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-                              <div>
+                              <div style={{gridColumn:"1/-1"}}>
                                 <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Descripción *</div>
                                 <input value={formProg.descripcion} onChange={e=>setFormProg(p=>({...p,descripcion:e.target.value}))}
-                                  placeholder="Ej: GMM Dirección Q2" style={{...inputStyle,fontSize:13}}/>
+                                  placeholder="Ej: GMM Dirección" style={{...inputStyle,fontSize:13}}/>
                               </div>
                               <div>
-                                <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Monto *</div>
+                                <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Monto por pago *</div>
                                 <input value={formProg.monto} onChange={e=>setFormProg(p=>({...p,monto:e.target.value}))}
-                                  placeholder="45000" type="number" style={{...inputStyle,fontSize:13}}/>
-                              </div>
-                              <div>
-                                <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Fecha *</div>
-                                <input value={formProg.fecha} onChange={e=>setFormProg(p=>({...p,fecha:e.target.value}))}
-                                  type="date" style={{...inputStyle,fontSize:13}}/>
+                                  placeholder="785613" type="number" style={{...inputStyle,fontSize:13}}/>
                               </div>
                               <div>
                                 <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Categoría</div>
@@ -2306,17 +2357,78 @@ export default function CxpApp({ user, onLogout }) {
                                   {CATS.map(c=><option key={c}>{c}</option>)}
                                 </select>
                               </div>
+                              <div>
+                                <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Fecha {formProg.recurrente?"inicial":""}*</div>
+                                <input value={formProg.fecha} onChange={e=>setFormProg(p=>({...p,fecha:e.target.value}))}
+                                  type="date" style={{...inputStyle,fontSize:13}}/>
+                              </div>
+                              <div>
+                                <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Notas</div>
+                                <input value={formProg.notas} onChange={e=>setFormProg(p=>({...p,notas:e.target.value}))}
+                                  placeholder="Ej: 4 trimestres dirección" style={{...inputStyle,fontSize:13}}/>
+                              </div>
                             </div>
-                            <div style={{marginBottom:10}}>
-                              <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Notas</div>
-                              <input value={formProg.notas} onChange={e=>setFormProg(p=>({...p,notas:e.target.value}))}
-                                placeholder="Ej: 2do trimestre dirección" style={{...inputStyle,fontSize:13}}/>
-                            </div>
+
+                            {/* Toggle recurrente — solo para nuevo */}
+                            {!formProg.id && (
+                              <div style={{marginBottom:12}}>
+                                <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",userSelect:"none"}}>
+                                  <div onClick={()=>setFormProg(p=>({...p,recurrente:!p.recurrente}))}
+                                    style={{width:36,height:20,borderRadius:10,background:formProg.recurrente?"#7B1FA2":"#E1BEE7",position:"relative",transition:"background .2s",cursor:"pointer",flexShrink:0}}>
+                                    <div style={{position:"absolute",top:2,left:formProg.recurrente?18:2,width:16,height:16,borderRadius:"50%",background:"#fff",transition:"left .2s",boxShadow:"0 1px 3px rgba(0,0,0,.2)"}}/>
+                                  </div>
+                                  <span style={{fontSize:12,fontWeight:700,color:formProg.recurrente?"#7B1FA2":"#999"}}>Pagos recurrentes (serie)</span>
+                                </label>
+
+                                {formProg.recurrente && (
+                                  <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                                    <div>
+                                      <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Número de pagos</div>
+                                      <input value={formProg.numPagos} onChange={e=>setFormProg(p=>({...p,numPagos:e.target.value}))}
+                                        type="number" min="2" max="24" style={{...inputStyle,fontSize:13}}/>
+                                    </div>
+                                    <div>
+                                      <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Frecuencia</div>
+                                      <select value={formProg.frecuencia} onChange={e=>setFormProg(p=>({...p,frecuencia:e.target.value}))}
+                                        style={{...selectStyle,fontSize:13}}>
+                                        <option value="mensual">Mensual</option>
+                                        <option value="bimestral">Bimestral</option>
+                                        <option value="trimestral">Trimestral</option>
+                                        <option value="semestral">Semestral</option>
+                                        <option value="anual">Anual</option>
+                                      </select>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Vista previa de fechas */}
+                                {previewFechas && formProg.monto && (
+                                  <div style={{marginTop:10,background:"#EDE7F6",borderRadius:10,padding:"10px 12px"}}>
+                                    <div style={{fontSize:11,fontWeight:800,color:"#7B1FA2",marginBottom:6}}>Vista previa · {previewFechas.length} pagos</div>
+                                    <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                                      {previewFechas.map((f,i)=>(
+                                        <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:"#4A148C"}}>
+                                          <span style={{fontWeight:600}}>Pago {i+1} · {f}</span>
+                                          <span style={{fontWeight:800}}>${fmt(parseFloat(String(formProg.monto).replace(/,/g,""))||0)}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                    <div style={{marginTop:6,paddingTop:6,borderTop:"1px solid #CE93D8",display:"flex",justifyContent:"space-between",fontSize:12,fontWeight:900,color:"#4A148C"}}>
+                                      <span>Total serie</span>
+                                      <span>${fmt((parseFloat(String(formProg.monto).replace(/,/g,""))||0)*previewFechas.length)}</span>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
                             <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
                               <button onClick={()=>setFormProg(null)}
                                 style={{padding:"7px 16px",borderRadius:9,border:"1px solid #E1BEE7",background:"#fff",cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>Cancelar</button>
                               <button onClick={guardarProg}
-                                style={{padding:"7px 16px",borderRadius:9,border:"none",background:"#7B1FA2",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Guardar</button>
+                                style={{padding:"7px 16px",borderRadius:9,border:"none",background:"#7B1FA2",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                                {formProg.recurrente && !formProg.id ? `Guardar ${formProg.numPagos||""} pagos` : "Guardar"}
+                              </button>
                             </div>
                           </div>
                         )}

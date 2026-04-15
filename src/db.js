@@ -778,6 +778,7 @@ export async function fetchProgramados(empresaId) {
     descripcion: r.descripcion||'', monto: r.monto||0,
     fecha: r.fecha||'', categoria: r.categoria||'',
     notas: r.notas||'', estatus: r.estatus||'pendiente',
+    serieId: r.serie_id||null,
   }));
 }
 
@@ -787,6 +788,7 @@ export async function upsertProgramado(row) {
     descripcion: row.descripcion, monto: row.monto,
     fecha: row.fecha, categoria: row.categoria||'',
     notas: row.notas||'', estatus: row.estatus||'pendiente',
+    serie_id: row.serieId||null,
   };
   if (row.id) {
     const { error } = await supabase.from('tarjeta_pagos_programados').update(r).eq('id', row.id);
