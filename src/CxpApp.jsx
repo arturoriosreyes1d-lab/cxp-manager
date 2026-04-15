@@ -2294,7 +2294,10 @@ export default function CxpApp({ user, onLogout }) {
                           <>
                           <div onClick={()=>setProgSeriePopup(null)}
                             style={{position:"fixed",inset:0,zIndex:3000,background:"rgba(0,0,0,.5)"}}/>
-                          <div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",
+                          <div style={{position:"fixed",top:"50%",left:"50%",
+                            transform:"translate3d(-50%,-50%,0)",
+                            WebkitFontSmoothing:"antialiased",
+                            MozOsxFontSmoothing:"grayscale",
                             zIndex:3001,background:"#fff",borderRadius:22,border:"2px solid #CE93D8",
                             boxShadow:"0 24px 64px rgba(74,20,140,.35)",width:560,maxHeight:"85vh",
                             display:"flex",flexDirection:"column",overflow:"hidden"}}
