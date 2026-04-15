@@ -2416,15 +2416,15 @@ export default function CxpApp({ user, onLogout }) {
             <div onClick={()=>setProgSeriePopup(null)}
               style={{position:"fixed",inset:0,zIndex:5000,background:"rgba(0,0,0,.55)"}}/>
             <div style={{position:"fixed",top:"50%",left:"50%",
-              marginTop:"-280px",marginLeft:"-280px",
-              zIndex:5001,background:"#fff",borderRadius:22,border:"2px solid #CE93D8",
-              boxShadow:"0 24px 64px rgba(74,20,140,.35)",width:560,maxHeight:"85vh",
+              marginTop:"-420px",marginLeft:"-420px",
+              zIndex:5001,background:"#fff",borderRadius:26,border:"2px solid #CE93D8",
+              boxShadow:"0 24px 64px rgba(74,20,140,.35)",width:840,maxHeight:"90vh",
               display:"flex",flexDirection:"column",overflow:"hidden",
               fontFamily:"inherit"}}
               onClick={e=>e.stopPropagation()}>
-              <div style={{background:"#4A148C",padding:"8px 26px",flexShrink:0,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <span style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.75)",textTransform:"uppercase",letterSpacing:1.5}}>Propuesta de Pagos con TC</span>
-                <span style={{fontSize:11,color:"rgba(255,255,255,.5)"}}>{t2.banco} · {t2.titular}</span>
+              <div style={{background:"#4A148C",padding:"12px 36px",flexShrink:0,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontSize:14,fontWeight:800,color:"rgba(255,255,255,.85)",textTransform:"uppercase",letterSpacing:1.5}}>Propuesta de Pagos con TC</span>
+                <span style={{fontSize:13,color:"rgba(255,255,255,.5)"}}>{t2.banco} · {t2.titular}</span>
               </div>
               {/* KPIs tarjeta */}
               <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:0,borderBottom:"1px solid #E1BEE7",flexShrink:0}}>
@@ -2436,9 +2436,9 @@ export default function CxpApp({ user, onLogout }) {
                     {l:"Disponible",   v:`$${fmt(t2.limite-t2.saldoActual)}`,c:"#1B5E20"},
                     {l:`${pct2}% Usado`, v:<div style={{height:6,borderRadius:3,background:"#EDE7F6",overflow:"hidden",marginTop:6}}><div style={{height:"100%",width:`${Math.min(pct2,100)}%`,background:pct2>80?"#C62828":pct2>50?"#E65100":"#7B1FA2",borderRadius:3}}/></div>, c:"#7B1FA2"},
                   ].map((k,i)=>(
-                    <div key={i} style={{padding:"10px 16px",borderRight:i<3?"1px solid #F3E5F5":"none",background:"#FAF5FF"}}>
-                      <div style={{fontSize:9,color:"#9C27B0",fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>{k.l}</div>
-                      <div style={{fontSize:14,fontWeight:900,color:k.c}}>{k.v}</div>
+                    <div key={i} style={{padding:"14px 22px",borderRight:i<3?"1px solid #F3E5F5":"none",background:"#FAF5FF"}}>
+                      <div style={{fontSize:11,color:"#9C27B0",fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>{k.l}</div>
+                      <div style={{fontSize:18,fontWeight:900,color:k.c}}>{k.v}</div>
                     </div>
                   ));
                 })()}
@@ -2446,11 +2446,11 @@ export default function CxpApp({ user, onLogout }) {
               <div style={{background:"#1A0533",padding:"18px 26px 16px",flexShrink:0}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
                   <div>
-                    <div style={{fontWeight:900,fontSize:20,color:"#fff"}}>{ps.desc}</div>
-                    <div style={{fontSize:12,color:"#CE93D8",marginTop:3}}>{ps.cat} · {nTot} pago{nTot!==1?"s":""}</div>
+                    <div style={{fontWeight:900,fontSize:26,color:"#fff"}}>{ps.desc}</div>
+                    <div style={{fontSize:14,color:"#CE93D8",marginTop:4}}>{ps.cat} · {nTot} pago{nTot!==1?"s":""}</div>
                   </div>
                   <button onClick={()=>setProgSeriePopup(null)}
-                    style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",width:34,height:34,cursor:"pointer",fontSize:20,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+                    style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",width:40,height:40,cursor:"pointer",fontSize:24,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
                   {[
@@ -2458,57 +2458,57 @@ export default function CxpApp({ user, onLogout }) {
                     {l:"✓ Pagado",   v:`$${fmt(ps.totalPagado)}`, c:"#81C784", bg:"rgba(129,199,132,.15)"},
                     {l:"⏳ Pendiente",v:`$${fmt(ps.totalPend)}`,   c:"#FFB74D", bg:"rgba(255,183,77,.15)"},
                   ].map((k,i)=>(
-                    <div key={i} style={{background:k.bg,borderRadius:12,padding:"10px 14px",border:`1px solid ${k.c}33`}}>
-                      <div style={{fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>{k.l}</div>
-                      <div style={{fontSize:19,fontWeight:900,color:k.c}}>{k.v}</div>
+                    <div key={i} style={{background:k.bg,borderRadius:12,padding:"14px 20px",border:`1px solid ${k.c}33`}}>
+                      <div style={{fontSize:12,color:"rgba(255,255,255,.5)",fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>{k.l}</div>
+                      <div style={{fontSize:24,fontWeight:900,color:k.c}}>{k.v}</div>
                     </div>
                   ))}
                 </div>
               </div>
-              {nTot>1 && <div style={{padding:"10px 26px 8px",background:"#F3E5F5",flexShrink:0}}>
-                <div style={{height:8,borderRadius:4,background:"#EDE7F6",overflow:"hidden"}}>
+              {nTot>1 && <div style={{padding:"14px 36px 10px",background:"#F3E5F5",flexShrink:0}}>
+                <div style={{height:10,borderRadius:5,background:"#EDE7F6",overflow:"hidden"}}>
                   <div style={{height:"100%",width:`${pct}%`,background:pct===100?"#43A047":"#7B1FA2",borderRadius:4,transition:"width .4s"}}/>
                 </div>
-                <div style={{fontSize:12,color:"#9C27B0",fontWeight:700,marginTop:4}}>{nPag} de {nTot} pagos realizados · {pct}%</div>
+                <div style={{fontSize:14,color:"#9C27B0",fontWeight:700,marginTop:6}}>{nPag} de {nTot} pagos realizados · {pct}%</div>
               </div>}
               <div style={{overflowY:"auto",flex:1}}>
-                <div style={{display:"flex",alignItems:"center",gap:14,padding:"8px 24px",background:"#F5F0FF",borderBottom:"2px solid #EDE7F6"}}>
-                  {nTot>1 && <div style={{width:30,flexShrink:0,fontSize:10,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.6,textAlign:"center"}}>No.</div>}
-                  <div style={{flex:1,fontSize:10,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.6}}>Fecha de pago</div>
-                  <div style={{fontSize:10,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.6,flexShrink:0,minWidth:120,textAlign:"right"}}>Importe</div>
-                  <div style={{minWidth:100,textAlign:"right",flexShrink:0,fontSize:10,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.6}}>Vencimiento</div>
-                  <div style={{width:118,flexShrink:0,fontSize:10,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.6,textAlign:"center"}}>Acciones</div>
+                <div style={{display:"flex",alignItems:"center",gap:20,padding:"12px 36px",background:"#F5F0FF",borderBottom:"2px solid #EDE7F6"}}>
+                  {nTot>1 && <div style={{width:40,flexShrink:0,fontSize:12,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.6,textAlign:"center"}}>No.</div>}
+                  <div style={{flex:1,fontSize:12,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.6}}>Fecha de pago</div>
+                  <div style={{fontSize:12,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.6,flexShrink:0,minWidth:160,textAlign:"right"}}>Importe</div>
+                  <div style={{minWidth:130,textAlign:"right",flexShrink:0,fontSize:12,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.6}}>Vencimiento</div>
+                  <div style={{width:148,flexShrink:0,fontSize:12,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.6,textAlign:"center"}}>Acciones</div>
                 </div>
                 {pags.map((p,pi)=>{
                   const dias=daysUntil(p.fecha);
                   const pagado=p.estatus==="pagado";
                   return (
-                    <div key={p.id} style={{display:"flex",alignItems:"center",gap:14,padding:"13px 24px",
+                    <div key={p.id} style={{display:"flex",alignItems:"center",gap:20,padding:"18px 36px",
                       borderTop:"1px solid #F3E5F5",background:pagado?"#F8FFF8":"#fff"}}>
-                      {nTot>1 && <div style={{width:30,height:30,borderRadius:"50%",flexShrink:0,
+                      {nTot>1 && <div style={{width:40,height:40,borderRadius:"50%",flexShrink:0,
                         background:pagado?"#43A047":"#EDE7F6",color:pagado?"#fff":"#7B1FA2",
-                        fontSize:13,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                        fontSize:16,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>
                         {pi+1}
                       </div>}
                       <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:15,fontWeight:700,color:pagado?"#999":"#333",
+                        <div style={{fontSize:18,fontWeight:700,color:pagado?"#999":"#333",
                           textDecoration:pagado?"line-through":"none",whiteSpace:"nowrap"}}>{p.fecha}</div>
-                        {p.notas && <div style={{fontSize:11,color:"#9C27B0",marginTop:1,fontStyle:"italic"}}>{p.notas}</div>}
+                        {p.notas && <div style={{fontSize:13,color:"#9C27B0",marginTop:2,fontStyle:"italic"}}>{p.notas}</div>}
                       </div>
-                      <div style={{fontWeight:900,fontSize:18,color:pagado?"#1B5E20":"#7B1FA2",flexShrink:0,minWidth:120,textAlign:"right"}}>${fmt(p.monto)}</div>
-                      <div style={{minWidth:100,textAlign:"right",flexShrink:0,fontSize:13,fontWeight:700,
+                      <div style={{fontWeight:900,fontSize:22,color:pagado?"#1B5E20":"#7B1FA2",flexShrink:0,minWidth:160,textAlign:"right"}}>${fmt(p.monto)}</div>
+                      <div style={{minWidth:130,textAlign:"right",flexShrink:0,fontSize:15,fontWeight:700,
                         color:pagado?"#1B5E20":dias<0?"#C62828":dias===0?"#E65100":dias<=7?"#E65100":"#999"}}>
                         {diasLabel(dias)}
                       </div>
-                      <div style={{display:"flex",gap:4,flexShrink:0,width:118,justifyContent:"center"}}>
+                      <div style={{display:"flex",gap:4,flexShrink:0,width:148,justifyContent:"center"}}>
                         {!pagado && <button onClick={async()=>{await upsertProgramado({...p,estatus:"pagado"});const n=await fetchProgramados(empresaId);setProgramados(n);}}
-                          style={{background:"#E8F5E9",border:"none",borderRadius:8,padding:"6px 9px",cursor:"pointer",fontSize:14}}>✅</button>}
+                          style={{background:"#E8F5E9",border:"none",borderRadius:9,padding:"8px 12px",cursor:"pointer",fontSize:17}}>✅</button>}
                         {pagado && <button onClick={async()=>{await upsertProgramado({...p,estatus:"pendiente"});const n=await fetchProgramados(empresaId);setProgramados(n);}}
-                          style={{background:"#EDE7F6",border:"none",borderRadius:8,padding:"6px 9px",cursor:"pointer",fontSize:13}}>↩️</button>}
+                          style={{background:"#EDE7F6",border:"none",borderRadius:9,padding:"8px 12px",cursor:"pointer",fontSize:16}}>↩️</button>}
                         <button onClick={()=>{setFormProg({...p});setProgSeriePopup(null);}}
-                          style={{background:"#EDE7F6",border:"none",borderRadius:8,padding:"6px 9px",cursor:"pointer",fontSize:13}}>✏️</button>
+                          style={{background:"#EDE7F6",border:"none",borderRadius:9,padding:"8px 12px",cursor:"pointer",fontSize:16}}>✏️</button>
                         <button onClick={async()=>{await deleteProgramado(p.id);const n=await fetchProgramados(empresaId);setProgramados(n);}}
-                          style={{background:"#FFEBEE",border:"none",borderRadius:8,padding:"6px 9px",cursor:"pointer",fontSize:13}}>🗑️</button>
+                          style={{background:"#FFEBEE",border:"none",borderRadius:9,padding:"8px 12px",cursor:"pointer",fontSize:16}}>🗑️</button>
                       </div>
                     </div>
                   );
