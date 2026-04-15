@@ -2228,7 +2228,8 @@ export default function CxpApp({ user, onLogout }) {
                   const popupSerie = progSeriePopup ? seriesMap[progSeriePopup] : null;
 
                   return (
-                    <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
+                    <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden",position:"relative"}}>
+                      {progSeriePopup && !formProg && <div onClick={()=>setProgSeriePopup(null)} style={{position:"absolute",inset:0,zIndex:99,background:"rgba(0,0,0,.15)"}}/>}
 
                       {/* ── BARRA SUPERIOR: KPIs + chips + agregar ── */}
                       <div style={{padding:"14px 24px",background:"#1A0533",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
@@ -2244,91 +2245,112 @@ export default function CxpApp({ user, onLogout }) {
                           </div>
                         ))}
                         <div style={{width:1,height:32,background:"rgba(255,255,255,.1)",flexShrink:0}}/>
-                        {/* Chips por serie */}
-                        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",flex:1}}>
+                        {/* Chips por serie — más grandes */}
+                        <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",flex:1}}>
                           {seriesSorted.map((s,si)=>{
                             const nPag = s.pagos.filter(p=>p.estatus==="pagado").length;
                             const nTot = s.pagos.length;
                             const pct  = nTot>0?Math.round((nPag/nTot)*100):0;
+                            const proxP = s.pagos.filter(p=>p.estatus==="pendiente").sort((a,b)=>a.fecha.localeCompare(b.fecha))[0];
+                            const dias = proxP?daysUntil(proxP.fecha):null;
                             const isOpen = progSeriePopup===s.key;
                             return (
                               <button key={si} onClick={()=>setProgSeriePopup(isOpen?null:s.key)}
-                                style={{padding:"8px 14px",borderRadius:12,border:`1.5px solid ${isOpen?"#CE93D8":"rgba(255,255,255,.2)"}`,
-                                  background:isOpen?"rgba(206,147,216,.2)":"rgba(255,255,255,.06)",
-                                  cursor:"pointer",fontFamily:"inherit",textAlign:"left",transition:"all .15s"}}>
-                                <div style={{fontWeight:700,fontSize:12,color:"#fff",marginBottom:2,whiteSpace:"nowrap"}}>{s.desc}</div>
-                                <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                                  <div style={{height:3,width:60,borderRadius:2,background:"rgba(255,255,255,.15)",overflow:"hidden"}}>
-                                    <div style={{height:"100%",width:`${pct}%`,background:pct===100?"#81C784":"#CE93D8",borderRadius:2}}/>
-                                  </div>
-                                  <span style={{fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:600}}>{nPag}/{nTot} · ${fmt(s.total)}</span>
+                                style={{padding:"12px 18px",borderRadius:14,border:`2px solid ${isOpen?"#CE93D8":"rgba(255,255,255,.25)"}`,
+                                  background:isOpen?"rgba(206,147,216,.25)":"rgba(255,255,255,.08)",
+                                  cursor:"pointer",fontFamily:"inherit",textAlign:"left",transition:"all .15s",minWidth:180}}>
+                                <div style={{fontWeight:800,fontSize:14,color:"#fff",marginBottom:4}}>{s.desc}</div>
+                                <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginBottom:6}}>{s.cat}{nTot>1?" · serie":""}</div>
+                                {/* Barra */}
+                                <div style={{height:4,borderRadius:2,background:"rgba(255,255,255,.15)",overflow:"hidden",marginBottom:5}}>
+                                  <div style={{height:"100%",width:`${pct}%`,background:pct===100?"#81C784":"#CE93D8",borderRadius:2}}/>
                                 </div>
+                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                                  <span style={{fontSize:11,color:"rgba(255,255,255,.5)",fontWeight:600}}>{nPag}/{nTot} pagados</span>
+                                  <span style={{fontSize:13,color:"#CE93D8",fontWeight:900}}>${fmt(s.total)}</span>
+                                </div>
+                                {proxP && <div style={{fontSize:10,fontWeight:700,marginTop:4,
+                                  color:dias<=0?"#FF8A65":dias<=7?"#FFB74D":"rgba(255,255,255,.35)"}}>
+                                  Próx: {proxP.fecha}{dias===0?" · Hoy":dias<0?` · Vencido ${Math.abs(dias)}d`:` · En ${dias}d`}
+                                </div>}
                               </button>
                             );
                           })}
                           <button onClick={()=>{setProgSeriePopup(null);setFormProg({descripcion:"",monto:"",fecha:"",categoria:"Seguros",notas:"",estatus:"pendiente",recurrente:false,numPagos:4,frecuencia:"trimestral"});}}
-                            style={{padding:"8px 14px",borderRadius:12,border:"1.5px dashed rgba(255,255,255,.3)",background:"transparent",
-                              color:"rgba(255,255,255,.6)",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                            style={{padding:"12px 18px",borderRadius:14,border:"2px dashed rgba(255,255,255,.3)",background:"transparent",
+                              color:"rgba(255,255,255,.6)",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",alignSelf:"stretch",display:"flex",alignItems:"center"}}>
                             + Agregar
                           </button>
                         </div>
                       </div>
 
-                      {/* ── POPUP SERIE (al hacer clic en chip) ── */}
+                      {/* ── POPUP FLOTANTE ── */}
                       {popupSerie && !formProg && (()=>{
                         const nPag  = popupSerie.pagos.filter(p=>p.estatus==="pagado").length;
                         const nTot  = popupSerie.pagos.length;
                         const pct   = nTot>0?Math.round((nPag/nTot)*100):0;
                         const pags  = [...popupSerie.pagos].sort((a,b)=>a.fecha.localeCompare(b.fecha));
                         return (
-                          <div style={{margin:"12px 20px 0",background:"#fff",borderRadius:16,border:"2px solid #CE93D8",boxShadow:"0 4px 20px rgba(123,31,162,.12)",overflow:"hidden"}}>
-                            {/* Header popup */}
-                            <div style={{background:"#F3E5F5",padding:"12px 18px",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                          <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",
+                            zIndex:100,background:"#fff",borderRadius:20,border:"2px solid #CE93D8",
+                            boxShadow:"0 20px 60px rgba(74,20,140,.25)",minWidth:460,maxWidth:560,overflow:"hidden"}}
+                            onClick={e=>e.stopPropagation()}>
+                            {/* Header */}
+                            <div style={{background:"#1A0533",padding:"18px 22px",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                               <div>
-                                <div style={{fontWeight:900,fontSize:16,color:"#4A148C"}}>{popupSerie.desc}</div>
-                                <div style={{fontSize:11,color:"#9C27B0",marginTop:2}}>{popupSerie.cat}{nTot>1?" · serie":""}</div>
+                                <div style={{fontWeight:900,fontSize:18,color:"#fff"}}>{popupSerie.desc}</div>
+                                <div style={{fontSize:12,color:"#CE93D8",marginTop:3}}>{popupSerie.cat}{nTot>1?" · serie · "+nTot+" pagos":""}</div>
                               </div>
                               <div style={{textAlign:"right"}}>
-                                <div style={{fontWeight:900,fontSize:18,color:"#4A148C"}}>${fmt(popupSerie.total)}</div>
-                                <div style={{fontSize:11,marginTop:1}}>
-                                  <span style={{color:"#1B5E20",fontWeight:700}}>✓ ${fmt(popupSerie.totalPagado)}</span>
-                                  <span style={{color:"#E65100",fontWeight:700,marginLeft:8}}>⏳ ${fmt(popupSerie.totalPend)}</span>
+                                <div style={{fontWeight:900,fontSize:20,color:"#CE93D8"}}>${fmt(popupSerie.total)}</div>
+                                <div style={{fontSize:11,marginTop:3,display:"flex",gap:8}}>
+                                  <span style={{color:"#81C784",fontWeight:700}}>✓ ${fmt(popupSerie.totalPagado)}</span>
+                                  <span style={{color:"#FFB74D",fontWeight:700}}>⏳ ${fmt(popupSerie.totalPend)}</span>
                                 </div>
                               </div>
+                              <button onClick={()=>setProgSeriePopup(null)}
+                                style={{background:"rgba(255,255,255,.1)",border:"none",borderRadius:8,color:"#fff",width:30,height:30,cursor:"pointer",fontSize:16,marginLeft:12,flexShrink:0}}>×</button>
                             </div>
-                            {/* Barra */}
-                            {nTot>1 && <div style={{padding:"8px 18px",background:"#F3E5F5",borderBottom:"1px solid #E1BEE7"}}>
+                            {/* Barra progreso */}
+                            {nTot>1 && <div style={{padding:"10px 22px 8px",background:"#F3E5F5"}}>
                               <div style={{height:8,borderRadius:4,background:"#EDE7F6",overflow:"hidden"}}>
                                 <div style={{height:"100%",width:`${pct}%`,background:pct===100?"#43A047":"#7B1FA2",borderRadius:4,transition:"width .4s"}}/>
                               </div>
-                              <div style={{fontSize:11,color:"#9C27B0",fontWeight:700,marginTop:3}}>{nPag} de {nTot} pagos realizados · {pct}%</div>
+                              <div style={{fontSize:11,color:"#9C27B0",fontWeight:700,marginTop:4}}>{nPag} de {nTot} pagos realizados · {pct}%</div>
                             </div>}
-                            {/* Pagos */}
-                            <div style={{overflowX:"auto"}}>
+                            {/* Tabla de pagos */}
+                            <div style={{maxHeight:320,overflowY:"auto"}}>
                               {pags.map((p,pi)=>{
                                 const dias=daysUntil(p.fecha);
                                 const pagado=p.estatus==="pagado";
                                 return (
-                                  <div key={p.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 18px",
-                                    borderBottom:"1px solid #F3E5F5",background:pagado?"#F8FFF8":"#fff"}}>
-                                    {nTot>1 && <div style={{width:22,height:22,borderRadius:"50%",background:pagado?"#43A047":"#EDE7F6",
-                                      color:pagado?"#fff":"#7B1FA2",fontSize:11,fontWeight:800,display:"flex",alignItems:"center",
-                                      justifyContent:"center",flexShrink:0}}>{pi+1}</div>}
-                                    <div style={{flex:1,fontSize:13,color:pagado?"#999":"#333",
-                                      fontWeight:500,textDecoration:pagado?"line-through":"none"}}>
-                                      {p.fecha}
-                                      {p.notas && <span style={{color:"#9C27B0",marginLeft:8,fontSize:11,fontStyle:"italic"}}>{p.notas}</span>}
+                                  <div key={p.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 22px",
+                                    borderTop:"1px solid #F3E5F5",background:pagado?"#F8FFF8":"#fff"}}>
+                                    {/* Número */}
+                                    {nTot>1 && <div style={{width:26,height:26,borderRadius:"50%",flexShrink:0,
+                                      background:pagado?"#43A047":"#EDE7F6",color:pagado?"#fff":"#7B1FA2",
+                                      fontSize:12,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                                      {pi+1}
+                                    </div>}
+                                    {/* Fecha + notas */}
+                                    <div style={{flex:1,minWidth:0}}>
+                                      <div style={{fontSize:14,fontWeight:700,color:pagado?"#999":"#333",
+                                        textDecoration:pagado?"line-through":"none"}}>{p.fecha}</div>
+                                      {p.notas && <div style={{fontSize:11,color:"#9C27B0",marginTop:1,fontStyle:"italic"}}>{p.notas}</div>}
                                     </div>
-                                    <span style={{fontWeight:900,fontSize:15,color:pagado?"#1B5E20":"#7B1FA2",flexShrink:0}}>${fmt(p.monto)}</span>
-                                    <span style={{fontSize:11,fontWeight:700,minWidth:70,textAlign:"right",flexShrink:0,
+                                    {/* Monto */}
+                                    <div style={{fontWeight:900,fontSize:17,color:pagado?"#1B5E20":"#7B1FA2",flexShrink:0}}>${fmt(p.monto)}</div>
+                                    {/* Estado */}
+                                    <div style={{minWidth:80,textAlign:"right",flexShrink:0,fontSize:11,fontWeight:700,
                                       color:pagado?"#1B5E20":dias<0?"#C62828":dias===0?"#E65100":dias<=7?"#E65100":"#999"}}>
                                       {pagado?"✓ Pagado":dias<0?`Vencido ${Math.abs(dias)}d`:dias===0?"Hoy":`En ${dias}d`}
-                                    </span>
+                                    </div>
+                                    {/* Acciones */}
                                     <div style={{display:"flex",gap:4,flexShrink:0}}>
-                                      {!pagado&&<button onClick={async()=>{await upsertProgramado({...p,estatus:"pagado"});const n=await fetchProgramados(empresaId);setProgramados(n);}}
-                                        title="Marcar pagado" style={{background:"#E8F5E9",border:"none",borderRadius:8,padding:"5px 9px",cursor:"pointer",fontSize:13}}>✅</button>}
-                                      {pagado&&<button onClick={async()=>{await upsertProgramado({...p,estatus:"pendiente"});const n=await fetchProgramados(empresaId);setProgramados(n);}}
-                                        style={{background:"#EDE7F6",border:"none",borderRadius:8,padding:"5px 9px",cursor:"pointer",fontSize:12}}>↩️</button>}
+                                      {!pagado && <button onClick={async()=>{await upsertProgramado({...p,estatus:"pagado"});const n=await fetchProgramados(empresaId);setProgramados(n);}}
+                                        title="Marcar pagado" style={{background:"#E8F5E9",border:"none",borderRadius:8,padding:"5px 9px",cursor:"pointer",fontSize:14}}>✅</button>}
+                                      {pagado && <button onClick={async()=>{await upsertProgramado({...p,estatus:"pendiente"});const n=await fetchProgramados(empresaId);setProgramados(n);}}
+                                        style={{background:"#EDE7F6",border:"none",borderRadius:8,padding:"5px 9px",cursor:"pointer",fontSize:13}}>↩️</button>}
                                       <button onClick={()=>{setFormProg({...p});setProgSeriePopup(null);}}
                                         style={{background:"#EDE7F6",border:"none",borderRadius:8,padding:"5px 9px",cursor:"pointer",fontSize:13}}>✏️</button>
                                       <button onClick={async()=>{await deleteProgramado(p.id);const n=await fetchProgramados(empresaId);setProgramados(n);}}
