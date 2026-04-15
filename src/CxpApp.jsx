@@ -2348,7 +2348,7 @@ export default function CxpApp({ user, onLogout }) {
                                     </div>}
                                     <div style={{flex:1,minWidth:0}}>
                                       <div style={{fontSize:16,fontWeight:700,color:pagado?"#999":"#333",
-                                        textDecoration:pagado?"line-through":"none"}}>{p.fecha}</div>
+                                        textDecoration:pagado?"line-through":"none",whiteSpace:"nowrap"}}>{p.fecha}</div>
                                       {p.notas && <div style={{fontSize:12,color:"#9C27B0",marginTop:2,fontStyle:"italic"}}>{p.notas}</div>}
                                     </div>
                                     <div style={{fontWeight:900,fontSize:19,color:pagado?"#1B5E20":"#7B1FA2",flexShrink:0}}>${fmt(p.monto)}</div>
