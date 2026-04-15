@@ -766,3 +766,40 @@ export async function bulkInsertMovimientos(rows) {
   }
   return { inserted, dupes };
 }
+
+/* ── Pagos Programados ────────────────────────────────────────────── */
+export async function fetchProgramados(empresaId) {
+  let q = supabase.from('tarjeta_pagos_programados').select('*').order('fecha');
+  if (empresaId) q = q.eq('empresa_id', empresaId);
+  const { data, error } = await q;
+  if (error) { console.error('fetchProgramados:', error); return []; }
+  return (data||[]).map(r => ({
+    id: r.id, empresaId: r.empresa_id, tarjetaId: r.tarjeta_id,
+    descripcion: r.descripcion||'', monto: r.monto||0,
+    fecha: r.fecha||'', categoria: r.categoria||'',
+    notas: r.notas||'', estatus: r.estatus||'pendiente',
+  }));
+}
+
+export async function upsertProgramado(row) {
+  const r = {
+    empresa_id: row.empresaId, tarjeta_id: row.tarjetaId,
+    descripcion: row.descripcion, monto: row.monto,
+    fecha: row.fecha, categoria: row.categoria||'',
+    notas: row.notas||'', estatus: row.estatus||'pendiente',
+  };
+  if (row.id) {
+    const { error } = await supabase.from('tarjeta_pagos_programados').update(r).eq('id', row.id);
+    if (error) console.error('upsertProgramado update:', error);
+    return row.id;
+  } else {
+    const { data, error } = await supabase.from('tarjeta_pagos_programados').insert(r).select().single();
+    if (error) console.error('upsertProgramado insert:', error);
+    return data?.id;
+  }
+}
+
+export async function deleteProgramado(id) {
+  const { error } = await supabase.from('tarjeta_pagos_programados').delete().eq('id', id);
+  if (error) console.error('deleteProgramado:', error);
+}

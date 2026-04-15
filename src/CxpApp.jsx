@@ -16,6 +16,7 @@ import {
   fetchFinanciamientos, insertFinanciamiento, updateFinanciamiento, deleteFinanciamiento,
   fetchFinanciamientoPagos, insertFinanciamientoPago, deleteFinanciamientoPago,
   fetchTarjetas, updateTarjetaSaldo, fetchTarjetaMovimientos, bulkInsertMovimientos,
+  fetchProgramados, upsertProgramado, deleteProgramado,
 } from "./db.js";
 import CxcView from "./CxcView.jsx";
 import { EMPRESAS } from "./empresas.js";
@@ -211,6 +212,19 @@ export default function CxpApp({ user, onLogout }) {
   const [tarjetaFiltroInt, setTarjetaFiltroInt] = useState("");
   const [tarjetaFiltroTipo, setTarjetaFiltroTipo] = useState("");
   const [tarjetaFiltroMes, setTarjetaFiltroMes] = useState("");
+  const [tarjetaTab, setTarjetaTab] = useState("calendario"); // calendario | resumen | programados
+  const [calMes, setCalMes] = useState(() => { const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`; });
+  const [calDiaSeleccionado, setCalDiaSeleccionado] = useState(null);
+  const [calShowMovs, setCalShowMovs] = useState(true);
+  const [calShowProgs, setCalShowProgs] = useState(true);
+  const [programados, setProgramados] = useState([]);
+  const [formProg, setFormProg] = useState(null); // null | {} para nuevo/editar
+  const [editSaldoModal, setEditSaldoModal] = useState(false);
+  const [editSaldoVal, setEditSaldoVal] = useState("");
+  const [resumenGrupo, setResumenGrupo] = useState("integrante"); // integrante | tipo | mes
+  const [resumenFiltroInt, setResumenFiltroInt] = useState("");
+  const [resumenFiltroTipo, setResumenFiltroTipo] = useState("");
+  const [resumenFiltroMes, setResumenFiltroMes] = useState("");
   const [vincularModal, setVincularModal] = useState(null); // {invoiceId, proveedor, folio, total, moneda}
 
   /* ── Load data from Supabase ────────────────────────────────────── */
@@ -223,8 +237,9 @@ export default function CxpApp({ user, onLogout }) {
         fetchClientes(empresaId), fetchPorFacturar(empresaId),
         fetchFinanciamientos(empresaId), fetchFinanciamientoPagos(empresaId),
         fetchTarjetas(empresaId), fetchTarjetaMovimientos(empresaId),
+        fetchProgramados(empresaId),
       ]);
-      const [inv, sup, cls, pays, ings, cbs, invIngs, cats, clts, pf, fins, finPagos, tarjs, tarjMovs] =
+      const [inv, sup, cls, pays, ings, cbs, invIngs, cats, clts, pf, fins, finPagos, tarjs, tarjMovs, progs] =
         results.map(r => r.status==="fulfilled" ? r.value : []);
       setInvoices(inv);
       setSuppliers(sup.length > 0 ? sup : []);
@@ -240,6 +255,7 @@ export default function CxpApp({ user, onLogout }) {
       setFinanciamientoPagos(finPagos);
       setTarjetas(tarjs);
       setTarjetaMovimientos(tarjMovs);
+      setProgramados(progs);
       setLoading(false);
     })();
   }, [empresaId]);
@@ -1774,128 +1790,518 @@ export default function CxpApp({ user, onLogout }) {
           const t = tarjetas.find(x=>x.id===tarjetaModalId);
           if (!t) return null;
           const movT = tarjetaMovimientos.filter(m=>m.tarjetaId===t.id);
-          const filtroInt = tarjetaFiltroInt;
-          const setFiltroInt = setTarjetaFiltroInt;
-          const filtroTipo = tarjetaFiltroTipo;
-          const setFiltroTipo = setTarjetaFiltroTipo;
-          const filtroMes = tarjetaFiltroMes;
-          const setFiltroMes = setTarjetaFiltroMes;
+          const progsT = programados.filter(p=>p.tarjetaId===t.id);
           const integrantes = [...new Set(movT.map(m=>m.integrante).filter(Boolean))].sort();
-          const mesesDisp = [...new Set(movT.map(m=>m.fecha?.slice(0,7)).filter(Boolean))].sort().reverse();
           const MESES_N = ["Enero","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+          const CATS = ["Seguros","Servicios","Gasolina","Hospedaje","Alimentación","Transporte","Software","Otros"];
+
           const filtrados = movT.filter(m=>{
-            if(filtroInt && m.integrante!==filtroInt) return false;
-            if(filtroTipo && m.tipo!==filtroTipo) return false;
-            if(filtroMes && !m.fecha?.startsWith(filtroMes)) return false;
+            if(tarjetaFiltroInt && m.integrante!==tarjetaFiltroInt) return false;
+            if(tarjetaFiltroTipo && m.tipo!==tarjetaFiltroTipo) return false;
+            if(tarjetaFiltroMes && !m.fecha?.startsWith(tarjetaFiltroMes)) return false;
             return true;
           });
+          const mesesDisp = [...new Set(movT.map(m=>m.fecha?.slice(0,7)).filter(Boolean))].sort().reverse();
           const cargosF = filtrados.filter(m=>m.monto>0&&m.tipo!=="PAGO");
           const pagosF  = filtrados.filter(m=>m.monto<0||m.tipo==="PAGO");
           const totalCargos = cargosF.reduce((s,m)=>s+m.monto,0);
           const totalPagos  = Math.abs(pagosF.reduce((s,m)=>s+m.monto,0));
           const pct = t.limite>0?Math.round((t.saldoActual/t.limite)*100):0;
-          // Por integrante
           const porInt = {};
           cargosF.forEach(m=>{ const k=m.integrante||"Sin asignar"; porInt[k]=(porInt[k]||0)+m.monto; });
           const intSorted = Object.entries(porInt).sort((a,b)=>b[1]-a[1]);
+
+          /* ── Calendario helpers ── */
+          const [calY, calM] = calMes.split("-").map(Number);
+          const diasEnMes = new Date(calY, calM, 0).getDate();
+          const primerDia = new Date(calY, calM-1, 1).getDay(); // 0=Dom
+          const inicioSemana = (primerDia+6)%7; // Lunes=0
+
+          const movPorDia = {}; // "YYYY-MM-DD" → [movs]
+          movT.filter(m=>m.fecha?.startsWith(calMes)).forEach(m=>{
+            movPorDia[m.fecha] = [...(movPorDia[m.fecha]||[]), m];
+          });
+          const progPorDia = {}; // "YYYY-MM-DD" → [progs]
+          progsT.filter(p=>p.fecha?.startsWith(calMes)).forEach(p=>{
+            progPorDia[p.fecha] = [...(progPorDia[p.fecha]||[]), p];
+          });
+
+          const cerrar = () => {
+            setTarjetaModalId(null);
+            setTarjetaFiltroInt(""); setTarjetaFiltroTipo(""); setTarjetaFiltroMes("");
+            setCalDiaSeleccionado(null); setFormProg(null); setEditSaldoModal(false);
+            setResumenFiltroInt(""); setResumenFiltroTipo(""); setResumenFiltroMes("");
+          };
+
           return (
             <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:10}}
-              onClick={()=>{setTarjetaModalId(null);setTarjetaFiltroInt("");setTarjetaFiltroTipo("");setTarjetaFiltroMes("");}}>
+              onClick={cerrar}>
               <div style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:"98vw",maxHeight:"96vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.3)"}}
                 onClick={e=>e.stopPropagation()}>
-                {/* Header */}
-                <div style={{padding:"18px 28px",background:"#1A0533",borderRadius:"20px 20px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+
+                {/* ── HEADER ── */}
+                <div style={{padding:"16px 28px",background:"#1A0533",borderRadius:"20px 20px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <div>
                     <div style={{fontSize:11,color:"#CE93D8",fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>💳 Tarjeta de Crédito</div>
-                    <div style={{fontWeight:900,fontSize:20,color:"#fff",marginTop:4}}>{t.banco} · {t.titular}</div>
-                    <div style={{fontSize:12,color:"rgba(255,255,255,.6)",marginTop:2}}>Contrato {t.contrato} · Corte día {t.fechaCorte}</div>
+                    <div style={{fontWeight:900,fontSize:20,color:"#fff",marginTop:2}}>{t.banco} · {t.titular}</div>
+                    <div style={{fontSize:12,color:"rgba(255,255,255,.5)",marginTop:1}}>Contrato {t.contrato} · Corte día {t.fechaCorte}</div>
                   </div>
-                  <button onClick={()=>{setTarjetaModalId(null);setTarjetaFiltroInt("");setTarjetaFiltroTipo("");setTarjetaFiltroMes("");}} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:10,color:"#fff",width:38,height:38,cursor:"pointer",fontSize:22}}>×</button>
+                  <button onClick={cerrar} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:10,color:"#fff",width:38,height:38,cursor:"pointer",fontSize:22}}>×</button>
                 </div>
-                {/* KPIs */}
-                <div style={{padding:"14px 24px",background:"#F5F0FF",borderBottom:"1px solid #E1BEE7",display:"flex",gap:10,flexWrap:"wrap"}}>
+
+                {/* ── 4 KPIs ── */}
+                <div style={{padding:"12px 24px",background:"#F5F0FF",borderBottom:"1px solid #E1BEE7",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
                   {[
-                    {icon:"💳",l:"Límite",       v:`$${fmt(t.limite)}`,      c:"#1A0533"},
-                    {icon:"🔴",l:"Saldo Actual",  v:`$${fmt(t.saldoActual)}`, c:"#C62828"},
-                    {icon:"✅",l:"Disponible",    v:`$${fmt(t.limite-t.saldoActual)}`, c:"#1B5E20"},
-                    {icon:"📊",l:"% Utilizado",   v:`${pct}%`,               c:pct>80?"#C62828":pct>50?"#E65100":"#7B1FA2"},
-                    {icon:"🛒",l:"Cargos período",v:`$${fmt(totalCargos)}`,   c:"#C62828"},
-                    {icon:"💰",l:"Pagos período", v:`$${fmt(totalPagos)}`,    c:"#1B5E20"},
-                    {icon:"📋",l:"Movimientos",   v:filtrados.length,         c:"#1A0533"},
-                  ].map(k=>(
-                    <div key={k.l} style={{background:"#fff",borderRadius:12,padding:"10px 16px",border:"1px solid #E1BEE7",flex:"1 1 120px"}}>
-                      <div style={{fontSize:10,color:"#7B1FA2",fontWeight:700,textTransform:"uppercase",letterSpacing:.4,marginBottom:3}}>{k.icon} {k.l}</div>
-                      <div style={{fontSize:15,fontWeight:900,color:k.c}}>{k.v}</div>
+                    {l:"💳 Límite",      v:`$${fmt(t.limite)}`,                       c:"#1A0533"},
+                    {l:"🔴 Saldo Actual", v:`$${fmt(t.saldoActual)}`,                  c:"#C62828"},
+                    {l:"✅ Disponible",   v:`$${fmt(t.limite-t.saldoActual)}`,          c:"#1B5E20"},
+                    {l:`📊 ${pct}% usado`,v:<div style={{height:8,borderRadius:4,background:"#EDE7F6",overflow:"hidden",width:120,marginTop:4}}><div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:pct>80?"#C62828":pct>50?"#E65100":"#7B1FA2",borderRadius:4}}/></div>, c:"#7B1FA2"},
+                  ].map((k,i)=>(
+                    <div key={i} style={{background:"#fff",borderRadius:12,padding:"10px 16px",border:"1px solid #E1BEE7",flex:"1 1 140px"}}>
+                      <div style={{fontSize:10,color:"#7B1FA2",fontWeight:700,textTransform:"uppercase",letterSpacing:.4,marginBottom:3}}>{k.l}</div>
+                      <div style={{fontSize:16,fontWeight:900,color:k.c}}>{k.v}</div>
                     </div>
                   ))}
+                  {/* Editar saldo */}
+                  {editSaldoModal ? (
+                    <div style={{display:"flex",gap:6,alignItems:"center",background:"#fff",borderRadius:12,padding:"8px 14px",border:"2px solid #7B1FA2",flex:"1 1 200px"}}>
+                      <span style={{fontSize:12,fontWeight:700,color:"#7B1FA2"}}>Nuevo saldo:</span>
+                      <input autoFocus value={editSaldoVal} onChange={e=>setEditSaldoVal(e.target.value)}
+                        style={{border:"none",borderBottom:"2px solid #7B1FA2",outline:"none",fontSize:15,fontWeight:800,color:"#C62828",width:130,background:"transparent",fontFamily:"inherit"}}
+                        placeholder={fmt(t.saldoActual)}
+                        onKeyDown={async e=>{
+                          if(e.key==="Enter"){
+                            const nuevo=parseFloat(editSaldoVal.replace(/,/g,""));
+                            if(!isNaN(nuevo)){
+                              await updateTarjetaSaldo(t.id,nuevo);
+                              setTarjetas(prev=>prev.map(x=>x.id===t.id?{...x,saldoActual:nuevo}:x));
+                            }
+                            setEditSaldoModal(false);
+                          }
+                          if(e.key==="Escape") setEditSaldoModal(false);
+                        }}
+                        onBlur={()=>setEditSaldoModal(false)}/>
+                      <button onClick={()=>setEditSaldoModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:"#999",fontSize:16}}>✕</button>
+                    </div>
+                  ) : (
+                    <button onClick={()=>{setEditSaldoModal(true);setEditSaldoVal(String(t.saldoActual));}}
+                      style={{padding:"8px 16px",borderRadius:12,border:"1.5px solid #7B1FA2",background:"#fff",color:"#7B1FA2",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                      ✏️ Editar saldo
+                    </button>
+                  )}
                 </div>
-                {/* Barra utilización */}
-                <div style={{padding:"10px 28px",background:"#F5F0FF",borderBottom:"1px solid #E1BEE7"}}>
-                  <div style={{height:8,borderRadius:4,background:"#EDE7F6",overflow:"hidden"}}>
-                    <div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:pct>80?"#C62828":pct>50?"#E65100":"#7B1FA2",borderRadius:4,transition:"width .5s"}}/>
-                  </div>
+
+                {/* ── TABS ── */}
+                <div style={{display:"flex",gap:2,padding:"10px 24px 0",background:"#FAFAFA",borderBottom:"1px solid #E1BEE7"}}>
+                  {[
+                    {k:"calendario",  l:"📅 Calendario"},
+                    {k:"resumen",     l:"📊 Resumen"},
+                    {k:"programados", l:"🔮 Programados"},
+                  ].map(tab=>(
+                    <button key={tab.k} onClick={()=>{setTarjetaTab(tab.k);setCalDiaSeleccionado(null);}}
+                      style={{padding:"8px 20px",borderRadius:"10px 10px 0 0",border:`1px solid ${tarjetaTab===tab.k?"#E1BEE7":"transparent"}`,
+                        borderBottom:tarjetaTab===tab.k?"1px solid #FAFAFA":"1px solid #E1BEE7",
+                        background:tarjetaTab===tab.k?"#FAFAFA":"transparent",
+                        color:tarjetaTab===tab.k?"#1A0533":"#7B1FA2",
+                        fontWeight:tarjetaTab===tab.k?800:600,fontSize:13,cursor:"pointer",fontFamily:"inherit",
+                        marginBottom:tarjetaTab===tab.k?-1:0,transition:"all .15s"}}>
+                      {tab.l}
+                    </button>
+                  ))}
                 </div>
-                {/* Filtros + por integrante */}
-                <div style={{padding:"12px 24px",borderBottom:"1px solid #E1BEE7",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",background:"#FAFAFA"}}>
-                  <select value={filtroInt} onChange={e=>setFiltroInt(e.target.value)}
-                    style={{padding:"6px 10px",borderRadius:8,border:"1px solid #E1BEE7",fontSize:12,fontFamily:"inherit"}}>
-                    <option value="">👥 Todos los integrantes</option>
-                    {integrantes.map(i=><option key={i}>{i}</option>)}
-                  </select>
-                  <select value={filtroTipo} onChange={e=>setFiltroTipo(e.target.value)}
-                    style={{padding:"6px 10px",borderRadius:8,border:"1px solid #E1BEE7",fontSize:12,fontFamily:"inherit"}}>
-                    <option value="">📋 Todos los tipos</option>
-                    {["COMPRA","CARGO","PAGO","TRANSFERENCIA"].map(t=><option key={t}>{t}</option>)}
-                  </select>
-                  <select value={filtroMes} onChange={e=>setFiltroMes(e.target.value)}
-                    style={{padding:"6px 10px",borderRadius:8,border:"1px solid #E1BEE7",fontSize:12,fontFamily:"inherit"}}>
-                    <option value="">📅 Todos los meses</option>
-                    {mesesDisp.map(m=>{const[y,mo]=m.split("-");return <option key={m} value={m}>{MESES_N[+mo-1]} {y}</option>;})}
-                  </select>
-                  {(filtroInt||filtroTipo||filtroMes)&&<button onClick={()=>{setFiltroInt("");setFiltroTipo("");setFiltroMes("");}}
-                    style={{padding:"6px 12px",borderRadius:8,border:"1px solid #E1BEE7",background:"#fff",cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>✕ Limpiar</button>}
-                  {/* Por integrante chips */}
-                  <div style={{marginLeft:"auto",display:"flex",gap:6,flexWrap:"wrap"}}>
-                    {intSorted.map(([k,v])=>(
-                      <span key={k} onClick={()=>setFiltroInt(filtroInt===k?"":k)}
-                        style={{background:filtroInt===k?"#7B1FA2":"#EDE7F6",color:filtroInt===k?"#fff":"#7B1FA2",
-                          fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:20,cursor:"pointer"}}>
-                        {k.split(" ")[0]}: ${fmt(v)}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                {/* Tabla movimientos */}
-                <div style={{overflowY:"auto",flex:1}}>
-                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                    <thead style={{position:"sticky",top:0}}>
-                      <tr style={{background:"#1A0533"}}>
-                        {["Fecha","Descripción","Integrante","Tipo","Tarjeta","Estatus","Monto"].map(h=>(
-                          <th key={h} style={{padding:"10px 14px",textAlign:h==="Monto"?"right":"left",color:"rgba(255,255,255,.85)",fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+
+                {/* ── TAB: RESUMEN ── */}
+                {tarjetaTab==="resumen" && (()=>{
+                  const MESES_N2 = ["Enero","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+                  const mesesDisp = [...new Set(movT.map(m=>m.fecha?.slice(0,7)).filter(Boolean))].sort().reverse();
+                  const filtrados = movT.filter(m=>{
+                    if(resumenFiltroInt && m.integrante!==resumenFiltroInt) return false;
+                    if(resumenFiltroTipo && m.tipo!==resumenFiltroTipo) return false;
+                    if(resumenFiltroMes && !m.fecha?.startsWith(resumenFiltroMes)) return false;
+                    return true;
+                  });
+                  const cargos = filtrados.filter(m=>m.monto>0&&m.tipo!=="PAGO");
+                  const pagos  = filtrados.filter(m=>m.monto<0||m.tipo==="PAGO");
+                  const totalC = cargos.reduce((s,m)=>s+m.monto,0);
+                  const totalP = Math.abs(pagos.reduce((s,m)=>s+m.monto,0));
+
+                  // Agrupación
+                  const grupos = {};
+                  filtrados.forEach(m=>{
+                    let k;
+                    if(resumenGrupo==="integrante") k = m.integrante||"Sin asignar";
+                    else if(resumenGrupo==="tipo") k = m.tipo||"—";
+                    else if(resumenGrupo==="mes") { const mo=m.fecha?.slice(0,7); k = mo ? `${MESES_N2[+mo.split("-")[1]-1]} ${mo.split("-")[0]}` : "Sin fecha"; }
+                    if(!grupos[k]) grupos[k]={cargos:0,pagos:0,movs:[]};
+                    if(m.monto>0&&m.tipo!=="PAGO") grupos[k].cargos+=m.monto;
+                    else grupos[k].pagos+=Math.abs(m.monto);
+                    grupos[k].movs.push(m);
+                  });
+                  const gruposSorted = Object.entries(grupos).sort((a,b)=>b[1].cargos-a[1].cargos);
+
+                  return (
+                    <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
+                      {/* Filtros */}
+                      <div style={{padding:"10px 24px",borderBottom:"1px solid #E1BEE7",background:"#FAFAFA",display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                        {/* Agrupar por */}
+                        <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                          <span style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginRight:4}}>AGRUPAR:</span>
+                          {[{k:"integrante",l:"👥 Integrante"},{k:"tipo",l:"📋 Tipo"},{k:"mes",l:"📅 Mes"}].map(g=>(
+                            <button key={g.k} onClick={()=>setResumenGrupo(g.k)}
+                              style={{padding:"5px 12px",borderRadius:20,border:`1.5px solid ${resumenGrupo===g.k?"#7B1FA2":"#E1BEE7"}`,
+                                background:resumenGrupo===g.k?"#7B1FA2":"#fff",color:resumenGrupo===g.k?"#fff":"#7B1FA2",
+                                fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all .15s"}}>
+                              {g.l}
+                            </button>
+                          ))}
+                        </div>
+                        <div style={{width:1,height:20,background:"#E1BEE7"}}/>
+                        {/* Filtros */}
+                        <select value={resumenFiltroInt} onChange={e=>setResumenFiltroInt(e.target.value)}
+                          style={{padding:"5px 10px",borderRadius:8,border:"1px solid #E1BEE7",fontSize:12,fontFamily:"inherit"}}>
+                          <option value="">👥 Todos los integrantes</option>
+                          {integrantes.map(i=><option key={i}>{i}</option>)}
+                        </select>
+                        <select value={resumenFiltroTipo} onChange={e=>setResumenFiltroTipo(e.target.value)}
+                          style={{padding:"5px 10px",borderRadius:8,border:"1px solid #E1BEE7",fontSize:12,fontFamily:"inherit"}}>
+                          <option value="">📋 Todos los tipos</option>
+                          {["COMPRA","CARGO","PAGO","TRANSFERENCIA"].map(tp=><option key={tp}>{tp}</option>)}
+                        </select>
+                        <select value={resumenFiltroMes} onChange={e=>setResumenFiltroMes(e.target.value)}
+                          style={{padding:"5px 10px",borderRadius:8,border:"1px solid #E1BEE7",fontSize:12,fontFamily:"inherit"}}>
+                          <option value="">📅 Todos los meses</option>
+                          {mesesDisp.map(m=>{const[y,mo]=m.split("-");return <option key={m} value={m}>{MESES_N2[+mo-1]} {y}</option>;})}
+                        </select>
+                        {(resumenFiltroInt||resumenFiltroTipo||resumenFiltroMes)&&
+                          <button onClick={()=>{setResumenFiltroInt("");setResumenFiltroTipo("");setResumenFiltroMes("");}}
+                            style={{padding:"5px 10px",borderRadius:8,border:"1px solid #E1BEE7",background:"#fff",cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>✕ Limpiar</button>}
+                        {/* Totales rápidos */}
+                        <div style={{marginLeft:"auto",display:"flex",gap:10}}>
+                          <span style={{fontSize:12,fontWeight:800,color:"#C62828"}}>Cargos: ${fmt(totalC)}</span>
+                          <span style={{fontSize:12,fontWeight:800,color:"#1B5E20"}}>Pagos: ${fmt(totalP)}</span>
+                          <span style={{fontSize:11,color:"#999"}}>{filtrados.length} movs.</span>
+                        </div>
+                      </div>
+                      {/* Cards por grupo */}
+                      <div style={{overflowY:"auto",flex:1,padding:"16px 24px",display:"flex",flexDirection:"column",gap:10}}>
+                        {gruposSorted.map(([k,v])=>(
+                          <div key={k} style={{background:"#fff",borderRadius:14,border:"1px solid #E1BEE7",overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,.04)"}}>
+                            {/* Cabecera grupo */}
+                            <div style={{padding:"10px 18px",background:"#F5F0FF",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                              <div style={{fontWeight:800,fontSize:14,color:"#1A0533"}}>{k}</div>
+                              <div style={{display:"flex",gap:16,alignItems:"center"}}>
+                                {v.cargos>0 && <span style={{fontSize:13,fontWeight:800,color:"#C62828"}}>Cargos: ${fmt(v.cargos)}</span>}
+                                {v.pagos>0  && <span style={{fontSize:13,fontWeight:800,color:"#1B5E20"}}>Pagos: ${fmt(v.pagos)}</span>}
+                                <span style={{fontSize:11,color:"#999"}}>{v.movs.length} mov.</span>
+                              </div>
+                            </div>
+                            {/* Tabla mini */}
+                            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                              <tbody>
+                                {v.movs.sort((a,b)=>b.fecha?.localeCompare(a.fecha||"")||0).map((m,i)=>(
+                                  <tr key={i} style={{borderTop:"1px solid #F3E5F5",background:i%2===0?"#fff":"#FDF7FF"}}>
+                                    <td style={{padding:"7px 18px",color:"#888",whiteSpace:"nowrap"}}>{m.fecha}</td>
+                                    <td style={{padding:"7px 12px",maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.descripcion}</td>
+                                    <td style={{padding:"7px 12px",color:"#7B1FA2",fontSize:11}}>{m.integrante||"—"}</td>
+                                    <td style={{padding:"7px 12px"}}>
+                                      <span style={{background:m.tipo==="PAGO"?"#E8F5E9":m.tipo==="TRANSFERENCIA"?"#E3F2FD":"#FFF3E0",
+                                        color:m.tipo==="PAGO"?"#1B5E20":m.tipo==="TRANSFERENCIA"?"#1565C0":"#E65100",
+                                        fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:20}}>{m.tipo}</span>
+                                    </td>
+                                    <td style={{padding:"7px 18px",textAlign:"right",fontWeight:800,color:m.monto<0?"#1B5E20":"#C62828"}}>
+                                      {m.monto<0?"-":""}${fmt(Math.abs(m.monto))}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filtrados.sort((a,b)=>b.fecha?.localeCompare(a.fecha||"")||0).map((m,i)=>(
-                        <tr key={m.id||i} style={{borderTop:"1px solid #F3E5F5",background:i%2===0?"#fff":"#FDF7FF"}}>
-                          <td style={{padding:"9px 14px",color:"#666",whiteSpace:"nowrap",fontSize:12}}>{m.fecha}</td>
-                          <td style={{padding:"9px 14px",maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.descripcion}</td>
-                          <td style={{padding:"9px 14px",color:"#7B1FA2",fontWeight:600,fontSize:12}}>{m.integrante||"—"}</td>
-                          <td style={{padding:"9px 14px"}}>
-                            <span style={{background:m.tipo==="PAGO"?"#E8F5E9":m.tipo==="TRANSFERENCIA"?"#E3F2FD":"#FFF3E0",
-                              color:m.tipo==="PAGO"?"#1B5E20":m.tipo==="TRANSFERENCIA"?"#1565C0":"#E65100",
-                              fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20}}>{m.tipo}</span>
-                          </td>
-                          <td style={{padding:"9px 14px",fontSize:12,color:"#999"}}>{m.tarjetaNum||"—"}</td>
-                          <td style={{padding:"9px 14px",fontSize:11,color:m.estatus==="Aplicada"?"#1B5E20":"#E65100"}}>{m.estatus||"—"}</td>
-                          <td style={{padding:"9px 14px",textAlign:"right",fontWeight:800,fontSize:14,color:m.monto<0?"#1B5E20":"#C62828"}}>
-                            {m.monto<0?"-":""}${fmt(Math.abs(m.monto))}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                        {gruposSorted.length===0 && <div style={{textAlign:"center",padding:"40px",color:"#999",fontSize:13}}>Sin movimientos con los filtros seleccionados</div>}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* ── TAB: CALENDARIO ── */}
+                {tarjetaTab==="calendario" && (()=>{
+                  const dias = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
+                  const celdas = [];
+                  for(let i=0;i<inicioSemana;i++) celdas.push(null);
+                  for(let d=1;d<=diasEnMes;d++) celdas.push(d);
+
+                  const diaKey = d => `${calMes}-${String(d).padStart(2,"0")}`;
+                  const movsDia = d => calShowMovs ? (movPorDia[diaKey(d)]||[]) : [];
+                  const progsDia = d => calShowProgs ? (progPorDia[diaKey(d)]||[]) : [];
+                  const totalMovsDia = d => movsDia(d).filter(m=>m.monto>0&&m.tipo!=="PAGO").reduce((s,m)=>s+m.monto,0);
+                  const totalProgsDia = d => progsDia(d).reduce((s,p)=>s+p.monto,0);
+                  const MESES_N2 = ["Enero","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+
+                  const [y,m_] = calMes.split("-").map(Number);
+                  const prevMes = m_===1?`${y-1}-12`:`${y}-${String(m_-1).padStart(2,"0")}`;
+                  const nextMes = m_===12?`${y+1}-01`:`${y}-${String(m_+1).padStart(2,"0")}`;
+
+                  // Totales del mes para el resumen top
+                  const movsDelMes = movT.filter(m=>m.fecha?.startsWith(calMes));
+                  const cargosDelMes = movsDelMes.filter(m=>m.monto>0&&m.tipo!=="PAGO").reduce((s,m)=>s+m.monto,0);
+                  const pagosDelMes  = Math.abs(movsDelMes.filter(m=>m.monto<0||m.tipo==="PAGO").reduce((s,m)=>s+m.monto,0));
+                  const progsDelMes  = progsT.filter(p=>p.fecha?.startsWith(calMes)&&p.estatus==="pendiente").reduce((s,p)=>s+p.monto,0);
+
+                  return (
+                    <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
+                      {/* Barra top: nav mes + toggles */}
+                      <div style={{padding:"10px 20px",background:"#1A0533",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                        {/* Nav mes */}
+                        <button onClick={()=>{setCalMes(prevMes);setCalDiaSeleccionado(null);}}
+                          style={{background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.2)",borderRadius:8,padding:"5px 12px",cursor:"pointer",fontSize:14,color:"#fff",fontFamily:"inherit"}}>◀</button>
+                        <span style={{fontWeight:800,fontSize:15,color:"#fff",minWidth:110,textAlign:"center"}}>{MESES_N2[m_-1]} {y}</span>
+                        <button onClick={()=>{setCalMes(nextMes);setCalDiaSeleccionado(null);}}
+                          style={{background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.2)",borderRadius:8,padding:"5px 12px",cursor:"pointer",fontSize:14,color:"#fff",fontFamily:"inherit"}}>▶</button>
+                        <div style={{width:1,height:20,background:"rgba(255,255,255,.2)"}}/>
+                        {/* Toggles — mutuamente exclusivos */}
+                        <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.5)"}}>VER:</span>
+                        <button onClick={()=>{setCalShowMovs(true);setCalShowProgs(false);}}
+                          style={{padding:"5px 16px",borderRadius:20,border:`1.5px solid ${calShowMovs&&!calShowProgs?"#CE93D8":"rgba(255,255,255,.2)"}`,
+                            background:calShowMovs&&!calShowProgs?"#CE93D8":"rgba(255,255,255,.08)",
+                            color:calShowMovs&&!calShowProgs?"#1A0533":"rgba(255,255,255,.7)",
+                            fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all .15s"}}>
+                          📋 Movimientos
+                        </button>
+                        <button onClick={()=>{setCalShowProgs(true);setCalShowMovs(false);}}
+                          style={{padding:"5px 16px",borderRadius:20,border:`1.5px solid ${calShowProgs&&!calShowMovs?"#CE93D8":"rgba(255,255,255,.2)"}`,
+                            background:calShowProgs&&!calShowMovs?"#CE93D8":"rgba(255,255,255,.08)",
+                            color:calShowProgs&&!calShowMovs?"#1A0533":"rgba(255,255,255,.7)",
+                            fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all .15s"}}>
+                          🔮 Programados
+                        </button>
+                        {/* Total del mes */}
+                        <div style={{marginLeft:"auto",display:"flex",gap:12,alignItems:"center"}}>
+                          {calShowMovs && !calShowProgs && <span style={{fontSize:13,fontWeight:800,color:"#CE93D8"}}>${fmt(movsDelMes.filter(m=>m.monto>0&&m.tipo!=="PAGO").reduce((s,m)=>s+m.monto,0))} en {MESES_N2[m_-1]}</span>}
+                          {calShowProgs && !calShowMovs && progsDelMes>0 && <span style={{fontSize:13,fontWeight:800,color:"#CE93D8"}}>🔮 ${fmt(progsDelMes)} pendiente</span>}
+                        </div>
+                      </div>
+
+                      <div style={{display:"flex",flex:1,overflow:"hidden"}}>
+                        {/* Calendario */}
+                        <div style={{flex:1,overflowY:"auto",padding:"14px 16px",background:"#F5F0FF"}}>
+                          {/* Cabecera días */}
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:4}}>
+                            {dias.map(d=><div key={d} style={{textAlign:"center",fontSize:11,fontWeight:800,color:"#7B1FA2",padding:"4px 0",textTransform:"uppercase",letterSpacing:.3}}>{d}</div>)}
+                          </div>
+                          {/* Celdas */}
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
+                            {celdas.map((d,i)=>{
+                              if(!d) return <div key={`e${i}`}/>;
+                              const tieneMovs  = (movPorDia[diaKey(d)]||[]).length>0;
+                              const tieneProgs = (progPorDia[diaKey(d)]||[]).length>0;
+                              const mostrarMov  = calShowMovs && !calShowProgs && tieneMovs;
+                              const mostrarProg = calShowProgs && !calShowMovs && tieneProgs;
+                              const tieneAlgo   = mostrarMov || mostrarProg;
+                              const seleccionado = calDiaSeleccionado===d;
+                              const hoy = today()===diaKey(d);
+                              const totalDia = mostrarMov
+                                ? (movPorDia[diaKey(d)]||[]).filter(m=>m.monto>0&&m.tipo!=="PAGO").reduce((s,m)=>s+m.monto,0)
+                                : (progPorDia[diaKey(d)]||[]).reduce((s,p)=>s+p.monto,0);
+                              return (
+                                <div key={d} onClick={()=>tieneAlgo&&setCalDiaSeleccionado(seleccionado?null:d)}
+                                  style={{minHeight:74,borderRadius:12,
+                                    border:`2px solid ${seleccionado?"#4A148C":hoy?"#9C27B0":tieneAlgo?"#CE93D8":"#EDE7F6"}`,
+                                    background:seleccionado?"#7B1FA2":hoy?"#EDE7F6":tieneAlgo?"#fff":"#FAF8FF",
+                                    cursor:tieneAlgo?"pointer":"default",padding:"7px 8px",transition:"all .1s",
+                                    boxShadow:seleccionado?"0 2px 8px rgba(123,31,162,.3)":tieneAlgo?"0 1px 4px rgba(0,0,0,.06)":"none"}}>
+                                  <div style={{fontWeight:hoy?900:600,fontSize:13,
+                                    color:seleccionado?"#fff":hoy?"#6A1B9A":"#4A148C",marginBottom:4}}>{d}</div>
+                                  {tieneAlgo && (
+                                    <div style={{fontSize:11,fontWeight:800,
+                                      color:seleccionado?"#fff":mostrarMov?"#4A148C":"#6A1B9A",
+                                      background:seleccionado?"rgba(255,255,255,.2)":mostrarMov?"#EDE7F6":"#E1BEE7",
+                                      borderRadius:6,padding:"2px 6px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                                      {mostrarProg && "🔮 "}${fmt(totalDia)}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        {/* Panel detalle día */}
+                        {calDiaSeleccionado && (
+                          <div style={{width:300,borderLeft:"1px solid #E1BEE7",background:"#FAF5FF",overflowY:"auto",padding:"16px"}}>
+                            <div style={{fontWeight:800,fontSize:15,color:"#4A148C",marginBottom:12}}>
+                              {calDiaSeleccionado} de {MESES_N2[m_-1]} {y}
+                            </div>
+                            {calShowMovs && !calShowProgs && (movPorDia[diaKey(calDiaSeleccionado)]||[]).length>0 && <>
+                              <div style={{fontSize:11,fontWeight:800,color:"#6A1B9A",textTransform:"uppercase",letterSpacing:.4,marginBottom:8}}>📋 Movimientos</div>
+                              {(movPorDia[diaKey(calDiaSeleccionado)]||[]).sort((a,b)=>b.monto-a.monto).map((m,i)=>(
+                                <div key={i} style={{background:"#fff",borderRadius:10,border:"1px solid #E1BEE7",padding:"9px 12px",marginBottom:7}}>
+                                  <div style={{fontSize:12,fontWeight:700,color:"#4A148C",marginBottom:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.descripcion}</div>
+                                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                                    <span style={{background:m.tipo==="PAGO"?"#E8F5E9":m.tipo==="TRANSFERENCIA"?"#E3F2FD":"#EDE7F6",
+                                      color:m.tipo==="PAGO"?"#1B5E20":m.tipo==="TRANSFERENCIA"?"#1565C0":"#7B1FA2",
+                                      fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:20}}>{m.tipo}</span>
+                                    <span style={{fontWeight:800,fontSize:13,color:m.monto<0?"#1B5E20":"#4A148C"}}>{m.monto<0?"-":""}${fmt(Math.abs(m.monto))}</span>
+                                  </div>
+                                  {m.integrante && <div style={{fontSize:10,color:"#9C27B0",marginTop:3}}>{m.integrante}</div>}
+                                </div>
+                              ))}
+                            </>}
+                            {calShowProgs && !calShowMovs && (progPorDia[diaKey(calDiaSeleccionado)]||[]).length>0 && <>
+                              <div style={{fontSize:11,fontWeight:800,color:"#6A1B9A",textTransform:"uppercase",letterSpacing:.4,marginBottom:8}}>🔮 Programados</div>
+                              {(progPorDia[diaKey(calDiaSeleccionado)]||[]).map((p,i)=>(
+                                <div key={i} style={{background:"#fff",borderRadius:10,border:"1px solid #E1BEE7",padding:"9px 12px",marginBottom:7}}>
+                                  <div style={{fontSize:12,fontWeight:700,color:"#4A148C",marginBottom:3}}>{p.descripcion}</div>
+                                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                                    <span style={{fontSize:10,color:"#9C27B0",background:"#EDE7F6",padding:"1px 7px",borderRadius:20,fontWeight:600}}>{p.categoria}</span>
+                                    <span style={{fontWeight:800,fontSize:13,color:"#4A148C"}}>${fmt(p.monto)}</span>
+                                  </div>
+                                  {p.notas && <div style={{fontSize:10,color:"#999",marginTop:3}}>{p.notas}</div>}
+                                </div>
+                              ))}
+                            </>}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* ── TAB: PROGRAMADOS ── */}
+                {tarjetaTab==="programados" && (()=>{
+                  const CATS = ["Seguros","Servicios","Luz","Internet","Gasolina","Hospedaje","Alimentación","Transporte","Software","Otros"];
+                  const pendientes = progsT.filter(p=>p.estatus==="pendiente").sort((a,b)=>a.fecha.localeCompare(b.fecha));
+                  const pagados    = progsT.filter(p=>p.estatus==="pagado").sort((a,b)=>b.fecha.localeCompare(a.fecha));
+                  const totalPend  = pendientes.reduce((s,p)=>s+p.monto,0);
+
+                  const guardarProg = async () => {
+                    if(!formProg?.descripcion||!formProg?.monto||!formProg?.fecha) return;
+                    const row = {...formProg, empresaId, tarjetaId: t.id, monto: parseFloat(String(formProg.monto).replace(/,/g,"")), estatus: formProg.estatus||"pendiente"};
+                    const id = await upsertProgramado(row);
+                    const nuevos = await fetchProgramados(empresaId);
+                    setProgramados(nuevos);
+                    setFormProg(null);
+                  };
+
+                  return (
+                    <div style={{display:"flex",flex:1,overflow:"hidden"}}>
+                      {/* Lista */}
+                      <div style={{flex:1,overflowY:"auto",padding:"16px 20px"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+                          <div>
+                            <span style={{fontWeight:800,fontSize:15,color:"#1A0533"}}>🔮 Pagos Programados</span>
+                            {totalPend>0 && <span style={{marginLeft:10,background:"#EDE7F6",color:"#7B1FA2",fontSize:12,fontWeight:800,padding:"2px 10px",borderRadius:20}}>${fmt(totalPend)} pendiente</span>}
+                          </div>
+                          <button onClick={()=>setFormProg({descripcion:"",monto:"",fecha:"",categoria:"Otros",notas:"",estatus:"pendiente"})}
+                            style={{padding:"7px 16px",borderRadius:10,border:"none",background:"#7B1FA2",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                            + Agregar
+                          </button>
+                        </div>
+
+                        {/* Formulario nuevo/editar */}
+                        {formProg && (
+                          <div style={{background:"#F3E5F5",borderRadius:14,border:"2px solid #7B1FA2",padding:"16px",marginBottom:16}}>
+                            <div style={{fontWeight:800,fontSize:13,color:"#1A0533",marginBottom:12}}>{formProg.id?"✏️ Editar pago":"➕ Nuevo pago programado"}</div>
+                            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                              <div>
+                                <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Descripción *</div>
+                                <input value={formProg.descripcion} onChange={e=>setFormProg(p=>({...p,descripcion:e.target.value}))}
+                                  placeholder="Ej: Gastos Médicos Q2" style={{...inputStyle,fontSize:13}}/>
+                              </div>
+                              <div>
+                                <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Monto *</div>
+                                <input value={formProg.monto} onChange={e=>setFormProg(p=>({...p,monto:e.target.value}))}
+                                  placeholder="45000" type="number" style={{...inputStyle,fontSize:13}}/>
+                              </div>
+                              <div>
+                                <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Fecha *</div>
+                                <input value={formProg.fecha} onChange={e=>setFormProg(p=>({...p,fecha:e.target.value}))}
+                                  type="date" style={{...inputStyle,fontSize:13}}/>
+                              </div>
+                              <div>
+                                <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Categoría</div>
+                                <select value={formProg.categoria} onChange={e=>setFormProg(p=>({...p,categoria:e.target.value}))}
+                                  style={{...selectStyle,fontSize:13}}>
+                                  {CATS.map(c=><option key={c}>{c}</option>)}
+                                </select>
+                              </div>
+                            </div>
+                            <div style={{marginBottom:10}}>
+                              <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Notas</div>
+                              <input value={formProg.notas} onChange={e=>setFormProg(p=>({...p,notas:e.target.value}))}
+                                placeholder="Ej: 2do trimestre dirección" style={{...inputStyle,fontSize:13}}/>
+                            </div>
+                            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                              <button onClick={()=>setFormProg(null)}
+                                style={{padding:"7px 16px",borderRadius:9,border:"1px solid #E1BEE7",background:"#fff",cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>Cancelar</button>
+                              <button onClick={guardarProg}
+                                style={{padding:"7px 16px",borderRadius:9,border:"none",background:"#7B1FA2",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Guardar</button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Pendientes */}
+                        {pendientes.length>0 && <>
+                          <div style={{fontSize:11,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.4,marginBottom:8}}>⏳ Pendientes ({pendientes.length})</div>
+                          {pendientes.map(p=>{
+                            const dias = daysUntil(p.fecha);
+                            return (
+                              <div key={p.id} style={{background:"#fff",borderRadius:12,border:"1px solid #E1BEE7",padding:"12px 16px",marginBottom:8,display:"flex",alignItems:"center",gap:12}}>
+                                <div style={{flex:1}}>
+                                  <div style={{fontWeight:700,fontSize:14,color:"#1A0533"}}>{p.descripcion}</div>
+                                  <div style={{fontSize:11,color:"#999",marginTop:2}}>{p.fecha} · {p.categoria}</div>
+                                  {p.notas && <div style={{fontSize:11,color:"#7B1FA2",marginTop:2}}>{p.notas}</div>}
+                                </div>
+                                <div style={{textAlign:"right"}}>
+                                  <div style={{fontWeight:900,fontSize:16,color:"#7B1FA2"}}>${fmt(p.monto)}</div>
+                                  <div style={{fontSize:10,fontWeight:700,color:dias<0?"#C62828":dias<=7?"#E65100":"#666",marginTop:1}}>
+                                    {dias<0?`Vencido hace ${Math.abs(dias)}d`:dias===0?"Hoy":`En ${dias} días`}
+                                  </div>
+                                </div>
+                                <div style={{display:"flex",gap:4}}>
+                                  <button onClick={async()=>{
+                                    await upsertProgramado({...p,estatus:"pagado"});
+                                    const nuevos=await fetchProgramados(empresaId);setProgramados(nuevos);
+                                  }} title="Marcar como pagado" style={{background:"#E8F5E9",border:"none",borderRadius:8,padding:"5px 9px",cursor:"pointer",fontSize:13}}>✅</button>
+                                  <button onClick={()=>setFormProg({...p})} style={{background:"#EDE7F6",border:"none",borderRadius:8,padding:"5px 9px",cursor:"pointer",fontSize:13}}>✏️</button>
+                                  <button onClick={async()=>{
+                                    await deleteProgramado(p.id);
+                                    const nuevos=await fetchProgramados(empresaId);setProgramados(nuevos);
+                                  }} style={{background:"#FFEBEE",border:"none",borderRadius:8,padding:"5px 9px",cursor:"pointer",fontSize:13}}>🗑️</button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </>}
+
+                        {/* Pagados */}
+                        {pagados.length>0 && <>
+                          <div style={{fontSize:11,fontWeight:800,color:"#1B5E20",textTransform:"uppercase",letterSpacing:.4,margin:"16px 0 8px"}}>✅ Pagados ({pagados.length})</div>
+                          {pagados.map(p=>(
+                            <div key={p.id} style={{background:"#F8FFF8",borderRadius:12,border:"1px solid #C8E6C9",padding:"10px 16px",marginBottom:6,display:"flex",alignItems:"center",gap:12,opacity:.75}}>
+                              <div style={{flex:1}}>
+                                <div style={{fontWeight:600,fontSize:13,color:"#555",textDecoration:"line-through"}}>{p.descripcion}</div>
+                                <div style={{fontSize:10,color:"#999",marginTop:1}}>{p.fecha} · {p.categoria}</div>
+                              </div>
+                              <div style={{fontWeight:800,fontSize:14,color:"#1B5E20"}}>${fmt(p.monto)}</div>
+                              <button onClick={async()=>{
+                                await deleteProgramado(p.id);
+                                const nuevos=await fetchProgramados(empresaId);setProgramados(nuevos);
+                              }} style={{background:"#FFEBEE",border:"none",borderRadius:8,padding:"4px 8px",cursor:"pointer",fontSize:12}}>🗑️</button>
+                            </div>
+                          ))}
+                        </>}
+
+                        {progsT.length===0 && !formProg && (
+                          <div style={{textAlign:"center",padding:"40px 20px",color:"#999"}}>
+                            <div style={{fontSize:36,marginBottom:10}}>🔮</div>
+                            <div style={{fontWeight:700,fontSize:14}}>Sin pagos programados</div>
+                            <div style={{fontSize:12,marginTop:4}}>Agrega pagos futuros como seguros, servicios, etc.</div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
               </div>
             </div>
           );
