@@ -2422,8 +2422,26 @@ export default function CxpApp({ user, onLogout }) {
               display:"flex",flexDirection:"column",overflow:"hidden",
               fontFamily:"inherit"}}
               onClick={e=>e.stopPropagation()}>
-              <div style={{background:"#4A148C",padding:"8px 26px",textAlign:"center",flexShrink:0}}>
+              <div style={{background:"#4A148C",padding:"8px 26px",flexShrink:0,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.75)",textTransform:"uppercase",letterSpacing:1.5}}>Propuesta de Pagos con TC</span>
+                <span style={{fontSize:11,color:"rgba(255,255,255,.5)"}}>{t2.banco} · {t2.titular}</span>
+              </div>
+              {/* KPIs tarjeta */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:0,borderBottom:"1px solid #E1BEE7",flexShrink:0}}>
+                {(()=>{
+                  const pct2 = t2.limite>0?Math.round((t2.saldoActual/t2.limite)*100):0;
+                  return [
+                    {l:"Límite",       v:`$${fmt(t2.limite)}`,              c:"#4A148C"},
+                    {l:"Saldo Actual", v:`$${fmt(t2.saldoActual)}`,         c:"#C62828"},
+                    {l:"Disponible",   v:`$${fmt(t2.limite-t2.saldoActual)}`,c:"#1B5E20"},
+                    {l:`${pct2}% Usado`, v:<div style={{height:6,borderRadius:3,background:"#EDE7F6",overflow:"hidden",marginTop:6}}><div style={{height:"100%",width:`${Math.min(pct2,100)}%`,background:pct2>80?"#C62828":pct2>50?"#E65100":"#7B1FA2",borderRadius:3}}/></div>, c:"#7B1FA2"},
+                  ].map((k,i)=>(
+                    <div key={i} style={{padding:"10px 16px",borderRight:i<3?"1px solid #F3E5F5":"none",background:"#FAF5FF"}}>
+                      <div style={{fontSize:9,color:"#9C27B0",fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>{k.l}</div>
+                      <div style={{fontSize:14,fontWeight:900,color:k.c}}>{k.v}</div>
+                    </div>
+                  ));
+                })()}
               </div>
               <div style={{background:"#1A0533",padding:"18px 26px 16px",flexShrink:0}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
