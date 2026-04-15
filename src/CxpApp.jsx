@@ -1431,7 +1431,7 @@ export default function CxpApp({ user, onLogout }) {
                             <div onClick={e=>{e.stopPropagation();setEditingSaldoId(t.id);setEditingSaldoVal(String(t.saldoActual));}}
                               style={{fontSize:22,fontWeight:900,color:"#C62828",marginBottom:6,cursor:"text",borderBottom:"1px dashed #EF9A9A",display:"inline-block"}}
                               title="Clic para editar saldo">
-                              ${fmt(t.saldoActual)} ✏️
+                              ${fmt(t.saldoActual)}
                             </div>
                           )}
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
@@ -2112,10 +2112,10 @@ export default function CxpApp({ user, onLogout }) {
                                   <div style={{fontWeight:hoy?900:600,fontSize:13,
                                     color:seleccionado?"#fff":hoy?"#6A1B9A":"#4A148C",marginBottom:4}}>{d}</div>
                                   {tieneAlgo && (
-                                    <div style={{fontSize:11,fontWeight:800,
+                                    <div style={{fontSize:13,fontWeight:900,
                                       color:seleccionado?"#fff":mostrarMov?"#4A148C":"#6A1B9A",
                                       background:seleccionado?"rgba(255,255,255,.2)":mostrarMov?"#EDE7F6":"#E1BEE7",
-                                      borderRadius:6,padding:"2px 6px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                                      borderRadius:7,padding:"3px 7px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginTop:2}}>
                                       {mostrarProg && "🔮 "}${fmt(totalDia)}
                                     </div>
                                   )}
@@ -2171,11 +2171,29 @@ export default function CxpApp({ user, onLogout }) {
                   const pendientes = progsT.filter(p=>p.estatus==="pendiente").sort((a,b)=>a.fecha.localeCompare(b.fecha));
                   const pagados    = progsT.filter(p=>p.estatus==="pagado").sort((a,b)=>b.fecha.localeCompare(a.fecha));
                   const totalPend  = pendientes.reduce((s,p)=>s+p.monto,0);
+                  const totalPagado= pagados.reduce((s,p)=>s+p.monto,0);
+                  const totalGlobal= progsT.reduce((s,p)=>s+p.monto,0);
+
+                  // Agrupar por descripción base (ej: "GMM Dirección Q1","GMM Dirección Q2" → "GMM Dirección")
+                  // Usamos la categoria como agrupador principal
+                  const porCategoria = {};
+                  progsT.forEach(p=>{
+                    const cat = p.categoria||"Otros";
+                    if(!porCategoria[cat]) porCategoria[cat]={pagos:[],total:0,pagado:0,pendiente:0};
+                    porCategoria[cat].pagos.push(p);
+                    porCategoria[cat].total += p.monto;
+                    if(p.estatus==="pagado") porCategoria[cat].pagado += p.monto;
+                    else porCategoria[cat].pendiente += p.monto;
+                  });
+                  const catsSorted = Object.entries(porCategoria).sort((a,b)=>b[1].total-a[1].total);
+
+                  // Próximos 3 pagos
+                  const proximos = pendientes.slice(0,3);
 
                   const guardarProg = async () => {
                     if(!formProg?.descripcion||!formProg?.monto||!formProg?.fecha) return;
                     const row = {...formProg, empresaId, tarjetaId: t.id, monto: parseFloat(String(formProg.monto).replace(/,/g,"")), estatus: formProg.estatus||"pendiente"};
-                    const id = await upsertProgramado(row);
+                    await upsertProgramado(row);
                     const nuevos = await fetchProgramados(empresaId);
                     setProgramados(nuevos);
                     setFormProg(null);
@@ -2183,28 +2201,93 @@ export default function CxpApp({ user, onLogout }) {
 
                   return (
                     <div style={{display:"flex",flex:1,overflow:"hidden"}}>
-                      {/* Lista */}
+
+                      {/* ── PANEL IZQUIERDO: Resumen ── */}
+                      <div style={{width:280,borderRight:"1px solid #E1BEE7",background:"#FAF5FF",overflowY:"auto",padding:"16px 14px",flexShrink:0}}>
+                        {/* KPIs globales */}
+                        <div style={{marginBottom:16}}>
+                          <div style={{fontSize:11,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.4,marginBottom:10}}>Resumen total</div>
+                          {[
+                            {l:"Total programado", v:`$${fmt(totalGlobal)}`,     c:"#4A148C", bg:"#EDE7F6"},
+                            {l:"✅ Pagado",         v:`$${fmt(totalPagado)}`,     c:"#1B5E20", bg:"#E8F5E9"},
+                            {l:"⏳ Pendiente",      v:`$${fmt(totalPend)}`,       c:"#7B1FA2", bg:"#F3E5F5"},
+                            {l:"# Pendientes",     v:`${pendientes.length} pago${pendientes.length!==1?"s":""}`, c:"#4A148C", bg:"#EDE7F6"},
+                          ].map((k,i)=>(
+                            <div key={i} style={{background:k.bg,borderRadius:10,padding:"8px 12px",marginBottom:6,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                              <span style={{fontSize:11,color:"#666",fontWeight:600}}>{k.l}</span>
+                              <span style={{fontSize:14,fontWeight:900,color:k.c}}>{k.v}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Próximos pagos */}
+                        {proximos.length>0 && (
+                          <div style={{marginBottom:16}}>
+                            <div style={{fontSize:11,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.4,marginBottom:8}}>📅 Próximos pagos</div>
+                            {proximos.map(p=>{
+                              const dias=daysUntil(p.fecha);
+                              return (
+                                <div key={p.id} style={{background:"#fff",borderRadius:9,border:"1px solid #E1BEE7",padding:"8px 10px",marginBottom:6}}>
+                                  <div style={{fontWeight:700,fontSize:12,color:"#4A148C",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.descripcion}</div>
+                                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:3}}>
+                                    <span style={{fontSize:10,color:dias<0?"#C62828":dias<=7?"#E65100":"#999",fontWeight:700}}>
+                                      {dias<0?`Vencido ${Math.abs(dias)}d`:dias===0?"Hoy":`En ${dias}d`}
+                                    </span>
+                                    <span style={{fontWeight:900,fontSize:13,color:"#7B1FA2"}}>${fmt(p.monto)}</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Por categoría */}
+                        {catsSorted.length>0 && (
+                          <div>
+                            <div style={{fontSize:11,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.4,marginBottom:8}}>Por categoría</div>
+                            {catsSorted.map(([cat,v])=>{
+                              const pctPag = v.total>0?Math.round((v.pagado/v.total)*100):0;
+                              return (
+                                <div key={cat} style={{background:"#fff",borderRadius:10,border:"1px solid #E1BEE7",padding:"10px 12px",marginBottom:7}}>
+                                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                                    <span style={{fontWeight:700,fontSize:12,color:"#4A148C"}}>{cat}</span>
+                                    <span style={{fontWeight:900,fontSize:12,color:"#7B1FA2"}}>${fmt(v.total)}</span>
+                                  </div>
+                                  {/* Barra progreso */}
+                                  <div style={{height:5,borderRadius:3,background:"#EDE7F6",marginBottom:5,overflow:"hidden"}}>
+                                    <div style={{height:"100%",width:`${pctPag}%`,background:"#7B1FA2",borderRadius:3,transition:"width .4s"}}/>
+                                  </div>
+                                  <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"#999"}}>
+                                    <span style={{color:"#1B5E20",fontWeight:600}}>Pagado ${fmt(v.pagado)}</span>
+                                    <span style={{color:"#E65100",fontWeight:600}}>Pendiente ${fmt(v.pendiente)}</span>
+                                  </div>
+                                  <div style={{fontSize:10,color:"#7B1FA2",marginTop:2}}>{v.pagos.length} pago{v.pagos.length!==1?"s":""} · {pctPag}% cubierto</div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* ── PANEL DERECHO: Lista + formulario ── */}
                       <div style={{flex:1,overflowY:"auto",padding:"16px 20px"}}>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-                          <div>
-                            <span style={{fontWeight:800,fontSize:15,color:"#1A0533"}}>🔮 Pagos Programados</span>
-                            {totalPend>0 && <span style={{marginLeft:10,background:"#EDE7F6",color:"#7B1FA2",fontSize:12,fontWeight:800,padding:"2px 10px",borderRadius:20}}>${fmt(totalPend)} pendiente</span>}
-                          </div>
-                          <button onClick={()=>setFormProg({descripcion:"",monto:"",fecha:"",categoria:"Otros",notas:"",estatus:"pendiente"})}
+                          <span style={{fontWeight:800,fontSize:15,color:"#1A0533"}}>🔮 Detalle de pagos</span>
+                          <button onClick={()=>setFormProg({descripcion:"",monto:"",fecha:"",categoria:"Seguros",notas:"",estatus:"pendiente"})}
                             style={{padding:"7px 16px",borderRadius:10,border:"none",background:"#7B1FA2",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
                             + Agregar
                           </button>
                         </div>
 
-                        {/* Formulario nuevo/editar */}
+                        {/* Formulario */}
                         {formProg && (
                           <div style={{background:"#F3E5F5",borderRadius:14,border:"2px solid #7B1FA2",padding:"16px",marginBottom:16}}>
-                            <div style={{fontWeight:800,fontSize:13,color:"#1A0533",marginBottom:12}}>{formProg.id?"✏️ Editar pago":"➕ Nuevo pago programado"}</div>
+                            <div style={{fontWeight:800,fontSize:13,color:"#1A0533",marginBottom:12}}>{formProg.id?"Editar pago":"Nuevo pago programado"}</div>
                             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
                               <div>
                                 <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Descripción *</div>
                                 <input value={formProg.descripcion} onChange={e=>setFormProg(p=>({...p,descripcion:e.target.value}))}
-                                  placeholder="Ej: Gastos Médicos Q2" style={{...inputStyle,fontSize:13}}/>
+                                  placeholder="Ej: GMM Dirección Q2" style={{...inputStyle,fontSize:13}}/>
                               </div>
                               <div>
                                 <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Monto *</div>
@@ -2242,30 +2325,27 @@ export default function CxpApp({ user, onLogout }) {
                         {pendientes.length>0 && <>
                           <div style={{fontSize:11,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.4,marginBottom:8}}>⏳ Pendientes ({pendientes.length})</div>
                           {pendientes.map(p=>{
-                            const dias = daysUntil(p.fecha);
+                            const dias=daysUntil(p.fecha);
                             return (
-                              <div key={p.id} style={{background:"#fff",borderRadius:12,border:"1px solid #E1BEE7",padding:"12px 16px",marginBottom:8,display:"flex",alignItems:"center",gap:12}}>
-                                <div style={{flex:1}}>
-                                  <div style={{fontWeight:700,fontSize:14,color:"#1A0533"}}>{p.descripcion}</div>
-                                  <div style={{fontSize:11,color:"#999",marginTop:2}}>{p.fecha} · {p.categoria}</div>
-                                  {p.notas && <div style={{fontSize:11,color:"#7B1FA2",marginTop:2}}>{p.notas}</div>}
+                              <div key={p.id} style={{background:"#fff",borderRadius:12,border:"1px solid #E1BEE7",padding:"11px 14px",marginBottom:7,display:"flex",alignItems:"center",gap:10}}>
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{fontWeight:700,fontSize:13,color:"#1A0533",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.descripcion}</div>
+                                  <div style={{fontSize:11,color:"#999",marginTop:1}}>{p.fecha} · <span style={{color:"#9C27B0"}}>{p.categoria}</span></div>
+                                  {p.notas && <div style={{fontSize:10,color:"#7B1FA2",marginTop:1,fontStyle:"italic"}}>{p.notas}</div>}
                                 </div>
-                                <div style={{textAlign:"right"}}>
-                                  <div style={{fontWeight:900,fontSize:16,color:"#7B1FA2"}}>${fmt(p.monto)}</div>
-                                  <div style={{fontSize:10,fontWeight:700,color:dias<0?"#C62828":dias<=7?"#E65100":"#666",marginTop:1}}>
-                                    {dias<0?`Vencido hace ${Math.abs(dias)}d`:dias===0?"Hoy":`En ${dias} días`}
+                                <div style={{textAlign:"right",flexShrink:0}}>
+                                  <div style={{fontWeight:900,fontSize:15,color:"#7B1FA2"}}>${fmt(p.monto)}</div>
+                                  <div style={{fontSize:10,fontWeight:700,color:dias<0?"#C62828":dias<=7?"#E65100":"#999",marginTop:1}}>
+                                    {dias<0?`Vencido ${Math.abs(dias)}d`:dias===0?"Hoy":`En ${dias}d`}
                                   </div>
                                 </div>
-                                <div style={{display:"flex",gap:4}}>
-                                  <button onClick={async()=>{
-                                    await upsertProgramado({...p,estatus:"pagado"});
-                                    const nuevos=await fetchProgramados(empresaId);setProgramados(nuevos);
-                                  }} title="Marcar como pagado" style={{background:"#E8F5E9",border:"none",borderRadius:8,padding:"5px 9px",cursor:"pointer",fontSize:13}}>✅</button>
-                                  <button onClick={()=>setFormProg({...p})} style={{background:"#EDE7F6",border:"none",borderRadius:8,padding:"5px 9px",cursor:"pointer",fontSize:13}}>✏️</button>
-                                  <button onClick={async()=>{
-                                    await deleteProgramado(p.id);
-                                    const nuevos=await fetchProgramados(empresaId);setProgramados(nuevos);
-                                  }} style={{background:"#FFEBEE",border:"none",borderRadius:8,padding:"5px 9px",cursor:"pointer",fontSize:13}}>🗑️</button>
+                                <div style={{display:"flex",flexDirection:"column",gap:3,flexShrink:0}}>
+                                  <button onClick={async()=>{await upsertProgramado({...p,estatus:"pagado"});const n=await fetchProgramados(empresaId);setProgramados(n);}}
+                                    title="Marcar pagado" style={{background:"#E8F5E9",border:"none",borderRadius:7,padding:"4px 8px",cursor:"pointer",fontSize:12}}>✅</button>
+                                  <button onClick={()=>setFormProg({...p})}
+                                    style={{background:"#EDE7F6",border:"none",borderRadius:7,padding:"4px 8px",cursor:"pointer",fontSize:12}}>✏️</button>
+                                  <button onClick={async()=>{await deleteProgramado(p.id);const n=await fetchProgramados(empresaId);setProgramados(n);}}
+                                    style={{background:"#FFEBEE",border:"none",borderRadius:7,padding:"4px 8px",cursor:"pointer",fontSize:12}}>🗑️</button>
                                 </div>
                               </div>
                             );
@@ -2274,27 +2354,25 @@ export default function CxpApp({ user, onLogout }) {
 
                         {/* Pagados */}
                         {pagados.length>0 && <>
-                          <div style={{fontSize:11,fontWeight:800,color:"#1B5E20",textTransform:"uppercase",letterSpacing:.4,margin:"16px 0 8px"}}>✅ Pagados ({pagados.length})</div>
+                          <div style={{fontSize:11,fontWeight:800,color:"#1B5E20",textTransform:"uppercase",letterSpacing:.4,margin:"14px 0 8px"}}>✅ Pagados ({pagados.length})</div>
                           {pagados.map(p=>(
-                            <div key={p.id} style={{background:"#F8FFF8",borderRadius:12,border:"1px solid #C8E6C9",padding:"10px 16px",marginBottom:6,display:"flex",alignItems:"center",gap:12,opacity:.75}}>
-                              <div style={{flex:1}}>
-                                <div style={{fontWeight:600,fontSize:13,color:"#555",textDecoration:"line-through"}}>{p.descripcion}</div>
+                            <div key={p.id} style={{background:"#F8FFF8",borderRadius:11,border:"1px solid #C8E6C9",padding:"9px 14px",marginBottom:5,display:"flex",alignItems:"center",gap:10,opacity:.8}}>
+                              <div style={{flex:1,minWidth:0}}>
+                                <div style={{fontWeight:600,fontSize:12,color:"#555",textDecoration:"line-through",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.descripcion}</div>
                                 <div style={{fontSize:10,color:"#999",marginTop:1}}>{p.fecha} · {p.categoria}</div>
                               </div>
-                              <div style={{fontWeight:800,fontSize:14,color:"#1B5E20"}}>${fmt(p.monto)}</div>
-                              <button onClick={async()=>{
-                                await deleteProgramado(p.id);
-                                const nuevos=await fetchProgramados(empresaId);setProgramados(nuevos);
-                              }} style={{background:"#FFEBEE",border:"none",borderRadius:8,padding:"4px 8px",cursor:"pointer",fontSize:12}}>🗑️</button>
+                              <div style={{fontWeight:800,fontSize:13,color:"#1B5E20",flexShrink:0}}>${fmt(p.monto)}</div>
+                              <button onClick={async()=>{await deleteProgramado(p.id);const n=await fetchProgramados(empresaId);setProgramados(n);}}
+                                style={{background:"#FFEBEE",border:"none",borderRadius:7,padding:"3px 7px",cursor:"pointer",fontSize:11,flexShrink:0}}>🗑️</button>
                             </div>
                           ))}
                         </>}
 
                         {progsT.length===0 && !formProg && (
-                          <div style={{textAlign:"center",padding:"40px 20px",color:"#999"}}>
-                            <div style={{fontSize:36,marginBottom:10}}>🔮</div>
-                            <div style={{fontWeight:700,fontSize:14}}>Sin pagos programados</div>
-                            <div style={{fontSize:12,marginTop:4}}>Agrega pagos futuros como seguros, servicios, etc.</div>
+                          <div style={{textAlign:"center",padding:"50px 20px",color:"#999"}}>
+                            <div style={{fontSize:40,marginBottom:10}}>🔮</div>
+                            <div style={{fontWeight:700,fontSize:14,color:"#7B1FA2"}}>Sin pagos programados</div>
+                            <div style={{fontSize:12,marginTop:4}}>Agrega seguros, servicios, o cualquier pago futuro</div>
                           </div>
                         )}
                       </div>
