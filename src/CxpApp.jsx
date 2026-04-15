@@ -2300,8 +2300,13 @@ export default function CxpApp({ user, onLogout }) {
                             display:"flex",flexDirection:"column",overflow:"hidden"}}
                             onClick={e=>e.stopPropagation()}>
 
+                            {/* Título superior */}
+                            <div style={{background:"#4A148C",padding:"8px 26px",textAlign:"center"}}>
+                              <span style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.7)",textTransform:"uppercase",letterSpacing:1.5}}>Propuesta de Pagos con TC</span>
+                            </div>
+
                             {/* Header */}
-                            <div style={{background:"#1A0533",padding:"22px 26px 16px",flexShrink:0}}>
+                            <div style={{background:"#1A0533",padding:"18px 26px 16px",flexShrink:0}}>
                               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
                                 <div>
                                   <div style={{fontWeight:900,fontSize:20,color:"#fff"}}>{popupSerie.desc}</div>
@@ -2335,11 +2340,20 @@ export default function CxpApp({ user, onLogout }) {
 
                             {/* Tabla de pagos */}
                             <div style={{overflowY:"auto",flex:1}}>
+                              {/* Cabecera columnas */}
+                              <div style={{display:"flex",alignItems:"center",gap:14,padding:"8px 24px",
+                                background:"#F5F0FF",borderBottom:"2px solid #EDE7F6"}}>
+                                {nTot>1 && <div style={{width:30,flexShrink:0,fontSize:10,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.6,textAlign:"center"}}>No.</div>}
+                                <div style={{flex:1,fontSize:10,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.6}}>Fecha de pago</div>
+                                <div style={{fontWeight:800,fontSize:10,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.6,flexShrink:0,minWidth:120,textAlign:"right"}}>Importe</div>
+                                <div style={{minWidth:100,textAlign:"right",flexShrink:0,fontSize:10,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.6}}>Vencimiento</div>
+                                <div style={{width:118,flexShrink:0,fontSize:10,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.6,textAlign:"center"}}>Acciones</div>
+                              </div>
                               {pags.map((p,pi)=>{
                                 const dias=daysUntil(p.fecha);
                                 const pagado=p.estatus==="pagado";
                                 return (
-                                  <div key={p.id} style={{display:"flex",alignItems:"center",gap:14,padding:"15px 26px",
+                                  <div key={p.id} style={{display:"flex",alignItems:"center",gap:14,padding:"13px 24px",
                                     borderTop:"1px solid #F3E5F5",background:pagado?"#F8FFF8":"#fff"}}>
                                     {nTot>1 && <div style={{width:30,height:30,borderRadius:"50%",flexShrink:0,
                                       background:pagado?"#43A047":"#EDE7F6",color:pagado?"#fff":"#7B1FA2",
@@ -2347,24 +2361,24 @@ export default function CxpApp({ user, onLogout }) {
                                       {pi+1}
                                     </div>}
                                     <div style={{flex:1,minWidth:0}}>
-                                      <div style={{fontSize:16,fontWeight:700,color:pagado?"#999":"#333",
+                                      <div style={{fontSize:15,fontWeight:700,color:pagado?"#999":"#333",
                                         textDecoration:pagado?"line-through":"none",whiteSpace:"nowrap"}}>{p.fecha}</div>
-                                      {p.notas && <div style={{fontSize:12,color:"#9C27B0",marginTop:2,fontStyle:"italic"}}>{p.notas}</div>}
+                                      {p.notas && <div style={{fontSize:11,color:"#9C27B0",marginTop:2,fontStyle:"italic"}}>{p.notas}</div>}
                                     </div>
-                                    <div style={{fontWeight:900,fontSize:19,color:pagado?"#1B5E20":"#7B1FA2",flexShrink:0}}>${fmt(p.monto)}</div>
+                                    <div style={{fontWeight:900,fontSize:18,color:pagado?"#1B5E20":"#7B1FA2",flexShrink:0,minWidth:120,textAlign:"right"}}>${fmt(p.monto)}</div>
                                     <div style={{minWidth:100,textAlign:"right",flexShrink:0,fontSize:13,fontWeight:700,
                                       color:pagado?"#1B5E20":dias<0?"#C62828":dias===0?"#E65100":dias<=7?"#E65100":"#999"}}>
                                       {diasLabel(dias)}
                                     </div>
-                                    <div style={{display:"flex",gap:5,flexShrink:0}}>
+                                    <div style={{display:"flex",gap:4,flexShrink:0,width:118,justifyContent:"center"}}>
                                       {!pagado && <button onClick={async()=>{await upsertProgramado({...p,estatus:"pagado"});const n=await fetchProgramados(empresaId);setProgramados(n);}}
-                                        title="Marcar pagado" style={{background:"#E8F5E9",border:"none",borderRadius:8,padding:"6px 10px",cursor:"pointer",fontSize:15}}>✅</button>}
+                                        title="Marcar pagado" style={{background:"#E8F5E9",border:"none",borderRadius:8,padding:"6px 9px",cursor:"pointer",fontSize:14}}>✅</button>}
                                       {pagado && <button onClick={async()=>{await upsertProgramado({...p,estatus:"pendiente"});const n=await fetchProgramados(empresaId);setProgramados(n);}}
-                                        style={{background:"#EDE7F6",border:"none",borderRadius:8,padding:"6px 10px",cursor:"pointer",fontSize:14}}>↩️</button>}
+                                        style={{background:"#EDE7F6",border:"none",borderRadius:8,padding:"6px 9px",cursor:"pointer",fontSize:13}}>↩️</button>}
                                       <button onClick={()=>{setFormProg({...p});setProgSeriePopup(null);}}
-                                        style={{background:"#EDE7F6",border:"none",borderRadius:8,padding:"6px 10px",cursor:"pointer",fontSize:14}}>✏️</button>
+                                        style={{background:"#EDE7F6",border:"none",borderRadius:8,padding:"6px 9px",cursor:"pointer",fontSize:13}}>✏️</button>
                                       <button onClick={async()=>{await deleteProgramado(p.id);const n=await fetchProgramados(empresaId);setProgramados(n);}}
-                                        style={{background:"#FFEBEE",border:"none",borderRadius:8,padding:"6px 10px",cursor:"pointer",fontSize:14}}>🗑️</button>
+                                        style={{background:"#FFEBEE",border:"none",borderRadius:8,padding:"6px 9px",cursor:"pointer",fontSize:13}}>🗑️</button>
                                     </div>
                                   </div>
                                 );
