@@ -225,6 +225,7 @@ export default function CxpApp({ user, onLogout }) {
   const [resumenFiltroInt, setResumenFiltroInt] = useState("");
   const [resumenFiltroTipo, setResumenFiltroTipo] = useState("");
   const [resumenFiltroMes, setResumenFiltroMes] = useState("");
+  const [progSeriePopup, setProgSeriePopup] = useState(null); // key of serie to show popup
   const [vincularModal, setVincularModal] = useState(null); // {invoiceId, proveedor, folio, total, moneda}
 
   /* ── Load data from Supabase ────────────────────────────────────── */
@@ -1850,24 +1851,24 @@ export default function CxpApp({ user, onLogout }) {
                 </div>
 
                 {/* ── 4 KPIs ── */}
-                <div style={{padding:"12px 24px",background:"#F5F0FF",borderBottom:"1px solid #E1BEE7",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+                <div style={{padding:"16px 24px",background:"#F5F0FF",borderBottom:"1px solid #E1BEE7",display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"}}>
                   {[
-                    {l:"💳 Límite",      v:`$${fmt(t.limite)}`,                       c:"#1A0533"},
-                    {l:"🔴 Saldo Actual", v:`$${fmt(t.saldoActual)}`,                  c:"#C62828"},
-                    {l:"✅ Disponible",   v:`$${fmt(t.limite-t.saldoActual)}`,          c:"#1B5E20"},
-                    {l:`📊 ${pct}% usado`,v:<div style={{height:8,borderRadius:4,background:"#EDE7F6",overflow:"hidden",width:120,marginTop:4}}><div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:pct>80?"#C62828":pct>50?"#E65100":"#7B1FA2",borderRadius:4}}/></div>, c:"#7B1FA2"},
+                    {l:"💳 Límite",       v:`$${fmt(t.limite)}`,              c:"#1A0533"},
+                    {l:"🔴 Saldo Actual",  v:`$${fmt(t.saldoActual)}`,         c:"#C62828"},
+                    {l:"✅ Disponible",    v:`$${fmt(t.limite-t.saldoActual)}`, c:"#1B5E20"},
+                    {l:`📊 ${pct}% usado`, v:<div style={{height:10,borderRadius:5,background:"#EDE7F6",overflow:"hidden",width:140,marginTop:6}}><div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:pct>80?"#C62828":pct>50?"#E65100":"#7B1FA2",borderRadius:5}}/></div>, c:"#7B1FA2"},
                   ].map((k,i)=>(
-                    <div key={i} style={{background:"#fff",borderRadius:12,padding:"10px 16px",border:"1px solid #E1BEE7",flex:"1 1 140px"}}>
-                      <div style={{fontSize:10,color:"#7B1FA2",fontWeight:700,textTransform:"uppercase",letterSpacing:.4,marginBottom:3}}>{k.l}</div>
-                      <div style={{fontSize:16,fontWeight:900,color:k.c}}>{k.v}</div>
+                    <div key={i} style={{background:"#fff",borderRadius:14,padding:"14px 20px",border:"1px solid #E1BEE7",flex:"1 1 160px",boxShadow:"0 1px 4px rgba(0,0,0,.04)"}}>
+                      <div style={{fontSize:11,color:"#7B1FA2",fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>{k.l}</div>
+                      <div style={{fontSize:22,fontWeight:900,color:k.c,lineHeight:1}}>{k.v}</div>
                     </div>
                   ))}
                   {/* Editar saldo */}
                   {editSaldoModal ? (
-                    <div style={{display:"flex",gap:6,alignItems:"center",background:"#fff",borderRadius:12,padding:"8px 14px",border:"2px solid #7B1FA2",flex:"1 1 200px"}}>
+                    <div style={{display:"flex",gap:6,alignItems:"center",background:"#fff",borderRadius:14,padding:"12px 18px",border:"2px solid #7B1FA2",flex:"1 1 200px"}}>
                       <span style={{fontSize:12,fontWeight:700,color:"#7B1FA2"}}>Nuevo saldo:</span>
                       <input autoFocus value={editSaldoVal} onChange={e=>setEditSaldoVal(e.target.value)}
-                        style={{border:"none",borderBottom:"2px solid #7B1FA2",outline:"none",fontSize:15,fontWeight:800,color:"#C62828",width:130,background:"transparent",fontFamily:"inherit"}}
+                        style={{border:"none",borderBottom:"2px solid #7B1FA2",outline:"none",fontSize:18,fontWeight:800,color:"#C62828",width:140,background:"transparent",fontFamily:"inherit"}}
                         placeholder={fmt(t.saldoActual)}
                         onKeyDown={async e=>{
                           if(e.key==="Enter"){
@@ -1885,7 +1886,7 @@ export default function CxpApp({ user, onLogout }) {
                     </div>
                   ) : (
                     <button onClick={()=>{setEditSaldoModal(true);setEditSaldoVal(String(t.saldoActual));}}
-                      style={{padding:"8px 16px",borderRadius:12,border:"1.5px solid #7B1FA2",background:"#fff",color:"#7B1FA2",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                      style={{padding:"14px 20px",borderRadius:14,border:"1.5px solid #7B1FA2",background:"#fff",color:"#7B1FA2",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",boxShadow:"0 1px 4px rgba(0,0,0,.04)"}}>
                       ✏️ Editar saldo
                     </button>
                   )}
@@ -2174,22 +2175,6 @@ export default function CxpApp({ user, onLogout }) {
                   const totalPagado= pagados.reduce((s,p)=>s+p.monto,0);
                   const totalGlobal= progsT.reduce((s,p)=>s+p.monto,0);
 
-                  // Agrupar por descripción base (ej: "GMM Dirección Q1","GMM Dirección Q2" → "GMM Dirección")
-                  // Usamos la categoria como agrupador principal
-                  const porCategoria = {};
-                  progsT.forEach(p=>{
-                    const cat = p.categoria||"Otros";
-                    if(!porCategoria[cat]) porCategoria[cat]={pagos:[],total:0,pagado:0,pendiente:0};
-                    porCategoria[cat].pagos.push(p);
-                    porCategoria[cat].total += p.monto;
-                    if(p.estatus==="pagado") porCategoria[cat].pagado += p.monto;
-                    else porCategoria[cat].pendiente += p.monto;
-                  });
-                  const catsSorted = Object.entries(porCategoria).sort((a,b)=>b[1].total-a[1].total);
-
-                  // Próximos 3 pagos
-                  const proximos = pendientes.slice(0,3);
-
                   const calcFechas = (fechaInicio, frecuencia, n) => {
                     const fechas = [];
                     let d = new Date(fechaInicio + "T12:00:00");
@@ -2210,7 +2195,6 @@ export default function CxpApp({ user, onLogout }) {
                     if(!formProg?.descripcion||!formProg?.monto||!formProg?.fecha) return;
                     const monto = parseFloat(String(formProg.monto).replace(/,/g,""));
                     if(formProg.recurrente && !formProg.id) {
-                      // Generar serie
                       const n = parseInt(formProg.numPagos)||1;
                       const fechas = calcFechas(formProg.fecha, formProg.frecuencia||"trimestral", n);
                       const serieId = `serie_${Date.now()}`;
@@ -2220,257 +2204,244 @@ export default function CxpApp({ user, onLogout }) {
                           estatus:"pendiente", empresaId, tarjetaId:t.id, serieId});
                       }
                     } else {
-                      const row = {...formProg, empresaId, tarjetaId:t.id, monto, estatus:formProg.estatus||"pendiente"};
-                      await upsertProgramado(row);
+                      await upsertProgramado({...formProg, empresaId, tarjetaId:t.id, monto, estatus:formProg.estatus||"pendiente"});
                     }
                     const nuevos = await fetchProgramados(empresaId);
                     setProgramados(nuevos);
                     setFormProg(null);
                   };
 
-                  // Preview de fechas para recurrentes
                   const previewFechas = formProg?.recurrente && formProg?.fecha && formProg?.numPagos
                     ? calcFechas(formProg.fecha, formProg.frecuencia||"trimestral", Math.min(parseInt(formProg.numPagos)||1, 12))
                     : null;
 
-                  // Agrupar pendientes por serie o descripción
                   const seriesMap = {};
                   progsT.forEach(p=>{
                     const key = p.serieId || `solo_${p.id}`;
-                    if(!seriesMap[key]) seriesMap[key]={desc:p.descripcion, cat:p.categoria, pagos:[], totalPagado:0, totalPend:0, total:0, serieId:p.serieId};
+                    if(!seriesMap[key]) seriesMap[key]={key, desc:p.descripcion, cat:p.categoria, pagos:[], totalPagado:0, totalPend:0, total:0, serieId:p.serieId};
                     seriesMap[key].pagos.push(p);
                     seriesMap[key].total += p.monto;
                     if(p.estatus==="pagado") seriesMap[key].totalPagado += p.monto;
                     else seriesMap[key].totalPend += p.monto;
                   });
                   const seriesSorted = Object.values(seriesMap).sort((a,b)=>b.total-a.total);
+                  const popupSerie = progSeriePopup ? seriesMap[progSeriePopup] : null;
 
                   return (
                     <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
 
-                      {/* ── RESUMEN SUPERIOR ── */}
-                      <div style={{padding:"14px 24px",background:"#1A0533",borderBottom:"1px solid #2D1B4A",display:"flex",gap:12,alignItems:"stretch",flexWrap:"wrap"}}>
-                        {/* KPIs */}
-                        <div style={{display:"flex",gap:8,flex:"0 0 auto"}}>
-                          {[
-                            {l:"Total",    v:`$${fmt(totalGlobal)}`, c:"#CE93D8"},
-                            {l:"Pagado",   v:`$${fmt(totalPagado)}`, c:"#81C784"},
-                            {l:"Pendiente",v:`$${fmt(totalPend)}`,   c:"#FFB74D"},
-                          ].map((k,i)=>(
-                            <div key={i} style={{background:"rgba(255,255,255,.07)",borderRadius:12,padding:"8px 14px",minWidth:120,border:"1px solid rgba(255,255,255,.1)"}}>
-                              <div style={{fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700,textTransform:"uppercase",letterSpacing:.4,marginBottom:3}}>{k.l}</div>
-                              <div style={{fontSize:16,fontWeight:900,color:k.c}}>{k.v}</div>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Separador */}
-                        <div style={{width:1,background:"rgba(255,255,255,.1)",alignSelf:"stretch"}}/>
-
-                        {/* Cards por concepto */}
-                        <div style={{display:"flex",gap:8,flex:1,flexWrap:"wrap",alignItems:"center"}}>
+                      {/* ── BARRA SUPERIOR: KPIs + chips + agregar ── */}
+                      <div style={{padding:"14px 24px",background:"#1A0533",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
+                        {/* KPIs globales */}
+                        {[
+                          {l:"Total",    v:`$${fmt(totalGlobal)}`, c:"#CE93D8"},
+                          {l:"Pagado",   v:`$${fmt(totalPagado)}`, c:"#81C784"},
+                          {l:"Pendiente",v:`$${fmt(totalPend)}`,   c:"#FFB74D"},
+                        ].map((k,i)=>(
+                          <div key={i} style={{background:"rgba(255,255,255,.07)",borderRadius:10,padding:"6px 14px",border:"1px solid rgba(255,255,255,.1)",flexShrink:0}}>
+                            <div style={{fontSize:9,color:"rgba(255,255,255,.4)",fontWeight:700,textTransform:"uppercase",letterSpacing:.4}}>{k.l}</div>
+                            <div style={{fontSize:15,fontWeight:900,color:k.c}}>{k.v}</div>
+                          </div>
+                        ))}
+                        <div style={{width:1,height:32,background:"rgba(255,255,255,.1)",flexShrink:0}}/>
+                        {/* Chips por serie */}
+                        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",flex:1}}>
                           {seriesSorted.map((s,si)=>{
                             const nPag = s.pagos.filter(p=>p.estatus==="pagado").length;
                             const nTot = s.pagos.length;
                             const pct  = nTot>0?Math.round((nPag/nTot)*100):0;
-                            const proxPago = s.pagos.filter(p=>p.estatus==="pendiente").sort((a,b)=>a.fecha.localeCompare(b.fecha))[0];
-                            const dias = proxPago?daysUntil(proxPago.fecha):null;
+                            const isOpen = progSeriePopup===s.key;
                             return (
-                              <div key={si} style={{background:"rgba(255,255,255,.07)",borderRadius:12,padding:"10px 14px",border:"1px solid rgba(255,255,255,.1)",minWidth:180,flex:"1 1 180px",maxWidth:280}}>
-                                <div style={{fontWeight:800,fontSize:12,color:"#fff",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.desc}</div>
-                                <div style={{fontSize:10,color:"rgba(255,255,255,.4)",marginBottom:6}}>{s.cat}{nTot>1?` · serie`:""}</div>
-                                {/* Barra */}
-                                <div style={{height:4,borderRadius:2,background:"rgba(255,255,255,.1)",marginBottom:5,overflow:"hidden"}}>
-                                  <div style={{height:"100%",width:`${pct}%`,background:pct===100?"#81C784":"#CE93D8",borderRadius:2,transition:"width .4s"}}/>
+                              <button key={si} onClick={()=>setProgSeriePopup(isOpen?null:s.key)}
+                                style={{padding:"8px 14px",borderRadius:12,border:`1.5px solid ${isOpen?"#CE93D8":"rgba(255,255,255,.2)"}`,
+                                  background:isOpen?"rgba(206,147,216,.2)":"rgba(255,255,255,.06)",
+                                  cursor:"pointer",fontFamily:"inherit",textAlign:"left",transition:"all .15s"}}>
+                                <div style={{fontWeight:700,fontSize:12,color:"#fff",marginBottom:2,whiteSpace:"nowrap"}}>{s.desc}</div>
+                                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                                  <div style={{height:3,width:60,borderRadius:2,background:"rgba(255,255,255,.15)",overflow:"hidden"}}>
+                                    <div style={{height:"100%",width:`${pct}%`,background:pct===100?"#81C784":"#CE93D8",borderRadius:2}}/>
+                                  </div>
+                                  <span style={{fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:600}}>{nPag}/{nTot} · ${fmt(s.total)}</span>
                                 </div>
-                                <div style={{display:"flex",justifyContent:"space-between",fontSize:10}}>
-                                  <span style={{color:"#81C784",fontWeight:700}}>{nPag}/{nTot} pagados</span>
-                                  <span style={{color:"#CE93D8",fontWeight:700}}>${fmt(s.total)}</span>
-                                </div>
-                                {proxPago && <div style={{fontSize:10,color:dias<=0?"#FF8A65":dias<=7?"#FFB74D":"rgba(255,255,255,.4)",marginTop:3,fontWeight:600}}>
-                                  Próx: {proxPago.fecha} · {dias<0?`Vencido ${Math.abs(dias)}d`:dias===0?"Hoy":`En ${dias}d`}
-                                </div>}
-                              </div>
+                              </button>
                             );
                           })}
-                          {/* Botón agregar */}
-                          <button onClick={()=>setFormProg({descripcion:"",monto:"",fecha:"",categoria:"Seguros",notas:"",estatus:"pendiente",recurrente:false,numPagos:4,frecuencia:"trimestral"})}
-                            style={{padding:"10px 18px",borderRadius:12,border:"1.5px dashed rgba(255,255,255,.3)",background:"transparent",color:"rgba(255,255,255,.7)",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",alignSelf:"center"}}>
+                          <button onClick={()=>{setProgSeriePopup(null);setFormProg({descripcion:"",monto:"",fecha:"",categoria:"Seguros",notas:"",estatus:"pendiente",recurrente:false,numPagos:4,frecuencia:"trimestral"});}}
+                            style={{padding:"8px 14px",borderRadius:12,border:"1.5px dashed rgba(255,255,255,.3)",background:"transparent",
+                              color:"rgba(255,255,255,.6)",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
                             + Agregar
                           </button>
                         </div>
                       </div>
 
-                      {/* ── DETALLE COMPACTO ── */}
-                      <div style={{flex:1,overflowY:"auto",padding:"14px 20px"}}>
-
-                        {/* Formulario */}
-                        {formProg && (
-                          <div style={{background:"#F3E5F5",borderRadius:14,border:"2px solid #7B1FA2",padding:"16px",marginBottom:14}}>
-                            <div style={{fontWeight:800,fontSize:13,color:"#1A0533",marginBottom:12}}>{formProg.id?"Editar pago":"Nuevo pago programado"}</div>
-                            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-                              <div style={{gridColumn:"1/-1"}}>
-                                <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Descripción *</div>
-                                <input value={formProg.descripcion} onChange={e=>setFormProg(p=>({...p,descripcion:e.target.value}))}
-                                  placeholder="Ej: GMM Dirección" style={{...inputStyle,fontSize:13}}/>
-                              </div>
+                      {/* ── POPUP SERIE (al hacer clic en chip) ── */}
+                      {popupSerie && !formProg && (()=>{
+                        const nPag  = popupSerie.pagos.filter(p=>p.estatus==="pagado").length;
+                        const nTot  = popupSerie.pagos.length;
+                        const pct   = nTot>0?Math.round((nPag/nTot)*100):0;
+                        const pags  = [...popupSerie.pagos].sort((a,b)=>a.fecha.localeCompare(b.fecha));
+                        return (
+                          <div style={{margin:"12px 20px 0",background:"#fff",borderRadius:16,border:"2px solid #CE93D8",boxShadow:"0 4px 20px rgba(123,31,162,.12)",overflow:"hidden"}}>
+                            {/* Header popup */}
+                            <div style={{background:"#F3E5F5",padding:"12px 18px",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                               <div>
-                                <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Monto por pago *</div>
-                                <input value={formProg.monto} onChange={e=>setFormProg(p=>({...p,monto:e.target.value}))}
-                                  placeholder="196403" type="number" style={{...inputStyle,fontSize:13}}/>
+                                <div style={{fontWeight:900,fontSize:16,color:"#4A148C"}}>{popupSerie.desc}</div>
+                                <div style={{fontSize:11,color:"#9C27B0",marginTop:2}}>{popupSerie.cat}{nTot>1?" · serie":""}</div>
                               </div>
-                              <div>
-                                <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Categoría</div>
-                                <select value={formProg.categoria} onChange={e=>setFormProg(p=>({...p,categoria:e.target.value}))}
-                                  style={{...selectStyle,fontSize:13}}>
-                                  {CATS.map(c=><option key={c}>{c}</option>)}
-                                </select>
-                              </div>
-                              <div>
-                                <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Fecha {formProg.recurrente?"inicial":""}*</div>
-                                <input value={formProg.fecha} onChange={e=>setFormProg(p=>({...p,fecha:e.target.value}))}
-                                  type="date" style={{...inputStyle,fontSize:13}}/>
-                              </div>
-                              <div>
-                                <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Notas</div>
-                                <input value={formProg.notas} onChange={e=>setFormProg(p=>({...p,notas:e.target.value}))}
-                                  placeholder="Ej: 4 trimestres dirección" style={{...inputStyle,fontSize:13}}/>
+                              <div style={{textAlign:"right"}}>
+                                <div style={{fontWeight:900,fontSize:18,color:"#4A148C"}}>${fmt(popupSerie.total)}</div>
+                                <div style={{fontSize:11,marginTop:1}}>
+                                  <span style={{color:"#1B5E20",fontWeight:700}}>✓ ${fmt(popupSerie.totalPagado)}</span>
+                                  <span style={{color:"#E65100",fontWeight:700,marginLeft:8}}>⏳ ${fmt(popupSerie.totalPend)}</span>
+                                </div>
                               </div>
                             </div>
-                            {!formProg.id && (
-                              <div style={{marginBottom:12}}>
-                                <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",userSelect:"none"}}>
-                                  <div onClick={()=>setFormProg(p=>({...p,recurrente:!p.recurrente}))}
-                                    style={{width:36,height:20,borderRadius:10,background:formProg.recurrente?"#7B1FA2":"#E1BEE7",position:"relative",transition:"background .2s",cursor:"pointer",flexShrink:0}}>
-                                    <div style={{position:"absolute",top:2,left:formProg.recurrente?18:2,width:16,height:16,borderRadius:"50%",background:"#fff",transition:"left .2s",boxShadow:"0 1px 3px rgba(0,0,0,.2)"}}/>
-                                  </div>
-                                  <span style={{fontSize:12,fontWeight:700,color:formProg.recurrente?"#7B1FA2":"#999"}}>Pagos recurrentes (serie)</span>
-                                </label>
-                                {formProg.recurrente && (
-                                  <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                                    <div>
-                                      <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Número de pagos</div>
-                                      <input value={formProg.numPagos} onChange={e=>setFormProg(p=>({...p,numPagos:e.target.value}))}
-                                        type="number" min="2" max="24" style={{...inputStyle,fontSize:13}}/>
-                                    </div>
-                                    <div>
-                                      <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Frecuencia</div>
-                                      <select value={formProg.frecuencia} onChange={e=>setFormProg(p=>({...p,frecuencia:e.target.value}))}
-                                        style={{...selectStyle,fontSize:13}}>
-                                        <option value="mensual">Mensual</option>
-                                        <option value="bimestral">Bimestral</option>
-                                        <option value="trimestral">Trimestral</option>
-                                        <option value="semestral">Semestral</option>
-                                        <option value="anual">Anual</option>
-                                      </select>
-                                    </div>
-                                  </div>
-                                )}
-                                {previewFechas && formProg.monto && (
-                                  <div style={{marginTop:10,background:"#EDE7F6",borderRadius:10,padding:"10px 12px"}}>
-                                    <div style={{fontSize:11,fontWeight:800,color:"#7B1FA2",marginBottom:6}}>Vista previa · {previewFechas.length} pagos</div>
-                                    <div style={{display:"flex",flexDirection:"column",gap:3}}>
-                                      {previewFechas.map((f,i)=>(
-                                        <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:"#4A148C"}}>
-                                          <span style={{fontWeight:600}}>Pago {i+1} · {f}</span>
-                                          <span style={{fontWeight:800}}>${fmt(parseFloat(String(formProg.monto).replace(/,/g,""))||0)}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                    <div style={{marginTop:6,paddingTop:6,borderTop:"1px solid #CE93D8",display:"flex",justifyContent:"space-between",fontSize:12,fontWeight:900,color:"#4A148C"}}>
-                                      <span>Total serie</span>
-                                      <span>${fmt((parseFloat(String(formProg.monto).replace(/,/g,""))||0)*previewFechas.length)}</span>
-                                    </div>
-                                  </div>
-                                )}
+                            {/* Barra */}
+                            {nTot>1 && <div style={{padding:"8px 18px",background:"#F3E5F5",borderBottom:"1px solid #E1BEE7"}}>
+                              <div style={{height:8,borderRadius:4,background:"#EDE7F6",overflow:"hidden"}}>
+                                <div style={{height:"100%",width:`${pct}%`,background:pct===100?"#43A047":"#7B1FA2",borderRadius:4,transition:"width .4s"}}/>
                               </div>
-                            )}
-                            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-                              <button onClick={()=>setFormProg(null)}
-                                style={{padding:"7px 16px",borderRadius:9,border:"1px solid #E1BEE7",background:"#fff",cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>Cancelar</button>
-                              <button onClick={guardarProg}
-                                style={{padding:"7px 16px",borderRadius:9,border:"none",background:"#7B1FA2",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-                                {formProg.recurrente && !formProg.id?`Guardar ${formProg.numPagos||""} pagos`:"Guardar"}
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Series agrupadas */}
-                        {seriesSorted.map((s,si)=>{
-                          const nPagados = s.pagos.filter(p=>p.estatus==="pagado").length;
-                          const nTotal   = s.pagos.length;
-                          const pct      = nTotal>0?Math.round((nPagados/nTotal)*100):0;
-                          const esSerie  = nTotal>1 && s.serieId;
-                          const pagosOrdenados = [...s.pagos].sort((a,b)=>a.fecha.localeCompare(b.fecha));
-                          return (
-                            <div key={si} style={{background:"#fff",borderRadius:14,border:`1.5px solid ${esSerie?"#CE93D8":"#E1BEE7"}`,marginBottom:10,overflow:"hidden"}}>
-                              {/* Cabecera */}
-                              <div style={{background:"#F3E5F5",padding:"8px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
-                                <div style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:8}}>
-                                  <span style={{fontWeight:800,fontSize:13,color:"#4A148C",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.desc}</span>
-                                  <span style={{fontSize:10,color:"#9C27B0",flexShrink:0}}>{s.cat}</span>
-                                  {esSerie && <span style={{fontSize:10,background:"#EDE7F6",color:"#7B1FA2",fontWeight:700,padding:"1px 7px",borderRadius:20,flexShrink:0}}>serie</span>}
-                                </div>
-                                <div style={{textAlign:"right",flexShrink:0,fontSize:12}}>
-                                  <span style={{fontWeight:900,color:"#4A148C"}}>${fmt(s.total)}</span>
-                                  {s.totalPagado>0 && <span style={{color:"#1B5E20",marginLeft:8,fontWeight:600}}>✓${fmt(s.totalPagado)}</span>}
-                                </div>
-                              </div>
-                              {/* Barra progreso */}
-                              {esSerie && (
-                                <div style={{padding:"4px 14px 0",background:"#F3E5F5"}}>
-                                  <div style={{height:4,borderRadius:2,background:"#EDE7F6",overflow:"hidden"}}>
-                                    <div style={{height:"100%",width:`${pct}%`,background:pct===100?"#43A047":"#7B1FA2",borderRadius:2}}/>
-                                  </div>
-                                  <div style={{fontSize:9,color:"#9C27B0",padding:"2px 0 4px",fontWeight:700}}>{nPagados}/{nTotal} · {pct}%</div>
-                                </div>
-                              )}
-                              {/* Filas compactas */}
-                              {pagosOrdenados.map((p,pi)=>{
+                              <div style={{fontSize:11,color:"#9C27B0",fontWeight:700,marginTop:3}}>{nPag} de {nTot} pagos realizados · {pct}%</div>
+                            </div>}
+                            {/* Pagos */}
+                            <div style={{overflowX:"auto"}}>
+                              {pags.map((p,pi)=>{
                                 const dias=daysUntil(p.fecha);
                                 const pagado=p.estatus==="pagado";
                                 return (
-                                  <div key={p.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 14px",
-                                    borderTop:"1px solid #F3E5F5",background:pagado?"#F8FFF8":"#fff",opacity:pagado?.85:1}}>
-                                    {esSerie && <div style={{width:18,height:18,borderRadius:"50%",background:pagado?"#43A047":"#EDE7F6",
-                                      color:pagado?"#fff":"#7B1FA2",fontSize:9,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{pi+1}</div>}
-                                    <div style={{flex:1,fontSize:12,color:pagado?"#999":"#444",fontWeight:500,textDecoration:pagado?"line-through":"none"}}>
-                                      {p.fecha}{p.notas&&<span style={{color:"#9C27B0",marginLeft:6,fontSize:10,fontStyle:"italic"}}>{p.notas}</span>}
+                                  <div key={p.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 18px",
+                                    borderBottom:"1px solid #F3E5F5",background:pagado?"#F8FFF8":"#fff"}}>
+                                    {nTot>1 && <div style={{width:22,height:22,borderRadius:"50%",background:pagado?"#43A047":"#EDE7F6",
+                                      color:pagado?"#fff":"#7B1FA2",fontSize:11,fontWeight:800,display:"flex",alignItems:"center",
+                                      justifyContent:"center",flexShrink:0}}>{pi+1}</div>}
+                                    <div style={{flex:1,fontSize:13,color:pagado?"#999":"#333",
+                                      fontWeight:500,textDecoration:pagado?"line-through":"none"}}>
+                                      {p.fecha}
+                                      {p.notas && <span style={{color:"#9C27B0",marginLeft:8,fontSize:11,fontStyle:"italic"}}>{p.notas}</span>}
                                     </div>
-                                    <span style={{fontWeight:800,fontSize:13,color:pagado?"#1B5E20":"#7B1FA2",flexShrink:0}}>${fmt(p.monto)}</span>
-                                    <span style={{fontSize:10,fontWeight:700,minWidth:55,textAlign:"right",flexShrink:0,
+                                    <span style={{fontWeight:900,fontSize:15,color:pagado?"#1B5E20":"#7B1FA2",flexShrink:0}}>${fmt(p.monto)}</span>
+                                    <span style={{fontSize:11,fontWeight:700,minWidth:70,textAlign:"right",flexShrink:0,
                                       color:pagado?"#1B5E20":dias<0?"#C62828":dias===0?"#E65100":dias<=7?"#E65100":"#999"}}>
                                       {pagado?"✓ Pagado":dias<0?`Vencido ${Math.abs(dias)}d`:dias===0?"Hoy":`En ${dias}d`}
                                     </span>
-                                    <div style={{display:"flex",gap:2,flexShrink:0}}>
+                                    <div style={{display:"flex",gap:4,flexShrink:0}}>
                                       {!pagado&&<button onClick={async()=>{await upsertProgramado({...p,estatus:"pagado"});const n=await fetchProgramados(empresaId);setProgramados(n);}}
-                                        style={{background:"#E8F5E9",border:"none",borderRadius:6,padding:"3px 6px",cursor:"pointer",fontSize:11}}>✅</button>}
+                                        title="Marcar pagado" style={{background:"#E8F5E9",border:"none",borderRadius:8,padding:"5px 9px",cursor:"pointer",fontSize:13}}>✅</button>}
                                       {pagado&&<button onClick={async()=>{await upsertProgramado({...p,estatus:"pendiente"});const n=await fetchProgramados(empresaId);setProgramados(n);}}
-                                        style={{background:"#EDE7F6",border:"none",borderRadius:6,padding:"3px 6px",cursor:"pointer",fontSize:11}}>↩️</button>}
-                                      <button onClick={()=>setFormProg({...p})}
-                                        style={{background:"#EDE7F6",border:"none",borderRadius:6,padding:"3px 6px",cursor:"pointer",fontSize:11}}>✏️</button>
+                                        style={{background:"#EDE7F6",border:"none",borderRadius:8,padding:"5px 9px",cursor:"pointer",fontSize:12}}>↩️</button>}
+                                      <button onClick={()=>{setFormProg({...p});setProgSeriePopup(null);}}
+                                        style={{background:"#EDE7F6",border:"none",borderRadius:8,padding:"5px 9px",cursor:"pointer",fontSize:13}}>✏️</button>
                                       <button onClick={async()=>{await deleteProgramado(p.id);const n=await fetchProgramados(empresaId);setProgramados(n);}}
-                                        style={{background:"#FFEBEE",border:"none",borderRadius:6,padding:"3px 6px",cursor:"pointer",fontSize:11}}>🗑️</button>
+                                        style={{background:"#FFEBEE",border:"none",borderRadius:8,padding:"5px 9px",cursor:"pointer",fontSize:13}}>🗑️</button>
                                     </div>
                                   </div>
                                 );
                               })}
                             </div>
-                          );
-                        })}
-
-                        {progsT.length===0 && !formProg && (
-                          <div style={{textAlign:"center",padding:"50px 20px",color:"#999"}}>
-                            <div style={{fontSize:40,marginBottom:10}}>🔮</div>
-                            <div style={{fontWeight:700,fontSize:14,color:"#7B1FA2"}}>Sin pagos programados</div>
-                            <div style={{fontSize:12,marginTop:4}}>Usa el botón "+ Agregar" para registrar seguros, servicios, etc.</div>
                           </div>
-                        )}
-                      </div>
+                        );
+                      })()}
+
+                      {/* ── FORMULARIO ── */}
+                      {formProg && (
+                        <div style={{margin:"12px 20px 0",background:"#F3E5F5",borderRadius:14,border:"2px solid #7B1FA2",padding:"16px"}}>
+                          <div style={{fontWeight:800,fontSize:13,color:"#1A0533",marginBottom:12}}>{formProg.id?"Editar pago":"Nuevo pago programado"}</div>
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                            <div style={{gridColumn:"1/-1"}}>
+                              <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Descripción *</div>
+                              <input value={formProg.descripcion} onChange={e=>setFormProg(p=>({...p,descripcion:e.target.value}))}
+                                placeholder="Ej: GMM Dirección" style={{...inputStyle,fontSize:13}}/>
+                            </div>
+                            <div>
+                              <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Monto por pago *</div>
+                              <input value={formProg.monto} onChange={e=>setFormProg(p=>({...p,monto:e.target.value}))}
+                                placeholder="196403" type="number" style={{...inputStyle,fontSize:13}}/>
+                            </div>
+                            <div>
+                              <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Categoría</div>
+                              <select value={formProg.categoria} onChange={e=>setFormProg(p=>({...p,categoria:e.target.value}))}
+                                style={{...selectStyle,fontSize:13}}>
+                                {CATS.map(c=><option key={c}>{c}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Fecha {formProg.recurrente?"inicial":""}*</div>
+                              <input value={formProg.fecha} onChange={e=>setFormProg(p=>({...p,fecha:e.target.value}))}
+                                type="date" style={{...inputStyle,fontSize:13}}/>
+                            </div>
+                            <div>
+                              <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Notas</div>
+                              <input value={formProg.notas} onChange={e=>setFormProg(p=>({...p,notas:e.target.value}))}
+                                placeholder="Ej: 4 trimestres dirección" style={{...inputStyle,fontSize:13}}/>
+                            </div>
+                          </div>
+                          {!formProg.id && (
+                            <div style={{marginBottom:12}}>
+                              <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",userSelect:"none"}}>
+                                <div onClick={()=>setFormProg(p=>({...p,recurrente:!p.recurrente}))}
+                                  style={{width:36,height:20,borderRadius:10,background:formProg.recurrente?"#7B1FA2":"#E1BEE7",position:"relative",transition:"background .2s",cursor:"pointer",flexShrink:0}}>
+                                  <div style={{position:"absolute",top:2,left:formProg.recurrente?18:2,width:16,height:16,borderRadius:"50%",background:"#fff",transition:"left .2s",boxShadow:"0 1px 3px rgba(0,0,0,.2)"}}/>
+                                </div>
+                                <span style={{fontSize:12,fontWeight:700,color:formProg.recurrente?"#7B1FA2":"#999"}}>Pagos recurrentes (serie)</span>
+                              </label>
+                              {formProg.recurrente && (
+                                <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                                  <div>
+                                    <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Número de pagos</div>
+                                    <input value={formProg.numPagos} onChange={e=>setFormProg(p=>({...p,numPagos:e.target.value}))}
+                                      type="number" min="2" max="24" style={{...inputStyle,fontSize:13}}/>
+                                  </div>
+                                  <div>
+                                    <div style={{fontSize:11,fontWeight:700,color:"#7B1FA2",marginBottom:4}}>Frecuencia</div>
+                                    <select value={formProg.frecuencia} onChange={e=>setFormProg(p=>({...p,frecuencia:e.target.value}))}
+                                      style={{...selectStyle,fontSize:13}}>
+                                      <option value="mensual">Mensual</option>
+                                      <option value="bimestral">Bimestral</option>
+                                      <option value="trimestral">Trimestral</option>
+                                      <option value="semestral">Semestral</option>
+                                      <option value="anual">Anual</option>
+                                    </select>
+                                  </div>
+                                </div>
+                              )}
+                              {previewFechas && formProg.monto && (
+                                <div style={{marginTop:10,background:"#EDE7F6",borderRadius:10,padding:"10px 12px"}}>
+                                  <div style={{fontSize:11,fontWeight:800,color:"#7B1FA2",marginBottom:6}}>Vista previa · {previewFechas.length} pagos</div>
+                                  {previewFechas.map((f,i)=>(
+                                    <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#4A148C",marginBottom:2}}>
+                                      <span style={{fontWeight:600}}>Pago {i+1} · {f}</span>
+                                      <span style={{fontWeight:800}}>${fmt(parseFloat(String(formProg.monto).replace(/,/g,""))||0)}</span>
+                                    </div>
+                                  ))}
+                                  <div style={{marginTop:6,paddingTop:6,borderTop:"1px solid #CE93D8",display:"flex",justifyContent:"space-between",fontSize:12,fontWeight:900,color:"#4A148C"}}>
+                                    <span>Total serie</span>
+                                    <span>${fmt((parseFloat(String(formProg.monto).replace(/,/g,""))||0)*previewFechas.length)}</span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                            <button onClick={()=>setFormProg(null)}
+                              style={{padding:"7px 16px",borderRadius:9,border:"1px solid #E1BEE7",background:"#fff",cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>Cancelar</button>
+                            <button onClick={guardarProg}
+                              style={{padding:"7px 16px",borderRadius:9,border:"none",background:"#7B1FA2",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                              {formProg.recurrente&&!formProg.id?`Guardar ${formProg.numPagos||""} pagos`:"Guardar"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {progsT.length===0 && !formProg && (
+                        <div style={{textAlign:"center",padding:"60px 20px",color:"#999"}}>
+                          <div style={{fontSize:44,marginBottom:12}}>🔮</div>
+                          <div style={{fontWeight:700,fontSize:15,color:"#7B1FA2"}}>Sin pagos programados</div>
+                          <div style={{fontSize:12,marginTop:4}}>Usa "+ Agregar" para registrar seguros, servicios, etc.</div>
+                        </div>
+                      )}
                     </div>
                   );
-                })()}
+                })()}                })()}
 
               </div>
             </div>
