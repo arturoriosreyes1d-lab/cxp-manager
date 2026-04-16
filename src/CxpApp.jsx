@@ -2563,8 +2563,8 @@ export default function CxpApp({ user, onLogout }) {
           {/* Row 1: Filters — todas en una línea, fechas pareadas */}
           <div style={{padding:"12px 16px",display:"flex",gap:8,alignItems:"center",borderBottom:`1px solid ${C.border}`,flexWrap:"wrap"}}>
 
-            <input ref={searchRef} placeholder="🔍 Buscar…" value={search} onChange={e=>setSearch(e.target.value)}
-              style={{...inputStyle,width:300,flex:"0 0 auto"}} />
+            <input ref={searchRef} placeholder="🔍 Buscar por proveedor, folio, concepto…" value={search} onChange={e=>setSearch(e.target.value)}
+              style={{...inputStyle,width:340,flex:"0 0 auto"}} />
 
             {carteraTab !== "resumen" && gruposList.length>0 && (
               <select value={filtroGrupo} onChange={e=>setFiltroGrupo(e.target.value)}
@@ -2577,7 +2577,7 @@ export default function CxpApp({ user, onLogout }) {
             <ProveedorPicker curInvoices={curInvoices} filtroProveedores={filtroProveedores} setFiltroProveedores={setFiltroProveedores} inputStyle={inputStyle} C={C}/>
 
             <select value={filters.clasificacion} onChange={e=>setFilters(f=>({...f,clasificacion:e.target.value}))}
-              style={{...selectStyle,width:165,flex:"0 0 auto"}}>
+              style={{...selectStyle,width:210,flex:"0 0 auto"}}>
               <option value="">Todas las clasificaciones</option>
               {clases.map(c=><option key={c}>{c}</option>)}
             </select>
@@ -2805,7 +2805,11 @@ export default function CxpApp({ user, onLogout }) {
             </div>
           );
         })()}
-        {Object.entries(grouped).map(([g1, data]) => {
+        {Object.entries(grouped).sort((a,b)=>{
+          const sA=( a[1].invoices||Object.values(a[1].subgroups||{}).flat()).filter(i=>i.estatus!=="Pagado").reduce((s,i)=>s+((+i.total||0)-(+i.montoPagado||0)),0);
+          const sB=(b[1].invoices||Object.values(b[1].subgroups||{}).flat()).filter(i=>i.estatus!=="Pagado").reduce((s,i)=>s+((+i.total||0)-(+i.montoPagado||0)),0);
+          return sB-sA;
+        }).map(([g1, data]) => {
           const invs = data.invoices || Object.values(data.subgroups||{}).flat();
           const saldo = invs.filter(i=>i.estatus!=="Pagado").reduce((s,i)=>s+((+i.total||0)-(+i.montoPagado||0)),0);
           const vencidas = invs.filter(i=>isOverdue(i.vencimiento,i.estatus)).length;
@@ -3851,7 +3855,8 @@ export default function CxpApp({ user, onLogout }) {
 
       {/* Dashboard detail modal */}
       {dashDetail && (
-        <ModalShell title={dashDetail.title} onClose={()=>setDashDetail(null)} extraWide>
+        <div style={{position:"fixed",inset:0,background:"rgba(26,5,51,.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}} onClick={()=>setDashDetail(null)}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:1400,maxHeight:"92vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(74,20,140,.4)",overflow:"hidden"}}>
           {dashDetail.type==="invoices" && (()=>{
             const allItems = dashDetail.items;
             const items = allItems.filter(inv => {
@@ -3863,9 +3868,9 @@ export default function CxpApp({ user, onLogout }) {
             });
             const totalSum = items.reduce((s,i)=>s+(+i.total||0),0);
             const saldoSum = items.reduce((s,i)=>s+((+i.total||0)-(+i.montoPagado||0)),0);
+            const pagadoSum = items.reduce((s,i)=>s+(+i.montoPagado||0),0);
             const provsList = [...new Set(allItems.map(i=>i.proveedor))].sort();
             const clasifList = [...new Set(allItems.map(i=>i.clasificacion))].sort();
-            // Selection
             const selSaldo = items.filter(i=>dashSelectedIds.has(i.id)).reduce((s,i)=>s+((+i.total||0)-(+i.montoPagado||0)),0);
             const selCount = items.filter(i=>dashSelectedIds.has(i.id)).length;
             const allChecked = items.length > 0 && items.every(i=>dashSelectedIds.has(i.id));
@@ -3881,148 +3886,187 @@ export default function CxpApp({ user, onLogout }) {
               if(dashBulkAutDir==="true") fields.autorizadoDireccion = true;
               if(dashBulkAutDir==="false") fields.autorizadoDireccion = false;
               if(Object.keys(fields).length===0) return;
-              // Update local state across all currencies
-              setInvoices(prev => {
-                const result = {...prev};
-                ["MXN","USD","EUR"].forEach(c => {
-                  result[c] = result[c].map(i => ids.includes(i.id) ? {...i, ...fields} : i);
-                });
-                return result;
-              });
-              // Update dashDetail items too
+              setInvoices(prev => { const result = {...prev}; ["MXN","USD","EUR"].forEach(c => { result[c] = result[c].map(i => ids.includes(i.id) ? {...i, ...fields} : i); }); return result; });
               setDashDetail(prev => ({...prev, items: prev.items.map(i => ids.includes(i.id) ? {...i, ...fields} : i)}));
               bulkUpdateInvoices(ids, fields);
-              setDashSelectedIds(new Set());
-              setDashBulkAutDir("");
+              setDashSelectedIds(new Set()); setDashBulkAutDir("");
             };
-            // Grouping
+
+            // Siempre agrupado por proveedor por defecto
+            const groupBy = dashGroupBy || "proveedor";
             const groups = {};
-            if(dashGroupBy) {
-              items.forEach(inv => {
-                const k = dashGroupBy==="proveedor"?inv.proveedor:dashGroupBy==="clasificacion"?inv.clasificacion:dashGroupBy==="estatus"?inv.estatus:dashGroupBy==="moneda"?inv.moneda:"—";
-                if(!groups[k]) groups[k]=[];
-                groups[k].push(inv);
-              });
-            }
-            const renderTable = (rows) => (
-              <div style={{overflowX:"auto",marginBottom:12}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:1100}}>
-                  <thead><tr style={{background:"#F8FAFC"}}>
-                    <th style={{padding:"7px 4px",textAlign:"center",width:32}}>
-                      <input type="checkbox" checked={allChecked} onChange={toggleDashSelAll} style={{cursor:"pointer",width:15,height:15,accentColor:C.blue}}/>
-                    </th>
-                    {["Folio","Proveedor","Concepto","Clasif.","Fecha","Total","Pagado","Saldo Total","Vence","Días","Estatus","Aut.Dir.","Moneda"].map(h=>(
-                      <th key={h} style={{padding:"7px 6px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
-                    ))}
-                  </tr></thead>
-                  <tbody>
-                    {rows.map(inv=>{
-                      const saldo=(+inv.total||0)-(+inv.montoPagado||0);
-                      const overdue=isOverdue(inv.vencimiento,inv.estatus);
-                      const dias = daysUntil(inv.vencimiento);
-                      const diasLabel = dias===null ? "—" : dias>=0 ? dias+" d" : Math.abs(dias)+" d";
-                      const diasColor = dias===null ? C.muted : dias>=0 ? C.ok : C.danger;
-                      const diasPrefix = dias===null ? "" : dias>=0 ? "⏳ " : "⚠️ ";
-                      const checked = dashSelectedIds.has(inv.id);
-                      return (
-                        <tr key={inv.id} style={{borderTop:`1px solid ${C.border}`,background:checked?"#EEF2FF":overdue?"#FFF5F5":"transparent"}}>
-                          <td style={{padding:"7px 4px",textAlign:"center"}}>
-                            <input type="checkbox" checked={checked} onChange={()=>toggleDashSel(inv.id)} style={{cursor:"pointer",width:15,height:15,accentColor:C.blue}}/>
-                          </td>
-                          <td style={{padding:"7px 6px",fontWeight:600,whiteSpace:"nowrap"}}>{inv.serie}{inv.folio}</td>
-                          <td style={{padding:"7px 6px",fontWeight:600,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{inv.proveedor}</td>
-                          <td style={{padding:"7px 6px",color:inv.concepto?C.text:C.muted,fontStyle:inv.concepto?"normal":"italic",maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{inv.concepto||"—"}</td>
-                          <td style={{padding:"7px 6px"}}><span style={{background:"#EEF2FF",color:C.blue,padding:"1px 5px",borderRadius:20,fontSize:10,fontWeight:600}}>{inv.clasificacion}</span></td>
-                          <td style={{padding:"7px 6px",whiteSpace:"nowrap",fontSize:11}}>{inv.fecha}</td>
-                          <td style={{padding:"7px 6px",fontWeight:700}}>${fmt(inv.total)}</td>
-                          <td style={{padding:"7px 6px",color:C.ok}}>${fmt(inv.montoPagado)}</td>
-                          <td style={{padding:"7px 6px",fontWeight:700,color:saldo>0?(overdue?C.danger:C.warn):C.ok}}>${fmt(saldo)}</td>
-                          <td style={{padding:"7px 6px",whiteSpace:"nowrap",color:overdue?C.danger:C.text,fontSize:11}}>{inv.vencimiento||"—"}</td>
-                          <td style={{padding:"7px 6px",whiteSpace:"nowrap",fontWeight:700,color:diasColor,fontSize:11}}>{diasPrefix}{diasLabel}</td>
-                          <td style={{padding:"7px 6px"}}><span style={{color:statusColor(inv.estatus),fontWeight:700,fontSize:10}}>{inv.estatus}</span></td>
-                          <td style={{padding:"7px 6px",textAlign:"center"}}>
-                            <button onClick={()=>toggleAutorizadoDireccion(inv.id,inv.moneda)} style={{background:"none",border:"none",cursor:"pointer",fontSize:16,padding:1,lineHeight:1}}>
-                              {inv.autorizadoDireccion ? "✅" : "⬜"}
-                            </button>
-                          </td>
-                          <td style={{padding:"7px 6px"}}><span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[inv.moneda],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[inv.moneda],padding:"1px 5px",borderRadius:20,fontSize:10,fontWeight:700}}>{inv.moneda}</span></td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            );
+            items.forEach(inv => {
+              const k = groupBy==="proveedor"?inv.proveedor:groupBy==="clasificacion"?inv.clasificacion:groupBy==="estatus"?inv.estatus:groupBy==="moneda"?inv.moneda:"—";
+              if(!groups[k]) groups[k]=[];
+              groups[k].push(inv);
+            });
+            const groupsSorted = Object.entries(groups).sort((a,b)=>{
+              const sA=a[1].reduce((s,i)=>s+((+i.total||0)-(+i.montoPagado||0)),0);
+              const sB=b[1].reduce((s,i)=>s+((+i.total||0)-(+i.montoPagado||0)),0);
+              return sB-sA;
+            });
+
+            const renderRows = (rows) => rows.map(inv=>{
+              const saldo=(+inv.total||0)-(+inv.montoPagado||0);
+              const overdue=isOverdue(inv.vencimiento,inv.estatus);
+              const dias = daysUntil(inv.vencimiento);
+              const diasLabel = dias===null?"—":dias>=0?dias+" d":Math.abs(dias)+" d";
+              const diasColor = dias===null?C.muted:dias>=0?C.ok:C.danger;
+              const checked = dashSelectedIds.has(inv.id);
+              return (
+                <tr key={inv.id} style={{borderTop:"1px solid #F3E5F5",background:checked?"#EDE7F6":overdue?"#FFF5F5":"#fff"}}
+                  onMouseEnter={e=>{ if(!checked&&!overdue) e.currentTarget.style.background="#FAF5FF"; }}
+                  onMouseLeave={e=>{ e.currentTarget.style.background=checked?"#EDE7F6":overdue?"#FFF5F5":"#fff"; }}>
+                  <td style={{padding:"8px 6px",textAlign:"center"}}>
+                    <input type="checkbox" checked={checked} onChange={()=>toggleDashSel(inv.id)} style={{cursor:"pointer",width:14,height:14,accentColor:"#7B1FA2"}}/>
+                  </td>
+                  <td style={{padding:"8px 8px",fontWeight:700,color:"#4A148C",whiteSpace:"nowrap",fontSize:13}}>{inv.serie}{inv.folio}</td>
+                  <td style={{padding:"8px 8px",fontWeight:600,color:"#333",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:13}}>{inv.proveedor}</td>
+                  <td style={{padding:"8px 8px",color:inv.concepto?C.text:C.muted,maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:13}}>{inv.concepto||"—"}</td>
+                  <td style={{padding:"8px 8px"}}><span style={{background:"#EDE7F6",color:"#7B1FA2",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{inv.clasificacion}</span></td>
+                  <td style={{padding:"8px 8px",whiteSpace:"nowrap",fontSize:12,color:C.muted}}>{inv.fecha}</td>
+                  <td style={{padding:"8px 8px",fontWeight:800,fontSize:14,color:"#1A0533",textAlign:"right"}}>${fmt(inv.total)}</td>
+                  <td style={{padding:"8px 8px",fontWeight:600,color:C.ok,textAlign:"right",fontSize:13}}>${fmt(inv.montoPagado)}</td>
+                  <td style={{padding:"8px 8px",fontWeight:900,fontSize:15,color:saldo>0?(overdue?"#C62828":"#E65100"):"#1B5E20",textAlign:"right"}}>${fmt(saldo)}</td>
+                  <td style={{padding:"8px 8px",whiteSpace:"nowrap",color:overdue?"#C62828":C.text,fontSize:12}}>{inv.vencimiento||"—"}</td>
+                  <td style={{padding:"8px 8px",whiteSpace:"nowrap",fontWeight:700,color:diasColor,fontSize:12}}>{dias===null?"":dias>=0?"⏳ ":"⚠️ "}{diasLabel}</td>
+                  <td style={{padding:"8px 8px"}}><span style={{color:statusColor(inv.estatus),fontWeight:700,fontSize:11}}>{inv.estatus}</span></td>
+                  <td style={{padding:"8px 8px",textAlign:"center"}}>
+                    <button onClick={()=>toggleAutorizadoDireccion(inv.id,inv.moneda)} style={{background:"none",border:"none",cursor:"pointer",fontSize:15,padding:1}}>
+                      {inv.autorizadoDireccion?"✅":"⬜"}
+                    </button>
+                  </td>
+                </tr>
+              );
+            });
+
             return (
-              <div>
-                {/* Search + Filters */}
-                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12,alignItems:"center"}}>
-                  <input placeholder="🔍 Buscar…" value={dashSearch} onChange={e=>setDashSearch(e.target.value)} style={{...inputStyle,maxWidth:180,padding:"6px 10px",fontSize:12}}/>
-                  <select value={dashFilterProv} onChange={e=>setDashFilterProv(e.target.value)} style={{...selectStyle,maxWidth:160,padding:"6px 8px",fontSize:12}}>
-                    <option value="">Todos proveedores</option>
+              <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
+                {/* Header morado */}
+                <div style={{background:"#1A0533",padding:"18px 28px",flexShrink:0,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div>
+                    <div style={{fontSize:11,color:"#CE93D8",fontWeight:700,textTransform:"uppercase",letterSpacing:.6}}>CxP — Detalle</div>
+                    <div style={{fontSize:20,fontWeight:900,color:"#fff",marginTop:2}}>{dashDetail.title}</div>
+                  </div>
+                  <div style={{display:"flex",gap:16,alignItems:"center"}}>
+                    {/* KPIs */}
+                    {[
+                      {l:"Facturas", v:items.length,           c:"#CE93D8"},
+                      {l:"Total",    v:`$${fmt(totalSum)}`,    c:"#CE93D8"},
+                      {l:"Pagado",   v:`$${fmt(pagadoSum)}`,   c:"#81C784"},
+                      {l:"Saldo",    v:`$${fmt(saldoSum)}`,    c:"#FFB74D"},
+                    ].map((k,i)=>(
+                      <div key={i} style={{background:"rgba(255,255,255,.07)",borderRadius:12,padding:"8px 16px",textAlign:"center",border:"1px solid rgba(255,255,255,.1)"}}>
+                        <div style={{fontSize:10,color:"rgba(255,255,255,.45)",fontWeight:700,textTransform:"uppercase",letterSpacing:.4,marginBottom:2}}>{k.l}</div>
+                        <div style={{fontSize:18,fontWeight:900,color:k.c}}>{k.v}</div>
+                      </div>
+                    ))}
+                    <button onClick={()=>setDashDetail(null)} style={{background:"rgba(255,255,255,.12)",border:"none",borderRadius:10,color:"#fff",width:36,height:36,cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",marginLeft:8}}>×</button>
+                  </div>
+                </div>
+
+                {/* Filtros */}
+                <div style={{padding:"10px 24px",background:"#F5F0FF",borderBottom:"1px solid #E1BEE7",display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",flexShrink:0}}>
+                  <input placeholder="🔍 Buscar…" value={dashSearch} onChange={e=>setDashSearch(e.target.value)} style={{...inputStyle,width:200,padding:"6px 10px",fontSize:12,border:"1px solid #CE93D8"}}/>
+                  <select value={dashFilterProv} onChange={e=>setDashFilterProv(e.target.value)} style={{...selectStyle,width:180,padding:"6px 8px",fontSize:12}}>
+                    <option value="">Todos los proveedores</option>
                     {provsList.map(p=><option key={p}>{p}</option>)}
                   </select>
-                  <select value={dashFilterClasif} onChange={e=>setDashFilterClasif(e.target.value)} style={{...selectStyle,maxWidth:150,padding:"6px 8px",fontSize:12}}>
-                    <option value="">Todas clasif.</option>
+                  <select value={dashFilterClasif} onChange={e=>setDashFilterClasif(e.target.value)} style={{...selectStyle,width:160,padding:"6px 8px",fontSize:12}}>
+                    <option value="">Todas las clasif.</option>
                     {clasifList.map(c=><option key={c}>{c}</option>)}
                   </select>
-                  <select value={dashFilterEstatus} onChange={e=>setDashFilterEstatus(e.target.value)} style={{...selectStyle,maxWidth:130,padding:"6px 8px",fontSize:12}}>
+                  <select value={dashFilterEstatus} onChange={e=>setDashFilterEstatus(e.target.value)} style={{...selectStyle,width:140,padding:"6px 8px",fontSize:12}}>
                     <option value="">Todo estatus</option>
                     {["Pendiente","Pagado","Vencido","Parcial"].map(s=><option key={s}>{s}</option>)}
                   </select>
-                  <span style={{fontSize:12,color:C.muted,marginLeft:4}}>Agrupar:</span>
-                  {["","proveedor","clasificacion","estatus","moneda"].map(g=>(
-                    <button key={g} onClick={()=>setDashGroupBy(g)} style={{padding:"3px 10px",borderRadius:20,border:`1px solid ${dashGroupBy===g?C.blue:C.border}`,background:dashGroupBy===g?"#E8F0FE":C.surface,color:dashGroupBy===g?C.blue:C.text,cursor:"pointer",fontSize:11,fontWeight:600}}>
-                      {g||"Ninguno"}
+                  <div style={{width:1,height:20,background:"#E1BEE7"}}/>
+                  <span style={{fontSize:11,fontWeight:700,color:"#7B1FA2"}}>AGRUPAR:</span>
+                  {["proveedor","clasificacion","estatus","moneda"].map(g=>(
+                    <button key={g} onClick={()=>setDashGroupBy(dashGroupBy===g?"":g)}
+                      style={{padding:"4px 12px",borderRadius:20,border:`1.5px solid ${(dashGroupBy||"proveedor")===g?"#7B1FA2":"#E1BEE7"}`,
+                        background:(dashGroupBy||"proveedor")===g?"#7B1FA2":"#fff",
+                        color:(dashGroupBy||"proveedor")===g?"#fff":"#7B1FA2",
+                        cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>
+                      {g.charAt(0).toUpperCase()+g.slice(1)}
                     </button>
                   ))}
-                </div>
-                {/* Summary + Selection */}
-                <div style={{display:"flex",gap:12,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
-                  <div style={{background:"#F8FAFC",borderRadius:8,padding:"6px 14px",fontSize:12}}>
-                    <span style={{color:C.muted}}>Facturas: </span><span style={{fontWeight:700}}>{items.length}</span>
-                  </div>
-                  <div style={{background:"#F8FAFC",borderRadius:8,padding:"6px 14px",fontSize:12}}>
-                    <span style={{color:C.muted}}>Total: </span><span style={{fontWeight:700}}>${fmt(totalSum)}</span>
-                  </div>
-                  <div style={{background:"#FFF3E0",borderRadius:8,padding:"6px 14px",fontSize:12}}>
-                    <span style={{color:C.muted}}>Saldo: </span><span style={{fontWeight:700,color:C.warn}}>${fmt(saldoSum)}</span>
-                  </div>
-                  {selCount>0 && (
-                    <div style={{background:"#E8F0FE",borderRadius:8,padding:"6px 14px",fontSize:12,border:`1px solid ${C.blue}`}}>
-                      <span style={{color:C.blue,fontWeight:700}}>✅ {selCount} seleccionada{selCount!==1?"s":""}: ${fmt(selSaldo)}</span>
+                  {selCount>0 && <>
+                    <div style={{marginLeft:"auto",background:"#EDE7F6",borderRadius:8,padding:"4px 14px",fontSize:12,border:"1px solid #CE93D8"}}>
+                      <span style={{color:"#7B1FA2",fontWeight:700}}>✅ {selCount} selec.: ${fmt(selSaldo)}</span>
                     </div>
-                  )}
-                </div>
-                {/* Bulk edit bar */}
-                {selCount>0 && (
-                  <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:14,padding:"10px 14px",background:"#E8F0FE",borderRadius:10,border:`1px solid ${C.blue}`}}>
-                    <span style={{fontSize:12,fontWeight:700,color:C.blue}}>Edición masiva ({selCount}):</span>
-                    <select value={dashBulkAutDir} onChange={e=>setDashBulkAutDir(e.target.value)} style={{...selectStyle,maxWidth:160,padding:"5px 8px",fontSize:12}}>
+                    <select value={dashBulkAutDir} onChange={e=>setDashBulkAutDir(e.target.value)} style={{...selectStyle,width:150,padding:"5px 8px",fontSize:12}}>
                       <option value="">Aut. Dirección</option>
                       <option value="true">✅ Autorizado</option>
                       <option value="false">⬜ No autorizado</option>
                     </select>
-                    <button onClick={applyDashBulk} style={{...btnStyle,padding:"6px 16px",fontSize:12}}>Aplicar</button>
-                    <button onClick={()=>{setDashSelectedIds(new Set());setDashBulkAutDir("");}} style={{...btnStyle,padding:"6px 12px",fontSize:12,background:"#F1F5F9",color:C.text}}>Cancelar</button>
-                  </div>
-                )}
-                {/* Table or grouped tables */}
-                {dashGroupBy ? (
-                  Object.entries(groups).sort((a,b)=>{ const sA=a[1].reduce((s,i)=>s+((+i.total||0)-(+i.montoPagado||0)),0); const sB=b[1].reduce((s,i)=>s+((+i.total||0)-(+i.montoPagado||0)),0); return sB-sA; }).map(([grp,rows])=>{
-                    const grpSaldo=rows.reduce((s,i)=>s+((+i.total||0)-(+i.montoPagado||0)),0);
+                    <button onClick={applyDashBulk} style={{...btnStyle,padding:"5px 14px",fontSize:12,background:"#7B1FA2"}}>Aplicar</button>
+                    <button onClick={()=>{setDashSelectedIds(new Set());setDashBulkAutDir("");}} style={{...btnStyle,padding:"5px 10px",fontSize:12,background:"#F1F5F9",color:C.text}}>✕</button>
+                  </>}
+                </div>
+
+                {/* Tabla agrupada */}
+                <div style={{overflowY:"auto",flex:1}}>
+                  {groupsSorted.map(([grp, rows])=>{
+                    const grpTotal = rows.reduce((s,i)=>s+(+i.total||0),0);
+                    const grpSaldo = rows.reduce((s,i)=>s+((+i.total||0)-(+i.montoPagado||0)),0);
+                    const grpPagado = rows.reduce((s,i)=>s+(+i.montoPagado||0),0);
+                    const grpOverdue = rows.filter(i=>isOverdue(i.vencimiento,i.estatus)).length;
+                    const grpExpanded = expandedGroups.has(`chip_${grp}`);
+                    const toggleGrp = () => setExpandedGroups(prev=>{const n=new Set(prev);n.has(`chip_${grp}`)?n.delete(`chip_${grp}`):n.add(`chip_${grp}`);return n;});
                     return (
-                      <div key={grp} style={{marginBottom:16}}>
-                        <div style={{display:"flex",justifyContent:"space-between",padding:"6px 12px",background:C.navy,borderRadius:8,marginBottom:4}}>
-                          <span style={{fontWeight:700,color:"#fff",fontSize:13}}>{grp||"—"}</span>
-                          <span style={{color:"#94A3B8",fontSize:12}}>{rows.length} fact. · Saldo: ${fmt(grpSaldo)}</span>
+                      <div key={grp} style={{borderBottom:"1px solid #F3E5F5"}}>
+                        {/* Cabecera grupo */}
+                        <div onClick={toggleGrp} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 24px",background:grpExpanded?"#F3E5F5":"#FAF5FF",cursor:"pointer",transition:"background .15s"}}
+                          onMouseEnter={e=>{ if(!grpExpanded) e.currentTarget.style.background="#EDE7F6"; }}
+                          onMouseLeave={e=>{ e.currentTarget.style.background=grpExpanded?"#F3E5F5":"#FAF5FF"; }}>
+                          <div style={{display:"flex",alignItems:"center",gap:10}}>
+                            <span style={{fontSize:12,color:"#7B1FA2",transition:"transform .2s",display:"inline-block",transform:grpExpanded?"rotate(90deg)":"rotate(0deg)"}}>▶</span>
+                            <span style={{fontWeight:800,fontSize:15,color:"#1A0533"}}>{grp||"—"}</span>
+                            <span style={{fontSize:12,color:"#9C27B0"}}>{rows.length} factura{rows.length!==1?"s":""}</span>
+                            {grpOverdue>0 && <span style={{background:"#FFEBEE",color:"#C62828",fontWeight:700,fontSize:11,padding:"1px 8px",borderRadius:20}}>⚠️ {grpOverdue} vencida{grpOverdue!==1?"s":""}</span>}
+                          </div>
+                          <div style={{display:"flex",gap:20,alignItems:"center"}}>
+                            <div style={{textAlign:"right"}}>
+                              <div style={{fontSize:10,color:"#9C27B0",fontWeight:700,textTransform:"uppercase",letterSpacing:.4}}>Total</div>
+                              <div style={{fontSize:16,fontWeight:800,color:"#4A148C"}}>${fmt(grpTotal)}</div>
+                            </div>
+                            <div style={{textAlign:"right"}}>
+                              <div style={{fontSize:10,color:"#9C27B0",fontWeight:700,textTransform:"uppercase",letterSpacing:.4}}>Pagado</div>
+                              <div style={{fontSize:16,fontWeight:800,color:"#1B5E20"}}>${fmt(grpPagado)}</div>
+                            </div>
+                            <div style={{textAlign:"right"}}>
+                              <div style={{fontSize:10,color:"#9C27B0",fontWeight:700,textTransform:"uppercase",letterSpacing:.4}}>Saldo</div>
+                              <div style={{fontSize:18,fontWeight:900,color:grpSaldo>0?"#E65100":"#1B5E20"}}>${fmt(grpSaldo)}</div>
+                            </div>
+                          </div>
                         </div>
-                        {renderTable(rows)}
+                        {/* Tabla de facturas */}
+                        {grpExpanded && (
+                          <div style={{overflowX:"auto"}}>
+                            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:1100}}>
+                              <thead>
+                                <tr style={{background:"#EDE7F6"}}>
+                                  <th style={{padding:"7px 6px",textAlign:"center",width:32}}>
+                                    <input type="checkbox" checked={rows.every(i=>dashSelectedIds.has(i.id))} onChange={()=>{
+                                      const all = rows.every(i=>dashSelectedIds.has(i.id));
+                                      setDashSelectedIds(prev=>{const n=new Set(prev);rows.forEach(i=>all?n.delete(i.id):n.add(i.id));return n;});
+                                    }} style={{cursor:"pointer",width:13,height:13,accentColor:"#7B1FA2"}}/>
+                                  </th>
+                                  {["Folio","Proveedor","Concepto","Clasif.","Fecha","Total","Pagado","Saldo","Vence","Días","Estatus","Aut."].map(h=>(
+                                    <th key={h} style={{padding:"7px 8px",textAlign:["Total","Pagado","Saldo"].includes(h)?"right":"left",color:"#7B1FA2",fontWeight:700,fontSize:10,textTransform:"uppercase",whiteSpace:"nowrap",letterSpacing:.4}}>{h}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>{renderRows(rows)}</tbody>
+                            </table>
+                          </div>
+                        )}
                       </div>
                     );
-                  })
-                ) : renderTable(items)}
-                {items.length===0 && <div style={{textAlign:"center",padding:24,color:C.muted}}>Sin registros con estos filtros</div>}
+                  })}
+                  {items.length===0 && <div style={{textAlign:"center",padding:32,color:"#9C27B0",fontSize:14}}>Sin registros con estos filtros</div>}
+                </div>
               </div>
             );
           })()}
@@ -4064,7 +4108,8 @@ export default function CxpApp({ user, onLogout }) {
               </div>
             );
           })()}
-        </ModalShell>
+          </div>
+        </div>
       )}
 
       {/* Vincular Ingreso Modal */}
