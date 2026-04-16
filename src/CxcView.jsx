@@ -3007,7 +3007,7 @@ export default function CxcView({
             if (empresaId === "empresa_2") {
               const TAS_TPL = "minmax(160px,1fr) 70px repeat(7,130px)";
               return (
-                <div key={cliente} style={{background:C.surface,border:`1px solid ${expanded?C.blue:C.border}`,borderTop:"none",overflow:"hidden",transition:"border-color .2s"}}>
+                <div key={cliente} style={{background:C.surface,border:`1px solid ${expanded?C.blue:C.border}`,borderTop:"none",overflow:"hidden",transition:"border-color .2s",marginBottom:16}}>
                   {monedas.map((mon,mi) => {
                     const ag = agByMon[mon] || {total:0,cobradoParcial:0,vencido:0,pv15:0,pv30:0,pv60:0,pvmas:0};
                     const sym = monedaSym(mon);
@@ -3142,7 +3142,7 @@ export default function CxcView({
 
             // ── Vista estándar empresa_1 ──
             return (
-              <div key={cliente} style={{background:C.surface,border:`1px solid ${expanded?C.blue:C.border}`,borderRadius:14,overflow:"hidden",transition:"border-color .2s"}}>
+              <div key={cliente} style={{background:C.surface,border:`1px solid ${expanded?C.blue:C.border}`,borderRadius:14,overflow:"hidden",transition:"border-color .2s",marginBottom:16}}>
                 {/* Cliente header — clickable */}
                 <div onClick={()=>toggleCliente(cliente)}
                   style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 18px",background:expanded?"#E8F0FE":"#F8FAFC",cursor:"pointer",transition:"background .15s"}}
