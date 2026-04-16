@@ -2963,13 +2963,13 @@ export default function CxcView({
             const arrow = (col) => clienteSortCol === col ? (clienteSortDir === "asc" ? " ↑" : " ↓") : "";
             const TAS_COLS = ["cliente","_moneda","total","cobrado","vencido","pv15","pv30","pv60","pvmas"];
             const TAS_LABELS = {cliente:"Cliente",_moneda:"Moneda",total:"Total",cobrado:"Cobrado",vencido:"Vencido",pv15:"Por Vencer 1-15d",pv30:"Por Vencer 16-30d",pv60:"Por Vencer 31-60d",pvmas:"Por Vencer +60d"};
-            const TAS_TPL = "minmax(160px,1fr) 70px repeat(7,130px)";
+            const TAS_TPL = "minmax(160px,1fr) 70px repeat(7,110px)";
             return (
               <div style={{display:"grid",gridTemplateColumns:TAS_TPL,background:C.navy,borderRadius:"14px 14px 0 0",position:"sticky",top:0,zIndex:10}}>
                 {TAS_COLS.map(col => (
                   <div key={col}
                     onClick={col !== "_moneda" ? ()=>toggleSort(col) : undefined}
-                    style={{padding:"12px 10px",textAlign: col==="cliente"?"left":"center",fontSize:11,fontWeight:800,
+                    style={{padding:"12px 10px",textAlign: col==="cliente"?"left":col==="_moneda"?"center":"right",fontSize:11,fontWeight:800,
                       textTransform:"uppercase",letterSpacing:.6,cursor:col!=="_moneda"?"pointer":"default",
                       color:clienteSortCol===col?"#90CAF9":"rgba(255,255,255,.8)",
                       userSelect:"none",whiteSpace:"nowrap",
@@ -3003,7 +3003,7 @@ export default function CxcView({
             const monedas = Object.keys(byMon);
 
             if (empresaId === "empresa_2") {
-              const TAS_TPL = "minmax(160px,1fr) 70px repeat(7,130px)";
+              const TAS_TPL = "minmax(160px,1fr) 70px repeat(7,110px)";
               return (
                 <div key={cliente} style={{background:C.surface,border:`1px solid ${expanded?C.blue:C.border}`,borderTop:"none",overflow:"hidden",transition:"border-color .2s",marginBottom:16}}>
                   {monedas.map((mon,mi) => {
@@ -3048,7 +3048,7 @@ export default function CxcView({
                           {v:ag.pv60,        c:"#43A047", label:"Por Vencer 31-60d", fn: i => { const d=diasDiff(i.fechaVencimiento); return (metrics[i.id]?.porCobrar||0)>0 && d!==null && d>30 && d<=60; }},
                           {v:ag.pvmas,       c:"#66BB6A", label:"Por Vencer +60d",   fn: i => { const d=diasDiff(i.fechaVencimiento); return (metrics[i.id]?.porCobrar||0)>0 && d!==null && d>60; }},
                         ].map((col,i)=>(
-                          <div key={i} style={{textAlign:"center",padding:"0 6px"}}
+                          <div key={i} style={{textAlign:"right",padding:"0 8px",minWidth:"100px"}}
                             onClick={col.v>0 ? e=>{
                               e.stopPropagation();
                               const ingsMon = ings.filter(ing => ing.moneda===mon);
@@ -3065,8 +3065,12 @@ export default function CxcView({
                               color:col.v>0?col.c:"#CFD8DC",
                               cursor:col.v>0?"pointer":"default",
                               borderBottom:col.v>0?`1px dotted ${col.c}`:"none",
+                              fontFamily:"'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 'Menlo', 'Consolas', monospace",
+                              minWidth:"90px",
+                              display:"inline-block",
+                              textAlign:"right"
                             }}>
-                              {col.v>0?`${sym}${fmt(col.v)}`:"—"}
+                              {col.v>0?`${sym}${fmt(col.v)}`.padStart(12):"—".padStart(12)}
                             </span>
                           </div>
                         ))}
