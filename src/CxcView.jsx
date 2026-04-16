@@ -4467,12 +4467,12 @@ function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
     },{}) : null;
     const clientesList = byCliente ? Object.values(byCliente).sort((a,b)=>b.porCobrar-a.porCobrar) : null;
 
-    const TableRows=({invList})=>invList.sort((a,b)=>(a.fechaVencimiento||"").localeCompare(b.fechaVencimiento||"")).map((ing,i)=>{
+    const TableRows=({invList, showCliente=true})=>invList.sort((a,b)=>(a.fechaVencimiento||"").localeCompare(b.fechaVencimiento||"")).map((ing,i)=>{
       const m=metrics[ing.id]||{};
       const dias=calcDias(ing.fechaVencimiento);
       return(
         <tr key={ing.id} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFC"}}>
-          <td style={{padding:"10px 14px",fontWeight:600,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.cliente}</td>
+          {showCliente && <td style={{padding:"10px 14px",fontWeight:600,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.cliente}</td>}
           <td style={{padding:"10px 14px",color:C.blue,fontWeight:600,whiteSpace:"nowrap"}}>{ing.folio||"—"}</td>
           <td style={{padding:"10px 14px",color:C.muted,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:12}}>{ing.concepto||"—"}</td>
           <td style={{padding:"10px 14px",fontSize:11,color:C.teal,whiteSpace:"nowrap"}}>{ing.fechaContable||"—"}</td>
@@ -4490,7 +4490,16 @@ function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
       );
     });
 
-    const thead=(
+    const makeHead = (showCliente) => (
+      <thead style={{position:"sticky",top:0}}>
+        <tr style={{background:C.navy}}>
+          {["Folio","Concepto","F.Contable","Fecha","Vencimiento","Días","Total","Cobrado","Por Cobrar"].map(h=>(
+            <th key={h} style={{padding:"11px 14px",textAlign:["Total","Cobrado","Por Cobrar"].includes(h)?"right":"left",color:"#fff",fontWeight:700,fontSize:12,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+          ))}
+        </tr>
+      </thead>
+    );
+    const theadConCliente = (
       <thead style={{position:"sticky",top:0}}>
         <tr style={{background:C.navy}}>
           {["Cliente","Folio","Concepto","F.Contable","Fecha","Vencimiento","Días","Total","Cobrado","Por Cobrar"].map(h=>(
@@ -4499,6 +4508,7 @@ function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
         </tr>
       </thead>
     );
+    const thead = theadConCliente;
 
     return(
       <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:10}}
@@ -4516,9 +4526,9 @@ function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
             {grouped && clientesList ? (
               /* Grouped by client view */
               clientesList.map((cli,ci)=>(
-                <div key={cli.cliente} style={{marginBottom: ci < clientesList.length-1 ? 0 : 0}}>
+                <div key={cli.cliente} style={{marginBottom: ci < clientesList.length-1 ? 16 : 0}}>
                   {/* Client header */}
-                  <div style={{background:"#EEF2FF",padding:"12px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`${ci>0?"3px":"1px"} solid ${ci>0?"#C5CAE9":C.border}`,position:"sticky",top:0,zIndex:2}}>
+                  <div style={{background:"#EEF2FF",padding:"12px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`1px solid #C5CAE9`,borderRadius: ci>0?"8px 8px 0 0":"0",position:"sticky",top:0,zIndex:2}}>
                     <div style={{fontWeight:800,fontSize:14,color:C.navy}}>👤 {cli.cliente}</div>
                     <div style={{display:"flex",gap:20,fontSize:13}}>
                       <span style={{color:C.muted}}>{cli.ingresos.length} factura{cli.ingresos.length!==1?"s":""}</span>
@@ -4526,8 +4536,8 @@ function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
                     </div>
                   </div>
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                    {thead}
-                    <tbody><TableRows invList={cli.ingresos}/></tbody>
+                    {makeHead(false)}
+                    <tbody><TableRows invList={cli.ingresos} showCliente={false}/></tbody>
                   </table>
                 </div>
               ))
