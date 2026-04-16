@@ -4005,6 +4005,16 @@ export default function CxpApp({ user, onLogout }) {
                   </>}
                 </div>
 
+                {/* Cabecera de columnas */}
+                <div style={{display:"flex",alignItems:"center",padding:"8px 24px",background:"#EDE7F6",borderBottom:"2px solid #CE93D8",flexShrink:0}}>
+                  <div style={{flex:1}}/>
+                  <div style={{display:"flex",gap:0,alignItems:"center"}}>
+                    <div style={{textAlign:"right",minWidth:160,paddingRight:24,fontSize:11,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.5}}>Total</div>
+                    <div style={{textAlign:"right",minWidth:140,paddingRight:24,fontSize:11,fontWeight:800,color:"#1B5E20",textTransform:"uppercase",letterSpacing:.5}}>Pagado</div>
+                    <div style={{textAlign:"right",minWidth:160,fontSize:11,fontWeight:800,color:"#E65100",textTransform:"uppercase",letterSpacing:.5}}>Saldo</div>
+                  </div>
+                </div>
+
                 {/* Tabla agrupada */}
                 <div style={{overflowY:"auto",flex:1}}>
                   {groupsSorted.map(([grp, rows])=>{
@@ -4028,15 +4038,12 @@ export default function CxpApp({ user, onLogout }) {
                           </div>
                           <div style={{display:"flex",gap:0,alignItems:"center"}}>
                             <div style={{textAlign:"right",minWidth:160,paddingRight:24}}>
-                              <div style={{fontSize:10,color:"#9C27B0",fontWeight:700,textTransform:"uppercase",letterSpacing:.4}}>Total</div>
                               <div style={{fontSize:16,fontWeight:800,color:"#4A148C"}}>${fmt(grpTotal)}</div>
                             </div>
                             <div style={{textAlign:"right",minWidth:140,paddingRight:24}}>
-                              <div style={{fontSize:10,color:"#9C27B0",fontWeight:700,textTransform:"uppercase",letterSpacing:.4}}>Pagado</div>
                               <div style={{fontSize:16,fontWeight:800,color:"#1B5E20"}}>${fmt(grpPagado)}</div>
                             </div>
                             <div style={{textAlign:"right",minWidth:160}}>
-                              <div style={{fontSize:10,color:"#9C27B0",fontWeight:700,textTransform:"uppercase",letterSpacing:.4}}>Saldo</div>
                               <div style={{fontSize:18,fontWeight:900,color:grpSaldo>0?"#E65100":"#1B5E20"}}>${fmt(grpSaldo)}</div>
                             </div>
                           </div>
