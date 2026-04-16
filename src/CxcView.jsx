@@ -1507,10 +1507,8 @@ export default function CxcView({
               }} placeholder="—" style={{padding:"3px 7px",fontSize:12,border:`1px solid ${C.border}`,borderRadius:6,width:70,fontFamily:"inherit",background:"#FAFBFC"}}/>
           }
         </td>
-        {/* Cliente — oculto en empresa_2 (ya está agrupado por cliente) */}
-        {empresaId !== "empresa_2" && (
-          <td style={{padding:"10px 10px",fontWeight:700,color:C.navy,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.cliente}</td>
-        )}
+        {/* Cliente */}
+        <td style={{padding:"10px 10px",fontWeight:700,color:C.navy,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.cliente}</td>
         {/* Folio */}
         <td style={{padding:"10px 8px",fontSize:13,color:C.blue,fontWeight:600,whiteSpace:"nowrap"}}>{ing.folio||"—"}</td>
         {/* Concepto */}
@@ -3315,7 +3313,7 @@ export default function CxcView({
                   </th>
                   {[
                     {label:"Segmento",       col:"segmento"},
-                    {label:"Cliente",         col:"cliente"},
+                    {label:"Cliente",        col:"cliente"},
                     {label:"Folio Factura",   col:"folio"},
                     {label:"Concepto",        col:"concepto"},
                     {label:"Moneda",          col:"moneda"},
@@ -3328,10 +3326,12 @@ export default function CxcView({
                     {label:"Monto",           col:"monto",       right:true},
                     {label:"Cobrado",         col:"cobrado",     right:true},
                     {label:"Por Cobrar",      col:"porCobrar",   right:true},
-                    {label:"Consumido",       col:"consumido",   right:true},
-                    {label:"Por Pagar",       col:"porPagar",    right:true},
-                    {label:"Disponible",      col:"disponible",  right:true},
-                    {label:"Disp. Neto",      col:"disponibleNeto", right:true},
+                    ...(empresaId !== "empresa_2" ? [
+                      {label:"Consumido",       col:"consumido",   right:true},
+                      {label:"Por Pagar",       col:"porPagar",    right:true},
+                      {label:"Disponible",      col:"disponible",  right:true},
+                      {label:"Disp. Neto",      col:"disponibleNeto", right:true},
+                    ] : []),
                     {label:"Acciones",        col:null},
                   ].map(h=>(
                     <th key={h.label}
@@ -3357,10 +3357,12 @@ export default function CxcView({
                       <td style={{padding:"8px 10px",fontWeight:800,textAlign:"right",color:C.navy,whiteSpace:"nowrap"}}>{sym}{fmt(v.monto)}</td>
                       <td style={{padding:"8px 10px",fontWeight:800,textAlign:"right",color:C.ok,whiteSpace:"nowrap"}}>{sym}{fmt(v.cobrado)}</td>
                       <td style={{padding:"8px 10px",fontWeight:800,textAlign:"right",color:C.warn,whiteSpace:"nowrap"}}>{sym}{fmt(v.porCobrar)}</td>
-                      <td style={{padding:"8px 10px",fontWeight:800,textAlign:"right",color:C.danger,whiteSpace:"nowrap"}}>{sym}{fmt(v.consumido)}</td>
-                      <td style={{padding:"8px 10px",fontWeight:800,textAlign:"right",color:"#E65100",whiteSpace:"nowrap"}}>{sym}{fmt(v.porPagar)}</td>
-                      <td style={{padding:"8px 10px",fontWeight:800,textAlign:"right",color:C.teal,whiteSpace:"nowrap"}}>{sym}{fmt(v.disponible)}</td>
-                      <td style={{padding:"8px 10px",fontWeight:800,textAlign:"right",color:v.disponibleNeto>=0?C.green:C.danger,whiteSpace:"nowrap"}}>{sym}{fmt(v.disponibleNeto)}</td>
+                      {empresaId !== "empresa_2" && <>
+                        <td style={{padding:"8px 10px",fontWeight:800,textAlign:"right",color:C.danger,whiteSpace:"nowrap"}}>{sym}{fmt(v.consumido)}</td>
+                        <td style={{padding:"8px 10px",fontWeight:800,textAlign:"right",color:"#E65100",whiteSpace:"nowrap"}}>{sym}{fmt(v.porPagar)}</td>
+                        <td style={{padding:"8px 10px",fontWeight:800,textAlign:"right",color:C.teal,whiteSpace:"nowrap"}}>{sym}{fmt(v.disponible)}</td>
+                        <td style={{padding:"8px 10px",fontWeight:800,textAlign:"right",color:v.disponibleNeto>=0?C.green:C.danger,whiteSpace:"nowrap"}}>{sym}{fmt(v.disponibleNeto)}</td>
+                      </>}
                       <td/>
                     </tr>
                   </tfoot>
@@ -4524,23 +4526,25 @@ function ResumenCxC({ ingresos, cobros, metrics, empresaId, fmt, C, XLSX }) {
           </div>
           <div style={{overflowY:"auto",flex:1}}>
             {grouped && clientesList ? (
-              /* Grouped by client view */
-              clientesList.map((cli,ci)=>(
-                <div key={cli.cliente} style={{marginBottom: ci < clientesList.length-1 ? 16 : 0}}>
-                  {/* Client header */}
-                  <div style={{background:"#EEF2FF",padding:"12px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`1px solid #C5CAE9`,borderRadius: ci>0?"8px 8px 0 0":"0",position:"sticky",top:0,zIndex:2}}>
-                    <div style={{fontWeight:800,fontSize:14,color:C.navy}}>👤 {cli.cliente}</div>
-                    <div style={{display:"flex",gap:20,fontSize:13}}>
-                      <span style={{color:C.muted}}>{cli.ingresos.length} factura{cli.ingresos.length!==1?"s":""}</span>
-                      <span style={{color:C.warn,fontWeight:700}}>Por cobrar: {sym}{fmt(cli.porCobrar)}</span>
+              /* Grouped by client view — mismo patrón de espaciado que vista "Por cliente" */
+              <div style={{padding:"12px 16px"}}>
+                {clientesList.map((cli,ci)=>(
+                  <div key={cli.cliente} style={{marginBottom:8,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",background:"#fff"}}>
+                    {/* Client header */}
+                    <div style={{background:"#EEF2FF",padding:"12px 20px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <div style={{fontWeight:800,fontSize:14,color:C.navy}}>👤 {cli.cliente}</div>
+                      <div style={{display:"flex",gap:20,fontSize:13}}>
+                        <span style={{color:C.muted}}>{cli.ingresos.length} factura{cli.ingresos.length!==1?"s":""}</span>
+                        <span style={{color:C.warn,fontWeight:700}}>Por cobrar: {sym}{fmt(cli.porCobrar)}</span>
+                      </div>
                     </div>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                      {makeHead(false)}
+                      <tbody><TableRows invList={cli.ingresos} showCliente={false}/></tbody>
+                    </table>
                   </div>
-                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                    {makeHead(false)}
-                    <tbody><TableRows invList={cli.ingresos} showCliente={false}/></tbody>
-                  </table>
-                </div>
-              ))
+                ))}
+              </div>
             ) : (
               /* Flat view */
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
