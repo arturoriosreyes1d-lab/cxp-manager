@@ -197,11 +197,11 @@ export default function CxpApp({ user, onLogout }) {
   const [financiamientos, setFinanciamientos] = useState([]);
   const [financiamientoPagos, setFinanciamientoPagos] = useState([]);
   const [financModalId, setFinancModalId] = useState(null);
-  const [financCollapsed, setFinancCollapsed] = useState(false);
+  const [financCollapsed, setFinancCollapsed] = useState(true);
   const [financImportPreview, setFinancImportPreview] = useState(null);
   const [financImportando, setFinancImportando] = useState(false);
   const [tarjetas, setTarjetas] = useState([]);
-  const [tarjetasCollapsed, setTarjetasCollapsed] = useState(false);
+  const [tarjetasCollapsed, setTarjetasCollapsed] = useState(true);
   const [tarjetaMovimientos, setTarjetaMovimientos] = useState([]);
   const [tarjetaModalId, setTarjetaModalId] = useState(null);
   const [tarjetaImportPreview, setTarjetaImportPreview] = useState(null);
@@ -2564,7 +2564,7 @@ export default function CxpApp({ user, onLogout }) {
           <div style={{padding:"12px 16px",display:"flex",gap:8,alignItems:"center",borderBottom:`1px solid ${C.border}`,flexWrap:"wrap"}}>
 
             <input ref={searchRef} placeholder="🔍 Buscar…" value={search} onChange={e=>setSearch(e.target.value)}
-              style={{...inputStyle,width:160,flex:"0 0 auto"}} />
+              style={{...inputStyle,width:300,flex:"0 0 auto"}} />
 
             {carteraTab !== "resumen" && gruposList.length>0 && (
               <select value={filtroGrupo} onChange={e=>setFiltroGrupo(e.target.value)}
@@ -2605,31 +2605,12 @@ export default function CxpApp({ user, onLogout }) {
               );
             })()}
 
-            {/* Fechas factura pareadas */}
-            <div style={{display:"flex",alignItems:"center",gap:4,flex:"0 0 auto"}}>
-              <input type="date" value={filters.fechaFrom} onChange={e=>setFilters(f=>({...f,fechaFrom:e.target.value}))}
-                style={{...inputStyle,width:136}} title="Fecha desde"/>
-              <span style={{color:C.muted,fontSize:12,padding:"0 2px"}}>—</span>
-              <input type="date" value={filters.fechaTo} onChange={e=>setFilters(f=>({...f,fechaTo:e.target.value}))}
-                style={{...inputStyle,width:136}} title="Fecha hasta"/>
-            </div>
 
-            {/* Fechas pago programado pareadas (Activas/Pagadas) */}
-            {carteraTab !== "resumen" && (
-              <div style={{display:"flex",alignItems:"center",gap:4,flex:"0 0 auto"}}>
-                <span style={{fontSize:11,color:C.muted,fontWeight:700,whiteSpace:"nowrap"}}>📅 Pago:</span>
-                <input type="date" value={filters.pagoFrom||""} onChange={e=>setFilters(f=>({...f,pagoFrom:e.target.value}))}
-                  style={{...inputStyle,width:136}}/>
-                <span style={{color:C.muted,fontSize:12,padding:"0 2px"}}>—</span>
-                <input type="date" value={filters.pagoTo||""} onChange={e=>setFilters(f=>({...f,pagoTo:e.target.value}))}
-                  style={{...inputStyle,width:136}}/>
-              </div>
-            )}
 
             <div style={{flex:1,minWidth:4}}/>
 
             {/* ✕ Limpiar — solo si hay algo activo */}
-            {(search||filters.clasificacion||filters.estatus||filters.fechaFrom||filters.fechaTo||filters.pagoFrom||filters.pagoTo||filtroGrupo||filtroProveedores.size>0||filtroMesConcepto) && (
+            {(search||filters.clasificacion||filters.estatus||filtroGrupo||filtroProveedores.size>0||filtroMesConcepto) && (
               <button onClick={()=>{setFilters({proveedor:"",clasificacion:"",estatus:"",fechaFrom:"",fechaTo:"",pagoFrom:"",pagoTo:""});setSearch("");setFiltroGrupo("");setFiltroProveedores(new Set());setFiltroMesConcepto("");}}
                 style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${C.danger}`,background:"#FFEBEE",color:C.danger,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",flex:"0 0 auto",whiteSpace:"nowrap"}}>
                 ✕ Limpiar
@@ -4028,7 +4009,7 @@ export default function CxpApp({ user, onLogout }) {
                 )}
                 {/* Table or grouped tables */}
                 {dashGroupBy ? (
-                  Object.entries(groups).sort((a,b)=>a[0].localeCompare(b[0])).map(([grp,rows])=>{
+                  Object.entries(groups).sort((a,b)=>{ const sA=a[1].reduce((s,i)=>s+((+i.total||0)-(+i.montoPagado||0)),0); const sB=b[1].reduce((s,i)=>s+((+i.total||0)-(+i.montoPagado||0)),0); return sB-sA; }).map(([grp,rows])=>{
                     const grpSaldo=rows.reduce((s,i)=>s+((+i.total||0)-(+i.montoPagado||0)),0);
                     return (
                       <div key={grp} style={{marginBottom:16}}>
