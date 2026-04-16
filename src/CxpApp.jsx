@@ -3855,7 +3855,7 @@ export default function CxpApp({ user, onLogout }) {
 
       {/* Dashboard detail modal */}
       {dashDetail && (
-        <div style={{position:"fixed",inset:0,background:"rgba(26,5,51,.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}} onClick={()=>setDashDetail(null)}>
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}} onClick={()=>setDashDetail(null)}>
           <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:1400,maxHeight:"92vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(74,20,140,.4)",overflow:"hidden"}}>
           {dashDetail.type==="invoices" && (()=>{
             const allItems = dashDetail.items;
@@ -4026,16 +4026,16 @@ export default function CxpApp({ user, onLogout }) {
                             <span style={{fontSize:12,color:"#9C27B0"}}>{rows.length} factura{rows.length!==1?"s":""}</span>
                             {grpOverdue>0 && <span style={{background:"#FFEBEE",color:"#C62828",fontWeight:700,fontSize:11,padding:"1px 8px",borderRadius:20}}>⚠️ {grpOverdue} vencida{grpOverdue!==1?"s":""}</span>}
                           </div>
-                          <div style={{display:"flex",gap:20,alignItems:"center"}}>
-                            <div style={{textAlign:"right"}}>
+                          <div style={{display:"flex",gap:0,alignItems:"center"}}>
+                            <div style={{textAlign:"right",minWidth:160,paddingRight:24}}>
                               <div style={{fontSize:10,color:"#9C27B0",fontWeight:700,textTransform:"uppercase",letterSpacing:.4}}>Total</div>
                               <div style={{fontSize:16,fontWeight:800,color:"#4A148C"}}>${fmt(grpTotal)}</div>
                             </div>
-                            <div style={{textAlign:"right"}}>
+                            <div style={{textAlign:"right",minWidth:140,paddingRight:24}}>
                               <div style={{fontSize:10,color:"#9C27B0",fontWeight:700,textTransform:"uppercase",letterSpacing:.4}}>Pagado</div>
                               <div style={{fontSize:16,fontWeight:800,color:"#1B5E20"}}>${fmt(grpPagado)}</div>
                             </div>
-                            <div style={{textAlign:"right"}}>
+                            <div style={{textAlign:"right",minWidth:160}}>
                               <div style={{fontSize:10,color:"#9C27B0",fontWeight:700,textTransform:"uppercase",letterSpacing:.4}}>Saldo</div>
                               <div style={{fontSize:18,fontWeight:900,color:grpSaldo>0?"#E65100":"#1B5E20"}}>${fmt(grpSaldo)}</div>
                             </div>
