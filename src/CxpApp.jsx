@@ -4009,9 +4009,9 @@ export default function CxpApp({ user, onLogout }) {
                 <div style={{display:"flex",alignItems:"center",padding:"8px 24px",background:"#EDE7F6",borderBottom:"2px solid #CE93D8",flexShrink:0}}>
                   <div style={{flex:1}}/>
                   <div style={{display:"flex",gap:0,alignItems:"center"}}>
-                    <div style={{textAlign:"right",minWidth:160,paddingRight:24,fontSize:11,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.5}}>Total</div>
-                    <div style={{textAlign:"right",minWidth:140,paddingRight:24,fontSize:11,fontWeight:800,color:"#1B5E20",textTransform:"uppercase",letterSpacing:.5}}>Pagado</div>
-                    <div style={{textAlign:"right",minWidth:160,fontSize:11,fontWeight:800,color:"#E65100",textTransform:"uppercase",letterSpacing:.5}}>Saldo</div>
+                    <div style={{width:160,paddingRight:24,fontSize:11,fontWeight:800,color:"#7B1FA2",textTransform:"uppercase",letterSpacing:.5,textAlign:"center"}}>Total</div>
+                    <div style={{width:140,paddingRight:24,fontSize:11,fontWeight:800,color:"#1B5E20",textTransform:"uppercase",letterSpacing:.5,textAlign:"center"}}>Pagado</div>
+                    <div style={{width:160,fontSize:11,fontWeight:800,color:"#E65100",textTransform:"uppercase",letterSpacing:.5,textAlign:"center"}}>Saldo</div>
                   </div>
                 </div>
 
@@ -4037,13 +4037,13 @@ export default function CxpApp({ user, onLogout }) {
                             {grpOverdue>0 && <span style={{background:"#FFEBEE",color:"#C62828",fontWeight:700,fontSize:11,padding:"1px 8px",borderRadius:20}}>⚠️ {grpOverdue} vencida{grpOverdue!==1?"s":""}</span>}
                           </div>
                           <div style={{display:"flex",gap:0,alignItems:"center"}}>
-                            <div style={{textAlign:"right",minWidth:160,paddingRight:24}}>
+                            <div style={{width:160,paddingRight:24,textAlign:"center"}}>
                               <div style={{fontSize:16,fontWeight:800,color:"#4A148C"}}>${fmt(grpTotal)}</div>
                             </div>
-                            <div style={{textAlign:"right",minWidth:140,paddingRight:24}}>
+                            <div style={{width:140,paddingRight:24,textAlign:"center"}}>
                               <div style={{fontSize:16,fontWeight:800,color:"#1B5E20"}}>${fmt(grpPagado)}</div>
                             </div>
-                            <div style={{textAlign:"right",minWidth:160}}>
+                            <div style={{width:160,textAlign:"center"}}>
                               <div style={{fontSize:18,fontWeight:900,color:grpSaldo>0?"#E65100":"#1B5E20"}}>${fmt(grpSaldo)}</div>
                             </div>
                           </div>
