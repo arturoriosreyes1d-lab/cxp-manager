@@ -3441,77 +3441,68 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         </div>
 
         {/* Análisis de Liquidez con Tipos de Cambio Integrados */}
-        <div style={{background:'linear-gradient(135deg, #F3E5F5 0%, #FAF4FB 50%, #EDE7F6 100%)',border:`3px solid #9575CD`,borderRadius:20,padding:24,marginBottom:20,position:'relative',overflow:'hidden'}}>
-          
-          {/* Decoración de fondo */}
-          <div style={{position:'absolute',top:-20,right:-20,width:100,height:100,background:'radial-gradient(circle, #CE93D8 0%, transparent 70%)',opacity:0.35}}/>
-          <div style={{position:'absolute',bottom:-30,left:-30,width:120,height:120,background:'radial-gradient(circle, #7E57C2 0%, transparent 60%)',opacity:0.2}}/>
+        <div style={{background:'linear-gradient(135deg, #F3E5F5 0%, #FAF4FB 50%, #EDE7F6 100%)',border:`2px solid #9575CD`,borderRadius:14,padding:14,marginBottom:20,position:'relative',overflow:'hidden'}}>
           
           <div style={{position:'relative',zIndex:1}}>
-            <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:24}}>
-              <div style={{fontSize:32,filter:'drop-shadow(0 2px 4px rgba(0,0,0,0.1))'}}>⚠️</div>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+              <div style={{fontSize:18}}>⚠️</div>
               <div>
-                <h3 style={{fontSize:18,fontWeight:800,color:"#4A148C",margin:0,textShadow:'0 1px 2px rgba(0,0,0,0.1)'}}>Análisis de Liquidez</h3>
-                <p style={{fontSize:13,color:"#6A1B9A",margin:"2px 0 0",opacity:0.8}}>Estado financiero en tiempo real</p>
+                <h3 style={{fontSize:14,fontWeight:800,color:"#4A148C",margin:0}}>Análisis de Liquidez</h3>
+                <p style={{fontSize:11,color:"#6A1B9A",margin:"1px 0 0",opacity:0.75}}>Estado financiero en tiempo real</p>
               </div>
             </div>
 
             {/* Tipos de Cambio */}
-            <div style={{background:'rgba(255,255,255,0.7)',borderRadius:12,padding:16,marginBottom:20,backdropFilter:'blur(10px)'}}>
-              <h4 style={{fontSize:14,fontWeight:700,color:"#4A148C",margin:"0 0 12px",display:'flex',alignItems:'center',gap:6}}>
+            <div style={{background:'rgba(255,255,255,0.7)',borderRadius:10,padding:10,marginBottom:12}}>
+              <h4 style={{fontSize:12,fontWeight:700,color:"#4A148C",margin:"0 0 8px",display:'flex',alignItems:'center',gap:6}}>
                 💱 Tipos de Cambio
-                <span style={{fontSize:11,opacity:0.7}}>(Actualizar si es necesario)</span>
+                <span style={{fontSize:10,opacity:0.7,fontWeight:500}}>(actualizar si es necesario)</span>
               </h4>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                <div style={{background:'rgba(46,125,50,0.1)',border:'2px solid #A5D6A7',borderRadius:8,padding:12,textAlign:'center'}}>
-                  <div style={{fontSize:11,fontWeight:600,color:C.usd,marginBottom:4}}>🇺🇸 USD → MXN 🇲🇽</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <div style={{background:'rgba(46,125,50,0.08)',border:'1px solid #A5D6A7',borderRadius:6,padding:6,textAlign:'center'}}>
+                  <div style={{fontSize:10,fontWeight:600,color:C.usd,marginBottom:2}}>🇺🇸 USD → MXN 🇲🇽</div>
                   <input 
                     value={tiposCambio.usdMxn}
                     onChange={(e) => setTiposCambio(prev => ({...prev, usdMxn: e.target.value.replace(/[^\d.]/g, '')}))}
                     placeholder="20.00"
-                    style={{background:'white',border:'1px solid #A5D6A7',borderRadius:6,padding:'6px 8px',fontSize:14,fontWeight:700,textAlign:'center',width:'100%',color:C.usd,outline:'none'}}
+                    style={{background:'white',border:'1px solid #A5D6A7',borderRadius:5,padding:'4px 6px',fontSize:13,fontWeight:700,textAlign:'center',width:'100%',color:C.usd,outline:'none',boxSizing:'border-box'}}
                   />
                 </div>
-                <div style={{background:'rgba(106,27,154,0.1)',border:'2px solid #CE93D8',borderRadius:8,padding:12,textAlign:'center'}}>
-                  <div style={{fontSize:11,fontWeight:600,color:C.eur,marginBottom:4}}>🇪🇺 EUR → MXN 🇲🇽</div>
+                <div style={{background:'rgba(106,27,154,0.08)',border:'1px solid #CE93D8',borderRadius:6,padding:6,textAlign:'center'}}>
+                  <div style={{fontSize:10,fontWeight:600,color:C.eur,marginBottom:2}}>🇪🇺 EUR → MXN 🇲🇽</div>
                   <input 
                     value={tiposCambio.eurMxn}
                     onChange={(e) => setTiposCambio(prev => ({...prev, eurMxn: e.target.value.replace(/[^\d.]/g, '')}))}
                     placeholder="22.00"
-                    style={{background:'white',border:'1px solid #CE93D8',borderRadius:6,padding:'6px 8px',fontSize:14,fontWeight:700,textAlign:'center',width:'100%',color:C.eur,outline:'none'}}
+                    style={{background:'white',border:'1px solid #CE93D8',borderRadius:5,padding:'4px 6px',fontSize:13,fontWeight:700,textAlign:'center',width:'100%',color:C.eur,outline:'none',boxSizing:'border-box'}}
                   />
                 </div>
               </div>
             </div>
 
             {/* Estado por Moneda */}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
               {[
-                {moneda: 'MXN', status: analisisLiquidez.statusMXN, deficit: analisisLiquidez.deficit.MXN, color: C.mxn, bg: 'linear-gradient(135deg, #E3F2FD, #BBDEFB)'},
-                {moneda: 'USD', status: analisisLiquidez.statusUSD, deficit: analisisLiquidez.deficit.USD, color: C.usd, bg: 'linear-gradient(135deg, #E8F5E9, #C8E6C9)'},
-                {moneda: 'EUR', status: analisisLiquidez.statusEUR, deficit: analisisLiquidez.deficit.EUR, color: C.eur, bg: 'linear-gradient(135deg, #F3E5F5, #E1BEE7)'}
+                {moneda: 'MXN', status: analisisLiquidez.statusMXN, deficit: analisisLiquidez.deficit.MXN, color: C.mxn, bg: '#E3F2FD'},
+                {moneda: 'USD', status: analisisLiquidez.statusUSD, deficit: analisisLiquidez.deficit.USD, color: C.usd, bg: '#E8F5E9'},
+                {moneda: 'EUR', status: analisisLiquidez.statusEUR, deficit: analisisLiquidez.deficit.EUR, color: C.eur, bg: '#F3E5F5'}
               ].map(({moneda, status, deficit, color, bg}) => (
                 <div key={moneda} style={{
                   background:bg,
-                  border:`2px solid ${color}`,
-                  borderRadius:16,
-                  padding:20,
-                  textAlign:'center',
-                  position:'relative',
-                  transform: status === '✅' ? 'translateY(-2px)' : 'none',
-                  boxShadow: status === '✅' ? '0 4px 12px rgba(0,0,0,0.15)' : '0 2px 8px rgba(0,0,0,0.1)',
-                  transition:'all 0.3s ease'
+                  border:`1px solid ${color}`,
+                  borderRadius:10,
+                  padding:'8px 10px',
+                  display:'flex',
+                  alignItems:'center',
+                  justifyContent:'space-between',
+                  gap:8
                 }}>
-                  <div style={{fontSize:32,marginBottom:8,filter:'drop-shadow(0 2px 4px rgba(0,0,0,0.1))'}}>
-                    {status}
+                  <div style={{display:'flex',alignItems:'center',gap:6,minWidth:0}}>
+                    <span style={{fontSize:16,lineHeight:1}}>{status}</span>
+                    <span style={{fontSize:13,fontWeight:800,color}}>{moneda}</span>
+                    <span style={{fontSize:10,fontWeight:600,color:'#555'}}>{deficit >= 0 ? 'Excedente' : 'Déficit'}</span>
                   </div>
-                  <div style={{fontSize:16,fontWeight:800,color,marginBottom:8,textShadow:'0 1px 2px rgba(255,255,255,0.8)'}}>
-                    {moneda}
-                  </div>
-                  <div style={{fontSize:13,fontWeight:600,color:'#333',background:'rgba(255,255,255,0.8)',borderRadius:20,padding:'4px 12px',display:'inline-block'}}>
-                    {deficit >= 0 ? '+ Excedente' : '- Déficit'}
-                  </div>
-                  <div style={{fontSize:18,fontWeight:800,color: deficit >= 0 ? '#1B5E20' : '#D32F2F',marginTop:8,textShadow:'0 1px 2px rgba(255,255,255,0.5)'}}>
+                  <div style={{fontSize:13,fontWeight:800,color: deficit >= 0 ? '#1B5E20' : '#D32F2F',whiteSpace:'nowrap'}}>
                     {moneda === 'EUR' ? '€' : '$'}{fmt(Math.abs(deficit))}
                   </div>
                 </div>
