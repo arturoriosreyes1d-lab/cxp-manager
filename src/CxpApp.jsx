@@ -2938,7 +2938,7 @@ export default function CxpApp({ user, onLogout }) {
   };
 
   /* ── PROYECCIÓN ─────────────────────────────────────────────────────── */
-  const renderProyeccion = () => {
+  const renderProyeccionCxP = () => {
     return (
       <div>
         <h1 style={{fontSize:22,fontWeight:800,color:C.navy,marginBottom:4}}>Proyección de Pagos</h1>
@@ -2982,6 +2982,11 @@ export default function CxpApp({ user, onLogout }) {
         {proyeccionTab === "matriz" ? renderMatrizProyeccion() : <ReporteDiarioCxP />}
       </div>
     );
+  };
+
+  // Función original de proyección (sin tabs) para CxC  
+  const renderProyeccion = () => {
+    return renderMatrizProyeccion();
   };
 
   // Separar la matriz original en su propia función
@@ -3885,7 +3890,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: $${fmt(p.monto)} ${p.moneda}
         {view==="cartera" && renderCartera()}
         {view==="pagos" && renderPagos()}
         {view==="proveedores" && renderProveedores()}
-        {view==="proyeccion" && renderProyeccion()}
+        {view==="proyeccion" && renderProyeccionCxP()}
         {view==="importar" && renderImportar()}
         {view==="config" && renderConfig()}
         {view==="cxc" && (
