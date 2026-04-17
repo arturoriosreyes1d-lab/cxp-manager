@@ -3419,7 +3419,10 @@ export default function CxpApp({ user, onLogout }) {
         monedasOrdenadas.forEach(mon => {
           const filas = pagosProgramadosHoy.filter(p => p.moneda === mon);
           if (filas.length === 0) return;
-          filasHTML += `<tr class="sep"><td colspan="6">${mon} &middot; ${filas.length} ${filas.length === 1 ? 'proveedor' : 'proveedores'}</td></tr>`;
+          // Solo mostrar separador en modo detallado (en resumen ahorra espacio)
+          if (detallado) {
+            filasHTML += `<tr class="sep"><td colspan="6">${mon} &middot; ${filas.length} ${filas.length === 1 ? 'proveedor' : 'proveedores'}</td></tr>`;
+          }
           filas.forEach(p => { filasHTML += renderFilaProveedor(p); });
         });
       }
@@ -3458,41 +3461,57 @@ export default function CxpApp({ user, onLogout }) {
 <html lang="es"><head><meta charset="utf-8">
 <title>Reporte Pagos ${empresa.nombre} - ${new Date().toISOString().slice(0,10)}</title>
 <style>
-  @page { size: A4 ${orientacion}; margin: 12mm; }
+  @page { size: A4 ${orientacion}; margin: 10mm; }
   * { box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Arial, sans-serif; color:#1F2937; margin:0; font-size:11px; line-height:1.45; }
+  body.compact { font-size:10px; line-height:1.35; }
 
   /* HEADER */
   .header { display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:18px; padding-bottom:12px; border-bottom:3px solid #4A148C; }
+  body.compact .header { margin-bottom:10px; padding-bottom:8px; border-bottom-width:2px; }
   .header .brand { font-size:10px; color:#9575CD; letter-spacing:2px; text-transform:uppercase; font-weight:700; margin-bottom:4px; }
+  body.compact .header .brand { font-size:8px; margin-bottom:2px; }
   .header h1 { font-size:22px; margin:0; color:#1F2937; font-weight:700; letter-spacing:-0.3px; }
+  body.compact .header h1 { font-size:16px; }
   .header .empresa { font-size:13px; color:#4A148C; font-weight:600; margin-top:4px; }
+  body.compact .header .empresa { font-size:11px; margin-top:2px; }
   .header .meta-right { text-align:right; font-size:9px; color:#6B7280; line-height:1.5; }
+  body.compact .header .meta-right { font-size:8px; line-height:1.4; }
   .header .meta-right .fecha { font-size:11px; color:#1F2937; font-weight:600; text-transform:capitalize; }
+  body.compact .header .meta-right .fecha { font-size:9px; }
 
   /* SECCIONES */
   h2 { font-size:11px; margin:18px 0 8px; color:#4A148C; font-weight:700; text-transform:uppercase; letter-spacing:1px; }
+  body.compact h2 { font-size:9px; margin:10px 0 4px; letter-spacing:0.8px; }
   h2 .num { color:#9CA3AF; font-weight:500; text-transform:none; letter-spacing:0; margin-left:6px; font-size:10px; }
+  body.compact h2 .num { font-size:9px; }
 
   /* CARDS DE SALDOS */
   .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:14px; }
   .card { border:1px solid #E5E7EB; border-radius:8px; padding:10px 14px; background:#FAFAFA; }
   .card .lbl { font-size:9px; color:#6B7280; text-transform:uppercase; letter-spacing:1px; font-weight:600; margin-bottom:3px; }
   .card .val { font-size:18px; font-weight:700; letter-spacing:-0.3px; }
+  body.compact .card { padding:6px 10px; }
+  body.compact .card .val { font-size:13px; }
+  body.compact .card .lbl { font-size:8px; }
   .card.mxn { border-left:3px solid #1565C0; } .card.mxn .val { color:#1565C0; }
   .card.usd { border-left:3px solid #2E7D32; } .card.usd .val { color:#2E7D32; }
   .card.eur { border-left:3px solid #6A1B9A; } .card.eur .val { color:#6A1B9A; }
   .tc-line { font-size:10px; color:#6B7280; margin-bottom:6px; padding:6px 12px; background:#F9F5FB; border-radius:6px; border-left:3px solid #9575CD; }
+  body.compact .tc-line { font-size:9px; padding:4px 10px; margin-bottom:4px; }
   .tc-line b { color:#4A148C; }
 
   /* TABLAS */
   table { width:100%; border-collapse:collapse; font-size:10px; }
+  body.compact table { font-size:9px; }
   thead { display:table-header-group; } /* repetir header en cada página */
   th { background:#4A148C; color:#fff; padding:8px 10px; text-align:left; font-weight:600; font-size:10px; text-transform:uppercase; letter-spacing:0.5px; }
+  body.compact th { padding:5px 8px; font-size:8.5px; letter-spacing:0.3px; }
   th:first-child { border-radius:6px 0 0 0; }
   th:last-child { border-radius:0 6px 0 0; }
   th.r { text-align:right; } th.c { text-align:center; }
   td { padding:7px 10px; border-bottom:1px solid #F3F4F6; }
+  body.compact td { padding:4px 8px; }
   td.r { text-align:right; font-variant-numeric:tabular-nums; }
   td.c { text-align:center; }
   tr.prov { background:#fff; page-break-inside:avoid; }
@@ -3506,9 +3525,11 @@ export default function CxpApp({ user, onLogout }) {
 
   /* SEPARADOR DE MONEDA */
   tr.sep td { background:#EDE7F6; font-weight:700; color:#4A148C; padding:6px 10px; font-size:10px; letter-spacing:1px; text-transform:uppercase; border-top:2px solid #9575CD; }
+  body.compact tr.sep td { padding:3px 8px; font-size:8.5px; letter-spacing:0.5px; border-top-width:1px; }
 
   /* BADGES DE MONEDA */
   .badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:9px; font-weight:700; letter-spacing:0.5px; }
+  body.compact .badge { padding:1px 6px; font-size:8px; }
   .badge-mxn { background:#E3F2FD; color:#1565C0; }
   .badge-usd { background:#E8F5E9; color:#2E7D32; }
   .badge-eur { background:#F3E5F5; color:#6A1B9A; }
@@ -3525,6 +3546,7 @@ export default function CxpApp({ user, onLogout }) {
 
   /* TOTALES */
   tr.totalrow td { background:#F5F0FA; font-size:12px; padding:11px 10px; border-top:2px solid #4A148C; border-bottom:1px solid #C5B5DC; color:#4A148C; }
+  body.compact tr.totalrow td { font-size:11px; padding:7px 8px; }
   tr.totalrow td:first-child { font-weight:800; }
   tr.totalrow td.pago { color:#C62828; }
   tr.totalrow td.ok { color:#1B5E20; }
@@ -3536,13 +3558,14 @@ export default function CxpApp({ user, onLogout }) {
 
   /* FOOTER */
   .footer { margin-top:24px; padding-top:10px; border-top:1px solid #E5E7EB; color:#9CA3AF; font-size:9px; display:flex; justify-content:space-between; align-items:center; }
+  body.compact .footer { margin-top:10px; padding-top:6px; font-size:8px; }
   .footer .brand-foot { color:#4A148C; font-weight:700; letter-spacing:1px; }
 
   @media print { 
     body { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
     tr { page-break-inside:avoid; }
   }
-</style></head><body>
+</style></head><body class="${detallado ? '' : 'compact'}">
 
 <div class="header">
   <div>
@@ -3557,6 +3580,7 @@ export default function CxpApp({ user, onLogout }) {
   </div>
 </div>
 
+${detallado ? `
 <h2>Saldos bancarios</h2>
 <div class="grid">
   <div class="card mxn"><div class="lbl">Saldo MXN</div><div class="val">$${fmt(saldoNum('mxn'))}</div></div>
@@ -3576,6 +3600,29 @@ export default function CxpApp({ user, onLogout }) {
     ${filaSaldoFinal('eur','EUR','€')}
   </tbody>
 </table>
+` : `
+<div class="tc-line" style="margin-bottom:6px;">
+  💱 Tipos de cambio &middot; USD/MXN <b>${tiposCambio.usdMxn}</b> &middot; EUR/MXN <b>${tiposCambio.eurMxn}</b>
+</div>
+<div class="grid" style="margin-bottom:8px;">
+  ${['mxn','usd','eur'].map(k => {
+    const m = k.toUpperCase();
+    const s = k === 'eur' ? '€' : '$';
+    const inicial = saldoNum(k);
+    const pago = totalesPagos[m] || 0;
+    const final = inicial - pago;
+    const colorFinal = final >= 0 ? '#1B5E20' : '#C62828';
+    return `<div class="card ${k}">
+      <div class="lbl">${m} · Inicial → Pagos → Final</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px;margin-top:2px;">
+        <div style="font-size:11px;color:#6B7280;">${s}${fmt(inicial)}</div>
+        <div style="font-size:11px;color:#C62828;">−${s}${fmt(pago)}</div>
+        <div style="font-size:14px;font-weight:800;color:${colorFinal};">${s}${fmt(final)}</div>
+      </div>
+    </div>`;
+  }).join('')}
+</div>
+`}
 
 <h2>Pagos programados para hoy<span class="num">(${pagosProgramadosHoy.length} ${pagosProgramadosHoy.length === 1 ? 'proveedor' : 'proveedores'}${detallado ? ' · con detalle de facturas' : ''})</span></h2>
 <table>
