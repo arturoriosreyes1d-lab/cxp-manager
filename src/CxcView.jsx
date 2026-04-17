@@ -114,6 +114,7 @@ export default function CxcView({
   const [configCats, setConfigCats] = useState(false);
   const [newCatInput, setNewCatInput] = useState("");
   const [proyeccionView, setProyeccionView] = useState(false);
+  const [proyeccionTab, setProyeccionTab] = useState("calendario"); // "calendario" | "matriz" | "reporte"
   const [calDayDetail, setCalDayDetail] = useState(null);
   const [kpiModal, setKpiModal] = useState(null); // { titulo, tipo, moneda }
   const [vistaGrupo, setVistaGrupo] = useState("cliente"); // "ingreso" | "cliente"
@@ -1901,10 +1902,567 @@ export default function CxcView({
     );
   };
 
+  /* ── Reporte Diario de Pagos ─────────────────────────────────── */
+  const ReporteDiario = () => {
+    const [saldosEmpresas, setSaldosEmpresas] = useState({
+      travelair: { mxn: "", usd: "", eur: "" },
+      libero: { mxn: "", usd: "", eur: "" },
+      empresa3: { mxn: "", usd: "", eur: "" },
+    });
+    const [tiposCambio, setTiposCambio] = useState({ usdMxn: "", eurMxn: "" });
+    const [transferencias, setTransferencias] = useState({
+      libero_mxn: "", libero_usd: "", libero_eur: "",
+      empresa3_mxn: "", empresa3_usd: "", empresa3_eur: "",
+    });
+    const [conversiones, setConversiones] = useState({ usd_to_mxn: "", eur_to_mxn: "" });
+
+    const hoy = today();
+    
+    // Obtener pagos programados para hoy
+    const pagosProgramadosHoy = useMemo(() => {
+      const pagos = [];
+      
+      // 1. Cobros proyectados para hoy
+      cobros.filter(c => c.tipo === 'proyectado' && c.fechaCobro === hoy).forEach(c => {
+        const ing = ingresos.find(i => i.id === c.ingresoId);
+        if (ing && !ing.oculta) {
+          const proveedor = ing.cliente || "Sin proveedor";
+          const existing = pagos.find(p => p.proveedor === proveedor && p.moneda === ing.moneda);
+          if (existing) {
+            existing.monto += c.monto;
+          } else {
+            pagos.push({
+              proveedor,
+              moneda: ing.moneda,
+              monto: c.monto,
+              facturas: 1,
+              tipo: 'proyectado'
+            });
+          }
+        }
+      });
+
+      // 2. Ingresos con fecha ficticia de hoy (sin cobros proyectados)
+      ingresos.filter(i => !i.oculta && i.fechaFicticia === hoy).forEach(ing => {
+        const tieneCobrosProy = cobros.some(c => c.ingresoId === ing.id && c.tipo === 'proyectado');
+        if (!tieneCobrosProy) {
+          const porCobrar = (metrics[ing.id]?.porCobrar || 0);
+          if (porCobrar > 0) {
+            const proveedor = ing.cliente || "Sin proveedor";
+            const existing = pagos.find(p => p.proveedor === proveedor && p.moneda === ing.moneda);
+            if (existing) {
+              existing.monto += porCobrar;
+              existing.facturas += 1;
+            } else {
+              pagos.push({
+                proveedor,
+                moneda: ing.moneda,
+                monto: porCobrar,
+                facturas: 1,
+                tipo: 'ficticia'
+              });
+            }
+          }
+        }
+      });
+
+      return pagos.sort((a, b) => b.monto - a.monto);
+    }, [cobros, ingresos, metrics, hoy]);
+
+    // Calcular totales por moneda
+    const totalesPagos = useMemo(() => {
+      const totales = { MXN: 0, USD: 0, EUR: 0 };
+      pagosProgramadosHoy.forEach(p => {
+        totales[p.moneda] = (totales[p.moneda] || 0) + p.monto;
+      });
+      return totales;
+    }, [pagosProgramadosHoy]);
+
+    // Análisis de liquidez
+    const analisisLiquidez = useMemo(() => {
+      const parseSaldo = (val) => parseFloat(val.replace(/[,$]/g, '')) || 0;
+      const parseTc = (val) => parseFloat(val) || 1;
+      
+      const saldoTravelMXN = parseSaldo(saldosEmpresas.travelair.mxn);
+      const saldoTravelUSD = parseSaldo(saldosEmpresas.travelair.usd);
+      const saldoTravelEUR = parseSaldo(saldosEmpresas.travelair.eur);
+      
+      // Transferencias propuestas
+      const transferMXN = parseSaldo(transferencias.libero_mxn) + parseSaldo(transferencias.empresa3_mxn);
+      const transferUSD = parseSaldo(transferencias.libero_usd) + parseSaldo(transferencias.empresa3_usd);
+      const transferEUR = parseSaldo(transferencias.libero_eur) + parseSaldo(transferencias.empresa3_eur);
+      
+      // Conversiones
+      const convUSD = parseSaldo(conversiones.usd_to_mxn) * parseTc(tiposCambio.usdMxn);
+      const convEUR = parseSaldo(conversiones.eur_to_mxn) * parseTc(tiposCambio.eurMxn);
+      
+      const saldoFinalMXN = saldoTravelMXN + transferMXN + convUSD + convEUR;
+      const saldoFinalUSD = saldoTravelUSD + transferUSD - parseSaldo(conversiones.usd_to_mxn);
+      const saldoFinalEUR = saldoTravelEUR + transferEUR - parseSaldo(conversiones.eur_to_mxn);
+      
+      const deficitMXN = saldoFinalMXN - totalesPagos.MXN;
+      const deficitUSD = saldoFinalUSD - totalesPagos.USD;
+      const deficitEUR = saldoFinalEUR - totalesPagos.EUR;
+      
+      return {
+        saldoFinal: { MXN: saldoFinalMXN, USD: saldoFinalUSD, EUR: saldoFinalEUR },
+        deficit: { MXN: deficitMXN, USD: deficitUSD, EUR: deficitEUR },
+        statusMXN: deficitMXN >= 0 ? '✅' : deficitMXN > -50000 ? '🟡' : '🔴',
+        statusUSD: deficitUSD >= 0 ? '✅' : deficitUSD > -5000 ? '🟡' : '🔴',
+        statusEUR: deficitEUR >= 0 ? '✅' : '🟡'
+      };
+    }, [saldosEmpresas, transferencias, conversiones, tiposCambio, totalesPagos]);
+
+    const handleSaldoChange = (empresa, moneda, value) => {
+      setSaldosEmpresas(prev => ({
+        ...prev,
+        [empresa]: { ...prev[empresa], [moneda]: value }
+      }));
+    };
+
+    const handleTransferenciaChange = (key, value) => {
+      setTransferencias(prev => ({ ...prev, [key]: value }));
+    };
+
+    const handleConversionChange = (key, value) => {
+      setConversiones(prev => ({ ...prev, [key]: value }));
+    };
+
+    const generarPDF = () => {
+      alert("Funcionalidad de PDF en desarrollo");
+    };
+
+    const copiarResumen = () => {
+      const resumen = `📊 REPORTE DE PAGOS - ${new Date().toLocaleDateString()}
+
+💰 PAGOS PROGRAMADOS HOY:
+• MXN: $${fmt(totalesPagos.MXN)}
+• USD: $${fmt(totalesPagos.USD)}
+• EUR: €${fmt(totalesPagos.EUR)}
+
+🏦 ANÁLISIS DE LIQUIDEZ:
+• MXN: ${analisisLiquidez.statusMXN} ${analisisLiquidez.deficit.MXN >= 0 ? 'Excedente' : 'Déficit'}: $${fmt(Math.abs(analisisLiquidez.deficit.MXN))}
+• USD: ${analisisLiquidez.statusUSD} ${analisisLiquidez.deficit.USD >= 0 ? 'Excedente' : 'Déficit'}: $${fmt(Math.abs(analisisLiquidez.deficit.USD))}
+
+📋 PROVEEDORES (${pagosProgramadosHoy.length}):
+${pagosProgramadosHoy.map(p => `• ${p.proveedor}: ${monedaSym(p.moneda)}${fmt(p.monto)}`).join('\n')}`;
+      navigator.clipboard.writeText(resumen);
+      alert("Resumen copiado al portapapeles");
+    };
+
+    return (
+      <div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+          <div>
+            <h2 style={{fontSize:18,fontWeight:800,color:C.navy,margin:0}}>📊 Reporte de Pagos del Día</h2>
+            <p style={{color:C.muted,fontSize:13,margin:"4px 0 0"}}>Análisis de liquidez y pagos programados para {new Date().toLocaleDateString()}</p>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={generarPDF} style={{...btnStyle,background:"#E53E3E",color:"#fff",padding:"8px 16px",fontSize:13}}>📄 PDF</button>
+            <button onClick={copiarResumen} style={{...btnStyle,background:"#38A169",color:"#fff",padding:"8px 16px",fontSize:13}}>📋 Copiar</button>
+          </div>
+        </div>
+
+        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:20,marginBottom:20}}>
+          <h3 style={{fontSize:16,fontWeight:700,color:C.navy,margin:"0 0 16px"}}>🏦 Saldos Bancarios Disponibles</h3>
+          
+          <div style={{marginBottom:16}}>
+            <h4 style={{fontSize:14,fontWeight:600,color:C.text,margin:"0 0 8px"}}>TravelAirSolutions</h4>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
+              <div>
+                <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>MXN</label>
+                <input 
+                  value={saldosEmpresas.travelair.mxn} 
+                  onChange={(e) => handleSaldoChange('travelair', 'mxn', e.target.value)}
+                  placeholder="$0.00" 
+                  style={{...inputStyle,textAlign:"right"}} 
+                />
+              </div>
+              <div>
+                <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>USD</label>
+                <input 
+                  value={saldosEmpresas.travelair.usd} 
+                  onChange={(e) => handleSaldoChange('travelair', 'usd', e.target.value)}
+                  placeholder="$0.00" 
+                  style={{...inputStyle,textAlign:"right"}} 
+                />
+              </div>
+              <div>
+                <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>EUR</label>
+                <input 
+                  value={saldosEmpresas.travelair.eur} 
+                  onChange={(e) => handleSaldoChange('travelair', 'eur', e.target.value)}
+                  placeholder="€0.00" 
+                  style={{...inputStyle,textAlign:"right"}} 
+                />
+              </div>
+            </div>
+          </div>
+
+          <div style={{marginBottom:16}}>
+            <h4 style={{fontSize:14,fontWeight:600,color:C.text,margin:"0 0 8px"}}>Viajes Libero</h4>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
+              <div>
+                <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>MXN</label>
+                <input 
+                  value={saldosEmpresas.libero.mxn} 
+                  onChange={(e) => handleSaldoChange('libero', 'mxn', e.target.value)}
+                  placeholder="$0.00" 
+                  style={{...inputStyle,textAlign:"right"}} 
+                />
+              </div>
+              <div>
+                <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>USD</label>
+                <input 
+                  value={saldosEmpresas.libero.usd} 
+                  onChange={(e) => handleSaldoChange('libero', 'usd', e.target.value)}
+                  placeholder="$0.00" 
+                  style={{...inputStyle,textAlign:"right"}} 
+                />
+              </div>
+              <div>
+                <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>EUR</label>
+                <input 
+                  value={saldosEmpresas.libero.eur} 
+                  onChange={(e) => handleSaldoChange('libero', 'eur', e.target.value)}
+                  placeholder="€0.00" 
+                  style={{...inputStyle,textAlign:"right"}} 
+                />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h4 style={{fontSize:14,fontWeight:600,color:C.text,margin:"0 0 8px"}}>Otra Empresa</h4>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
+              <div>
+                <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>MXN</label>
+                <input 
+                  value={saldosEmpresas.empresa3.mxn} 
+                  onChange={(e) => handleSaldoChange('empresa3', 'mxn', e.target.value)}
+                  placeholder="$0.00" 
+                  style={{...inputStyle,textAlign:"right"}} 
+                />
+              </div>
+              <div>
+                <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>USD</label>
+                <input 
+                  value={saldosEmpresas.empresa3.usd} 
+                  onChange={(e) => handleSaldoChange('empresa3', 'usd', e.target.value)}
+                  placeholder="$0.00" 
+                  style={{...inputStyle,textAlign:"right"}} 
+                />
+              </div>
+              <div>
+                <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>EUR</label>
+                <input 
+                  value={saldosEmpresas.empresa3.eur} 
+                  onChange={(e) => handleSaldoChange('empresa3', 'eur', e.target.value)}
+                  placeholder="€0.00" 
+                  style={{...inputStyle,textAlign:"right"}} 
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:20,marginBottom:20}}>
+          <h3 style={{fontSize:16,fontWeight:700,color:C.navy,margin:"0 0 16px"}}>💱 Tipos de Cambio</h3>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+            <div>
+              <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>USD → MXN</label>
+              <input 
+                value={tiposCambio.usdMxn} 
+                onChange={(e) => setTiposCambio(prev => ({...prev, usdMxn: e.target.value}))}
+                placeholder="20.00" 
+                style={{...inputStyle,textAlign:"right"}} 
+              />
+            </div>
+            <div>
+              <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>EUR → MXN</label>
+              <input 
+                value={tiposCambio.eurMxn} 
+                onChange={(e) => setTiposCambio(prev => ({...prev, eurMxn: e.target.value}))}
+                placeholder="22.00" 
+                style={{...inputStyle,textAlign:"right"}} 
+              />
+            </div>
+          </div>
+        </div>
+
+        <div style={{background:"#FFF8E1",border:`2px solid #FFB74D`,borderRadius:14,padding:20,marginBottom:20}}>
+          <h3 style={{fontSize:16,fontWeight:700,color:"#E65100",margin:"0 0 16px"}}>⚠️ Análisis de Liquidez</h3>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16}}>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:24}}>{analisisLiquidez.statusMXN}</div>
+              <div style={{fontSize:14,fontWeight:600,color:"#E65100"}}>MXN</div>
+              <div style={{fontSize:12,color:"#BF360C"}}>
+                {analisisLiquidez.deficit.MXN >= 0 ? 'Excedente' : 'Déficit'}: ${fmt(Math.abs(analisisLiquidez.deficit.MXN))}
+              </div>
+            </div>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:24}}>{analisisLiquidez.statusUSD}</div>
+              <div style={{fontSize:14,fontWeight:600,color:"#E65100"}}>USD</div>
+              <div style={{fontSize:12,color:"#BF360C"}}>
+                {analisisLiquidez.deficit.USD >= 0 ? 'Excedente' : 'Déficit'}: ${fmt(Math.abs(analisisLiquidez.deficit.USD))}
+              </div>
+            </div>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:24}}>{analisisLiquidez.statusEUR}</div>
+              <div style={{fontSize:14,fontWeight:600,color:"#E65100"}}>EUR</div>
+              <div style={{fontSize:12,color:"#BF360C"}}>
+                {analisisLiquidez.deficit.EUR >= 0 ? 'Excedente' : 'Déficit'}: €{fmt(Math.abs(analisisLiquidez.deficit.EUR))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {(analisisLiquidez.deficit.MXN < 0 || analisisLiquidez.deficit.USD < 0) && (
+          <div style={{background:"#E8F0FE",border:`1px solid ${C.blue}`,borderRadius:14,padding:20,marginBottom:20}}>
+            <h3 style={{fontSize:16,fontWeight:700,color:C.navy,margin:"0 0 16px"}}>🔄 Propuesta de Transferencias</h3>
+            
+            <div style={{marginBottom:16}}>
+              <h4 style={{fontSize:14,fontWeight:600,color:C.text,margin:"0 0 8px"}}>Transferir de Viajes Libero</h4>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
+                <div>
+                  <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>MXN</label>
+                  <input 
+                    value={transferencias.libero_mxn} 
+                    onChange={(e) => handleTransferenciaChange('libero_mxn', e.target.value)}
+                    placeholder="$0.00" 
+                    style={{...inputStyle,textAlign:"right"}} 
+                  />
+                </div>
+                <div>
+                  <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>USD</label>
+                  <input 
+                    value={transferencias.libero_usd} 
+                    onChange={(e) => handleTransferenciaChange('libero_usd', e.target.value)}
+                    placeholder="$0.00" 
+                    style={{...inputStyle,textAlign:"right"}} 
+                  />
+                </div>
+                <div>
+                  <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>EUR</label>
+                  <input 
+                    value={transferencias.libero_eur} 
+                    onChange={(e) => handleTransferenciaChange('libero_eur', e.target.value)}
+                    placeholder="€0.00" 
+                    style={{...inputStyle,textAlign:"right"}} 
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h4 style={{fontSize:14,fontWeight:600,color:C.text,margin:"0 0 8px"}}>Convertir a MXN</h4>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <div>
+                  <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>USD → MXN</label>
+                  <input 
+                    value={conversiones.usd_to_mxn} 
+                    onChange={(e) => handleConversionChange('usd_to_mxn', e.target.value)}
+                    placeholder="$0.00 USD" 
+                    style={{...inputStyle,textAlign:"right"}} 
+                  />
+                  {conversiones.usd_to_mxn && tiposCambio.usdMxn && (
+                    <div style={{fontSize:11,color:C.muted,marginTop:2}}>
+                      = ${fmt(parseFloat(conversiones.usd_to_mxn || 0) * parseFloat(tiposCambio.usdMxn || 1))} MXN
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>EUR → MXN</label>
+                  <input 
+                    value={conversiones.eur_to_mxn} 
+                    onChange={(e) => handleConversionChange('eur_to_mxn', e.target.value)}
+                    placeholder="€0.00 EUR" 
+                    style={{...inputStyle,textAlign:"right"}} 
+                  />
+                  {conversiones.eur_to_mxn && tiposCambio.eurMxn && (
+                    <div style={{fontSize:11,color:C.muted,marginTop:2}}>
+                      = ${fmt(parseFloat(conversiones.eur_to_mxn || 0) * parseFloat(tiposCambio.eurMxn || 1))} MXN
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",marginBottom:20}}>
+          <div style={{padding:"16px 20px",background:C.navy,color:"#fff"}}>
+            <h3 style={{fontSize:16,fontWeight:700,margin:0}}>📋 Pagos Programados para Hoy</h3>
+            <p style={{fontSize:13,margin:"4px 0 0",opacity:0.8}}>Total: {pagosProgramadosHoy.length} proveedores</p>
+          </div>
+          
+          {pagosProgramadosHoy.length === 0 ? (
+            <div style={{padding:40,textAlign:"center",color:C.muted}}>
+              <div style={{fontSize:48,marginBottom:12}}>📅</div>
+              <div style={{fontSize:16}}>No hay pagos programados para hoy</div>
+            </div>
+          ) : (
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                <thead>
+                  <tr style={{background:"#F8FAFC"}}>
+                    <th style={{padding:"12px 16px",textAlign:"left",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>Proveedor</th>
+                    <th style={{padding:"12px 16px",textAlign:"center",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>Moneda</th>
+                    <th style={{padding:"12px 16px",textAlign:"right",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>Monto</th>
+                    <th style={{padding:"12px 16px",textAlign:"center",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>Facturas</th>
+                    <th style={{padding:"12px 16px",textAlign:"center",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>Tipo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagosProgramadosHoy.map((pago, i) => (
+                    <tr key={i} style={{borderBottom:`1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFC"}}>
+                      <td style={{padding:"12px 16px",fontWeight:600,color:C.navy}}>{pago.proveedor}</td>
+                      <td style={{padding:"12px 16px",textAlign:"center"}}>
+                        <span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[pago.moneda],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[pago.moneda],padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{pago.moneda}</span>
+                      </td>
+                      <td style={{padding:"12px 16px",textAlign:"right",fontWeight:800,fontSize:14}}>{monedaSym(pago.moneda)}{fmt(pago.monto)}</td>
+                      <td style={{padding:"12px 16px",textAlign:"center",color:C.muted}}>{pago.facturas}</td>
+                      <td style={{padding:"12px 16px",textAlign:"center"}}>
+                        <span style={{fontSize:10,padding:"2px 6px",borderRadius:12,background:pago.tipo==='proyectado'?"#E8F5E9":"#FFF3E0",color:pago.tipo==='proyectado'?"#2E7D32":"#F57C00"}}>
+                          {pago.tipo === 'proyectado' ? 'Programado' : 'Fecha Límite'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{background:"#EEF2FF",borderTop:`2px solid ${C.blue}`}}>
+                    <td colSpan={2} style={{padding:"12px 16px",fontWeight:800,color:C.navy}}>TOTALES</td>
+                    <td style={{padding:"12px 16px",textAlign:"right",fontWeight:800,color:C.navy}}>
+                      {Object.entries(totalesPagos).filter(([,total]) => total > 0).map(([moneda, total]) => (
+                        <div key={moneda}>{monedaSym(moneda)}{fmt(total)} {moneda}</div>
+                      ))}
+                    </td>
+                    <td colSpan={2}/>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div style={{background:"#F0FFF4",border:`1px solid #A5D6A7`,borderRadius:14,padding:20}}>
+          <h3 style={{fontSize:16,fontWeight:700,color:"#1B5E20",margin:"0 0 16px"}}>💰 Saldos Después de Pagos</h3>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16}}>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:14,fontWeight:600,color:"#2E7D32",marginBottom:4}}>MXN</div>
+              <div style={{fontSize:18,fontWeight:800,color:analisisLiquidez.deficit.MXN >= 0 ? "#1B5E20" : "#D32F2F"}}>
+                ${fmt(analisisLiquidez.saldoFinal.MXN)}
+              </div>
+              <div style={{fontSize:11,color:"#4CAF50",marginTop:2}}>
+                {analisisLiquidez.deficit.MXN >= 0 ? '+ Excedente' : '- Déficit'}
+              </div>
+            </div>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:14,fontWeight:600,color:"#2E7D32",marginBottom:4}}>USD</div>
+              <div style={{fontSize:18,fontWeight:800,color:analisisLiquidez.deficit.USD >= 0 ? "#1B5E20" : "#D32F2F"}}>
+                ${fmt(analisisLiquidez.saldoFinal.USD)}
+              </div>
+              <div style={{fontSize:11,color:"#4CAF50",marginTop:2}}>
+                {analisisLiquidez.deficit.USD >= 0 ? '+ Excedente' : '- Déficit'}
+              </div>
+            </div>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:14,fontWeight:600,color:"#2E7D32",marginBottom:4}}>EUR</div>
+              <div style={{fontSize:18,fontWeight:800,color:analisisLiquidez.deficit.EUR >= 0 ? "#1B5E20" : "#D32F2F"}}>
+                €{fmt(analisisLiquidez.saldoFinal.EUR)}
+              </div>
+              <div style={{fontSize:11,color:"#4CAF50",marginTop:2}}>
+                {analisisLiquidez.deficit.EUR >= 0 ? '+ Excedente' : '- Déficit'}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   /* ── Main Render ───────────────────────────────────────────────── */
   if (proyeccionView) return (
     <div>
-      <ProyeccionCalendario/>
+      {/* Header con navegación de tabs */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+        <div>
+          <h2 style={{fontSize:18,fontWeight:800,color:C.navy,margin:0}}>📊 Módulo de Proyección</h2>
+          <p style={{color:C.muted,fontSize:13,margin:"4px 0 0"}}>Análisis de flujo de efectivo y pagos programados</p>
+        </div>
+        <button onClick={()=>setProyeccionView(false)} style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"7px 14px",fontSize:12}}>← Volver</button>
+      </div>
+
+      {/* Navegación de tabs */}
+      <div style={{marginBottom:20}}>
+        <div style={{display:"flex",border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",background:"#F8FAFC"}}>
+          <button 
+            onClick={()=>setProyeccionTab("calendario")}
+            style={{
+              padding:"12px 20px",
+              border:"none",
+              background:proyeccionTab==="calendario"?C.navy:"transparent",
+              color:proyeccionTab==="calendario"?"#fff":C.text,
+              fontWeight:700,
+              fontSize:13,
+              cursor:"pointer",
+              fontFamily:"inherit",
+              flex:1,
+              transition:"all 0.2s ease"
+            }}
+          >
+            📅 Calendario
+          </button>
+          <button 
+            onClick={()=>setProyeccionTab("matriz")}
+            style={{
+              padding:"12px 20px",
+              border:"none",
+              background:proyeccionTab==="matriz"?C.navy:"transparent",
+              color:proyeccionTab==="matriz"?"#fff":C.text,
+              fontWeight:700,
+              fontSize:13,
+              cursor:"pointer",
+              fontFamily:"inherit",
+              flex:1,
+              transition:"all 0.2s ease"
+            }}
+          >
+            📊 Matriz
+          </button>
+          <button 
+            onClick={()=>setProyeccionTab("reporte")}
+            style={{
+              padding:"12px 20px",
+              border:"none",
+              background:proyeccionTab==="reporte"?C.navy:"transparent",
+              color:proyeccionTab==="reporte"?"#fff":C.text,
+              fontWeight:700,
+              fontSize:13,
+              cursor:"pointer",
+              fontFamily:"inherit",
+              flex:1,
+              transition:"all 0.2s ease"
+            }}
+          >
+            📋 Reporte Diario
+          </button>
+        </div>
+      </div>
+
+      {/* Contenido de tabs */}
+      {proyeccionTab === "calendario" && <ProyeccionCalendario/>}
+      {proyeccionTab === "matriz" && (
+        <div style={{padding:40,textAlign:"center",color:C.muted}}>
+          <div style={{fontSize:48,marginBottom:16}}>🚧</div>
+          <h3 style={{fontSize:18,fontWeight:600,color:C.navy,margin:"0 0 8px"}}>Matriz de Proyección</h3>
+          <p style={{fontSize:14}}>Funcionalidad en desarrollo</p>
+        </div>
+      )}
+      {proyeccionTab === "reporte" && <ReporteDiario/>}
+
+      {/* Modales */}
       {detailIngreso && <DetailModal/>}
     </div>
   );
