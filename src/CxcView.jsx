@@ -114,7 +114,6 @@ export default function CxcView({
   const [configCats, setConfigCats] = useState(false);
   const [newCatInput, setNewCatInput] = useState("");
   const [proyeccionView, setProyeccionView] = useState(false);
-  const [proyeccionTab, setProyeccionTab] = useState("calendario"); // "calendario" | "matriz"
   const [calDayDetail, setCalDayDetail] = useState(null);
   const [kpiModal, setKpiModal] = useState(null); // { titulo, tipo, moneda }
   const [vistaGrupo, setVistaGrupo] = useState("cliente"); // "ingreso" | "cliente"
@@ -1915,55 +1914,8 @@ export default function CxcView({
         <button onClick={()=>setProyeccionView(false)} style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"7px 14px",fontSize:12}}>← Volver</button>
       </div>
 
-      {/* Navegación de tabs */}
-      <div style={{marginBottom:20}}>
-        <div style={{display:"flex",border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",background:"#F8FAFC"}}>
-          <button 
-            onClick={()=>setProyeccionTab("calendario")}
-            style={{
-              padding:"12px 20px",
-              border:"none",
-              background:proyeccionTab==="calendario"?C.navy:"transparent",
-              color:proyeccionTab==="calendario"?"#fff":C.text,
-              fontWeight:700,
-              fontSize:13,
-              cursor:"pointer",
-              fontFamily:"inherit",
-              flex:1,
-              transition:"all 0.2s ease"
-            }}
-          >
-            📅 Calendario
-          </button>
-          <button 
-            onClick={()=>setProyeccionTab("matriz")}
-            style={{
-              padding:"12px 20px",
-              border:"none",
-              background:proyeccionTab==="matriz"?C.navy:"transparent",
-              color:proyeccionTab==="matriz"?"#fff":C.text,
-              fontWeight:700,
-              fontSize:13,
-              cursor:"pointer",
-              fontFamily:"inherit",
-              flex:1,
-              transition:"all 0.2s ease"
-            }}
-          >
-            📊 Matriz
-          </button>
-        </div>
-      </div>
-
-      {/* Contenido de tabs */}
-      {proyeccionTab === "calendario" && <ProyeccionCalendario/>}
-      {proyeccionTab === "matriz" && (
-        <div style={{padding:40,textAlign:"center",color:C.muted}}>
-          <div style={{fontSize:48,marginBottom:16}}>🚧</div>
-          <h3 style={{fontSize:18,fontWeight:600,color:C.navy,margin:"0 0 8px"}}>Matriz de Proyección</h3>
-          <p style={{fontSize:14}}>Funcionalidad en desarrollo</p>
-        </div>
-      )}
+      {/* Solo mostrar el calendario directamente - sin tabs */}
+      <ProyeccionCalendario/>
 
       {/* Modales */}
       {detailIngreso && <DetailModal/>}
