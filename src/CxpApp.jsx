@@ -3311,7 +3311,151 @@ export default function CxpApp({ user, onLogout }) {
     };
 
     const generarPDF = () => {
-      alert("Funcionalidad de PDF en desarrollo");
+      const fechaTexto = new Date().toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+      const horaTexto = new Date().toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' });
+      const sym = (m) => m === 'EUR' ? '€' : '$';
+      const saldosCap = saldosEmpresas[empresaId] || { mxn:0, usd:0, eur:0 };
+      const saldoNum = (k) => parseFloat(String(saldosCap[k] || '0').replace(/[,$]/g, '')) || 0;
+
+      // Filas de la tabla agrupadas por moneda con encabezado por sección
+      const monedasOrdenadas = ['USD','MXN','EUR'];
+      let filasHTML = '';
+      monedasOrdenadas.forEach(mon => {
+        const filas = pagosProgramadosHoy.filter(p => p.moneda === mon);
+        if (filas.length === 0) return;
+        const subtotalAdeudo = filas.reduce((s,p) => s + p.importeAdeudado, 0);
+        const subtotalPago   = filas.reduce((s,p) => s + p.pagoHoy, 0);
+        const subtotalSaldo  = filas.reduce((s,p) => s + p.saldoDespuesPago, 0);
+        filasHTML += `<tr class="sep"><td colspan="6">${mon}</td></tr>`;
+        filas.forEach(p => {
+          filasHTML += `
+            <tr>
+              <td>${p.proveedor}</td>
+              <td class="c">${p.moneda}</td>
+              <td class="r">${sym(p.moneda)}${fmt(p.importeAdeudado)}</td>
+              <td class="r pago">${sym(p.moneda)}${fmt(p.pagoHoy)}</td>
+              <td class="r ${p.saldoDespuesPago === 0 ? 'ok' : 'pend'}">${sym(p.moneda)}${fmt(p.saldoDespuesPago)}</td>
+              <td class="c">${p.facturas}</td>
+            </tr>`;
+        });
+        filasHTML += `
+          <tr class="subt">
+            <td colspan="2">Subtotal ${mon}</td>
+            <td class="r">${sym(mon)}${fmt(subtotalAdeudo)}</td>
+            <td class="r">${sym(mon)}${fmt(subtotalPago)}</td>
+            <td class="r">${sym(mon)}${fmt(subtotalSaldo)}</td>
+            <td></td>
+          </tr>`;
+      });
+
+      const filaSaldoFinal = (k, label, sm) => {
+        const inicial = saldoNum(k);
+        const pago = totalesPagos[label] || 0;
+        const final = inicial - pago;
+        const colorClass = final >= 0 ? 'ok' : 'pend';
+        return `
+          <tr>
+            <td>${label}</td>
+            <td class="r">${sm}${fmt(inicial)}</td>
+            <td class="r">${sm}${fmt(pago)}</td>
+            <td class="r ${colorClass}">${sm}${fmt(final)}</td>
+          </tr>`;
+      };
+
+      const html = `<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<title>Reporte Pagos ${empresa.nombre} - ${new Date().toISOString().slice(0,10)}</title>
+<style>
+  @page { size: A4; margin: 14mm; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, 'Segoe UI', Arial, sans-serif; color:#222; margin:0; font-size:11px; line-height:1.4; }
+  h1 { font-size:18px; margin:0 0 4px; color:#1A237E; }
+  h2 { font-size:13px; margin:18px 0 8px; color:#1A237E; border-bottom:2px solid #1A237E; padding-bottom:4px; }
+  .meta { color:#555; font-size:10px; margin-bottom:14px; }
+  .meta b { color:#1A237E; }
+  table { width:100%; border-collapse:collapse; font-size:10px; }
+  th { background:#1A237E; color:#fff; padding:6px 8px; text-align:left; font-weight:600; font-size:10px; }
+  th.r { text-align:right; }
+  th.c { text-align:center; }
+  td { padding:5px 8px; border-bottom:1px solid #E0E0E0; }
+  td.r { text-align:right; }
+  td.c { text-align:center; }
+  td.pago { color:#C62828; font-weight:700; }
+  td.ok { color:#1B5E20; font-weight:600; }
+  td.pend { color:#E65100; font-weight:600; }
+  tr.sep td { background:#E8EAF6; font-weight:700; color:#1A237E; padding:4px 8px; font-size:10px; letter-spacing:0.5px; }
+  tr.subt td { background:#F5F5F5; font-weight:700; border-top:1px solid #999; }
+  .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px; }
+  .card { border:1px solid #BDBDBD; border-radius:4px; padding:8px 10px; }
+  .card .lbl { font-size:9px; color:#666; text-transform:uppercase; letter-spacing:0.5px; }
+  .card .val { font-size:14px; font-weight:700; margin-top:2px; }
+  .card.mxn { border-color:#1565C0; } .card.mxn .val { color:#1565C0; }
+  .card.usd { border-color:#2E7D32; } .card.usd .val { color:#2E7D32; }
+  .card.eur { border-color:#6A1B9A; } .card.eur .val { color:#6A1B9A; }
+  .footer { margin-top:18px; padding-top:8px; border-top:1px solid #E0E0E0; color:#777; font-size:9px; display:flex; justify-content:space-between; }
+  .tag { display:inline-block; padding:1px 6px; border-radius:3px; font-size:9px; font-weight:600; }
+  .tag-ok { background:#E8F5E9; color:#1B5E20; }
+  .tag-warn { background:#FFF3E0; color:#E65100; }
+  .tag-err { background:#FFEBEE; color:#C62828; }
+  @media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+</style></head><body>
+
+<h1>Reporte de Pagos del Día</h1>
+<div class="meta"><b>${empresa.nombre}</b> &middot; ${fechaTexto} &middot; Generado a las ${horaTexto} por ${user?.nombre || 'usuario'}</div>
+
+<h2>Saldos bancarios y tipos de cambio</h2>
+<div class="grid">
+  <div class="card mxn"><div class="lbl">Saldo MXN</div><div class="val">$${fmt(saldoNum('mxn'))}</div></div>
+  <div class="card usd"><div class="lbl">Saldo USD</div><div class="val">$${fmt(saldoNum('usd'))}</div></div>
+  <div class="card eur"><div class="lbl">Saldo EUR</div><div class="val">€${fmt(saldoNum('eur'))}</div></div>
+</div>
+<div style="font-size:10px;color:#555;margin-bottom:8px;">
+  Tipo de cambio: USD/MXN <b>${tiposCambio.usdMxn}</b> &middot; EUR/MXN <b>${tiposCambio.eurMxn}</b>
+</div>
+
+<h2>Saldos finales (saldo bancario − pagos del día)</h2>
+<table>
+  <thead><tr><th>Moneda</th><th class="r">Saldo inicial</th><th class="r">Pagos del día</th><th class="r">Saldo final</th></tr></thead>
+  <tbody>
+    ${filaSaldoFinal('mxn','MXN','$')}
+    ${filaSaldoFinal('usd','USD','$')}
+    ${filaSaldoFinal('eur','EUR','€')}
+  </tbody>
+</table>
+
+<h2>Pagos programados para hoy (${pagosProgramadosHoy.length} ${pagosProgramadosHoy.length === 1 ? 'proveedor' : 'proveedores'})</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Proveedor</th>
+      <th class="c">Moneda</th>
+      <th class="r">Importe adeudado</th>
+      <th class="r">Pago del día</th>
+      <th class="r">Saldo después</th>
+      <th class="c">Facturas</th>
+    </tr>
+  </thead>
+  <tbody>${filasHTML}</tbody>
+</table>
+
+<div class="footer">
+  <div>CxP+CxC Manager &middot; ${empresa.nombre}</div>
+  <div>Reporte generado el ${new Date().toLocaleString('es-MX')}</div>
+</div>
+
+<script>
+  window.onload = function() { setTimeout(function() { window.print(); }, 300); };
+</script>
+</body></html>`;
+
+      const win = window.open('', '_blank');
+      if (!win) {
+        alert('El navegador bloqueó la ventana emergente. Permite ventanas emergentes para este sitio e intenta de nuevo.');
+        return;
+      }
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
     };
 
     const copiarResumen = () => {
