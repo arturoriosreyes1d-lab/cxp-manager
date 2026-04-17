@@ -3143,11 +3143,17 @@ export default function CxpApp({ user, onLogout }) {
     const hoy = today();
     
     const pagosProgramadosHoy = useMemo(() => {
-      const pagos = [];
+      const pagosMap = new Map(); // Usar Map para evitar duplicados
       
       Object.entries(invoices).forEach(([moneda, facturas]) => {
         facturas.forEach(factura => {
           if (factura.empresaId !== empresaId) return;
+          
+          // Calcular importe total adeudado por factura
+          const totalAdeudado = (+factura.total || 0) - (+factura.montoPagado || 0);
+          if (totalAdeudado <= 0) return; // Skip si no hay deuda
+          
+          const proveedorKey = `${factura.proveedor}-${moneda}`;
           
           const pagosProgHoy = payments.filter(p => 
             p.invoiceId === factura.id && 
@@ -3155,56 +3161,67 @@ export default function CxpApp({ user, onLogout }) {
             p.fechaPago === hoy
           );
           
-          pagosProgHoy.forEach(pago => {
-            const existing = pagos.find(p => p.proveedor === factura.proveedor && p.moneda === moneda);
-            if (existing) {
-              existing.monto += pago.monto;
+          // Si hay pagos programados para hoy
+          if (pagosProgHoy.length > 0) {
+            const totalPagoHoy = pagosProgHoy.reduce((sum, p) => sum + p.monto, 0);
+            
+            if (pagosMap.has(proveedorKey)) {
+              const existing = pagosMap.get(proveedorKey);
+              existing.pagoHoy += totalPagoHoy;
+              existing.importeAdeudado += totalAdeudado;
               existing.facturas += 1;
             } else {
-              pagos.push({
+              pagosMap.set(proveedorKey, {
                 proveedor: factura.proveedor,
                 moneda,
-                monto: pago.monto,
+                pagoHoy: totalPagoHoy,
+                importeAdeudado: totalAdeudado,
                 facturas: 1,
                 tipo: 'programado'
               });
             }
-          });
-          
-          const tieneProgHoy = payments.some(p => 
-            p.invoiceId === factura.id && 
-            p.tipo === 'programado' && 
-            p.fechaPago === hoy
-          );
-          
-          if (!tieneProgHoy && factura.fechaVencimiento === hoy) {
-            const saldoPendiente = (+factura.total || 0) - (+factura.montoPagado || 0);
-            if (saldoPendiente > 0) {
-              const existing = pagos.find(p => p.proveedor === factura.proveedor && p.moneda === moneda);
-              if (existing && existing.tipo === 'vencimiento') {
-                existing.monto += saldoPendiente;
-                existing.facturas += 1;
-              } else {
-                pagos.push({
-                  proveedor: factura.proveedor,
-                  moneda,
-                  monto: saldoPendiente,
-                  facturas: 1,
-                  tipo: 'vencimiento'
-                });
-              }
+          }
+          // Si no hay pagos programados pero vence hoy
+          else if (factura.fechaVencimiento === hoy) {
+            if (pagosMap.has(proveedorKey)) {
+              const existing = pagosMap.get(proveedorKey);
+              existing.pagoHoy += totalAdeudado; // Se paga todo al vencer
+              existing.importeAdeudado += totalAdeudado;
+              existing.facturas += 1;
+            } else {
+              pagosMap.set(proveedorKey, {
+                proveedor: factura.proveedor,
+                moneda,
+                pagoHoy: totalAdeudado, // Se paga todo al vencer
+                importeAdeudado: totalAdeudado,
+                facturas: 1,
+                tipo: 'vencimiento'
+              });
             }
           }
         });
       });
 
-      return pagos.sort((a, b) => b.monto - a.monto);
+      // Calcular saldos después del pago y convertir a array
+      const pagosArray = Array.from(pagosMap.values()).map(pago => ({
+        ...pago,
+        saldoDespuesPago: Math.max(0, pago.importeAdeudado - pago.pagoHoy)
+      }));
+
+      // Ordenar: USD primero (mayor a menor), luego MXN (mayor a menor)
+      return pagosArray.sort((a, b) => {
+        if (a.moneda === 'USD' && b.moneda !== 'USD') return -1;
+        if (b.moneda === 'USD' && a.moneda !== 'USD') return 1;
+        if (a.moneda === 'MXN' && b.moneda === 'EUR') return -1;
+        if (b.moneda === 'MXN' && a.moneda === 'EUR') return 1;
+        return b.pagoHoy - a.pagoHoy; // Mayor a menor dentro de la misma moneda
+      });
     }, [invoices, payments, empresaId, hoy]);
 
     const totalesPagos = useMemo(() => {
       const totales = { MXN: 0, USD: 0, EUR: 0 };
       pagosProgramadosHoy.forEach(p => {
-        totales[p.moneda] = (totales[p.moneda] || 0) + p.monto;
+        totales[p.moneda] = (totales[p.moneda] || 0) + p.pagoHoy;
       });
       return totales;
     }, [pagosProgramadosHoy]);
@@ -3267,12 +3284,12 @@ export default function CxpApp({ user, onLogout }) {
 • USD: ${analisisLiquidez.statusUSD} ${analisisLiquidez.deficit.USD >= 0 ? 'Excedente' : 'Déficit'}: $${fmt(Math.abs(analisisLiquidez.deficit.USD))}
 
 📋 PROVEEDORES (${pagosProgramadosHoy.length}):
-${pagosProgramadosHoy.map(p => `• ${p.proveedor}: $${fmt(p.monto)} ${p.moneda}`).join('\n')}`;
+${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeudado)} ${p.moneda}, Pago hoy $${fmt(p.pagoHoy)} ${p.moneda}`).join('\n')}`;
       navigator.clipboard.writeText(resumen);
       alert("Resumen copiado al portapapeles");
     };
 
-    const monedaSym = (moneda) => ({ MXN: "$", USD: "US$", EUR: "€" }[moneda] || "$");
+    const monedaSym = (moneda) => ({ MXN: "$", USD: "$", EUR: "€" }[moneda] || "$");
 
     return (
       <div>
@@ -3430,9 +3447,10 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: $${fmt(p.monto)} ${p.moneda}
                   <tr style={{background:"#F8FAFC"}}>
                     <th style={{padding:"12px 16px",textAlign:"left",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>Proveedor</th>
                     <th style={{padding:"12px 16px",textAlign:"center",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>Moneda</th>
-                    <th style={{padding:"12px 16px",textAlign:"right",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>Monto</th>
+                    <th style={{padding:"12px 16px",textAlign:"right",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>Importe Adeudado</th>
+                    <th style={{padding:"12px 16px",textAlign:"right",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>Pago del Día</th>
+                    <th style={{padding:"12px 16px",textAlign:"right",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>Saldo Después</th>
                     <th style={{padding:"12px 16px",textAlign:"center",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>Facturas</th>
-                    <th style={{padding:"12px 16px",textAlign:"center",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>Tipo</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3442,19 +3460,16 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: $${fmt(p.monto)} ${p.moneda}
                       <td style={{padding:"12px 16px",textAlign:"center"}}>
                         <span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[pago.moneda],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[pago.moneda],padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{pago.moneda}</span>
                       </td>
-                      <td style={{padding:"12px 16px",textAlign:"right",fontWeight:800,fontSize:14}}>{monedaSym(pago.moneda)}{fmt(pago.monto)}</td>
+                      <td style={{padding:"12px 16px",textAlign:"right",fontWeight:700,fontSize:13}}>{monedaSym(pago.moneda)}{fmt(pago.importeAdeudado)}</td>
+                      <td style={{padding:"12px 16px",textAlign:"right",fontWeight:800,fontSize:14,color:"#D32F2F"}}>{monedaSym(pago.moneda)}{fmt(pago.pagoHoy)}</td>
+                      <td style={{padding:"12px 16px",textAlign:"right",fontWeight:700,fontSize:13,color:pago.saldoDespuesPago <= 0 ? "#2E7D32" : "#F57C00"}}>{monedaSym(pago.moneda)}{fmt(pago.saldoDespuesPago)}</td>
                       <td style={{padding:"12px 16px",textAlign:"center",color:C.muted}}>{pago.facturas}</td>
-                      <td style={{padding:"12px 16px",textAlign:"center"}}>
-                        <span style={{fontSize:10,padding:"2px 6px",borderRadius:12,background:pago.tipo==='programado'?"#E8F5E9":"#FFF3E0",color:pago.tipo==='programado'?"#2E7D32":"#F57C00"}}>
-                          {pago.tipo === 'programado' ? 'Programado' : 'Vencimiento'}
-                        </span>
-                      </td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
                   <tr style={{background:"#EEF2FF",borderTop:`2px solid ${C.blue}`}}>
-                    <td colSpan={2} style={{padding:"12px 16px",fontWeight:800,color:C.navy}}>TOTALES</td>
+                    <td colSpan={3} style={{padding:"12px 16px",fontWeight:800,color:C.navy}}>TOTALES</td>
                     <td style={{padding:"12px 16px",textAlign:"right",fontWeight:800,color:C.navy}}>
                       {Object.entries(totalesPagos).filter(([,total]) => total > 0).map(([moneda, total]) => (
                         <div key={moneda}>{monedaSym(moneda)}{fmt(total)} {moneda}</div>
