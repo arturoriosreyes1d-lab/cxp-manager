@@ -3441,24 +3441,24 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         </div>
 
         {/* Análisis de Liquidez con Tipos de Cambio Integrados */}
-        <div style={{background:'linear-gradient(135deg, #FFF8E1 0%, #FFFDE7 50%, #F9FBE7 100%)',border:`3px solid #FFB74D`,borderRadius:20,padding:24,marginBottom:20,position:'relative',overflow:'hidden'}}>
+        <div style={{background:'linear-gradient(135deg, #F3E5F5 0%, #FAF4FB 50%, #EDE7F6 100%)',border:`3px solid #9575CD`,borderRadius:20,padding:24,marginBottom:20,position:'relative',overflow:'hidden'}}>
           
           {/* Decoración de fondo */}
-          <div style={{position:'absolute',top:-20,right:-20,width:100,height:100,background:'radial-gradient(circle, #FFE082 0%, transparent 70%)',opacity:0.3}}/>
-          <div style={{position:'absolute',bottom:-30,left:-30,width:120,height:120,background:'radial-gradient(circle, #FFCC02 0%, transparent 60%)',opacity:0.2}}/>
+          <div style={{position:'absolute',top:-20,right:-20,width:100,height:100,background:'radial-gradient(circle, #CE93D8 0%, transparent 70%)',opacity:0.35}}/>
+          <div style={{position:'absolute',bottom:-30,left:-30,width:120,height:120,background:'radial-gradient(circle, #7E57C2 0%, transparent 60%)',opacity:0.2}}/>
           
           <div style={{position:'relative',zIndex:1}}>
             <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:24}}>
               <div style={{fontSize:32,filter:'drop-shadow(0 2px 4px rgba(0,0,0,0.1))'}}>⚠️</div>
               <div>
-                <h3 style={{fontSize:18,fontWeight:800,color:"#E65100",margin:0,textShadow:'0 1px 2px rgba(0,0,0,0.1)'}}>Análisis de Liquidez</h3>
-                <p style={{fontSize:13,color:"#BF360C",margin:"2px 0 0",opacity:0.8}}>Estado financiero en tiempo real</p>
+                <h3 style={{fontSize:18,fontWeight:800,color:"#4A148C",margin:0,textShadow:'0 1px 2px rgba(0,0,0,0.1)'}}>Análisis de Liquidez</h3>
+                <p style={{fontSize:13,color:"#6A1B9A",margin:"2px 0 0",opacity:0.8}}>Estado financiero en tiempo real</p>
               </div>
             </div>
 
             {/* Tipos de Cambio */}
             <div style={{background:'rgba(255,255,255,0.7)',borderRadius:12,padding:16,marginBottom:20,backdropFilter:'blur(10px)'}}>
-              <h4 style={{fontSize:14,fontWeight:700,color:"#E65100",margin:"0 0 12px",display:'flex',alignItems:'center',gap:6}}>
+              <h4 style={{fontSize:14,fontWeight:700,color:"#4A148C",margin:"0 0 12px",display:'flex',alignItems:'center',gap:6}}>
                 💱 Tipos de Cambio
                 <span style={{fontSize:11,opacity:0.7}}>(Actualizar si es necesario)</span>
               </h4>
