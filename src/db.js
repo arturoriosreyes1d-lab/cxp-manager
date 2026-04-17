@@ -805,3 +805,37 @@ export async function deleteProgramado(id) {
   const { error } = await supabase.from('tarjeta_pagos_programados').delete().eq('id', id);
   if (error) console.error('deleteProgramado:', error);
 }
+
+/* ── Reporte Diario: Saldos compartidos por empresa ─────────────── */
+export async function fetchReporteSaldos(empresaId) {
+  const { data, error } = await supabase
+    .from('reporte_saldos')
+    .select('*')
+    .eq('empresa_id', empresaId)
+    .maybeSingle();
+  if (error) { console.error('fetchReporteSaldos:', error); return null; }
+  if (!data) return null;
+  return {
+    mxn: String(+data.mxn || 0),
+    usd: String(+data.usd || 0),
+    eur: String(+data.eur || 0),
+    updatedAt: data.updated_at || null,
+    updatedBy: data.updated_by || null,
+  };
+}
+
+export async function upsertReporteSaldos(empresaId, saldos, usuario) {
+  const row = {
+    empresa_id: empresaId,
+    mxn: parseFloat(String(saldos.mxn || '0').replace(/[,$]/g, '')) || 0,
+    usd: parseFloat(String(saldos.usd || '0').replace(/[,$]/g, '')) || 0,
+    eur: parseFloat(String(saldos.eur || '0').replace(/[,$]/g, '')) || 0,
+    updated_at: new Date().toISOString(),
+    updated_by: usuario || 'desconocido',
+  };
+  const { error } = await supabase
+    .from('reporte_saldos')
+    .upsert(row, { onConflict: 'empresa_id' });
+  if (error) { console.error('upsertReporteSaldos:', error); return false; }
+  return true;
+}

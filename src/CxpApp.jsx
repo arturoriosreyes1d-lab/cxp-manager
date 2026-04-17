@@ -17,6 +17,7 @@ import {
   fetchFinanciamientoPagos, insertFinanciamientoPago, deleteFinanciamientoPago,
   fetchTarjetas, updateTarjetaSaldo, fetchTarjetaMovimientos, bulkInsertMovimientos,
   fetchProgramados, upsertProgramado, deleteProgramado,
+  fetchReporteSaldos, upsertReporteSaldos,
 } from "./db.js";
 import CxcView from "./CxcView.jsx";
 import { EMPRESAS } from "./empresas.js";
@@ -2384,7 +2385,7 @@ export default function CxpApp({ user, onLogout }) {
                       )}
                     </div>
                   );
-                })()}                })()}
+                })()}
 
               </div>
             </div>
@@ -3134,17 +3135,31 @@ export default function CxpApp({ user, onLogout }) {
 
   /* ── Reporte Diario de Pagos (CxP) ─────────────────────────────── */
   const ReporteDiarioCxP = () => {
-    const [saldosEmpresas, setSaldosEmpresas] = useState(() => {
-      // Cargar desde localStorage si existe
-      const saved = localStorage.getItem(`saldos_${empresaId}`);
-      if (saved) {
-        return { [empresaId]: JSON.parse(saved) };
-      }
-      return { [empresaId]: { mxn: "100", usd: "0", eur: "0" } };
-    });
+    const [saldosEmpresas, setSaldosEmpresas] = useState({ [empresaId]: { mxn: "0", usd: "0", eur: "0" } });
+    const [saldosMeta, setSaldosMeta] = useState({ updatedAt: null, updatedBy: null });
+    const [saldosLoading, setSaldosLoading] = useState(true);
+    const [saldosSaving, setSaldosSaving] = useState(false);
     const [editando, setEditando] = useState({});
     const [tiposCambio, setTiposCambio] = useState({ usdMxn: "20.00", eurMxn: "22.00" });
     const [conversiones, setConversiones] = useState({ usd_to_mxn: "", eur_to_mxn: "" });
+
+    // Cargar saldos desde Supabase al abrir o cambiar de empresa
+    useEffect(() => {
+      let cancelado = false;
+      setSaldosLoading(true);
+      fetchReporteSaldos(empresaId).then(data => {
+        if (cancelado) return;
+        if (data) {
+          setSaldosEmpresas({ [empresaId]: { mxn: data.mxn, usd: data.usd, eur: data.eur } });
+          setSaldosMeta({ updatedAt: data.updatedAt, updatedBy: data.updatedBy });
+        } else {
+          setSaldosEmpresas({ [empresaId]: { mxn: "0", usd: "0", eur: "0" } });
+          setSaldosMeta({ updatedAt: null, updatedBy: null });
+        }
+        setSaldosLoading(false);
+      });
+      return () => { cancelado = true; };
+    }, [empresaId]);
 
     const hoy = today();
     
@@ -3188,7 +3203,7 @@ export default function CxpApp({ user, onLogout }) {
             }
           }
           // Si no hay pagos programados pero vence hoy
-          else if (factura.fechaVencimiento === hoy) {
+          else if (factura.vencimiento === hoy) {
             if (pagosMap.has(proveedorKey)) {
               const existing = pagosMap.get(proveedorKey);
               existing.pagoHoy += totalAdeudado; // Se paga todo al vencer
@@ -3262,16 +3277,28 @@ export default function CxpApp({ user, onLogout }) {
     }, [saldosEmpresas, conversiones, tiposCambio, totalesPagos, empresaId]);
 
     const handleSaldoChange = (moneda, value) => {
-      const newSaldos = {
-        ...saldosEmpresas,
-        [empresaId]: { ...saldosEmpresas[empresaId], [moneda]: value }
-      };
-      setSaldosEmpresas(newSaldos);
-      // Guardar en localStorage
-      localStorage.setItem(`saldos_${empresaId}`, JSON.stringify(newSaldos[empresaId]));
+      // Solo actualiza estado local en cada keystroke (sin tocar Supabase)
+      setSaldosEmpresas(prev => ({
+        ...prev,
+        [empresaId]: { ...(prev[empresaId] || {}), [moneda]: value }
+      }));
+    };
+
+    const guardarSaldosEnSupabase = async () => {
+      const saldosActuales = saldosEmpresas[empresaId] || { mxn: "0", usd: "0", eur: "0" };
+      setSaldosSaving(true);
+      const ok = await upsertReporteSaldos(empresaId, saldosActuales, user?.nombre || "desconocido");
+      if (ok) {
+        setSaldosMeta({ updatedAt: new Date().toISOString(), updatedBy: user?.nombre || "desconocido" });
+      }
+      setSaldosSaving(false);
     };
 
     const handleEditToggle = (key, estado) => {
+      // Si está cerrando edición, guardar en Supabase
+      if (editando[key] && !estado) {
+        guardarSaldosEnSupabase();
+      }
       setEditando(prev => ({ ...prev, [key]: estado }));
     };
 
@@ -3320,7 +3347,19 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         </div>
 
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:20,marginBottom:20}}>
-          <h3 style={{fontSize:16,fontWeight:700,color:C.navy,margin:"0 0 20px"}}>🏦 Saldos Bancarios - {empresa.nombre}</h3>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:8}}>
+            <h3 style={{fontSize:16,fontWeight:700,color:C.navy,margin:0}}>🏦 Saldos Bancarios - {empresa.nombre}</h3>
+            <div style={{fontSize:11,color:C.muted,display:"flex",alignItems:"center",gap:6}}>
+              {saldosLoading && <span>⏳ Cargando...</span>}
+              {saldosSaving && <span style={{color:"#FB8C00"}}>💾 Guardando...</span>}
+              {!saldosLoading && !saldosSaving && saldosMeta.updatedAt && (
+                <span>✓ Última actualización: {new Date(saldosMeta.updatedAt).toLocaleString('es-MX',{dateStyle:'short',timeStyle:'short'})}{saldosMeta.updatedBy ? ` · ${saldosMeta.updatedBy}` : ''}</span>
+              )}
+              {!saldosLoading && !saldosSaving && !saldosMeta.updatedAt && (
+                <span style={{color:"#999"}}>Sin saldos guardados aún</span>
+              )}
+            </div>
+          </div>
           
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:20}}>
             {[
@@ -3328,8 +3367,8 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
               {key: 'usd', label: 'USD', symbol: '$', bg: '#E8F5E9', color: C.usd, border: '#A5D6A7'},
               {key: 'eur', label: 'EUR', symbol: '€', bg: '#F3E5F5', color: C.eur, border: '#CE93D8'}
             ].map(({key, label, symbol, bg, color, border}) => {
-              const valor = saldosEmpresas[empresaId]?.[key] || "100";
-              const valorNumerico = parseFloat(valor.replace(/[,$]/g, '')) || 0;
+              const valor = saldosEmpresas[empresaId]?.[key] || "0";
+              const valorNumerico = parseFloat(String(valor).replace(/[,$]/g, '')) || 0;
               const isEditing = editando[key];
               
               return (
@@ -3343,11 +3382,12 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                   flexDirection:'column',
                   justifyContent:'center',
                   alignItems:'center',
-                  cursor: isEditing ? 'default' : 'pointer',
+                  cursor: isEditing ? 'default' : (esConsulta ? 'not-allowed' : 'pointer'),
+                  opacity: esConsulta ? 0.85 : 1,
                   transition:'all 0.2s ease',
                   transform: isEditing ? 'scale(1.02)' : 'scale(1)'
                 }}
-                onClick={() => !isEditing && handleEditToggle(key, true)}>
+                onClick={() => !isEditing && !esConsulta && handleEditToggle(key, true)}>
                   
                   <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
                     <span style={{fontSize:16,fontWeight:700,color}}>{label}</span>
@@ -3360,7 +3400,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                         {symbol}{fmt(valorNumerico)}
                       </div>
                       <div style={{fontSize:11,color:color,opacity:0.7}}>
-                        Clic para editar
+                        {esConsulta ? 'Solo lectura' : 'Clic para editar'}
                       </div>
                     </div>
                   ) : (
@@ -3400,12 +3440,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           </div>
         </div>
 
-        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:20,marginBottom:20}}>
-          <h3 style={{fontSize:16,fontWeight:700,color:C.navy,margin:"0 0 20px"}}>💱 Tipos de Cambio</h3>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-            
-            {/* USD → MXN */}
-            {/* Análisis de Liquidez con Tipos de Cambio Integrados */}
+        {/* Análisis de Liquidez con Tipos de Cambio Integrados */}
         <div style={{background:'linear-gradient(135deg, #FFF8E1 0%, #FFFDE7 50%, #F9FBE7 100%)',border:`3px solid #FFB74D`,borderRadius:20,padding:24,marginBottom:20,position:'relative',overflow:'hidden'}}>
           
           {/* Decoración de fondo */}
