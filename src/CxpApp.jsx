@@ -3203,17 +3203,33 @@ export default function CxpApp({ user, onLogout }) {
           
           if (pagosProgHoy.length > 0) {
             const totalPagoHoy = pagosProgHoy.reduce((sum, p) => sum + p.monto, 0);
+            const detalleFactura = {
+              serie: factura.serie || '',
+              folio: factura.folio || '',
+              concepto: factura.concepto || '',
+              pagoHoy: totalPagoHoy
+            };
             if (pagosHoy.has(proveedorKey)) {
-              pagosHoy.get(proveedorKey).pagoHoy += totalPagoHoy;
+              const ex = pagosHoy.get(proveedorKey);
+              ex.pagoHoy += totalPagoHoy;
+              ex.detalleFacturas.push(detalleFactura);
             } else {
-              pagosHoy.set(proveedorKey, { pagoHoy: totalPagoHoy, tipo: 'programado' });
+              pagosHoy.set(proveedorKey, { pagoHoy: totalPagoHoy, tipo: 'programado', detalleFacturas: [detalleFactura] });
             }
           } else if (factura.vencimiento === hoy) {
             // Factura vence hoy sin pago programado: se asume pago completo del saldo
+            const detalleFactura = {
+              serie: factura.serie || '',
+              folio: factura.folio || '',
+              concepto: factura.concepto || '',
+              pagoHoy: saldoFactura
+            };
             if (pagosHoy.has(proveedorKey)) {
-              pagosHoy.get(proveedorKey).pagoHoy += saldoFactura;
+              const ex = pagosHoy.get(proveedorKey);
+              ex.pagoHoy += saldoFactura;
+              ex.detalleFacturas.push(detalleFactura);
             } else {
-              pagosHoy.set(proveedorKey, { pagoHoy: saldoFactura, tipo: 'vencimiento' });
+              pagosHoy.set(proveedorKey, { pagoHoy: saldoFactura, tipo: 'vencimiento', detalleFacturas: [detalleFactura] });
             }
           }
         });
@@ -3224,6 +3240,8 @@ export default function CxpApp({ user, onLogout }) {
       pagosHoy.forEach((pagoInfo, key) => {
         const adeudoInfo = adeudoTotal.get(key);
         if (!adeudoInfo) return; // Salvaguarda: no debería pasar
+        // Ordenar facturas por monto descendente
+        const detalleOrdenado = [...pagoInfo.detalleFacturas].sort((a,b) => b.pagoHoy - a.pagoHoy);
         resultado.push({
           proveedor: adeudoInfo.proveedor,
           moneda: adeudoInfo.moneda,
@@ -3231,7 +3249,8 @@ export default function CxpApp({ user, onLogout }) {
           pagoHoy: pagoInfo.pagoHoy,
           facturas: adeudoInfo.facturasActivas,         // Total de facturas activas
           tipo: pagoInfo.tipo,
-          saldoDespuesPago: Math.max(0, adeudoInfo.adeudado - pagoInfo.pagoHoy)
+          saldoDespuesPago: Math.max(0, adeudoInfo.adeudado - pagoInfo.pagoHoy),
+          detalleFacturas: detalleOrdenado              // Facturas que se pagan hoy (con concepto)
         });
       });
 
@@ -3353,45 +3372,55 @@ export default function CxpApp({ user, onLogout }) {
       setConversiones(prev => ({ ...prev, [key]: value }));
     };
 
-    const generarPDF = () => {
+    const [pdfModalOpen, setPdfModalOpen] = useState(false);
+
+    const generarPDF = (modo = 'resumen', orientacion = 'portrait') => {
+      setPdfModalOpen(false);
+      const detallado = modo === 'detallado';
       const fechaTexto = new Date().toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
       const horaTexto = new Date().toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' });
       const sym = (m) => m === 'EUR' ? '€' : '$';
       const saldosCap = saldosEmpresas[empresaId] || { mxn:0, usd:0, eur:0 };
       const saldoNum = (k) => parseFloat(String(saldosCap[k] || '0').replace(/[,$]/g, '')) || 0;
+      const trunc = (s, n=60) => { s = String(s||''); return s.length > n ? s.slice(0,n-1) + '…' : s; };
+
+      // Helper: renderiza una fila de proveedor + opcionalmente sub-filas de facturas
+      const renderFilaProveedor = (p) => {
+        const filaProveedor = `
+          <tr class="prov ${detallado ? 'prov-det' : ''}">
+            <td>${p.proveedor}</td>
+            <td class="c"><span class="badge badge-${p.moneda.toLowerCase()}">${p.moneda}</span></td>
+            <td class="r">${sym(p.moneda)}${fmt(p.importeAdeudado)}</td>
+            <td class="r pago">${sym(p.moneda)}${fmt(p.pagoHoy)}</td>
+            <td class="r ${p.saldoDespuesPago === 0 ? 'ok' : 'pend'}">${sym(p.moneda)}${fmt(p.saldoDespuesPago)}</td>
+            <td class="c">${p.facturas}</td>
+          </tr>`;
+        if (!detallado || !p.detalleFacturas?.length) return filaProveedor;
+        // Sub-filas de detalle
+        const subFilas = p.detalleFacturas.map(f => {
+          const ref = ((f.serie || '') + (f.folio || '')).trim() || '—';
+          return `
+            <tr class="det">
+              <td colspan="3"><span class="det-ico">↳</span> <span class="det-ref">${ref}</span> <span class="det-conc">${trunc(f.concepto, 60) || '<i class="muted">(sin concepto)</i>'}</span></td>
+              <td class="r det-monto">${sym(p.moneda)}${fmt(f.pagoHoy)}</td>
+              <td colspan="2"></td>
+            </tr>`;
+        }).join('');
+        return filaProveedor + subFilas;
+      };
 
       // Si el usuario aplicó orden manual: tabla plana en ese orden.
-      // Si no: agrupada por moneda con subtotales (orden por defecto USD/MXN/EUR).
+      // Si no: agrupada por moneda con encabezado de sección.
       let filasHTML = '';
       if (sortBy) {
-        pagosOrdenados.forEach(p => {
-          filasHTML += `
-            <tr>
-              <td>${p.proveedor}</td>
-              <td class="c">${p.moneda}</td>
-              <td class="r">${sym(p.moneda)}${fmt(p.importeAdeudado)}</td>
-              <td class="r pago">${sym(p.moneda)}${fmt(p.pagoHoy)}</td>
-              <td class="r ${p.saldoDespuesPago === 0 ? 'ok' : 'pend'}">${sym(p.moneda)}${fmt(p.saldoDespuesPago)}</td>
-              <td class="c">${p.facturas}</td>
-            </tr>`;
-        });
+        pagosOrdenados.forEach(p => { filasHTML += renderFilaProveedor(p); });
       } else {
         const monedasOrdenadas = ['USD','MXN','EUR'];
         monedasOrdenadas.forEach(mon => {
           const filas = pagosProgramadosHoy.filter(p => p.moneda === mon);
           if (filas.length === 0) return;
-          filasHTML += `<tr class="sep"><td colspan="6">${mon}</td></tr>`;
-          filas.forEach(p => {
-            filasHTML += `
-              <tr>
-                <td>${p.proveedor}</td>
-                <td class="c">${p.moneda}</td>
-                <td class="r">${sym(p.moneda)}${fmt(p.importeAdeudado)}</td>
-                <td class="r pago">${sym(p.moneda)}${fmt(p.pagoHoy)}</td>
-                <td class="r ${p.saldoDespuesPago === 0 ? 'ok' : 'pend'}">${sym(p.moneda)}${fmt(p.saldoDespuesPago)}</td>
-                <td class="c">${p.facturas}</td>
-              </tr>`;
-          });
+          filasHTML += `<tr class="sep"><td colspan="6">${mon} &middot; ${filas.length} ${filas.length === 1 ? 'proveedor' : 'proveedores'}</td></tr>`;
+          filas.forEach(p => { filasHTML += renderFilaProveedor(p); });
         });
       }
 
@@ -3403,7 +3432,7 @@ export default function CxpApp({ user, onLogout }) {
         totalesHTML += `
           <tr class="totalrow">
             <td><b>TOTAL ${m}</b></td>
-            <td class="c">${m}</td>
+            <td class="c"><span class="badge badge-${m.toLowerCase()}">${m}</span></td>
             <td class="r"><b>${sym(m)}${fmt(t.adeudado)}</b></td>
             <td class="r pago"><b>${sym(m)}${fmt(t.pago)}</b></td>
             <td class="r ${t.saldoDespues === 0 ? 'ok' : 'pend'}"><b>${sym(m)}${fmt(t.saldoDespues)}</b></td>
@@ -3429,59 +3458,117 @@ export default function CxpApp({ user, onLogout }) {
 <html lang="es"><head><meta charset="utf-8">
 <title>Reporte Pagos ${empresa.nombre} - ${new Date().toISOString().slice(0,10)}</title>
 <style>
-  @page { size: A4; margin: 14mm; }
+  @page { size: A4 ${orientacion}; margin: 12mm; }
   * { box-sizing: border-box; }
-  body { font-family: -apple-system, 'Segoe UI', Arial, sans-serif; color:#222; margin:0; font-size:11px; line-height:1.4; }
-  h1 { font-size:18px; margin:0 0 4px; color:#1A237E; }
-  h2 { font-size:13px; margin:18px 0 8px; color:#1A237E; border-bottom:2px solid #1A237E; padding-bottom:4px; }
-  .meta { color:#555; font-size:10px; margin-bottom:14px; }
-  .meta b { color:#1A237E; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Arial, sans-serif; color:#1F2937; margin:0; font-size:11px; line-height:1.45; }
+
+  /* HEADER */
+  .header { display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:18px; padding-bottom:12px; border-bottom:3px solid #4A148C; }
+  .header .brand { font-size:10px; color:#9575CD; letter-spacing:2px; text-transform:uppercase; font-weight:700; margin-bottom:4px; }
+  .header h1 { font-size:22px; margin:0; color:#1F2937; font-weight:700; letter-spacing:-0.3px; }
+  .header .empresa { font-size:13px; color:#4A148C; font-weight:600; margin-top:4px; }
+  .header .meta-right { text-align:right; font-size:9px; color:#6B7280; line-height:1.5; }
+  .header .meta-right .fecha { font-size:11px; color:#1F2937; font-weight:600; text-transform:capitalize; }
+
+  /* SECCIONES */
+  h2 { font-size:11px; margin:18px 0 8px; color:#4A148C; font-weight:700; text-transform:uppercase; letter-spacing:1px; }
+  h2 .num { color:#9CA3AF; font-weight:500; text-transform:none; letter-spacing:0; margin-left:6px; font-size:10px; }
+
+  /* CARDS DE SALDOS */
+  .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:14px; }
+  .card { border:1px solid #E5E7EB; border-radius:8px; padding:10px 14px; background:#FAFAFA; }
+  .card .lbl { font-size:9px; color:#6B7280; text-transform:uppercase; letter-spacing:1px; font-weight:600; margin-bottom:3px; }
+  .card .val { font-size:18px; font-weight:700; letter-spacing:-0.3px; }
+  .card.mxn { border-left:3px solid #1565C0; } .card.mxn .val { color:#1565C0; }
+  .card.usd { border-left:3px solid #2E7D32; } .card.usd .val { color:#2E7D32; }
+  .card.eur { border-left:3px solid #6A1B9A; } .card.eur .val { color:#6A1B9A; }
+  .tc-line { font-size:10px; color:#6B7280; margin-bottom:6px; padding:6px 12px; background:#F9F5FB; border-radius:6px; border-left:3px solid #9575CD; }
+  .tc-line b { color:#4A148C; }
+
+  /* TABLAS */
   table { width:100%; border-collapse:collapse; font-size:10px; }
-  th { background:#1A237E; color:#fff; padding:6px 8px; text-align:left; font-weight:600; font-size:10px; }
-  th.r { text-align:right; }
-  th.c { text-align:center; }
-  td { padding:5px 8px; border-bottom:1px solid #E0E0E0; }
-  td.r { text-align:right; }
+  thead { display:table-header-group; } /* repetir header en cada página */
+  th { background:#4A148C; color:#fff; padding:8px 10px; text-align:left; font-weight:600; font-size:10px; text-transform:uppercase; letter-spacing:0.5px; }
+  th:first-child { border-radius:6px 0 0 0; }
+  th:last-child { border-radius:0 6px 0 0; }
+  th.r { text-align:right; } th.c { text-align:center; }
+  td { padding:7px 10px; border-bottom:1px solid #F3F4F6; }
+  td.r { text-align:right; font-variant-numeric:tabular-nums; }
   td.c { text-align:center; }
+  tr.prov { background:#fff; page-break-inside:avoid; }
+  tr.prov:nth-child(even) { background:#FBFAFC; }
+  tr.prov td { font-weight:500; }
+  tr.prov td:first-child { font-weight:600; color:#1F2937; }
+  tr.prov-det td { border-bottom:none; padding-bottom:4px; background:#F9F5FB; font-weight:700; }
   td.pago { color:#C62828; font-weight:700; }
   td.ok { color:#1B5E20; font-weight:600; }
   td.pend { color:#E65100; font-weight:600; }
-  tr.sep td { background:#E8EAF6; font-weight:700; color:#1A237E; padding:4px 8px; font-size:10px; letter-spacing:0.5px; }
-  tr.subt td { background:#F5F5F5; font-weight:700; border-top:1px solid #999; }
-  tr.totalrow td { background:#E8EAF6; font-size:13px; padding:9px 8px; border-top:2px solid #1A237E; color:#1A237E; }
+
+  /* SEPARADOR DE MONEDA */
+  tr.sep td { background:#EDE7F6; font-weight:700; color:#4A148C; padding:6px 10px; font-size:10px; letter-spacing:1px; text-transform:uppercase; border-top:2px solid #9575CD; }
+
+  /* BADGES DE MONEDA */
+  .badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:9px; font-weight:700; letter-spacing:0.5px; }
+  .badge-mxn { background:#E3F2FD; color:#1565C0; }
+  .badge-usd { background:#E8F5E9; color:#2E7D32; }
+  .badge-eur { background:#F3E5F5; color:#6A1B9A; }
+
+  /* SUB-FILAS DE DETALLE (modo detallado) */
+  tr.det { background:#FAFAFA; page-break-inside:avoid; }
+  tr.det td { padding:4px 10px 4px 24px; border-bottom:1px dotted #E5E7EB; font-size:9.5px; color:#4B5563; }
+  tr.det td:last-child { border-bottom:1px dotted #E5E7EB; }
+  .det-ico { color:#9575CD; font-weight:700; margin-right:4px; }
+  .det-ref { display:inline-block; min-width:70px; font-weight:700; color:#4A148C; font-family:'SF Mono','Monaco','Consolas',monospace; font-size:9px; }
+  .det-conc { color:#4B5563; }
+  .det-monto { color:#C62828; font-weight:600; font-size:9.5px; }
+  .muted { color:#9CA3AF; font-style:italic; }
+
+  /* TOTALES */
+  tr.totalrow td { background:#F5F0FA; font-size:12px; padding:11px 10px; border-top:2px solid #4A148C; border-bottom:1px solid #C5B5DC; color:#4A148C; }
+  tr.totalrow td:first-child { font-weight:800; }
   tr.totalrow td.pago { color:#C62828; }
   tr.totalrow td.ok { color:#1B5E20; }
   tr.totalrow td.pend { color:#E65100; }
-  .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px; }
-  .card { border:1px solid #BDBDBD; border-radius:4px; padding:8px 10px; }
-  .card .lbl { font-size:9px; color:#666; text-transform:uppercase; letter-spacing:0.5px; }
-  .card .val { font-size:14px; font-weight:700; margin-top:2px; }
-  .card.mxn { border-color:#1565C0; } .card.mxn .val { color:#1565C0; }
-  .card.usd { border-color:#2E7D32; } .card.usd .val { color:#2E7D32; }
-  .card.eur { border-color:#6A1B9A; } .card.eur .val { color:#6A1B9A; }
-  .footer { margin-top:18px; padding-top:8px; border-top:1px solid #E0E0E0; color:#777; font-size:9px; display:flex; justify-content:space-between; }
-  .tag { display:inline-block; padding:1px 6px; border-radius:3px; font-size:9px; font-weight:600; }
-  .tag-ok { background:#E8F5E9; color:#1B5E20; }
-  .tag-warn { background:#FFF3E0; color:#E65100; }
-  .tag-err { background:#FFEBEE; color:#C62828; }
-  @media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+
+  /* SALDOS FINALES TABLE */
+  table.saldos-final th { background:#6B7280; }
+  table.saldos-final tr:nth-child(even) td { background:#FAFAFA; }
+
+  /* FOOTER */
+  .footer { margin-top:24px; padding-top:10px; border-top:1px solid #E5E7EB; color:#9CA3AF; font-size:9px; display:flex; justify-content:space-between; align-items:center; }
+  .footer .brand-foot { color:#4A148C; font-weight:700; letter-spacing:1px; }
+
+  @media print { 
+    body { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    tr { page-break-inside:avoid; }
+  }
 </style></head><body>
 
-<h1>Reporte de Pagos del Día</h1>
-<div class="meta"><b>${empresa.nombre}</b> &middot; ${fechaTexto} &middot; Generado a las ${horaTexto} por ${user?.nombre || 'usuario'}</div>
+<div class="header">
+  <div>
+    <div class="brand">CxP Manager</div>
+    <h1>Reporte de Pagos del Día</h1>
+    <div class="empresa">${empresa.nombre}</div>
+  </div>
+  <div class="meta-right">
+    <div class="fecha">${fechaTexto}</div>
+    <div>Generado ${horaTexto} hrs &middot; ${user?.nombre || 'usuario'}</div>
+    ${detallado ? '<div style="color:#9575CD;font-weight:700;margin-top:2px;">VERSIÓN DETALLADA</div>' : ''}
+  </div>
+</div>
 
-<h2>Saldos bancarios y tipos de cambio</h2>
+<h2>Saldos bancarios</h2>
 <div class="grid">
   <div class="card mxn"><div class="lbl">Saldo MXN</div><div class="val">$${fmt(saldoNum('mxn'))}</div></div>
   <div class="card usd"><div class="lbl">Saldo USD</div><div class="val">$${fmt(saldoNum('usd'))}</div></div>
   <div class="card eur"><div class="lbl">Saldo EUR</div><div class="val">€${fmt(saldoNum('eur'))}</div></div>
 </div>
-<div style="font-size:10px;color:#555;margin-bottom:8px;">
-  Tipo de cambio: USD/MXN <b>${tiposCambio.usdMxn}</b> &middot; EUR/MXN <b>${tiposCambio.eurMxn}</b>
+<div class="tc-line">
+  💱 Tipos de cambio aplicados &middot; USD/MXN <b>${tiposCambio.usdMxn}</b> &middot; EUR/MXN <b>${tiposCambio.eurMxn}</b>
 </div>
 
-<h2>Saldos finales (saldo bancario − pagos del día)</h2>
-<table>
+<h2>Saldos finales después de pagos</h2>
+<table class="saldos-final">
   <thead><tr><th>Moneda</th><th class="r">Saldo inicial</th><th class="r">Pagos del día</th><th class="r">Saldo final</th></tr></thead>
   <tbody>
     ${filaSaldoFinal('mxn','MXN','$')}
@@ -3490,7 +3577,7 @@ export default function CxpApp({ user, onLogout }) {
   </tbody>
 </table>
 
-<h2>Pagos programados para hoy (${pagosProgramadosHoy.length} ${pagosProgramadosHoy.length === 1 ? 'proveedor' : 'proveedores'})</h2>
+<h2>Pagos programados para hoy<span class="num">(${pagosProgramadosHoy.length} ${pagosProgramadosHoy.length === 1 ? 'proveedor' : 'proveedores'}${detallado ? ' · con detalle de facturas' : ''})</span></h2>
 <table>
   <thead>
     <tr>
@@ -3506,8 +3593,8 @@ export default function CxpApp({ user, onLogout }) {
 </table>
 
 <div class="footer">
-  <div>CxP+CxC Manager &middot; ${empresa.nombre}</div>
-  <div>Reporte generado el ${new Date().toLocaleString('es-MX')}</div>
+  <div class="brand-foot">CxP MANAGER</div>
+  <div>${empresa.nombre} &middot; Generado el ${new Date().toLocaleString('es-MX')}</div>
 </div>
 
 <script>
@@ -3574,7 +3661,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                 style={{width:50,background:"#fff",border:`1px solid ${C.eur}`,borderRadius:6,padding:"3px 6px",fontSize:12,fontWeight:700,textAlign:"center",color:C.eur,outline:"none"}}
               />
             </div>
-            <button onClick={generarPDF} style={{...btnStyle,background:"#E53E3E",color:"#fff",padding:"8px 16px",fontSize:13}}>📄 PDF</button>
+            <button onClick={() => setPdfModalOpen(true)} style={{...btnStyle,background:"#E53E3E",color:"#fff",padding:"8px 16px",fontSize:13}}>📄 PDF</button>
             <button onClick={copiarResumen} style={{...btnStyle,background:"#38A169",color:"#fff",padding:"8px 16px",fontSize:13}}>📋 Copiar</button>
           </div>
         </div>
@@ -3861,6 +3948,58 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             </div>
           </div>
         </div>
+
+        {/* MODAL: Selector de tipo de PDF */}
+        {pdfModalOpen && (
+          <div onClick={() => setPdfModalOpen(false)} style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(31,41,55,0.55)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:9999,padding:20}}>
+            <div onClick={(e) => e.stopPropagation()} style={{background:"#fff",borderRadius:18,padding:28,maxWidth:720,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}}>
+                <div>
+                  <div style={{fontSize:11,fontWeight:700,color:"#9575CD",letterSpacing:2,textTransform:"uppercase",marginBottom:4}}>Generar Reporte</div>
+                  <h2 style={{fontSize:20,fontWeight:800,color:"#1F2937",margin:0,letterSpacing:-0.3}}>¿Cómo quieres exportar?</h2>
+                  <p style={{fontSize:13,color:"#6B7280",margin:"6px 0 0"}}>Elige el formato según el detalle que necesite tu jefe.</p>
+                </div>
+                <button onClick={() => setPdfModalOpen(false)} style={{background:"transparent",border:"none",fontSize:24,cursor:"pointer",color:"#9CA3AF",padding:0,lineHeight:1}}>×</button>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14}}>
+                {[
+                  {id:'r',  modo:'resumen',   ori:'portrait',  icon:'📋', titulo:'Resumen',   sub:'Solo totales por proveedor',          paginas:'1 hoja',     reco:true},
+                  {id:'dv', modo:'detallado', ori:'portrait',  icon:'📑', titulo:'Detallado vertical', sub:'Con desglose de facturas pagadas hoy', paginas:'2-3 hojas', reco:false},
+                  {id:'dh', modo:'detallado', ori:'landscape', icon:'📑', titulo:'Detallado horizontal', sub:'Más espacio por fila',         paginas:'1-2 hojas', reco:false},
+                ].map(opt => (
+                  <button
+                    key={opt.id}
+                    onClick={() => generarPDF(opt.modo, opt.ori)}
+                    style={{
+                      background:opt.reco ? "linear-gradient(135deg, #F3E5F5 0%, #FAF4FB 100%)" : "#FAFAFA",
+                      border:`2px solid ${opt.reco ? '#9575CD' : '#E5E7EB'}`,
+                      borderRadius:14,
+                      padding:20,
+                      cursor:"pointer",
+                      textAlign:"left",
+                      transition:"all 0.15s ease",
+                      position:"relative",
+                      fontFamily:"inherit"
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#9575CD'; e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(74,20,140,0.15)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = opt.reco ? '#9575CD' : '#E5E7EB'; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}
+                  >
+                    {opt.reco && (
+                      <div style={{position:"absolute",top:-9,right:12,background:"#9575CD",color:"#fff",fontSize:9,fontWeight:700,padding:"3px 8px",borderRadius:10,letterSpacing:0.5}}>RECOMENDADO</div>
+                    )}
+                    <div style={{fontSize:32,marginBottom:10}}>{opt.icon}</div>
+                    <div style={{fontSize:15,fontWeight:800,color:"#1F2937",marginBottom:4}}>{opt.titulo}</div>
+                    <div style={{fontSize:12,color:"#6B7280",lineHeight:1.4,marginBottom:12,minHeight:34}}>{opt.sub}</div>
+                    <div style={{display:"inline-block",fontSize:10,fontWeight:700,color:"#4A148C",background:"#EDE7F6",padding:"3px 8px",borderRadius:6,letterSpacing:0.5,textTransform:"uppercase"}}>~{opt.paginas}</div>
+                  </button>
+                ))}
+              </div>
+              <div style={{marginTop:20,paddingTop:14,borderTop:"1px solid #F3F4F6",fontSize:11,color:"#9CA3AF",textAlign:"center"}}>
+                Después de elegir, aparecerá el diálogo de impresión. Puedes elegir "Guardar como PDF" para descargarlo.
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
