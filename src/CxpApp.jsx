@@ -3142,6 +3142,8 @@ export default function CxpApp({ user, onLogout }) {
     const [editando, setEditando] = useState({});
     const [tiposCambio, setTiposCambio] = useState({ usdMxn: "20.00", eurMxn: "22.00" });
     const [conversiones, setConversiones] = useState({ usd_to_mxn: "", eur_to_mxn: "" });
+    const [sortBy, setSortBy] = useState(null);   // 'proveedor' | 'moneda' | 'importeAdeudado' | 'pagoHoy' | 'saldoDespuesPago' | 'facturas' | null
+    const [sortDir, setSortDir] = useState('desc'); // 'asc' | 'desc'
 
     // Cargar saldos desde Supabase al abrir o cambiar de empresa
     useEffect(() => {
@@ -3251,6 +3253,47 @@ export default function CxpApp({ user, onLogout }) {
       return totales;
     }, [pagosProgramadosHoy]);
 
+    // Lista de pagos en el orden seleccionado por el usuario (o por defecto USD/MXN/EUR)
+    const pagosOrdenados = useMemo(() => {
+      if (!sortBy) return pagosProgramadosHoy; // Orden por defecto
+      const factor = sortDir === 'asc' ? 1 : -1;
+      return [...pagosProgramadosHoy].sort((a, b) => {
+        const va = a[sortBy], vb = b[sortBy];
+        if (typeof va === 'string') return va.localeCompare(vb) * factor;
+        return ((va || 0) - (vb || 0)) * factor;
+      });
+    }, [pagosProgramadosHoy, sortBy, sortDir]);
+
+    // Totales completos por moneda: adeudo, pago, saldo después
+    const totalesCompletos = useMemo(() => {
+      const t = {
+        MXN: { adeudado: 0, pago: 0, saldoDespues: 0, facturas: 0 },
+        USD: { adeudado: 0, pago: 0, saldoDespues: 0, facturas: 0 },
+        EUR: { adeudado: 0, pago: 0, saldoDespues: 0, facturas: 0 },
+      };
+      pagosProgramadosHoy.forEach(p => {
+        if (!t[p.moneda]) return;
+        t[p.moneda].adeudado     += p.importeAdeudado;
+        t[p.moneda].pago         += p.pagoHoy;
+        t[p.moneda].saldoDespues += p.saldoDespuesPago;
+        t[p.moneda].facturas     += p.facturas;
+      });
+      return t;
+    }, [pagosProgramadosHoy]);
+
+    const toggleSort = (col) => {
+      if (sortBy === col) {
+        // Mismo column: alternar dirección, o quitar orden si ya estaba en asc
+        if (sortDir === 'desc') setSortDir('asc');
+        else { setSortBy(null); setSortDir('desc'); }
+      } else {
+        setSortBy(col);
+        setSortDir(col === 'proveedor' || col === 'moneda' ? 'asc' : 'desc');
+      }
+    };
+
+    const sortIcon = (col) => sortBy === col ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+
     const analisisLiquidez = useMemo(() => {
       const parseSaldo = (val) => parseFloat(val.replace(/[,$]/g, '')) || 0;
       const parseTc = (val) => parseFloat(val) || 1;
@@ -3317,17 +3360,11 @@ export default function CxpApp({ user, onLogout }) {
       const saldosCap = saldosEmpresas[empresaId] || { mxn:0, usd:0, eur:0 };
       const saldoNum = (k) => parseFloat(String(saldosCap[k] || '0').replace(/[,$]/g, '')) || 0;
 
-      // Filas de la tabla agrupadas por moneda con encabezado por sección
-      const monedasOrdenadas = ['USD','MXN','EUR'];
+      // Si el usuario aplicó orden manual: tabla plana en ese orden.
+      // Si no: agrupada por moneda con subtotales (orden por defecto USD/MXN/EUR).
       let filasHTML = '';
-      monedasOrdenadas.forEach(mon => {
-        const filas = pagosProgramadosHoy.filter(p => p.moneda === mon);
-        if (filas.length === 0) return;
-        const subtotalAdeudo = filas.reduce((s,p) => s + p.importeAdeudado, 0);
-        const subtotalPago   = filas.reduce((s,p) => s + p.pagoHoy, 0);
-        const subtotalSaldo  = filas.reduce((s,p) => s + p.saldoDespuesPago, 0);
-        filasHTML += `<tr class="sep"><td colspan="6">${mon}</td></tr>`;
-        filas.forEach(p => {
+      if (sortBy) {
+        pagosOrdenados.forEach(p => {
           filasHTML += `
             <tr>
               <td>${p.proveedor}</td>
@@ -3338,13 +3375,39 @@ export default function CxpApp({ user, onLogout }) {
               <td class="c">${p.facturas}</td>
             </tr>`;
         });
-        filasHTML += `
-          <tr class="subt">
-            <td colspan="2">Subtotal ${mon}</td>
-            <td class="r">${sym(mon)}${fmt(subtotalAdeudo)}</td>
-            <td class="r">${sym(mon)}${fmt(subtotalPago)}</td>
-            <td class="r">${sym(mon)}${fmt(subtotalSaldo)}</td>
-            <td></td>
+      } else {
+        const monedasOrdenadas = ['USD','MXN','EUR'];
+        monedasOrdenadas.forEach(mon => {
+          const filas = pagosProgramadosHoy.filter(p => p.moneda === mon);
+          if (filas.length === 0) return;
+          filasHTML += `<tr class="sep"><td colspan="6">${mon}</td></tr>`;
+          filas.forEach(p => {
+            filasHTML += `
+              <tr>
+                <td>${p.proveedor}</td>
+                <td class="c">${p.moneda}</td>
+                <td class="r">${sym(p.moneda)}${fmt(p.importeAdeudado)}</td>
+                <td class="r pago">${sym(p.moneda)}${fmt(p.pagoHoy)}</td>
+                <td class="r ${p.saldoDespuesPago === 0 ? 'ok' : 'pend'}">${sym(p.moneda)}${fmt(p.saldoDespuesPago)}</td>
+                <td class="c">${p.facturas}</td>
+              </tr>`;
+          });
+        });
+      }
+
+      // Totales por moneda al final de la tabla (siempre, en ambos modos)
+      let totalesHTML = '';
+      ['USD','MXN','EUR'].forEach(m => {
+        const t = totalesCompletos[m];
+        if (t.pago === 0 && t.adeudado === 0) return;
+        totalesHTML += `
+          <tr class="totalrow">
+            <td><b>TOTAL ${m}</b></td>
+            <td class="c">${m}</td>
+            <td class="r"><b>${sym(m)}${fmt(t.adeudado)}</b></td>
+            <td class="r pago"><b>${sym(m)}${fmt(t.pago)}</b></td>
+            <td class="r ${t.saldoDespues === 0 ? 'ok' : 'pend'}"><b>${sym(m)}${fmt(t.saldoDespues)}</b></td>
+            <td class="c"><b>${t.facturas}</b></td>
           </tr>`;
       });
 
@@ -3385,6 +3448,10 @@ export default function CxpApp({ user, onLogout }) {
   td.pend { color:#E65100; font-weight:600; }
   tr.sep td { background:#E8EAF6; font-weight:700; color:#1A237E; padding:4px 8px; font-size:10px; letter-spacing:0.5px; }
   tr.subt td { background:#F5F5F5; font-weight:700; border-top:1px solid #999; }
+  tr.totalrow td { background:#E8EAF6; font-size:13px; padding:9px 8px; border-top:2px solid #1A237E; color:#1A237E; }
+  tr.totalrow td.pago { color:#C62828; }
+  tr.totalrow td.ok { color:#1B5E20; }
+  tr.totalrow td.pend { color:#E65100; }
   .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px; }
   .card { border:1px solid #BDBDBD; border-radius:4px; padding:8px 10px; }
   .card .lbl { font-size:9px; color:#666; text-transform:uppercase; letter-spacing:0.5px; }
@@ -3435,7 +3502,7 @@ export default function CxpApp({ user, onLogout }) {
       <th class="c">Facturas</th>
     </tr>
   </thead>
-  <tbody>${filasHTML}</tbody>
+  <tbody>${filasHTML}${totalesHTML}</tbody>
 </table>
 
 <div class="footer">
@@ -3702,16 +3769,25 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
                 <thead>
                   <tr style={{background:"#F8FAFC"}}>
-                    <th style={{padding:"12px 16px",textAlign:"left",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>Proveedor</th>
-                    <th style={{padding:"12px 16px",textAlign:"center",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>Moneda</th>
-                    <th style={{padding:"12px 16px",textAlign:"right",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>Importe Adeudado</th>
-                    <th style={{padding:"12px 16px",textAlign:"right",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>Pago del Día</th>
-                    <th style={{padding:"12px 16px",textAlign:"right",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>Saldo Después</th>
-                    <th style={{padding:"12px 16px",textAlign:"center",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>Facturas</th>
+                    {[
+                      {k:'proveedor',         label:'Proveedor',         align:'left'},
+                      {k:'moneda',            label:'Moneda',            align:'center'},
+                      {k:'importeAdeudado',   label:'Importe Adeudado',  align:'right'},
+                      {k:'pagoHoy',           label:'Pago del Día',      align:'right'},
+                      {k:'saldoDespuesPago',  label:'Saldo Después',     align:'right'},
+                      {k:'facturas',          label:'Facturas',          align:'center'},
+                    ].map(h => (
+                      <th key={h.k}
+                          onClick={() => toggleSort(h.k)}
+                          title="Clic para ordenar"
+                          style={{padding:"12px 16px",textAlign:h.align,color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`,cursor:"pointer",userSelect:"none",background:sortBy===h.k?"#E3F2FD":"transparent"}}>
+                        {h.label}{sortIcon(h.k)}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {pagosProgramadosHoy.map((pago, i) => (
+                  {pagosOrdenados.map((pago, i) => (
                     <tr key={i} style={{borderBottom:`1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFC"}}>
                       <td style={{padding:"12px 16px",fontWeight:600,color:C.navy}}>{pago.proveedor}</td>
                       <td style={{padding:"12px 16px",textAlign:"center"}}>
@@ -3725,15 +3801,28 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                   ))}
                 </tbody>
                 <tfoot>
-                  <tr style={{background:"#EEF2FF",borderTop:`2px solid ${C.blue}`}}>
-                    <td colSpan={3} style={{padding:"12px 16px",fontWeight:800,color:C.navy}}>TOTALES</td>
-                    <td style={{padding:"12px 16px",textAlign:"right",fontWeight:800,color:C.navy}}>
-                      {Object.entries(totalesPagos).filter(([,total]) => total > 0).map(([moneda, total]) => (
-                        <div key={moneda}>{monedaSym(moneda)}{fmt(total)} {moneda}</div>
-                      ))}
-                    </td>
-                    <td colSpan={2}/>
-                  </tr>
+                  {['USD','MXN','EUR'].filter(m => totalesCompletos[m].pago > 0 || totalesCompletos[m].adeudado > 0).map((m, idx, arr) => (
+                    <tr key={m} style={{background:"#EEF2FF",borderTop:idx===0?`2px solid ${C.blue}`:`1px solid ${C.border}`}}>
+                      <td style={{padding:"14px 16px",fontWeight:800,color:C.navy,fontSize:14}}>
+                        TOTAL {m}
+                      </td>
+                      <td style={{padding:"14px 16px",textAlign:"center"}}>
+                        <span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[m],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[m],padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800}}>{m}</span>
+                      </td>
+                      <td style={{padding:"14px 16px",textAlign:"right",fontWeight:800,color:C.navy,fontSize:18}}>
+                        {monedaSym(m)}{fmt(totalesCompletos[m].adeudado)}
+                      </td>
+                      <td style={{padding:"14px 16px",textAlign:"right",fontWeight:800,color:"#D32F2F",fontSize:18}}>
+                        {monedaSym(m)}{fmt(totalesCompletos[m].pago)}
+                      </td>
+                      <td style={{padding:"14px 16px",textAlign:"right",fontWeight:800,color:totalesCompletos[m].saldoDespues <= 0 ? "#2E7D32" : "#F57C00",fontSize:18}}>
+                        {monedaSym(m)}{fmt(totalesCompletos[m].saldoDespues)}
+                      </td>
+                      <td style={{padding:"14px 16px",textAlign:"center",fontWeight:800,color:C.navy,fontSize:14}}>
+                        {totalesCompletos[m].facturas}
+                      </td>
+                    </tr>
+                  ))}
                 </tfoot>
               </table>
             </div>
