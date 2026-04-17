@@ -158,6 +158,7 @@ export default function CxpApp({ user, onLogout }) {
   const [projFrom, setProjFrom] = useState("");
   const [projTo, setProjTo] = useState("");
   const [projDetail, setProjDetail] = useState(null);
+  const [proyeccionTab, setProyeccionTab] = useState("matriz"); // "matriz" | "reporte"
   const [supSearch, setSupSearch] = useState("");
   const [showDupes, setShowDupes] = useState(false);
   const [projSearch, setProjSearch] = useState("");
@@ -2938,6 +2939,53 @@ export default function CxpApp({ user, onLogout }) {
 
   /* ── PROYECCIÓN ─────────────────────────────────────────────────────── */
   const renderProyeccion = () => {
+    return (
+      <div>
+        <h1 style={{fontSize:22,fontWeight:800,color:C.navy,marginBottom:4}}>Proyección de Pagos</h1>
+        <p style={{color:C.muted,fontSize:14,marginBottom:16}}>Matriz de proveedores y reporte diario</p>
+        
+        {/* Tab Navigation */}
+        <div style={{display:"flex",gap:4,marginBottom:24,background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:4}}>
+          <button
+            onClick={() => setProyeccionTab("matriz")}
+            style={{
+              ...btnStyle,
+              background: proyeccionTab === "matriz" ? C.navy : "transparent",
+              color: proyeccionTab === "matriz" ? "#fff" : C.text,
+              border: "none",
+              borderRadius: 8,
+              fontWeight: proyeccionTab === "matriz" ? 700 : 500,
+              fontSize: 14,
+              padding: "8px 16px"
+            }}
+          >
+            📊 Matriz de Pagos
+          </button>
+          <button
+            onClick={() => setProyeccionTab("reporte")}
+            style={{
+              ...btnStyle,
+              background: proyeccionTab === "reporte" ? C.navy : "transparent",
+              color: proyeccionTab === "reporte" ? "#fff" : C.text,
+              border: "none",
+              borderRadius: 8,
+              fontWeight: proyeccionTab === "reporte" ? 700 : 500,
+              fontSize: 14,
+              padding: "8px 16px"
+            }}
+          >
+            📋 Reporte Diario
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        {proyeccionTab === "matriz" ? renderMatrizProyeccion() : <ReporteDiarioCxP />}
+      </div>
+    );
+  };
+
+  // Separar la matriz original en su propia función
+  const renderMatrizProyeccion = () => {
     const {providers,dates,matrix} = projMatrix;
     const dateTotals = {};
     dates.forEach(d=>{ dateTotals[d]=providers.reduce((s,p)=>s+(matrix[p]?.[d]?.total||0),0); });
@@ -2959,7 +3007,6 @@ export default function CxpApp({ user, onLogout }) {
 
     return (
       <div>
-        <h1 style={{fontSize:22,fontWeight:800,color:C.navy,marginBottom:4}}>Proyección de Pagos</h1>
         <p style={{color:C.muted,fontSize:14,marginBottom:16}}>Basada en la fecha de programación de pago. Si no tiene, usa la fecha de vencimiento.</p>
         {/* Currency legend */}
         <div style={{display:"flex",gap:16,marginBottom:20,flexWrap:"wrap"}}>
@@ -3076,6 +3123,378 @@ export default function CxpApp({ user, onLogout }) {
             <div style={{fontSize:13}}>Agrega facturas en Cartera o importa desde Excel</div>
           </div>
         )}
+      </div>
+    );
+  };
+
+  /* ── Reporte Diario de Pagos (CxP) ─────────────────────────────── */
+  const ReporteDiarioCxP = () => {
+    const [saldosEmpresas, setSaldosEmpresas] = useState(() => {
+      return { [empresaId]: { mxn: "", usd: "", eur: "" } };
+    });
+    const [tiposCambio, setTiposCambio] = useState({ usdMxn: "", eurMxn: "" });
+    const [conversiones, setConversiones] = useState({ usd_to_mxn: "", eur_to_mxn: "" });
+
+    const hoy = today();
+    
+    const pagosProgramadosHoy = useMemo(() => {
+      const pagos = [];
+      
+      Object.entries(invoices).forEach(([moneda, facturas]) => {
+        facturas.forEach(factura => {
+          if (factura.empresaId !== empresaId) return;
+          
+          const pagosProgHoy = payments.filter(p => 
+            p.invoiceId === factura.id && 
+            p.tipo === 'programado' && 
+            p.fechaPago === hoy
+          );
+          
+          pagosProgHoy.forEach(pago => {
+            const existing = pagos.find(p => p.proveedor === factura.proveedor && p.moneda === moneda);
+            if (existing) {
+              existing.monto += pago.monto;
+              existing.facturas += 1;
+            } else {
+              pagos.push({
+                proveedor: factura.proveedor,
+                moneda,
+                monto: pago.monto,
+                facturas: 1,
+                tipo: 'programado'
+              });
+            }
+          });
+          
+          const tieneProgHoy = payments.some(p => 
+            p.invoiceId === factura.id && 
+            p.tipo === 'programado' && 
+            p.fechaPago === hoy
+          );
+          
+          if (!tieneProgHoy && factura.fechaVencimiento === hoy) {
+            const saldoPendiente = (+factura.total || 0) - (+factura.montoPagado || 0);
+            if (saldoPendiente > 0) {
+              const existing = pagos.find(p => p.proveedor === factura.proveedor && p.moneda === moneda);
+              if (existing && existing.tipo === 'vencimiento') {
+                existing.monto += saldoPendiente;
+                existing.facturas += 1;
+              } else {
+                pagos.push({
+                  proveedor: factura.proveedor,
+                  moneda,
+                  monto: saldoPendiente,
+                  facturas: 1,
+                  tipo: 'vencimiento'
+                });
+              }
+            }
+          }
+        });
+      });
+
+      return pagos.sort((a, b) => b.monto - a.monto);
+    }, [invoices, payments, empresaId, hoy]);
+
+    const totalesPagos = useMemo(() => {
+      const totales = { MXN: 0, USD: 0, EUR: 0 };
+      pagosProgramadosHoy.forEach(p => {
+        totales[p.moneda] = (totales[p.moneda] || 0) + p.monto;
+      });
+      return totales;
+    }, [pagosProgramadosHoy]);
+
+    const analisisLiquidez = useMemo(() => {
+      const parseSaldo = (val) => parseFloat(val.replace(/[,$]/g, '')) || 0;
+      const parseTc = (val) => parseFloat(val) || 1;
+      
+      const saldos = saldosEmpresas[empresaId] || { mxn: "", usd: "", eur: "" };
+      const saldoMXN = parseSaldo(saldos.mxn);
+      const saldoUSD = parseSaldo(saldos.usd);  
+      const saldoEUR = parseSaldo(saldos.eur);
+      
+      const convUSD = parseSaldo(conversiones.usd_to_mxn) * parseTc(tiposCambio.usdMxn);
+      const convEUR = parseSaldo(conversiones.eur_to_mxn) * parseTc(tiposCambio.eurMxn);
+      
+      const saldoFinalMXN = saldoMXN + convUSD + convEUR;
+      const saldoFinalUSD = saldoUSD - parseSaldo(conversiones.usd_to_mxn);
+      const saldoFinalEUR = saldoEUR - parseSaldo(conversiones.eur_to_mxn);
+      
+      const deficitMXN = saldoFinalMXN - totalesPagos.MXN;
+      const deficitUSD = saldoFinalUSD - totalesPagos.USD;
+      const deficitEUR = saldoFinalEUR - totalesPagos.EUR;
+      
+      return {
+        saldoFinal: { MXN: saldoFinalMXN, USD: saldoFinalUSD, EUR: saldoFinalEUR },
+        deficit: { MXN: deficitMXN, USD: deficitUSD, EUR: deficitEUR },
+        statusMXN: deficitMXN >= 0 ? '✅' : deficitMXN > -50000 ? '🟡' : '🔴',
+        statusUSD: deficitUSD >= 0 ? '✅' : deficitUSD > -5000 ? '🟡' : '🔴',
+        statusEUR: deficitEUR >= 0 ? '✅' : '🟡'
+      };
+    }, [saldosEmpresas, conversiones, tiposCambio, totalesPagos, empresaId]);
+
+    const handleSaldoChange = (moneda, value) => {
+      setSaldosEmpresas(prev => ({
+        ...prev,
+        [empresaId]: { ...prev[empresaId], [moneda]: value }
+      }));
+    };
+
+    const handleConversionChange = (key, value) => {
+      setConversiones(prev => ({ ...prev, [key]: value }));
+    };
+
+    const generarPDF = () => {
+      alert("Funcionalidad de PDF en desarrollo");
+    };
+
+    const copiarResumen = () => {
+      const resumen = `📊 REPORTE DE PAGOS - ${new Date().toLocaleDateString()}
+💼 Empresa: ${empresa.nombre}
+
+💰 PAGOS PROGRAMADOS HOY:
+• MXN: $${fmt(totalesPagos.MXN)}
+• USD: $${fmt(totalesPagos.USD)}  
+• EUR: €${fmt(totalesPagos.EUR)}
+
+🏦 ANÁLISIS DE LIQUIDEZ:
+• MXN: ${analisisLiquidez.statusMXN} ${analisisLiquidez.deficit.MXN >= 0 ? 'Excedente' : 'Déficit'}: $${fmt(Math.abs(analisisLiquidez.deficit.MXN))}
+• USD: ${analisisLiquidez.statusUSD} ${analisisLiquidez.deficit.USD >= 0 ? 'Excedente' : 'Déficit'}: $${fmt(Math.abs(analisisLiquidez.deficit.USD))}
+
+📋 PROVEEDORES (${pagosProgramadosHoy.length}):
+${pagosProgramadosHoy.map(p => `• ${p.proveedor}: $${fmt(p.monto)} ${p.moneda}`).join('\n')}`;
+      navigator.clipboard.writeText(resumen);
+      alert("Resumen copiado al portapapeles");
+    };
+
+    const monedaSym = (moneda) => ({ MXN: "$", USD: "US$", EUR: "€" }[moneda] || "$");
+
+    return (
+      <div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+          <div>
+            <h2 style={{fontSize:18,fontWeight:800,color:C.navy,margin:0}}>📊 Reporte de Pagos del Día</h2>
+            <p style={{color:C.muted,fontSize:13,margin:"4px 0 0"}}>
+              Análisis de liquidez para {empresa.nombre}
+            </p>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={generarPDF} style={{...btnStyle,background:"#E53E3E",color:"#fff",padding:"8px 16px",fontSize:13}}>📄 PDF</button>
+            <button onClick={copiarResumen} style={{...btnStyle,background:"#38A169",color:"#fff",padding:"8px 16px",fontSize:13}}>📋 Copiar</button>
+          </div>
+        </div>
+
+        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:20,marginBottom:20}}>
+          <h3 style={{fontSize:16,fontWeight:700,color:C.navy,margin:"0 0 16px"}}>🏦 Saldos Bancarios - {empresa.nombre}</h3>
+          
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
+            <div>
+              <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>MXN</label>
+              <input 
+                value={saldosEmpresas[empresaId]?.mxn || ""} 
+                onChange={(e) => handleSaldoChange('mxn', e.target.value)}
+                placeholder="$0.00" 
+                style={{...inputStyle,textAlign:"right"}} 
+              />
+            </div>
+            <div>
+              <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>USD</label>
+              <input 
+                value={saldosEmpresas[empresaId]?.usd || ""} 
+                onChange={(e) => handleSaldoChange('usd', e.target.value)}
+                placeholder="$0.00" 
+                style={{...inputStyle,textAlign:"right"}} 
+              />
+            </div>
+            <div>
+              <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>EUR</label>
+              <input 
+                value={saldosEmpresas[empresaId]?.eur || ""} 
+                onChange={(e) => handleSaldoChange('eur', e.target.value)}
+                placeholder="€0.00" 
+                style={{...inputStyle,textAlign:"right"}} 
+              />
+            </div>
+          </div>
+        </div>
+
+        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:20,marginBottom:20}}>
+          <h3 style={{fontSize:16,fontWeight:700,color:C.navy,margin:"0 0 16px"}}>💱 Tipos de Cambio</h3>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+            <div>
+              <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>USD → MXN</label>
+              <input 
+                value={tiposCambio.usdMxn} 
+                onChange={(e) => setTiposCambio(prev => ({...prev, usdMxn: e.target.value}))}
+                placeholder="20.00" 
+                style={{...inputStyle,textAlign:"right"}} 
+              />
+            </div>
+            <div>
+              <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>EUR → MXN</label>
+              <input 
+                value={tiposCambio.eurMxn} 
+                onChange={(e) => setTiposCambio(prev => ({...prev, eurMxn: e.target.value}))}
+                placeholder="22.00" 
+                style={{...inputStyle,textAlign:"right"}} 
+              />
+            </div>
+          </div>
+        </div>
+
+        <div style={{background:"#FFF8E1",border:`2px solid #FFB74D`,borderRadius:14,padding:20,marginBottom:20}}>
+          <h3 style={{fontSize:16,fontWeight:700,color:"#E65100",margin:"0 0 16px"}}>⚠️ Análisis de Liquidez</h3>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16}}>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:24}}>{analisisLiquidez.statusMXN}</div>
+              <div style={{fontSize:14,fontWeight:600,color:"#E65100"}}>MXN</div>
+              <div style={{fontSize:12,color:"#BF360C"}}>
+                {analisisLiquidez.deficit.MXN >= 0 ? 'Excedente' : 'Déficit'}: ${fmt(Math.abs(analisisLiquidez.deficit.MXN))}
+              </div>
+            </div>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:24}}>{analisisLiquidez.statusUSD}</div>
+              <div style={{fontSize:14,fontWeight:600,color:"#E65100"}}>USD</div>
+              <div style={{fontSize:12,color:"#BF360C"}}>
+                {analisisLiquidez.deficit.USD >= 0 ? 'Excedente' : 'Déficit'}: ${fmt(Math.abs(analisisLiquidez.deficit.USD))}
+              </div>
+            </div>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:24}}>{analisisLiquidez.statusEUR}</div>
+              <div style={{fontSize:14,fontWeight:600,color:"#E65100"}}>EUR</div>
+              <div style={{fontSize:12,color:"#BF360C"}}>
+                {analisisLiquidez.deficit.EUR >= 0 ? 'Excedente' : 'Déficit'}: €{fmt(Math.abs(analisisLiquidez.deficit.EUR))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {(analisisLiquidez.deficit.MXN < 0 && (saldosEmpresas[empresaId]?.usd || saldosEmpresas[empresaId]?.eur)) && (
+          <div style={{background:"#E8F0FE",border:`1px solid ${C.blue}`,borderRadius:14,padding:20,marginBottom:20}}>
+            <h3 style={{fontSize:16,fontWeight:700,color:C.navy,margin:"0 0 16px"}}>🔄 Convertir Divisas</h3>
+            
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div>
+                <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>USD → MXN</label>
+                <input 
+                  value={conversiones.usd_to_mxn} 
+                  onChange={(e) => handleConversionChange('usd_to_mxn', e.target.value)}
+                  placeholder="$0.00 USD" 
+                  style={{...inputStyle,textAlign:"right"}} 
+                />
+                {conversiones.usd_to_mxn && tiposCambio.usdMxn && (
+                  <div style={{fontSize:11,color:C.muted,marginTop:2}}>
+                    = ${fmt(parseFloat(conversiones.usd_to_mxn || 0) * parseFloat(tiposCambio.usdMxn || 1))} MXN
+                  </div>
+                )}
+              </div>
+              <div>
+                <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>EUR → MXN</label>
+                <input 
+                  value={conversiones.eur_to_mxn} 
+                  onChange={(e) => handleConversionChange('eur_to_mxn', e.target.value)}
+                  placeholder="€0.00 EUR" 
+                  style={{...inputStyle,textAlign:"right"}} 
+                />
+                {conversiones.eur_to_mxn && tiposCambio.eurMxn && (
+                  <div style={{fontSize:11,color:C.muted,marginTop:2}}>
+                    = ${fmt(parseFloat(conversiones.eur_to_mxn || 0) * parseFloat(tiposCambio.eurMxn || 1))} MXN
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",marginBottom:20}}>
+          <div style={{padding:"16px 20px",background:C.navy,color:"#fff"}}>
+            <h3 style={{fontSize:16,fontWeight:700,margin:0}}>📋 Pagos Programados para Hoy</h3>
+            <p style={{fontSize:13,margin:"4px 0 0",opacity:0.8}}>Total: {pagosProgramadosHoy.length} proveedores</p>
+          </div>
+          
+          {pagosProgramadosHoy.length === 0 ? (
+            <div style={{padding:40,textAlign:"center",color:C.muted}}>
+              <div style={{fontSize:48,marginBottom:12}}>📅</div>
+              <div style={{fontSize:16}}>No hay pagos programados para hoy</div>
+              <div style={{fontSize:13,marginTop:4}}>Ve a Cartera para programar pagos</div>
+            </div>
+          ) : (
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                <thead>
+                  <tr style={{background:"#F8FAFC"}}>
+                    <th style={{padding:"12px 16px",textAlign:"left",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>Proveedor</th>
+                    <th style={{padding:"12px 16px",textAlign:"center",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>Moneda</th>
+                    <th style={{padding:"12px 16px",textAlign:"right",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>Monto</th>
+                    <th style={{padding:"12px 16px",textAlign:"center",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>Facturas</th>
+                    <th style={{padding:"12px 16px",textAlign:"center",color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`}}>Tipo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagosProgramadosHoy.map((pago, i) => (
+                    <tr key={i} style={{borderBottom:`1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFC"}}>
+                      <td style={{padding:"12px 16px",fontWeight:600,color:C.navy}}>{pago.proveedor}</td>
+                      <td style={{padding:"12px 16px",textAlign:"center"}}>
+                        <span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[pago.moneda],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[pago.moneda],padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{pago.moneda}</span>
+                      </td>
+                      <td style={{padding:"12px 16px",textAlign:"right",fontWeight:800,fontSize:14}}>{monedaSym(pago.moneda)}{fmt(pago.monto)}</td>
+                      <td style={{padding:"12px 16px",textAlign:"center",color:C.muted}}>{pago.facturas}</td>
+                      <td style={{padding:"12px 16px",textAlign:"center"}}>
+                        <span style={{fontSize:10,padding:"2px 6px",borderRadius:12,background:pago.tipo==='programado'?"#E8F5E9":"#FFF3E0",color:pago.tipo==='programado'?"#2E7D32":"#F57C00"}}>
+                          {pago.tipo === 'programado' ? 'Programado' : 'Vencimiento'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{background:"#EEF2FF",borderTop:`2px solid ${C.blue}`}}>
+                    <td colSpan={2} style={{padding:"12px 16px",fontWeight:800,color:C.navy}}>TOTALES</td>
+                    <td style={{padding:"12px 16px",textAlign:"right",fontWeight:800,color:C.navy}}>
+                      {Object.entries(totalesPagos).filter(([,total]) => total > 0).map(([moneda, total]) => (
+                        <div key={moneda}>{monedaSym(moneda)}{fmt(total)} {moneda}</div>
+                      ))}
+                    </td>
+                    <td colSpan={2}/>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div style={{background:"#F0FFF4",border:`1px solid #A5D6A7`,borderRadius:14,padding:20}}>
+          <h3 style={{fontSize:16,fontWeight:700,color:"#1B5E20",margin:"0 0 16px"}}>💰 Saldos Después de Pagos</h3>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16}}>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:14,fontWeight:600,color:"#2E7D32",marginBottom:4}}>MXN</div>
+              <div style={{fontSize:18,fontWeight:800,color:analisisLiquidez.deficit.MXN >= 0 ? "#1B5E20" : "#D32F2F"}}>
+                ${fmt(analisisLiquidez.saldoFinal.MXN)}
+              </div>
+              <div style={{fontSize:11,color:"#4CAF50",marginTop:2}}>
+                {analisisLiquidez.deficit.MXN >= 0 ? '+ Excedente' : '- Déficit'}
+              </div>
+            </div>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:14,fontWeight:600,color:"#2E7D32",marginBottom:4}}>USD</div>
+              <div style={{fontSize:18,fontWeight:800,color:analisisLiquidez.deficit.USD >= 0 ? "#1B5E20" : "#D32F2F"}}>
+                ${fmt(analisisLiquidez.saldoFinal.USD)}
+              </div>
+              <div style={{fontSize:11,color:"#4CAF50",marginTop:2}}>
+                {analisisLiquidez.deficit.USD >= 0 ? '+ Excedente' : '- Déficit'}
+              </div>
+            </div>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:14,fontWeight:600,color:"#2E7D32",marginBottom:4}}>EUR</div>
+              <div style={{fontSize:18,fontWeight:800,color:analisisLiquidez.deficit.EUR >= 0 ? "#1B5E20" : "#D32F2F"}}>
+                €{fmt(analisisLiquidez.saldoFinal.EUR)}
+              </div>
+              <div style={{fontSize:11,color:"#4CAF50",marginTop:2}}>
+                {analisisLiquidez.deficit.EUR >= 0 ? '+ Excedente' : '- Déficit'}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   };
