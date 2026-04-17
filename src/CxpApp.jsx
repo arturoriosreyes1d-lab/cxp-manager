@@ -3164,73 +3164,77 @@ export default function CxpApp({ user, onLogout }) {
     const hoy = today();
     
     const pagosProgramadosHoy = useMemo(() => {
-      const pagosMap = new Map(); // Usar Map para evitar duplicados
+      // PASO 1: Construir mapa de adeudo TOTAL por proveedor+moneda (todas las facturas activas)
+      const adeudoTotal = new Map();   // key: "proveedor-moneda" → { adeudado, facturasActivas }
+      // PASO 2: Construir mapa de pagos del día por proveedor+moneda
+      const pagosHoy = new Map();      // key: "proveedor-moneda" → { pagoHoy, tipo }
       
       Object.entries(invoices).forEach(([moneda, facturas]) => {
         facturas.forEach(factura => {
           if (factura.empresaId !== empresaId) return;
           
-          // Calcular importe total adeudado por factura
-          const totalAdeudado = (+factura.total || 0) - (+factura.montoPagado || 0);
-          if (totalAdeudado <= 0) return; // Skip si no hay deuda
+          const saldoFactura = (+factura.total || 0) - (+factura.montoPagado || 0);
+          if (saldoFactura <= 0) return; // Solo facturas con saldo pendiente
           
           const proveedorKey = `${factura.proveedor}-${moneda}`;
           
+          // Acumular adeudo total del proveedor
+          if (adeudoTotal.has(proveedorKey)) {
+            const ex = adeudoTotal.get(proveedorKey);
+            ex.adeudado += saldoFactura;
+            ex.facturasActivas += 1;
+          } else {
+            adeudoTotal.set(proveedorKey, {
+              proveedor: factura.proveedor,
+              moneda,
+              adeudado: saldoFactura,
+              facturasActivas: 1
+            });
+          }
+          
+          // Verificar si tiene pago programado para hoy
           const pagosProgHoy = payments.filter(p => 
             p.invoiceId === factura.id && 
             p.tipo === 'programado' && 
             p.fechaPago === hoy
           );
           
-          // Si hay pagos programados para hoy
           if (pagosProgHoy.length > 0) {
             const totalPagoHoy = pagosProgHoy.reduce((sum, p) => sum + p.monto, 0);
-            
-            if (pagosMap.has(proveedorKey)) {
-              const existing = pagosMap.get(proveedorKey);
-              existing.pagoHoy += totalPagoHoy;
-              existing.importeAdeudado += totalAdeudado;
-              existing.facturas += 1;
+            if (pagosHoy.has(proveedorKey)) {
+              pagosHoy.get(proveedorKey).pagoHoy += totalPagoHoy;
             } else {
-              pagosMap.set(proveedorKey, {
-                proveedor: factura.proveedor,
-                moneda,
-                pagoHoy: totalPagoHoy,
-                importeAdeudado: totalAdeudado,
-                facturas: 1,
-                tipo: 'programado'
-              });
+              pagosHoy.set(proveedorKey, { pagoHoy: totalPagoHoy, tipo: 'programado' });
             }
-          }
-          // Si no hay pagos programados pero vence hoy
-          else if (factura.vencimiento === hoy) {
-            if (pagosMap.has(proveedorKey)) {
-              const existing = pagosMap.get(proveedorKey);
-              existing.pagoHoy += totalAdeudado; // Se paga todo al vencer
-              existing.importeAdeudado += totalAdeudado;
-              existing.facturas += 1;
+          } else if (factura.vencimiento === hoy) {
+            // Factura vence hoy sin pago programado: se asume pago completo del saldo
+            if (pagosHoy.has(proveedorKey)) {
+              pagosHoy.get(proveedorKey).pagoHoy += saldoFactura;
             } else {
-              pagosMap.set(proveedorKey, {
-                proveedor: factura.proveedor,
-                moneda,
-                pagoHoy: totalAdeudado, // Se paga todo al vencer
-                importeAdeudado: totalAdeudado,
-                facturas: 1,
-                tipo: 'vencimiento'
-              });
+              pagosHoy.set(proveedorKey, { pagoHoy: saldoFactura, tipo: 'vencimiento' });
             }
           }
         });
       });
-
-      // Calcular saldos después del pago y convertir a array
-      const pagosArray = Array.from(pagosMap.values()).map(pago => ({
-        ...pago,
-        saldoDespuesPago: Math.max(0, pago.importeAdeudado - pago.pagoHoy)
-      }));
+      
+      // PASO 3: Combinar — solo proveedores con pago hoy
+      const resultado = [];
+      pagosHoy.forEach((pagoInfo, key) => {
+        const adeudoInfo = adeudoTotal.get(key);
+        if (!adeudoInfo) return; // Salvaguarda: no debería pasar
+        resultado.push({
+          proveedor: adeudoInfo.proveedor,
+          moneda: adeudoInfo.moneda,
+          importeAdeudado: adeudoInfo.adeudado,        // TOTAL del proveedor en esa moneda
+          pagoHoy: pagoInfo.pagoHoy,
+          facturas: adeudoInfo.facturasActivas,         // Total de facturas activas
+          tipo: pagoInfo.tipo,
+          saldoDespuesPago: Math.max(0, adeudoInfo.adeudado - pagoInfo.pagoHoy)
+        });
+      });
 
       // Ordenar: USD primero (mayor a menor), luego MXN (mayor a menor)
-      return pagosArray.sort((a, b) => {
+      return resultado.sort((a, b) => {
         if (a.moneda === 'USD' && b.moneda !== 'USD') return -1;
         if (b.moneda === 'USD' && a.moneda !== 'USD') return 1;
         if (a.moneda === 'MXN' && b.moneda === 'EUR') return -1;
