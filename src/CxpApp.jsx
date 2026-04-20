@@ -4057,60 +4057,82 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
   /* ── SALDOS BANCARIOS ───────────────────────────────────────────────── */
   const SaldosBancarios = () => {
     const [cuentas, setCuentas] = useState([]);
-    const [saldosHoy, setSaldosHoy] = useState({});  // {cuentaId: {saldoReal, movsPendientes}}
-    const [meta, setMeta] = useState({ updatedAt: null, updatedBy: null });
+    const [saldosInicio, setSaldosInicio] = useState({});  // {cuentaId: {saldoReal, movsPendientes}}
+    const [saldosCierre, setSaldosCierre] = useState({});  // idem
+    const [metaInicio, setMetaInicio] = useState({ updatedAt: null, updatedBy: null });
+    const [metaCierre, setMetaCierre] = useState({ updatedAt: null, updatedBy: null });
     const [loading, setLoading] = useState(true);
-    const [savingCuenta, setSavingCuenta] = useState(null);   // cuentaId que se está guardando
-    const [editandoSaldo, setEditandoSaldo] = useState(null); // cuentaId en edición
+    const [savingCuenta, setSavingCuenta] = useState(null);   // `${cuentaId}_${momento}` que se está guardando
+    const [editandoSaldo, setEditandoSaldo] = useState(null); // `${cuentaId}_${momento}` en edición
     const [valorEdicion, setValorEdicion] = useState("");
     const [showCuentas, setShowCuentas] = useState(false);
     const [showPendientes, setShowPendientes] = useState(false);
+    const [pendientesMomento, setPendientesMomento] = useState('inicio');
     const [showHistorico, setShowHistorico] = useState(false);
-    const [verHistorico, setVerHistorico] = useState(null); // {fecha, momento} para ver detalle histórico
-    const [momento, setMomento] = useState('inicio');       // 'inicio' | 'cierre'
-    const reporteRef = useRef(null);
+    const [verHistorico, setVerHistorico] = useState(null); // {fecha, momento}
+    const [showCopiarMenu, setShowCopiarMenu] = useState(false);
+    const refInicio = useRef(null);
+    const refCierre = useRef(null);
+    const refAmbos = useRef(null);
 
     const fechaHoy = today();
     const fechaConsulta = verHistorico?.fecha || fechaHoy;
-    const momentoConsulta = verHistorico?.momento || momento;
-    const esHoy = fechaConsulta === fechaHoy && !verHistorico;
+    const esHoy = !verHistorico;
+    const momentoConsulta = verHistorico?.momento || null; // null = mostrar ambos cuadros
 
-    // Paleta dinámica según momento
-    const temaPrimario = momentoConsulta === 'cierre' ? '#1B5E20' : C.navy;   // verde oscuro vs navy
-    const temaClaroFondo = momentoConsulta === 'cierre' ? '#C8E6C9' : '#BBDEFB';
-    const temaClaroTexto = momentoConsulta === 'cierre' ? '#1B5E20' : '#0C447C';
-
-    // Cargar cuentas + saldos del día
+    // Cargar cuentas + saldos del día (ambos momentos en paralelo)
     const recargar = async () => {
       setLoading(true);
-      const [cs, ss] = await Promise.all([
+      const [cs, ssIni, ssCie] = await Promise.all([
         fetchCuentasBancarias(empresaId),
-        fetchSaldosDiarios(empresaId, fechaConsulta, momentoConsulta),
+        fetchSaldosDiarios(empresaId, fechaConsulta, 'inicio'),
+        fetchSaldosDiarios(empresaId, fechaConsulta, 'cierre'),
       ]);
       setCuentas(cs);
-      const map = {};
-      let lastUpdate = null, lastBy = null;
-      ss.forEach(s => {
-        map[s.cuentaId] = { saldoReal: s.saldoReal, movsPendientes: s.movsPendientes };
-        if (!lastUpdate || s.updatedAt > lastUpdate) {
-          lastUpdate = s.updatedAt;
-          lastBy = s.updatedBy;
-        }
-      });
-      setSaldosHoy(map);
-      setMeta({ updatedAt: lastUpdate, updatedBy: lastBy });
+      const procesar = (arr) => {
+        const map = {};
+        let lastUpdate = null, lastBy = null;
+        arr.forEach(s => {
+          map[s.cuentaId] = { saldoReal: s.saldoReal, movsPendientes: s.movsPendientes };
+          if (!lastUpdate || s.updatedAt > lastUpdate) {
+            lastUpdate = s.updatedAt;
+            lastBy = s.updatedBy;
+          }
+        });
+        return { map, lastUpdate, lastBy };
+      };
+      const ini = procesar(ssIni);
+      const cie = procesar(ssCie);
+      setSaldosInicio(ini.map);
+      setSaldosCierre(cie.map);
+      setMetaInicio({ updatedAt: ini.lastUpdate, updatedBy: ini.lastBy });
+      setMetaCierre({ updatedAt: cie.lastUpdate, updatedBy: cie.lastBy });
       setLoading(false);
     };
-    
-    useEffect(() => { recargar(); /* eslint-disable-next-line */ }, [empresaId, fechaConsulta, momentoConsulta]);
 
-    // Helpers
-    const saldoReal = (cId) => saldosHoy[cId]?.saldoReal || 0;
-    const movsPend  = (cId) => saldosHoy[cId]?.movsPendientes || 0;
-    const reservaCta = (c) => +c.reservaMinima || 0;
-    const disponible = (c) => Math.max(0, saldoReal(c.id) - reservaCta(c) - movsPend(c.id));
-    const ajusteVisible = (c) => reservaCta(c) > 0 || movsPend(c.id) !== 0;
+    useEffect(() => { recargar(); /* eslint-disable-next-line */ }, [empresaId, fechaConsulta]);
+
+    // Helpers genéricos por momento
     const sym = (m) => m === 'EUR' ? '€' : '$';
+    const getSaldosByMomento = (m) => m === 'cierre' ? saldosCierre : saldosInicio;
+    const getMetaByMomento = (m) => m === 'cierre' ? metaCierre : metaInicio;
+    const saldoReal = (cId, m) => getSaldosByMomento(m)[cId]?.saldoReal || 0;
+    const movsPend  = (cId, m) => getSaldosByMomento(m)[cId]?.movsPendientes || 0;
+    const reservaCta = (c) => +c.reservaMinima || 0;
+    const disponible = (c, m) => Math.max(0, saldoReal(c.id, m) - reservaCta(c) - movsPend(c.id, m));
+    const ajusteVisible = (c, m) => reservaCta(c) > 0 || movsPend(c.id, m) !== 0;
+
+    // Tema por momento
+    const tema = (m) => {
+      if (m === 'cierre') return { primario: '#1B5E20', claroFondo: '#C8E6C9', claroTexto: '#1B5E20' };
+      return { primario: C.navy, claroFondo: '#BBDEFB', claroTexto: '#0C447C' };
+    };
+
+    // Limpiar prefijo "CTA" duplicado en el texto del número
+    const limpiaCta = (n) => {
+      if (!n) return '';
+      return String(n).replace(/^\s*(cta\.?|CTA\.?)\s*/i, '').trim();
+    };
 
     // Agrupar cuentas por banco preservando orden
     const cuentasPorBanco = useMemo(() => {
@@ -4122,12 +4144,12 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
       return grupos;
     }, [cuentas]);
 
-    // Totales
-    const totales = useMemo(() => {
+    // Totales por momento
+    const calcTotales = (m) => {
       const t = { realMN: 0, realDL: 0, inversion: 0, dispMN: 0, dispDL: 0, dispEUR: 0, dispInversion: 0 };
       cuentas.forEach(c => {
-        const r = saldoReal(c.id);
-        const d = disponible(c);
+        const r = saldoReal(c.id, m);
+        const d = disponible(c, m);
         if (c.tipo === 'inversion') {
           t.inversion += r;
           t.dispInversion += d;
@@ -4142,33 +4164,39 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         }
       });
       return t;
-      // eslint-disable-next-line
-    }, [cuentas, saldosHoy]);
+    };
 
-    // Editar saldo real desde la pantalla principal
-    const iniciarEdicion = (cuenta) => {
+    // Editar saldo real
+    const iniciarEdicion = (cuenta, m) => {
       if (esConsulta || !esHoy) return;
-      setEditandoSaldo(cuenta.id);
-      setValorEdicion(String(saldoReal(cuenta.id) || ''));
+      const key = `${cuenta.id}_${m}`;
+      setEditandoSaldo(key);
+      setValorEdicion(String(saldoReal(cuenta.id, m) || ''));
     };
     const guardarEdicion = async () => {
       if (!editandoSaldo) return;
-      const cuenta = cuentas.find(c => c.id === editandoSaldo);
+      const [cId, m] = editandoSaldo.split('_');
+      const cuenta = cuentas.find(c => c.id === cId);
       if (!cuenta) { setEditandoSaldo(null); return; }
       const nuevoReal = parseFloat(valorEdicion.replace(/[,$]/g, '')) || 0;
-      const pendiente = movsPend(cuenta.id);
-      setSavingCuenta(cuenta.id);
+      const pendiente = movsPend(cuenta.id, m);
+      setSavingCuenta(editandoSaldo);
       const ok = await upsertSaldoDiario({
         cuentaId: cuenta.id,
         empresaId,
         fecha: fechaHoy,
-        momento,
+        momento: m,
         saldoReal: nuevoReal,
         movsPendientes: pendiente,
       }, user?.nombre || 'desconocido');
       if (ok) {
-        setSaldosHoy(prev => ({ ...prev, [cuenta.id]: { saldoReal: nuevoReal, movsPendientes: pendiente } }));
-        setMeta({ updatedAt: new Date().toISOString(), updatedBy: user?.nombre || 'desconocido' });
+        if (m === 'cierre') {
+          setSaldosCierre(prev => ({ ...prev, [cuenta.id]: { saldoReal: nuevoReal, movsPendientes: pendiente } }));
+          setMetaCierre({ updatedAt: new Date().toISOString(), updatedBy: user?.nombre || 'desconocido' });
+        } else {
+          setSaldosInicio(prev => ({ ...prev, [cuenta.id]: { saldoReal: nuevoReal, movsPendientes: pendiente } }));
+          setMetaInicio({ updatedAt: new Date().toISOString(), updatedBy: user?.nombre || 'desconocido' });
+        }
       }
       setSavingCuenta(null);
       setEditandoSaldo(null);
@@ -4176,56 +4204,190 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     };
     const cancelarEdicion = () => { setEditandoSaldo(null); setValorEdicion(""); };
 
-    // Copiar imagen
-    const copiarImagen = async () => {
-      if (!reporteRef.current) return;
+    // Copiar imagen de un nodo específico
+    const copiarNodoComoImagen = async (node, nombreArchivo) => {
+      if (!node) return;
       try {
-        const canvas = await html2canvas(reporteRef.current, { scale: 2, backgroundColor: '#ffffff' });
+        const canvas = await html2canvas(node, { scale: 2, backgroundColor: '#ffffff' });
         canvas.toBlob(async (blob) => {
           if (!blob) return;
-          // Intentar copiar al portapapeles
           if (navigator.clipboard && window.ClipboardItem) {
             try {
               await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-              alert('✅ Imagen copiada al portapapeles. Pégala en WhatsApp/Teams/Email con Ctrl+V');
+              alert('✅ Imagen copiada al portapapeles. Pégala con Ctrl+V en WhatsApp/Teams/Email.');
               return;
             } catch (e) { /* fallback abajo */ }
           }
-          // Fallback: descargar
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = `Saldos_${empresa.nombre.replace(/\s/g,'_')}_${momento==='cierre'?'CIERRE':'INICIO'}_${fechaHoy}.png`;
+          a.download = nombreArchivo;
           a.click();
           URL.revokeObjectURL(url);
         });
       } catch (err) {
-        console.error('copiarImagen:', err);
+        console.error('copiar imagen:', err);
         alert('No se pudo generar la imagen. Intenta de nuevo.');
       }
     };
 
-    // Componentes auxiliares
-    const Pildora = ({ valor, moneda, onClick, editable, saving }) => {
-      const c = temaClaroFondo, textCol = temaClaroTexto;
-      if (saving) {
-        return <span style={{background:c,padding:'4px 14px',borderRadius:6,fontWeight:800,color:textCol,fontSize:13,opacity:0.6}}>guardando...</span>;
-      }
-      return (
-        <span 
-          onClick={onClick}
-          style={{background:c,padding:'4px 14px',borderRadius:6,display:'inline-block',fontWeight:800,color:textCol,fontSize:13,cursor:editable?'pointer':'default',userSelect:'none'}}
-          title={editable ? 'Clic para editar saldo real' : ''}
-        >
-          {sym(moneda)}{fmt(valor)}
-        </span>
-      );
+    const copiarSoloInicio = () => {
+      setShowCopiarMenu(false);
+      copiarNodoComoImagen(refInicio.current, `Saldos_${empresa.nombre.replace(/\s/g,'_')}_INICIO_${fechaHoy}.png`);
+    };
+    const copiarSoloCierre = () => {
+      setShowCopiarMenu(false);
+      copiarNodoComoImagen(refCierre.current, `Saldos_${empresa.nombre.replace(/\s/g,'_')}_CIERRE_${fechaHoy}.png`);
+    };
+    const copiarAmbos = () => {
+      setShowCopiarMenu(false);
+      copiarNodoComoImagen(refAmbos.current, `Saldos_${empresa.nombre.replace(/\s/g,'_')}_DIA_${fechaHoy}.png`);
     };
 
-    const fmtFecha = (f) => {
+    // Abrir pendientes con momento específico
+    const abrirPendientes = (m) => {
+      setPendientesMomento(m);
+      setShowPendientes(true);
+    };
+
+    const fmtFechaLarga = (f) => {
       if (!f) return '';
       const d = new Date(f + 'T12:00:00');
       return d.toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+    };
+    const fmtFechaCorta = (f) => {
+      if (!f) return '';
+      const d = new Date(f + 'T12:00:00');
+      return d.toLocaleDateString('es-MX', { day:'numeric', month:'long', year:'numeric' });
+    };
+
+    // ──── Sub-componente: Cuadro de un momento (INICIO o CIERRE) ────
+    const CuadroSaldos = ({ momento, innerRef }) => {
+      const t = tema(momento);
+      const meta = getMetaByMomento(momento);
+      const totales = calcTotales(momento);
+      const titulo = momento === 'cierre' ? 'CIERRE DE DÍA' : 'INICIO DE DÍA';
+      const editable = esHoy && !esConsulta;
+
+      return (
+        <div ref={innerRef} style={{width:720,maxWidth:'100%',background:'#fff',margin:'0 auto'}}>
+          <div style={{border:`1px solid ${t.primario}`,borderRadius:8,overflow:'hidden'}}>
+            {/* BARRA TÍTULO */}
+            <div style={{background:t.primario,color:'#fff',padding:'10px 14px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                {empresa.logo && (
+                  <div style={{width:38,height:38,borderRadius:'50%',background:'#fff',display:'flex',alignItems:'center',justifyContent:'center',padding:3,flexShrink:0,overflow:'hidden'}}>
+                    <img src={empresa.logo} alt={empresa.nombre} style={{width:'100%',height:'100%',objectFit:'contain',borderRadius:'50%'}}/>
+                  </div>
+                )}
+                <div style={{textAlign:'left'}}>
+                  <div style={{fontSize:14,fontWeight:700,lineHeight:1.2}}>{empresa.nombre}</div>
+                  <div style={{fontSize:11,opacity:0.85}}>{fmtFechaCorta(fechaConsulta)}</div>
+                </div>
+              </div>
+              <div style={{fontWeight:800,fontSize:14,letterSpacing:0.5}}>SALDOS BANCARIOS · {titulo}</div>
+            </div>
+
+            {/* META */}
+            <div style={{padding:'6px 14px',background:'#FAFAFA',fontSize:11,color:C.muted,borderBottom:`1px solid ${C.border}`,display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+              {meta.updatedAt
+                ? <span><span style={{color:'#1B5E20'}}>✓</span> Actualizado: {new Date(meta.updatedAt).toLocaleString('es-MX',{dateStyle:'short',timeStyle:'short'})}{meta.updatedBy ? ` · ${meta.updatedBy}` : ''}</span>
+                : <span style={{color:'#999'}}>Sin captura</span>}
+              {esHoy && !esConsulta && (
+                <button onClick={() => abrirPendientes(momento)} style={{background:'transparent',border:`1px solid ${t.primario}`,color:t.primario,padding:'2px 8px',borderRadius:4,fontSize:10,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>⚡ Pendientes</button>
+              )}
+            </div>
+
+            {/* CUENTAS POR BANCO */}
+            {Object.entries(cuentasPorBanco).map(([banco, ctas]) => (
+              <div key={banco}>
+                <div style={{background:t.claroFondo,color:t.claroTexto,padding:'7px 14px',textAlign:'center',fontWeight:800,fontSize:13,letterSpacing:1}}>{banco.toUpperCase()}</div>
+                {(() => {
+                  const filas = [];
+                  for (let i = 0; i < ctas.length; i += 2) filas.push([ctas[i], ctas[i+1] || null]);
+                  return filas.map((par, idx) => (
+                    <div key={idx} style={{display:'grid',gridTemplateColumns:'70px 1fr 40px 90px 1fr',gap:0,padding:'10px 14px',alignItems:'center',borderBottom:idx<filas.length-1?`1px solid ${C.border}`:'none'}}>
+                      {[0,1].map(slot => {
+                        const c = par[slot];
+                        if (!c) {
+                          if (slot === 0) return <React.Fragment key={slot}><div/><div/></React.Fragment>;
+                          return <React.Fragment key={slot}><div/><div/><div/></React.Fragment>;
+                        }
+                        const labelMoneda = c.tipo === 'inversion' ? 'PESOS' : (c.moneda === 'MXN' ? 'PESOS' : (c.moneda === 'USD' ? 'Dólares' : 'Euros'));
+                        const refTexto = c.tipo === 'inversion' ? 'Inversión' : `CTA. ${limpiaCta(c.numeroCuenta)}`;
+                        const tieneAjuste = ajusteVisible(c, momento);
+                        const keyEdicion = `${c.id}_${momento}`;
+                        const enEdicion = editandoSaldo === keyEdicion;
+                        const isSaving = savingCuenta === keyEdicion;
+                        const separador = slot === 1 ? [<div key="sep"/>] : [];
+                        return (
+                          <React.Fragment key={slot}>
+                            {separador}
+                            <div style={{fontSize:13,color:'#555',fontWeight:600,paddingLeft:slot===1?16:0}}>{labelMoneda}</div>
+                            <div
+                              onClick={() => !enEdicion && iniciarEdicion(c, momento)}
+                              style={{textAlign:'center',cursor:editable && !enEdicion ?'pointer':'default',padding:'4px 4px',borderRadius:6,transition:'background 0.15s'}}
+                              onMouseEnter={(e) => { if (editable && !enEdicion) e.currentTarget.style.background='#F0F4FF'; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.background='transparent'; }}
+                              title={editable && !enEdicion ? 'Clic para editar saldo' : ''}
+                            >
+                              <div style={{fontSize:11,color:'#1F2937',fontWeight:800,fontStyle:'italic',marginBottom:3}}>{refTexto}</div>
+                              {tieneAjuste && !enEdicion && (
+                                <div style={{fontSize:12,color:'#1F2937',marginBottom:3}}>{sym(c.moneda)}{fmt(saldoReal(c.id, momento))}</div>
+                              )}
+                              {enEdicion ? (
+                                <input
+                                  autoFocus
+                                  value={valorEdicion}
+                                  onChange={(e) => setValorEdicion(e.target.value.replace(/[^\d.]/g, ''))}
+                                  onBlur={guardarEdicion}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') guardarEdicion(); if (e.key === 'Escape') cancelarEdicion(); }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  style={{background:'#fff',border:`2px solid ${t.primario}`,padding:'4px 10px',borderRadius:6,fontWeight:800,color:t.primario,fontSize:13,textAlign:'center',width:130,outline:'none',fontFamily:'inherit'}}
+                                />
+                              ) : isSaving ? (
+                                <span style={{background:t.claroFondo,padding:'4px 14px',borderRadius:6,fontWeight:800,color:t.claroTexto,fontSize:13,opacity:0.6}}>guardando...</span>
+                              ) : (
+                                <span style={{background:t.claroFondo,padding:'4px 14px',borderRadius:6,display:'inline-block',fontWeight:800,color:t.claroTexto,fontSize:13,userSelect:'none'}}>
+                                  {sym(c.moneda)}{fmt(disponible(c, momento))}
+                                </span>
+                              )}
+                            </div>
+                          </React.Fragment>
+                        );
+                      })}
+                    </div>
+                  ));
+                })()}
+              </div>
+            ))}
+
+            {/* TOTALES */}
+            <div style={{background:'#F9FAFB',padding:'10px 14px',borderTop:`1px solid ${C.border}`}}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr auto',gap:'3px 12px',fontSize:12}}>
+                {totales.realMN > 0 && (<>
+                  <div style={{color:'#555'}}>Total Saldos Bancarios MN</div>
+                  <div style={{textAlign:'right',fontWeight:600,color:'#1F2937',fontFamily:'monospace'}}>${fmt(totales.realMN)}</div>
+                </>)}
+                {totales.realDL > 0 && (<>
+                  <div style={{color:'#555'}}>Total Saldos Bancarios DL</div>
+                  <div style={{textAlign:'right',fontWeight:600,color:'#1F2937',fontFamily:'monospace'}}>${fmt(totales.realDL)}</div>
+                </>)}
+                {totales.inversion > 0 && (<>
+                  <div style={{color:'#555'}}>Inversión</div>
+                  <div style={{textAlign:'right',fontWeight:600,color:'#1F2937',fontFamily:'monospace'}}>${fmt(totales.inversion)}</div>
+                </>)}
+                <div style={{color:t.primario,fontWeight:800,paddingTop:5,borderTop:`1px solid ${C.border}`,marginTop:3,fontSize:13}}>Total Disponible</div>
+                <div style={{textAlign:'right',paddingTop:5,borderTop:`1px solid ${C.border}`,marginTop:3}}>
+                  <span style={{background:t.primario,padding:'4px 12px',borderRadius:4,fontWeight:800,color:'#fff',fontSize:14}}>${fmt(totales.dispMN + totales.dispInversion)}</span>
+                  {totales.dispDL > 0 && <div style={{marginTop:3}}><span style={{background:t.primario,padding:'3px 10px',borderRadius:4,fontWeight:700,color:'#fff',fontSize:12}}>${fmt(totales.dispDL)} USD</span></div>}
+                  {totales.dispEUR > 0 && <div style={{marginTop:3}}><span style={{background:t.primario,padding:'3px 10px',borderRadius:4,fontWeight:700,color:'#fff',fontSize:12}}>€{fmt(totales.dispEUR)} EUR</span></div>}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
     };
 
     if (loading) {
@@ -4240,39 +4402,19 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     return (
       <div>
         {/* HEADER */}
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:16,paddingBottom:14,borderBottom:`1px solid ${C.border}`,flexWrap:'wrap',gap:12}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14,paddingBottom:12,borderBottom:`1px solid ${C.border}`,flexWrap:'wrap',gap:12}}>
           <div>
-            <h1 style={{fontSize:22,fontWeight:800,color:temaPrimario,margin:0}}>🏦 Saldos Bancarios · {empresa.nombre}</h1>
-            <p style={{fontSize:13,color:C.muted,margin:'4px 0 0',textTransform:'capitalize'}}>{fmtFecha(fechaConsulta)}{!esHoy && <span style={{marginLeft:8,background:'#FFF3E0',color:'#E65100',padding:'2px 8px',borderRadius:8,fontSize:11,fontWeight:700,textTransform:'uppercase'}}>Histórico · solo lectura</span>}</p>
+            <h1 style={{fontSize:20,fontWeight:800,color:C.navy,margin:0}}>🏦 Saldos Bancarios · {empresa.nombre}</h1>
+            <p style={{fontSize:13,color:C.muted,margin:'4px 0 0',textTransform:'capitalize'}}>{fmtFechaLarga(fechaConsulta)}{!esHoy && <span style={{marginLeft:8,background:'#FFF3E0',color:'#E65100',padding:'2px 8px',borderRadius:8,fontSize:11,fontWeight:700,textTransform:'uppercase'}}>Histórico · solo lectura</span>}</p>
           </div>
-          <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
-            {/* Toggle Inicio / Cierre */}
-            {esHoy && !esConsulta && (
-              <div style={{display:'flex',background:'#F3F4F6',borderRadius:8,padding:3,gap:2}}>
-                <button onClick={() => setMomento('inicio')} style={{background:momento==='inicio'?C.navy:'transparent',color:momento==='inicio'?'#fff':C.muted,border:'none',padding:'6px 14px',borderRadius:6,fontSize:11,fontWeight:momento==='inicio'?700:600,cursor:'pointer',fontFamily:'inherit'}}>🌅 INICIO</button>
-                <button onClick={() => setMomento('cierre')} style={{background:momento==='cierre'?'#1B5E20':'transparent',color:momento==='cierre'?'#fff':C.muted,border:'none',padding:'6px 14px',borderRadius:6,fontSize:11,fontWeight:momento==='cierre'?700:600,cursor:'pointer',fontFamily:'inherit'}}>🌙 CIERRE</button>
-              </div>
-            )}
+          <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
             {!esHoy && (
-              <>
-                <div style={{display:'inline-flex',background:momentoConsulta==='cierre'?'#E8F5E9':'#E8EAF6',color:momentoConsulta==='cierre'?'#1B5E20':C.navy,padding:'6px 12px',borderRadius:8,fontSize:11,fontWeight:700,alignItems:'center'}}>
-                  {momentoConsulta==='cierre'?'🌙 CIERRE':'🌅 INICIO'}
-                </div>
-                <button onClick={() => setVerHistorico(null)} style={{...btnStyle,background:'#FFF3E0',color:'#E65100',padding:'8px 14px',fontSize:12}}>← Volver a hoy</button>
-              </>
+              <button onClick={() => setVerHistorico(null)} style={{background:'#FFF3E0',color:'#E65100',border:'none',padding:'7px 12px',borderRadius:7,fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>← Volver a hoy</button>
             )}
-            <button onClick={() => setShowCuentas(true)} disabled={esConsulta} style={{background:'#fff',border:`1px solid ${C.border}`,padding:'8px 14px',borderRadius:8,fontSize:12,color:C.text,fontWeight:600,cursor:esConsulta?'not-allowed':'pointer',opacity:esConsulta?0.5:1,fontFamily:'inherit'}}>⚙️ Cuentas</button>
-            <button onClick={() => setShowPendientes(true)} disabled={esConsulta || !esHoy} style={{background:'#fff',border:`1px solid ${C.border}`,padding:'8px 14px',borderRadius:8,fontSize:12,color:C.text,fontWeight:600,cursor:(esConsulta||!esHoy)?'not-allowed':'pointer',opacity:(esConsulta||!esHoy)?0.5:1,fontFamily:'inherit'}}>⚡ Pendientes</button>
-            <button onClick={() => setShowHistorico(true)} style={{background:'#fff',border:`1px solid ${C.border}`,padding:'8px 14px',borderRadius:8,fontSize:12,color:C.text,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>📜 Histórico</button>
-            <button onClick={copiarImagen} style={{background:temaPrimario,color:'#fff',border:'none',padding:'8px 14px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>📸 Copiar Imagen</button>
+            <button onClick={() => setShowCuentas(true)} disabled={esConsulta} style={{background:'#fff',border:`1px solid ${C.border}`,padding:'7px 12px',borderRadius:7,fontSize:11,color:C.text,fontWeight:600,cursor:esConsulta?'not-allowed':'pointer',opacity:esConsulta?0.5:1,fontFamily:'inherit'}}>⚙️ Cuentas</button>
+            <button onClick={() => setShowHistorico(true)} style={{background:'#fff',border:`1px solid ${C.border}`,padding:'7px 12px',borderRadius:7,fontSize:11,color:C.text,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>📜 Histórico</button>
+            <button onClick={() => setShowCopiarMenu(true)} disabled={cuentas.length===0} style={{background:cuentas.length===0?'#999':C.navy,color:'#fff',border:'none',padding:'7px 12px',borderRadius:7,fontSize:11,fontWeight:700,cursor:cuentas.length===0?'not-allowed':'pointer',fontFamily:'inherit'}}>📸 Copiar Imagen</button>
           </div>
-        </div>
-
-        {/* META */}
-        <div style={{fontSize:11,color:C.muted,marginBottom:12}}>
-          {meta.updatedAt
-            ? <span><span style={{color:'#1B5E20'}}>✓</span> Última actualización {momentoConsulta==='cierre'?'cierre':'inicio'}: {new Date(meta.updatedAt).toLocaleString('es-MX',{dateStyle:'short',timeStyle:'short'})}{meta.updatedBy ? ` · ${meta.updatedBy}` : ''}</span>
-            : <span style={{color:'#999'}}>Sin saldos guardados para esta fecha y momento</span>}
         </div>
 
         {cuentas.length === 0 ? (
@@ -4282,117 +4424,61 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             <div style={{fontSize:13,marginBottom:14}}>Agrega tus cuentas bancarias para empezar a registrar saldos.</div>
             {!esConsulta && <button onClick={() => setShowCuentas(true)} style={btnStyle}>⚙️ Configurar cuentas</button>}
           </div>
+        ) : verHistorico ? (
+          /* MODO HISTÓRICO: solo el cuadro del momento seleccionado */
+          <div ref={refAmbos}>
+            <CuadroSaldos momento={momentoConsulta} innerRef={momentoConsulta==='cierre'?refCierre:refInicio}/>
+          </div>
         ) : (
-          <>
-            {/* TABLA DE SALDOS — capturada para imagen */}
-            <div ref={reporteRef} style={{background:'#fff'}}>
-              <div style={{border:`1px solid ${temaPrimario}`,borderRadius:10,overflow:'hidden'}}>
-                {/* Barra de título: logo + empresa + fecha a la izquierda, título al centro/derecha */}
-                <div style={{background:temaPrimario,color:'#fff',padding:'12px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
-                  <div style={{display:'flex',alignItems:'center',gap:12}}>
-                    {empresa.logo && (
-                      <div style={{width:42,height:42,borderRadius:'50%',background:'#fff',display:'flex',alignItems:'center',justifyContent:'center',padding:3,flexShrink:0,overflow:'hidden'}}>
-                        <img src={empresa.logo} alt={empresa.nombre} style={{width:'100%',height:'100%',objectFit:'contain',borderRadius:'50%'}}/>
-                      </div>
-                    )}
-                    <div style={{textAlign:'left'}}>
-                      <div style={{fontSize:13,fontWeight:700,lineHeight:1.2}}>{empresa.nombre}</div>
-                      <div style={{fontSize:10,opacity:0.85}}>{new Date(fechaConsulta + 'T12:00:00').toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'})}</div>
-                    </div>
-                  </div>
-                  <div style={{fontWeight:800,fontSize:14,letterSpacing:1}}>SALDOS BANCARIOS · {momentoConsulta==='cierre'?'CIERRE':'INICIO'} DE DÍA</div>
-                </div>
+          /* MODO HOY: ambos cuadros apilados */
+          <div ref={refAmbos} style={{display:'flex',flexDirection:'column',gap:18,alignItems:'center'}}>
+            <CuadroSaldos momento="inicio" innerRef={refInicio}/>
+            <CuadroSaldos momento="cierre" innerRef={refCierre}/>
+          </div>
+        )}
 
-                {Object.entries(cuentasPorBanco).map(([banco, ctas]) => (
-                  <div key={banco}>
-                    <div style={{background:temaClaroFondo,color:temaClaroTexto,padding:'8px 16px',textAlign:'center',fontWeight:800,fontSize:13,letterSpacing:1}}>{banco.toUpperCase()}</div>
-                    {/* Render en pares: 2 cuentas por fila */}
-                    {(() => {
-                      const filas = [];
-                      for (let i = 0; i < ctas.length; i += 2) {
-                        filas.push([ctas[i], ctas[i+1] || null]);
-                      }
-                      return filas.map((par, idx) => (
-                        <div key={idx} style={{display:'grid',gridTemplateColumns:'90px 1fr 60px 130px 1fr',gap:0,padding:'14px 16px',alignItems:'start',borderBottom:idx<filas.length-1?`1px solid ${C.border}`:'none'}}>
-                          {[0,1].map(slot => {
-                            const c = par[slot];
-                            if (!c) {
-                              if (slot === 0) return <React.Fragment key={slot}><div/><div/></React.Fragment>;
-                              return <React.Fragment key={slot}><div/><div/><div/></React.Fragment>;
-                            }
-                            const labelMoneda = c.tipo === 'inversion' ? 'PESOS' : (c.moneda === 'MXN' ? 'PESOS' : (c.moneda === 'USD' ? 'Dólares' : 'Euros'));
-                            const refTexto = c.tipo === 'inversion' ? 'Inversión' : `CTA. ${c.numeroCuenta}`;
-                            const tieneAjuste = ajusteVisible(c);
-                            const enEdicion = editandoSaldo === c.id;
-                            // Si es slot 1 (derecha), metemos un separador antes
-                            const separador = slot === 1 ? [<div key="sep"/>] : [];
-                            return (
-                              <React.Fragment key={slot}>
-                                {separador}
-                                <div style={{fontSize:12,color:'#555',fontWeight:600,paddingTop:18,paddingLeft:slot===1?24:0}}>{labelMoneda}</div>
-                                <div style={{textAlign:'center'}}>
-                                  <div style={{fontSize:11,color:'#1F2937',fontWeight:800,fontStyle:'italic',marginBottom:4}}>{refTexto}</div>
-                                  {tieneAjuste && !enEdicion && (
-                                    <div style={{fontSize:13,color:'#1F2937',marginBottom:6}}>{sym(c.moneda)}{fmt(saldoReal(c.id))}</div>
-                                  )}
-                                  {enEdicion ? (
-                                    <input
-                                      autoFocus
-                                      value={valorEdicion}
-                                      onChange={(e) => setValorEdicion(e.target.value.replace(/[^\d.]/g, ''))}
-                                      onBlur={guardarEdicion}
-                                      onKeyDown={(e) => { if (e.key === 'Enter') guardarEdicion(); if (e.key === 'Escape') cancelarEdicion(); }}
-                                      style={{background:'#fff',border:`2px solid ${temaPrimario}`,padding:'4px 10px',borderRadius:6,fontWeight:800,color:temaPrimario,fontSize:13,textAlign:'center',width:130,outline:'none',fontFamily:'inherit'}}
-                                    />
-                                  ) : (
-                                    <Pildora 
-                                      valor={disponible(c)} 
-                                      moneda={c.moneda} 
-                                      onClick={() => iniciarEdicion(c)} 
-                                      editable={esHoy && !esConsulta}
-                                      saving={savingCuenta === c.id}
-                                    />
-                                  )}
-                                </div>
-                              </React.Fragment>
-                            );
-                          })}
-                        </div>
-                      ));
-                    })()}
-                  </div>
-                ))}
+        {/* MODAL: Selección de qué imagen copiar */}
+        {showCopiarMenu && (
+          <div onClick={() => setShowCopiarMenu(false)} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(31,41,55,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:20}}>
+            <div onClick={(e) => e.stopPropagation()} style={{background:'#fff',borderRadius:14,padding:24,maxWidth:480,width:'100%',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:18,paddingBottom:12,borderBottom:`1px solid ${C.border}`}}>
+                <div>
+                  <h3 style={{fontSize:16,fontWeight:800,color:C.navy,margin:0}}>📸 ¿Qué imagen quieres copiar?</h3>
+                  <p style={{fontSize:11,color:C.muted,margin:'4px 0 0'}}>Selecciona qué cuadro enviar</p>
+                </div>
+                <button onClick={() => setShowCopiarMenu(false)} style={{background:'transparent',border:'none',fontSize:22,cursor:'pointer',color:C.muted,padding:0,lineHeight:1}}>×</button>
               </div>
-
-              {/* TOTALES */}
-              <div style={{marginTop:16,background:'#F9FAFB',borderRadius:8,padding:'14px 18px',border:`1px solid ${C.border}`}}>
-                <div style={{display:'grid',gridTemplateColumns:'1fr auto',gap:'4px 16px',fontSize:13}}>
-                  {totales.realMN > 0 && (<>
-                    <div style={{color:'#555'}}>Total Saldos Bancarios MN</div>
-                    <div style={{textAlign:'right',fontWeight:600,color:'#1F2937'}}>${fmt(totales.realMN)}</div>
-                  </>)}
-                  {totales.realDL > 0 && (<>
-                    <div style={{color:'#555'}}>Total Saldos Bancarios DL</div>
-                    <div style={{textAlign:'right',fontWeight:600,color:'#1F2937'}}>${fmt(totales.realDL)}</div>
-                  </>)}
-                  {totales.inversion > 0 && (<>
-                    <div style={{color:'#555'}}>Inversión</div>
-                    <div style={{textAlign:'right',fontWeight:600,color:'#1F2937'}}>${fmt(totales.inversion)}</div>
-                  </>)}
-                  <div style={{color:temaPrimario,fontWeight:800,paddingTop:6,borderTop:`1px solid ${C.border}`,marginTop:4,fontSize:14}}>Total Disponible</div>
-                  <div style={{textAlign:'right',paddingTop:6,borderTop:`1px solid ${C.border}`,marginTop:4}}>
-                    <span style={{background:temaPrimario,padding:'5px 14px',borderRadius:4,fontWeight:800,color:'#fff',fontSize:15}}>${fmt(totales.dispMN + totales.dispInversion)}</span>
-                    {totales.dispDL > 0 && <div style={{marginTop:4}}><span style={{background:temaPrimario,padding:'4px 12px',borderRadius:4,fontWeight:700,color:'#fff',fontSize:13}}>${fmt(totales.dispDL)} USD</span></div>}
-                    {totales.dispEUR > 0 && <div style={{marginTop:4}}><span style={{background:temaPrimario,padding:'4px 12px',borderRadius:4,fontWeight:700,color:'#fff',fontSize:13}}>€{fmt(totales.dispEUR)} EUR</span></div>}
-                  </div>
-                </div>
+              <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                {!verHistorico && (<>
+                  <button onClick={copiarSoloInicio} style={{background:'#fff',border:`2px solid ${C.navy}`,padding:'14px 16px',borderRadius:10,fontSize:13,color:C.navy,fontWeight:700,cursor:'pointer',textAlign:'left',display:'flex',alignItems:'center',gap:12,fontFamily:'inherit'}}>
+                    <div style={{width:36,height:36,background:C.navy,borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:18,flexShrink:0}}>🌅</div>
+                    <div><div>Solo INICIO de día</div><div style={{fontSize:10,fontWeight:500,color:C.muted,marginTop:2}}>Cuadro azul · 1 imagen</div></div>
+                  </button>
+                  <button onClick={copiarSoloCierre} style={{background:'#fff',border:'2px solid #1B5E20',padding:'14px 16px',borderRadius:10,fontSize:13,color:'#1B5E20',fontWeight:700,cursor:'pointer',textAlign:'left',display:'flex',alignItems:'center',gap:12,fontFamily:'inherit'}}>
+                    <div style={{width:36,height:36,background:'#1B5E20',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:18,flexShrink:0}}>🌙</div>
+                    <div><div>Solo CIERRE de día</div><div style={{fontSize:10,fontWeight:500,color:C.muted,marginTop:2}}>Cuadro verde · 1 imagen</div></div>
+                  </button>
+                  <button onClick={copiarAmbos} style={{background:'#F3F4F6',border:'2px solid #6B7280',padding:'14px 16px',borderRadius:10,fontSize:13,color:'#1F2937',fontWeight:700,cursor:'pointer',textAlign:'left',display:'flex',alignItems:'center',gap:12,fontFamily:'inherit'}}>
+                    <div style={{width:36,height:36,background:'#1F2937',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:18,flexShrink:0}}>📊</div>
+                    <div><div>Ambos (Inicio + Cierre)</div><div style={{fontSize:10,fontWeight:500,color:C.muted,marginTop:2}}>Comparativa del día completo · 1 imagen larga</div></div>
+                  </button>
+                </>)}
+                {verHistorico && (
+                  <button onClick={momentoConsulta==='cierre'?copiarSoloCierre:copiarSoloInicio} style={{background:'#fff',border:`2px solid ${tema(momentoConsulta).primario}`,padding:'14px 16px',borderRadius:10,fontSize:13,color:tema(momentoConsulta).primario,fontWeight:700,cursor:'pointer',textAlign:'left',display:'flex',alignItems:'center',gap:12,fontFamily:'inherit'}}>
+                    <div style={{width:36,height:36,background:tema(momentoConsulta).primario,borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:18,flexShrink:0}}>{momentoConsulta==='cierre'?'🌙':'🌅'}</div>
+                    <div><div>Copiar este cuadro</div><div style={{fontSize:10,fontWeight:500,color:C.muted,marginTop:2}}>{momentoConsulta==='cierre'?'CIERRE':'INICIO'} de día · 1 imagen</div></div>
+                  </button>
+                )}
+              </div>
+              <div style={{marginTop:14,padding:10,background:'#F0F4FF',borderRadius:8,fontSize:10,color:C.navy}}>
+                💡 La imagen se copia al portapapeles. Pégala con <strong>Ctrl+V</strong> en WhatsApp, Teams o correo.
               </div>
             </div>
-          </>
+          </div>
         )}
 
         {showCuentas && <ModalCuentas onClose={() => { setShowCuentas(false); recargar(); }} />}
-        {showPendientes && <ModalPendientes onClose={() => { setShowPendientes(false); recargar(); }} cuentas={cuentas} saldosHoy={saldosHoy} fechaHoy={fechaHoy} momento={momento} temaPrimario={temaPrimario} />}
+        {showPendientes && <ModalPendientes onClose={() => { setShowPendientes(false); recargar(); }} cuentas={cuentas} saldosHoy={getSaldosByMomento(pendientesMomento)} fechaHoy={fechaHoy} momento={pendientesMomento} temaPrimario={tema(pendientesMomento).primario} />}
         {showHistorico && <ModalHistorico onClose={() => setShowHistorico(false)} onSelectFecha={(f, m) => { setVerHistorico({fecha: f, momento: m}); setShowHistorico(false); }} />}
       </div>
     );
