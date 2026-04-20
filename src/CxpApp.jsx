@@ -4146,7 +4146,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
     // Totales por momento
     const calcTotales = (m) => {
-      const t = { realMN: 0, realDL: 0, inversion: 0, dispMN: 0, dispDL: 0, dispEUR: 0, dispInversion: 0 };
+      const t = { realMN: 0, realDL: 0, realEUR: 0, inversion: 0, dispMN: 0, dispDL: 0, dispEUR: 0, dispInversion: 0 };
       cuentas.forEach(c => {
         const r = saldoReal(c.id, m);
         const d = disponible(c, m);
@@ -4160,6 +4160,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           t.realDL += r;
           t.dispDL += d;
         } else if (c.moneda === 'EUR') {
+          t.realEUR += r;
           t.dispEUR += d;
         }
       });
@@ -4373,15 +4374,19 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                   <div style={{color:'#555',fontWeight:500}}>Total Saldos Bancarios DL</div>
                   <div style={{textAlign:'right',fontWeight:700,color:'#1F2937',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontSize:16}}>${fmt(totales.realDL)}</div>
                 </>)}
+                {totales.realEUR > 0 && (<>
+                  <div style={{color:'#555',fontWeight:500}}>Total Saldos Bancarios EU</div>
+                  <div style={{textAlign:'right',fontWeight:700,color:'#1F2937',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontSize:16}}>€{fmt(totales.realEUR)}</div>
+                </>)}
                 {totales.inversion > 0 && (<>
                   <div style={{color:'#555',fontWeight:500}}>Inversión</div>
                   <div style={{textAlign:'right',fontWeight:700,color:'#1F2937',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontSize:16}}>${fmt(totales.inversion)}</div>
                 </>)}
-                <div style={{color:t.primario,fontWeight:800,paddingTop:10,borderTop:`2px solid ${C.border}`,marginTop:6,fontSize:17}}>Total Disponible</div>
-                <div style={{textAlign:'right',paddingTop:10,borderTop:`2px solid ${C.border}`,marginTop:6}}>
+                <div style={{color:t.primario,fontWeight:800,paddingTop:10,borderTop:`2px solid ${C.border}`,marginTop:6,fontSize:17,alignSelf:'center'}}>Total Disponible</div>
+                <div style={{textAlign:'right',paddingTop:10,borderTop:`2px solid ${C.border}`,marginTop:6,display:'flex',flexDirection:'column',alignItems:'flex-end',gap:8}}>
                   <span style={{background:t.primario,padding:'8px 18px',borderRadius:5,fontWeight:800,color:'#fff',fontSize:22,fontVariantNumeric:'tabular-nums',letterSpacing:0.3}}>${fmt(totales.dispMN + totales.dispInversion)} MN</span>
-                  {totales.dispDL > 0 && <div style={{marginTop:6}}><span style={{background:t.primario,padding:'5px 14px',borderRadius:5,fontWeight:700,color:'#fff',fontSize:16,fontVariantNumeric:'tabular-nums',letterSpacing:0.3}}>${fmt(totales.dispDL)} USD</span></div>}
-                  {totales.dispEUR > 0 && <div style={{marginTop:6}}><span style={{background:t.primario,padding:'5px 14px',borderRadius:5,fontWeight:700,color:'#fff',fontSize:16,fontVariantNumeric:'tabular-nums',letterSpacing:0.3}}>€{fmt(totales.dispEUR)} EUR</span></div>}
+                  {totales.dispDL > 0 && <span style={{background:t.primario,padding:'5px 14px',borderRadius:5,fontWeight:700,color:'#fff',fontSize:16,fontVariantNumeric:'tabular-nums',letterSpacing:0.3}}>${fmt(totales.dispDL)} USD</span>}
+                  {totales.dispEUR > 0 && <span style={{background:t.primario,padding:'5px 14px',borderRadius:5,fontWeight:700,color:'#fff',fontSize:16,fontVariantNumeric:'tabular-nums',letterSpacing:0.3}}>€{fmt(totales.dispEUR)} EUR</span>}
                 </div>
               </div>
             </div>
