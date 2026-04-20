@@ -4270,43 +4270,43 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
       const editable = esHoy && !esConsulta;
 
       return (
-        <div ref={innerRef} style={{width:720,maxWidth:'100%',background:'#fff',margin:'0 auto'}}>
+        <div ref={innerRef} style={{width:820,maxWidth:'100%',background:'#fff',margin:'0 auto'}}>
           <div style={{border:`1px solid ${t.primario}`,borderRadius:8,overflow:'hidden'}}>
             {/* BARRA TÍTULO */}
-            <div style={{background:t.primario,color:'#fff',padding:'10px 14px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}>
-              <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <div style={{background:t.primario,color:'#fff',padding:'14px 18px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
+              <div style={{display:'flex',alignItems:'center',gap:12}}>
                 {empresa.logo && (
-                  <div style={{width:38,height:38,borderRadius:'50%',background:'#fff',display:'flex',alignItems:'center',justifyContent:'center',padding:3,flexShrink:0,overflow:'hidden'}}>
+                  <div style={{width:48,height:48,borderRadius:'50%',background:'#fff',display:'flex',alignItems:'center',justifyContent:'center',padding:4,flexShrink:0,overflow:'hidden'}}>
                     <img src={empresa.logo} alt={empresa.nombre} style={{width:'100%',height:'100%',objectFit:'contain',borderRadius:'50%'}}/>
                   </div>
                 )}
                 <div style={{textAlign:'left'}}>
-                  <div style={{fontSize:14,fontWeight:700,lineHeight:1.2}}>{empresa.nombre}</div>
-                  <div style={{fontSize:11,opacity:0.85}}>{fmtFechaCorta(fechaConsulta)}</div>
+                  <div style={{fontSize:17,fontWeight:700,lineHeight:1.2}}>{empresa.nombre}</div>
+                  <div style={{fontSize:13,opacity:0.85}}>{fmtFechaCorta(fechaConsulta)}</div>
                 </div>
               </div>
-              <div style={{fontWeight:800,fontSize:14,letterSpacing:0.5}}>SALDOS BANCARIOS · {titulo}</div>
+              <div style={{fontWeight:800,fontSize:17,letterSpacing:0.5}}>SALDOS BANCARIOS · {titulo}</div>
             </div>
 
             {/* META */}
-            <div style={{padding:'6px 14px',background:'#FAFAFA',fontSize:11,color:C.muted,borderBottom:`1px solid ${C.border}`,display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+            <div style={{padding:'8px 18px',background:'#FAFAFA',fontSize:12,color:C.muted,borderBottom:`1px solid ${C.border}`,display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,flexWrap:'wrap'}}>
               {meta.updatedAt
                 ? <span><span style={{color:'#1B5E20'}}>✓</span> Actualizado: {new Date(meta.updatedAt).toLocaleString('es-MX',{dateStyle:'short',timeStyle:'short'})}{meta.updatedBy ? ` · ${meta.updatedBy}` : ''}</span>
                 : <span style={{color:'#999'}}>Sin captura</span>}
               {esHoy && !esConsulta && (
-                <button onClick={() => abrirPendientes(momento)} style={{background:'transparent',border:`1px solid ${t.primario}`,color:t.primario,padding:'2px 8px',borderRadius:4,fontSize:10,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>⚡ Pendientes</button>
+                <button onClick={() => abrirPendientes(momento)} style={{background:'transparent',border:`1px solid ${t.primario}`,color:t.primario,padding:'3px 10px',borderRadius:4,fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>⚡ Pendientes</button>
               )}
             </div>
 
             {/* CUENTAS POR BANCO */}
             {Object.entries(cuentasPorBanco).map(([banco, ctas]) => (
               <div key={banco}>
-                <div style={{background:t.claroFondo,color:t.claroTexto,padding:'7px 14px',textAlign:'center',fontWeight:800,fontSize:13,letterSpacing:1}}>{banco.toUpperCase()}</div>
+                <div style={{background:t.claroFondo,color:t.claroTexto,padding:'9px 18px',textAlign:'center',fontWeight:800,fontSize:15,letterSpacing:1}}>{banco.toUpperCase()}</div>
                 {(() => {
                   const filas = [];
                   for (let i = 0; i < ctas.length; i += 2) filas.push([ctas[i], ctas[i+1] || null]);
                   return filas.map((par, idx) => (
-                    <div key={idx} style={{display:'grid',gridTemplateColumns:'70px 1fr 40px 90px 1fr',gap:0,padding:'10px 14px',alignItems:'center',borderBottom:idx<filas.length-1?`1px solid ${C.border}`:'none'}}>
+                    <div key={idx} style={{display:'grid',gridTemplateColumns:'80px 1fr 50px 100px 1fr',gap:0,padding:'14px 18px',alignItems:'center',borderBottom:idx<filas.length-1?`1px solid ${C.border}`:'none'}}>
                       {[0,1].map(slot => {
                         const c = par[slot];
                         if (!c) {
@@ -4323,7 +4323,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                         return (
                           <React.Fragment key={slot}>
                             {separador}
-                            <div style={{fontSize:13,color:'#555',fontWeight:600,paddingLeft:slot===1?16:0}}>{labelMoneda}</div>
+                            <div style={{fontSize:15,color:'#555',fontWeight:600,paddingLeft:slot===1?16:0}}>{labelMoneda}</div>
                             <div
                               onClick={() => !enEdicion && iniciarEdicion(c, momento)}
                               style={{textAlign:'center',cursor:editable && !enEdicion ?'pointer':'default',padding:'4px 4px',borderRadius:6,transition:'background 0.15s'}}
@@ -4331,9 +4331,9 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                               onMouseLeave={(e) => { e.currentTarget.style.background='transparent'; }}
                               title={editable && !enEdicion ? 'Clic para editar saldo' : ''}
                             >
-                              <div style={{fontSize:11,color:'#1F2937',fontWeight:800,fontStyle:'italic',marginBottom:3}}>{refTexto}</div>
+                              <div style={{fontSize:13,color:'#1F2937',fontWeight:800,fontStyle:'italic',marginBottom:4}}>{refTexto}</div>
                               {tieneAjuste && !enEdicion && (
-                                <div style={{fontSize:12,color:'#1F2937',marginBottom:3}}>{sym(c.moneda)}{fmt(saldoReal(c.id, momento))}</div>
+                                <div style={{fontSize:14,color:'#1F2937',marginBottom:4}}>{sym(c.moneda)}{fmt(saldoReal(c.id, momento))}</div>
                               )}
                               {enEdicion ? (
                                 <input
@@ -4343,12 +4343,12 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                                   onBlur={guardarEdicion}
                                   onKeyDown={(e) => { if (e.key === 'Enter') guardarEdicion(); if (e.key === 'Escape') cancelarEdicion(); }}
                                   onClick={(e) => e.stopPropagation()}
-                                  style={{background:'#fff',border:`2px solid ${t.primario}`,padding:'4px 10px',borderRadius:6,fontWeight:800,color:t.primario,fontSize:13,textAlign:'center',width:130,outline:'none',fontFamily:'inherit'}}
+                                  style={{background:'#fff',border:`2px solid ${t.primario}`,padding:'5px 12px',borderRadius:6,fontWeight:800,color:t.primario,fontSize:16,textAlign:'center',width:150,outline:'none',fontFamily:'inherit'}}
                                 />
                               ) : isSaving ? (
-                                <span style={{background:t.claroFondo,padding:'4px 14px',borderRadius:6,fontWeight:800,color:t.claroTexto,fontSize:13,opacity:0.6}}>guardando...</span>
+                                <span style={{background:t.claroFondo,padding:'5px 16px',borderRadius:6,fontWeight:800,color:t.claroTexto,fontSize:16,opacity:0.6}}>guardando...</span>
                               ) : (
-                                <span style={{background:t.claroFondo,padding:'4px 14px',borderRadius:6,display:'inline-block',fontWeight:800,color:t.claroTexto,fontSize:13,userSelect:'none'}}>
+                                <span style={{background:t.claroFondo,padding:'5px 16px',borderRadius:6,display:'inline-block',fontWeight:800,color:t.claroTexto,fontSize:16,userSelect:'none'}}>
                                   {sym(c.moneda)}{fmt(disponible(c, momento))}
                                 </span>
                               )}
@@ -4363,8 +4363,8 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             ))}
 
             {/* TOTALES */}
-            <div style={{background:'#F9FAFB',padding:'10px 14px',borderTop:`1px solid ${C.border}`}}>
-              <div style={{display:'grid',gridTemplateColumns:'1fr auto',gap:'3px 12px',fontSize:12}}>
+            <div style={{background:'#F9FAFB',padding:'14px 18px',borderTop:`1px solid ${C.border}`}}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr auto',gap:'5px 16px',fontSize:14}}>
                 {totales.realMN > 0 && (<>
                   <div style={{color:'#555'}}>Total Saldos Bancarios MN</div>
                   <div style={{textAlign:'right',fontWeight:600,color:'#1F2937',fontFamily:'monospace'}}>${fmt(totales.realMN)}</div>
@@ -4377,11 +4377,11 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                   <div style={{color:'#555'}}>Inversión</div>
                   <div style={{textAlign:'right',fontWeight:600,color:'#1F2937',fontFamily:'monospace'}}>${fmt(totales.inversion)}</div>
                 </>)}
-                <div style={{color:t.primario,fontWeight:800,paddingTop:5,borderTop:`1px solid ${C.border}`,marginTop:3,fontSize:13}}>Total Disponible</div>
-                <div style={{textAlign:'right',paddingTop:5,borderTop:`1px solid ${C.border}`,marginTop:3}}>
-                  <span style={{background:t.primario,padding:'4px 12px',borderRadius:4,fontWeight:800,color:'#fff',fontSize:14}}>${fmt(totales.dispMN + totales.dispInversion)}</span>
-                  {totales.dispDL > 0 && <div style={{marginTop:3}}><span style={{background:t.primario,padding:'3px 10px',borderRadius:4,fontWeight:700,color:'#fff',fontSize:12}}>${fmt(totales.dispDL)} USD</span></div>}
-                  {totales.dispEUR > 0 && <div style={{marginTop:3}}><span style={{background:t.primario,padding:'3px 10px',borderRadius:4,fontWeight:700,color:'#fff',fontSize:12}}>€{fmt(totales.dispEUR)} EUR</span></div>}
+                <div style={{color:t.primario,fontWeight:800,paddingTop:8,borderTop:`1px solid ${C.border}`,marginTop:5,fontSize:16}}>Total Disponible</div>
+                <div style={{textAlign:'right',paddingTop:8,borderTop:`1px solid ${C.border}`,marginTop:5}}>
+                  <span style={{background:t.primario,padding:'6px 16px',borderRadius:4,fontWeight:800,color:'#fff',fontSize:18}}>${fmt(totales.dispMN + totales.dispInversion)}</span>
+                  {totales.dispDL > 0 && <div style={{marginTop:4}}><span style={{background:t.primario,padding:'4px 12px',borderRadius:4,fontWeight:700,color:'#fff',fontSize:14}}>${fmt(totales.dispDL)} USD</span></div>}
+                  {totales.dispEUR > 0 && <div style={{marginTop:4}}><span style={{background:t.primario,padding:'4px 12px',borderRadius:4,fontWeight:700,color:'#fff',fontSize:14}}>€{fmt(totales.dispEUR)} EUR</span></div>}
                 </div>
               </div>
             </div>
@@ -4431,7 +4431,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           </div>
         ) : (
           /* MODO HOY: ambos cuadros apilados */
-          <div ref={refAmbos} style={{display:'flex',flexDirection:'column',gap:18,alignItems:'center'}}>
+          <div ref={refAmbos} style={{display:'flex',flexDirection:'column',gap:24,alignItems:'center'}}>
             <CuadroSaldos momento="inicio" innerRef={refInicio}/>
             <CuadroSaldos momento="cierre" innerRef={refCierre}/>
           </div>
