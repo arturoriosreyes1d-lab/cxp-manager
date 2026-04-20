@@ -4365,6 +4365,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
             {/* TOTALES */}
             <div style={{background:'#F9FAFB',padding:'16px 20px',borderTop:`1px solid ${C.border}`}}>
+              {/* Subtotales por moneda */}
               <div style={{display:'grid',gridTemplateColumns:'1fr auto',gap:'6px 18px',fontSize:15}}>
                 {totales.realMN > 0 && (<>
                   <div style={{color:'#555',fontWeight:500}}>Total Saldos Bancarios MN</div>
@@ -4382,8 +4383,12 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                   <div style={{color:'#555',fontWeight:500}}>Inversión</div>
                   <div style={{textAlign:'right',fontWeight:700,color:'#1F2937',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontSize:16}}>${fmt(totales.inversion)}</div>
                 </>)}
-                <div style={{color:t.primario,fontWeight:800,paddingTop:10,borderTop:`2px solid ${C.border}`,marginTop:6,fontSize:17,alignSelf:'center'}}>Total Disponible</div>
-                <div style={{textAlign:'right',paddingTop:10,borderTop:`2px solid ${C.border}`,marginTop:6,display:'flex',flexDirection:'column',alignItems:'flex-end',gap:8}}>
+              </div>
+
+              {/* Separador continuo de ancho completo */}
+              <div style={{borderTop:`2px solid ${C.border}`,marginTop:12,paddingTop:12,display:'flex',justifyContent:'space-between',alignItems:'center',gap:16,flexWrap:'wrap'}}>
+                <div style={{color:t.primario,fontWeight:800,fontSize:17}}>Total Disponible</div>
+                <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:8}}>
                   <span style={{background:t.primario,padding:'8px 18px',borderRadius:5,fontWeight:800,color:'#fff',fontSize:22,fontVariantNumeric:'tabular-nums',letterSpacing:0.3}}>${fmt(totales.dispMN + totales.dispInversion)} MN</span>
                   {totales.dispDL > 0 && <span style={{background:t.primario,padding:'5px 14px',borderRadius:5,fontWeight:700,color:'#fff',fontSize:16,fontVariantNumeric:'tabular-nums',letterSpacing:0.3}}>${fmt(totales.dispDL)} USD</span>}
                   {totales.dispEUR > 0 && <span style={{background:t.primario,padding:'5px 14px',borderRadius:5,fontWeight:700,color:'#fff',fontSize:16,fontVariantNumeric:'tabular-nums',letterSpacing:0.3}}>€{fmt(totales.dispEUR)} EUR</span>}
