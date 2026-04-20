@@ -839,3 +839,121 @@ export async function upsertReporteSaldos(empresaId, saldos, usuario) {
   if (error) { console.error('upsertReporteSaldos:', error); return false; }
   return true;
 }
+
+/* ── Saldos Bancarios: cuentas, saldos diarios, pendientes ─────── */
+
+// CUENTAS BANCARIAS
+export async function fetchCuentasBancarias(empresaId) {
+  const { data, error } = await supabase
+    .from('cuentas_bancarias')
+    .select('*')
+    .eq('empresa_id', empresaId)
+    .eq('activa', true)
+    .order('orden', { ascending: true });
+  if (error) { console.error('fetchCuentasBancarias:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id,
+    empresaId: r.empresa_id,
+    banco: r.banco || '',
+    numeroCuenta: r.numero_cuenta || '',
+    tipo: r.tipo || 'corriente',  // 'corriente' | 'inversion'
+    moneda: r.moneda || 'MXN',
+    reservaMinima: +r.reserva_minima || 0,
+    orden: +r.orden || 0,
+    activa: r.activa !== false,
+  }));
+}
+
+export async function upsertCuentaBancaria(cuenta) {
+  const row = {
+    empresa_id: cuenta.empresaId,
+    banco: cuenta.banco,
+    numero_cuenta: cuenta.numeroCuenta || null,
+    tipo: cuenta.tipo,
+    moneda: cuenta.moneda,
+    reserva_minima: +cuenta.reservaMinima || 0,
+    orden: +cuenta.orden || 0,
+    activa: cuenta.activa !== false,
+  };
+  const isUUID = cuenta.id && /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(cuenta.id);
+  if (isUUID) {
+    const { data, error } = await supabase.from('cuentas_bancarias').update(row).eq('id', cuenta.id).select().single();
+    if (error) { console.error('upsertCuentaBancaria update:', error); return null; }
+    return data?.id;
+  } else {
+    const { data, error } = await supabase.from('cuentas_bancarias').insert(row).select().single();
+    if (error) { console.error('upsertCuentaBancaria insert:', error); return null; }
+    return data?.id;
+  }
+}
+
+export async function deleteCuentaBancaria(id) {
+  // Soft delete: marcamos activa=false para no perder histórico
+  const { error } = await supabase.from('cuentas_bancarias').update({ activa: false }).eq('id', id);
+  if (error) console.error('deleteCuentaBancaria:', error);
+}
+
+// SALDOS DIARIOS (un registro por cuenta+fecha+momento)
+export async function fetchSaldosDiarios(empresaId, fecha, momento) {
+  let q = supabase.from('saldos_diarios').select('*').eq('empresa_id', empresaId);
+  if (fecha) q = q.eq('fecha', fecha);
+  if (momento) q = q.eq('momento', momento);
+  const { data, error } = await q;
+  if (error) { console.error('fetchSaldosDiarios:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id,
+    cuentaId: r.cuenta_id,
+    empresaId: r.empresa_id,
+    fecha: r.fecha,
+    momento: r.momento || 'inicio',
+    saldoReal: +r.saldo_real || 0,
+    movsPendientes: +r.movs_pendientes || 0,
+    updatedAt: r.updated_at,
+    updatedBy: r.updated_by,
+  }));
+}
+
+export async function upsertSaldoDiario(saldo, usuario) {
+  const row = {
+    cuenta_id: saldo.cuentaId,
+    empresa_id: saldo.empresaId,
+    fecha: saldo.fecha,
+    momento: saldo.momento || 'inicio',
+    saldo_real: +saldo.saldoReal || 0,
+    movs_pendientes: +saldo.movsPendientes || 0,
+    updated_at: new Date().toISOString(),
+    updated_by: usuario || 'desconocido',
+  };
+  const { error } = await supabase
+    .from('saldos_diarios')
+    .upsert(row, { onConflict: 'cuenta_id,fecha,momento' });
+  if (error) { console.error('upsertSaldoDiario:', error); return false; }
+  return true;
+}
+
+// HISTÓRICO: lista de fechas+momento con saldos para una empresa
+export async function fetchFechasHistoricoSaldos(empresaId, desde, hasta) {
+  let q = supabase
+    .from('saldos_diarios')
+    .select('fecha, momento, updated_at, updated_by')
+    .eq('empresa_id', empresaId)
+    .order('fecha', { ascending: false });
+  if (desde) q = q.gte('fecha', desde);
+  if (hasta) q = q.lte('fecha', hasta);
+  const { data, error } = await q;
+  if (error) { console.error('fetchFechasHistoricoSaldos:', error); return []; }
+  // Agrupar por fecha+momento
+  const map = new Map();
+  (data || []).forEach(r => {
+    const key = `${r.fecha}__${r.momento || 'inicio'}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        fecha: r.fecha,
+        momento: r.momento || 'inicio',
+        updatedAt: r.updated_at,
+        updatedBy: r.updated_by,
+      });
+    }
+  });
+  return Array.from(map.values());
+}

@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import * as XLSX from "xlsx";
+import html2canvas from "html2canvas";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   PieChart, Pie, Cell, ResponsiveContainer,
@@ -18,6 +19,8 @@ import {
   fetchTarjetas, updateTarjetaSaldo, fetchTarjetaMovimientos, bulkInsertMovimientos,
   fetchProgramados, upsertProgramado, deleteProgramado,
   fetchReporteSaldos, upsertReporteSaldos,
+  fetchCuentasBancarias, upsertCuentaBancaria, deleteCuentaBancaria,
+  fetchSaldosDiarios, upsertSaldoDiario, fetchFechasHistoricoSaldos,
 } from "./db.js";
 import CxcView from "./CxcView.jsx";
 import { EMPRESAS } from "./empresas.js";
@@ -4051,6 +4054,648 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     );
   };
 
+  /* ── SALDOS BANCARIOS ───────────────────────────────────────────────── */
+  const SaldosBancarios = () => {
+    const [cuentas, setCuentas] = useState([]);
+    const [saldosHoy, setSaldosHoy] = useState({});  // {cuentaId: {saldoReal, movsPendientes}}
+    const [meta, setMeta] = useState({ updatedAt: null, updatedBy: null });
+    const [loading, setLoading] = useState(true);
+    const [savingCuenta, setSavingCuenta] = useState(null);   // cuentaId que se está guardando
+    const [editandoSaldo, setEditandoSaldo] = useState(null); // cuentaId en edición
+    const [valorEdicion, setValorEdicion] = useState("");
+    const [showCuentas, setShowCuentas] = useState(false);
+    const [showPendientes, setShowPendientes] = useState(false);
+    const [showHistorico, setShowHistorico] = useState(false);
+    const [verHistorico, setVerHistorico] = useState(null); // {fecha, momento} para ver detalle histórico
+    const [momento, setMomento] = useState('inicio');       // 'inicio' | 'cierre'
+    const reporteRef = useRef(null);
+
+    const fechaHoy = today();
+    const fechaConsulta = verHistorico?.fecha || fechaHoy;
+    const momentoConsulta = verHistorico?.momento || momento;
+    const esHoy = fechaConsulta === fechaHoy && !verHistorico;
+
+    // Paleta dinámica según momento
+    const temaPrimario = momentoConsulta === 'cierre' ? '#1B5E20' : C.navy;   // verde oscuro vs navy
+    const temaClaroFondo = momentoConsulta === 'cierre' ? '#C8E6C9' : '#BBDEFB';
+    const temaClaroTexto = momentoConsulta === 'cierre' ? '#1B5E20' : '#0C447C';
+
+    // Cargar cuentas + saldos del día
+    const recargar = async () => {
+      setLoading(true);
+      const [cs, ss] = await Promise.all([
+        fetchCuentasBancarias(empresaId),
+        fetchSaldosDiarios(empresaId, fechaConsulta, momentoConsulta),
+      ]);
+      setCuentas(cs);
+      const map = {};
+      let lastUpdate = null, lastBy = null;
+      ss.forEach(s => {
+        map[s.cuentaId] = { saldoReal: s.saldoReal, movsPendientes: s.movsPendientes };
+        if (!lastUpdate || s.updatedAt > lastUpdate) {
+          lastUpdate = s.updatedAt;
+          lastBy = s.updatedBy;
+        }
+      });
+      setSaldosHoy(map);
+      setMeta({ updatedAt: lastUpdate, updatedBy: lastBy });
+      setLoading(false);
+    };
+    
+    useEffect(() => { recargar(); /* eslint-disable-next-line */ }, [empresaId, fechaConsulta, momentoConsulta]);
+
+    // Helpers
+    const saldoReal = (cId) => saldosHoy[cId]?.saldoReal || 0;
+    const movsPend  = (cId) => saldosHoy[cId]?.movsPendientes || 0;
+    const reservaCta = (c) => +c.reservaMinima || 0;
+    const disponible = (c) => Math.max(0, saldoReal(c.id) - reservaCta(c) - movsPend(c.id));
+    const ajusteVisible = (c) => reservaCta(c) > 0 || movsPend(c.id) !== 0;
+    const sym = (m) => m === 'EUR' ? '€' : '$';
+
+    // Agrupar cuentas por banco preservando orden
+    const cuentasPorBanco = useMemo(() => {
+      const grupos = {};
+      cuentas.forEach(c => {
+        if (!grupos[c.banco]) grupos[c.banco] = [];
+        grupos[c.banco].push(c);
+      });
+      return grupos;
+    }, [cuentas]);
+
+    // Totales
+    const totales = useMemo(() => {
+      const t = { realMN: 0, realDL: 0, inversion: 0, dispMN: 0, dispDL: 0, dispEUR: 0, dispInversion: 0 };
+      cuentas.forEach(c => {
+        const r = saldoReal(c.id);
+        const d = disponible(c);
+        if (c.tipo === 'inversion') {
+          t.inversion += r;
+          t.dispInversion += d;
+        } else if (c.moneda === 'MXN') {
+          t.realMN += r;
+          t.dispMN += d;
+        } else if (c.moneda === 'USD') {
+          t.realDL += r;
+          t.dispDL += d;
+        } else if (c.moneda === 'EUR') {
+          t.dispEUR += d;
+        }
+      });
+      return t;
+      // eslint-disable-next-line
+    }, [cuentas, saldosHoy]);
+
+    // Editar saldo real desde la pantalla principal
+    const iniciarEdicion = (cuenta) => {
+      if (esConsulta || !esHoy) return;
+      setEditandoSaldo(cuenta.id);
+      setValorEdicion(String(saldoReal(cuenta.id) || ''));
+    };
+    const guardarEdicion = async () => {
+      if (!editandoSaldo) return;
+      const cuenta = cuentas.find(c => c.id === editandoSaldo);
+      if (!cuenta) { setEditandoSaldo(null); return; }
+      const nuevoReal = parseFloat(valorEdicion.replace(/[,$]/g, '')) || 0;
+      const pendiente = movsPend(cuenta.id);
+      setSavingCuenta(cuenta.id);
+      const ok = await upsertSaldoDiario({
+        cuentaId: cuenta.id,
+        empresaId,
+        fecha: fechaHoy,
+        momento,
+        saldoReal: nuevoReal,
+        movsPendientes: pendiente,
+      }, user?.nombre || 'desconocido');
+      if (ok) {
+        setSaldosHoy(prev => ({ ...prev, [cuenta.id]: { saldoReal: nuevoReal, movsPendientes: pendiente } }));
+        setMeta({ updatedAt: new Date().toISOString(), updatedBy: user?.nombre || 'desconocido' });
+      }
+      setSavingCuenta(null);
+      setEditandoSaldo(null);
+      setValorEdicion("");
+    };
+    const cancelarEdicion = () => { setEditandoSaldo(null); setValorEdicion(""); };
+
+    // Copiar imagen
+    const copiarImagen = async () => {
+      if (!reporteRef.current) return;
+      try {
+        const canvas = await html2canvas(reporteRef.current, { scale: 2, backgroundColor: '#ffffff' });
+        canvas.toBlob(async (blob) => {
+          if (!blob) return;
+          // Intentar copiar al portapapeles
+          if (navigator.clipboard && window.ClipboardItem) {
+            try {
+              await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+              alert('✅ Imagen copiada al portapapeles. Pégala en WhatsApp/Teams/Email con Ctrl+V');
+              return;
+            } catch (e) { /* fallback abajo */ }
+          }
+          // Fallback: descargar
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `Saldos_${empresa.nombre.replace(/\s/g,'_')}_${momento==='cierre'?'CIERRE':'INICIO'}_${fechaHoy}.png`;
+          a.click();
+          URL.revokeObjectURL(url);
+        });
+      } catch (err) {
+        console.error('copiarImagen:', err);
+        alert('No se pudo generar la imagen. Intenta de nuevo.');
+      }
+    };
+
+    // Componentes auxiliares
+    const Pildora = ({ valor, moneda, onClick, editable, saving }) => {
+      const c = temaClaroFondo, textCol = temaClaroTexto;
+      if (saving) {
+        return <span style={{background:c,padding:'4px 14px',borderRadius:6,fontWeight:800,color:textCol,fontSize:13,opacity:0.6}}>guardando...</span>;
+      }
+      return (
+        <span 
+          onClick={onClick}
+          style={{background:c,padding:'4px 14px',borderRadius:6,display:'inline-block',fontWeight:800,color:textCol,fontSize:13,cursor:editable?'pointer':'default',userSelect:'none'}}
+          title={editable ? 'Clic para editar saldo real' : ''}
+        >
+          {sym(moneda)}{fmt(valor)}
+        </span>
+      );
+    };
+
+    const fmtFecha = (f) => {
+      if (!f) return '';
+      const d = new Date(f + 'T12:00:00');
+      return d.toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+    };
+
+    if (loading) {
+      return (
+        <div style={{textAlign:'center',padding:60,color:C.muted}}>
+          <div style={{fontSize:48,marginBottom:12}}>🏦</div>
+          <div>Cargando saldos bancarios...</div>
+        </div>
+      );
+    }
+
+    return (
+      <div>
+        {/* HEADER */}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:16,paddingBottom:14,borderBottom:`1px solid ${C.border}`,flexWrap:'wrap',gap:12}}>
+          <div>
+            <h1 style={{fontSize:22,fontWeight:800,color:temaPrimario,margin:0}}>🏦 Saldos Bancarios · {empresa.nombre}</h1>
+            <p style={{fontSize:13,color:C.muted,margin:'4px 0 0',textTransform:'capitalize'}}>{fmtFecha(fechaConsulta)}{!esHoy && <span style={{marginLeft:8,background:'#FFF3E0',color:'#E65100',padding:'2px 8px',borderRadius:8,fontSize:11,fontWeight:700,textTransform:'uppercase'}}>Histórico · solo lectura</span>}</p>
+          </div>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+            {/* Toggle Inicio / Cierre */}
+            {esHoy && !esConsulta && (
+              <div style={{display:'flex',background:'#F3F4F6',borderRadius:8,padding:3,gap:2}}>
+                <button onClick={() => setMomento('inicio')} style={{background:momento==='inicio'?C.navy:'transparent',color:momento==='inicio'?'#fff':C.muted,border:'none',padding:'6px 14px',borderRadius:6,fontSize:11,fontWeight:momento==='inicio'?700:600,cursor:'pointer',fontFamily:'inherit'}}>🌅 INICIO</button>
+                <button onClick={() => setMomento('cierre')} style={{background:momento==='cierre'?'#1B5E20':'transparent',color:momento==='cierre'?'#fff':C.muted,border:'none',padding:'6px 14px',borderRadius:6,fontSize:11,fontWeight:momento==='cierre'?700:600,cursor:'pointer',fontFamily:'inherit'}}>🌙 CIERRE</button>
+              </div>
+            )}
+            {!esHoy && (
+              <>
+                <div style={{display:'inline-flex',background:momentoConsulta==='cierre'?'#E8F5E9':'#E8EAF6',color:momentoConsulta==='cierre'?'#1B5E20':C.navy,padding:'6px 12px',borderRadius:8,fontSize:11,fontWeight:700,alignItems:'center'}}>
+                  {momentoConsulta==='cierre'?'🌙 CIERRE':'🌅 INICIO'}
+                </div>
+                <button onClick={() => setVerHistorico(null)} style={{...btnStyle,background:'#FFF3E0',color:'#E65100',padding:'8px 14px',fontSize:12}}>← Volver a hoy</button>
+              </>
+            )}
+            <button onClick={() => setShowCuentas(true)} disabled={esConsulta} style={{background:'#fff',border:`1px solid ${C.border}`,padding:'8px 14px',borderRadius:8,fontSize:12,color:C.text,fontWeight:600,cursor:esConsulta?'not-allowed':'pointer',opacity:esConsulta?0.5:1,fontFamily:'inherit'}}>⚙️ Cuentas</button>
+            <button onClick={() => setShowPendientes(true)} disabled={esConsulta || !esHoy} style={{background:'#fff',border:`1px solid ${C.border}`,padding:'8px 14px',borderRadius:8,fontSize:12,color:C.text,fontWeight:600,cursor:(esConsulta||!esHoy)?'not-allowed':'pointer',opacity:(esConsulta||!esHoy)?0.5:1,fontFamily:'inherit'}}>⚡ Pendientes</button>
+            <button onClick={() => setShowHistorico(true)} style={{background:'#fff',border:`1px solid ${C.border}`,padding:'8px 14px',borderRadius:8,fontSize:12,color:C.text,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>📜 Histórico</button>
+            <button onClick={copiarImagen} style={{background:temaPrimario,color:'#fff',border:'none',padding:'8px 14px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>📸 Copiar Imagen</button>
+          </div>
+        </div>
+
+        {/* META */}
+        <div style={{fontSize:11,color:C.muted,marginBottom:12}}>
+          {meta.updatedAt
+            ? <span><span style={{color:'#1B5E20'}}>✓</span> Última actualización {momentoConsulta==='cierre'?'cierre':'inicio'}: {new Date(meta.updatedAt).toLocaleString('es-MX',{dateStyle:'short',timeStyle:'short'})}{meta.updatedBy ? ` · ${meta.updatedBy}` : ''}</span>
+            : <span style={{color:'#999'}}>Sin saldos guardados para esta fecha y momento</span>}
+        </div>
+
+        {cuentas.length === 0 ? (
+          <div style={{textAlign:'center',padding:60,background:C.surface,border:`1px dashed ${C.border}`,borderRadius:14,color:C.muted}}>
+            <div style={{fontSize:48,marginBottom:12}}>🏦</div>
+            <div style={{fontSize:16,fontWeight:700,color:C.navy,marginBottom:6}}>No hay cuentas configuradas</div>
+            <div style={{fontSize:13,marginBottom:14}}>Agrega tus cuentas bancarias para empezar a registrar saldos.</div>
+            {!esConsulta && <button onClick={() => setShowCuentas(true)} style={btnStyle}>⚙️ Configurar cuentas</button>}
+          </div>
+        ) : (
+          <>
+            {/* TABLA DE SALDOS — capturada para imagen */}
+            <div ref={reporteRef} style={{background:'#fff'}}>
+              <div style={{border:`1px solid ${temaPrimario}`,borderRadius:10,overflow:'hidden'}}>
+                {/* Barra de título: logo + empresa + fecha a la izquierda, título al centro/derecha */}
+                <div style={{background:temaPrimario,color:'#fff',padding:'12px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:12}}>
+                    {empresa.logo && (
+                      <div style={{width:42,height:42,borderRadius:'50%',background:'#fff',display:'flex',alignItems:'center',justifyContent:'center',padding:3,flexShrink:0,overflow:'hidden'}}>
+                        <img src={empresa.logo} alt={empresa.nombre} style={{width:'100%',height:'100%',objectFit:'contain',borderRadius:'50%'}}/>
+                      </div>
+                    )}
+                    <div style={{textAlign:'left'}}>
+                      <div style={{fontSize:13,fontWeight:700,lineHeight:1.2}}>{empresa.nombre}</div>
+                      <div style={{fontSize:10,opacity:0.85}}>{new Date(fechaConsulta + 'T12:00:00').toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'})}</div>
+                    </div>
+                  </div>
+                  <div style={{fontWeight:800,fontSize:14,letterSpacing:1}}>SALDOS BANCARIOS · {momentoConsulta==='cierre'?'CIERRE':'INICIO'} DE DÍA</div>
+                </div>
+
+                {Object.entries(cuentasPorBanco).map(([banco, ctas]) => (
+                  <div key={banco}>
+                    <div style={{background:temaClaroFondo,color:temaClaroTexto,padding:'8px 16px',textAlign:'center',fontWeight:800,fontSize:13,letterSpacing:1}}>{banco.toUpperCase()}</div>
+                    {/* Render en pares: 2 cuentas por fila */}
+                    {(() => {
+                      const filas = [];
+                      for (let i = 0; i < ctas.length; i += 2) {
+                        filas.push([ctas[i], ctas[i+1] || null]);
+                      }
+                      return filas.map((par, idx) => (
+                        <div key={idx} style={{display:'grid',gridTemplateColumns:'90px 1fr 60px 130px 1fr',gap:0,padding:'14px 16px',alignItems:'start',borderBottom:idx<filas.length-1?`1px solid ${C.border}`:'none'}}>
+                          {[0,1].map(slot => {
+                            const c = par[slot];
+                            if (!c) {
+                              if (slot === 0) return <React.Fragment key={slot}><div/><div/></React.Fragment>;
+                              return <React.Fragment key={slot}><div/><div/><div/></React.Fragment>;
+                            }
+                            const labelMoneda = c.tipo === 'inversion' ? 'PESOS' : (c.moneda === 'MXN' ? 'PESOS' : (c.moneda === 'USD' ? 'Dólares' : 'Euros'));
+                            const refTexto = c.tipo === 'inversion' ? 'Inversión' : `CTA. ${c.numeroCuenta}`;
+                            const tieneAjuste = ajusteVisible(c);
+                            const enEdicion = editandoSaldo === c.id;
+                            // Si es slot 1 (derecha), metemos un separador antes
+                            const separador = slot === 1 ? [<div key="sep"/>] : [];
+                            return (
+                              <React.Fragment key={slot}>
+                                {separador}
+                                <div style={{fontSize:12,color:'#555',fontWeight:600,paddingTop:18,paddingLeft:slot===1?24:0}}>{labelMoneda}</div>
+                                <div style={{textAlign:'center'}}>
+                                  <div style={{fontSize:11,color:'#1F2937',fontWeight:800,fontStyle:'italic',marginBottom:4}}>{refTexto}</div>
+                                  {tieneAjuste && !enEdicion && (
+                                    <div style={{fontSize:13,color:'#1F2937',marginBottom:6}}>{sym(c.moneda)}{fmt(saldoReal(c.id))}</div>
+                                  )}
+                                  {enEdicion ? (
+                                    <input
+                                      autoFocus
+                                      value={valorEdicion}
+                                      onChange={(e) => setValorEdicion(e.target.value.replace(/[^\d.]/g, ''))}
+                                      onBlur={guardarEdicion}
+                                      onKeyDown={(e) => { if (e.key === 'Enter') guardarEdicion(); if (e.key === 'Escape') cancelarEdicion(); }}
+                                      style={{background:'#fff',border:`2px solid ${temaPrimario}`,padding:'4px 10px',borderRadius:6,fontWeight:800,color:temaPrimario,fontSize:13,textAlign:'center',width:130,outline:'none',fontFamily:'inherit'}}
+                                    />
+                                  ) : (
+                                    <Pildora 
+                                      valor={disponible(c)} 
+                                      moneda={c.moneda} 
+                                      onClick={() => iniciarEdicion(c)} 
+                                      editable={esHoy && !esConsulta}
+                                      saving={savingCuenta === c.id}
+                                    />
+                                  )}
+                                </div>
+                              </React.Fragment>
+                            );
+                          })}
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                ))}
+              </div>
+
+              {/* TOTALES */}
+              <div style={{marginTop:16,background:'#F9FAFB',borderRadius:8,padding:'14px 18px',border:`1px solid ${C.border}`}}>
+                <div style={{display:'grid',gridTemplateColumns:'1fr auto',gap:'4px 16px',fontSize:13}}>
+                  {totales.realMN > 0 && (<>
+                    <div style={{color:'#555'}}>Total Saldos Bancarios MN</div>
+                    <div style={{textAlign:'right',fontWeight:600,color:'#1F2937'}}>${fmt(totales.realMN)}</div>
+                  </>)}
+                  {totales.realDL > 0 && (<>
+                    <div style={{color:'#555'}}>Total Saldos Bancarios DL</div>
+                    <div style={{textAlign:'right',fontWeight:600,color:'#1F2937'}}>${fmt(totales.realDL)}</div>
+                  </>)}
+                  {totales.inversion > 0 && (<>
+                    <div style={{color:'#555'}}>Inversión</div>
+                    <div style={{textAlign:'right',fontWeight:600,color:'#1F2937'}}>${fmt(totales.inversion)}</div>
+                  </>)}
+                  <div style={{color:temaPrimario,fontWeight:800,paddingTop:6,borderTop:`1px solid ${C.border}`,marginTop:4,fontSize:14}}>Total Disponible</div>
+                  <div style={{textAlign:'right',paddingTop:6,borderTop:`1px solid ${C.border}`,marginTop:4}}>
+                    <span style={{background:temaPrimario,padding:'5px 14px',borderRadius:4,fontWeight:800,color:'#fff',fontSize:15}}>${fmt(totales.dispMN + totales.dispInversion)}</span>
+                    {totales.dispDL > 0 && <div style={{marginTop:4}}><span style={{background:temaPrimario,padding:'4px 12px',borderRadius:4,fontWeight:700,color:'#fff',fontSize:13}}>${fmt(totales.dispDL)} USD</span></div>}
+                    {totales.dispEUR > 0 && <div style={{marginTop:4}}><span style={{background:temaPrimario,padding:'4px 12px',borderRadius:4,fontWeight:700,color:'#fff',fontSize:13}}>€{fmt(totales.dispEUR)} EUR</span></div>}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {showCuentas && <ModalCuentas onClose={() => { setShowCuentas(false); recargar(); }} />}
+        {showPendientes && <ModalPendientes onClose={() => { setShowPendientes(false); recargar(); }} cuentas={cuentas} saldosHoy={saldosHoy} fechaHoy={fechaHoy} momento={momento} temaPrimario={temaPrimario} />}
+        {showHistorico && <ModalHistorico onClose={() => setShowHistorico(false)} onSelectFecha={(f, m) => { setVerHistorico({fecha: f, momento: m}); setShowHistorico(false); }} />}
+      </div>
+    );
+  };
+
+  /* ── MODAL: Gestión de Cuentas ──────────────────────────────────────── */
+  const ModalCuentas = ({ onClose }) => {
+    const [cuentas, setCuentas] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [nueva, setNueva] = useState({ banco:'', numeroCuenta:'', tipo:'corriente', moneda:'MXN', reservaMinima:'' });
+    const [editId, setEditId] = useState(null);
+    const [editForm, setEditForm] = useState({});
+    
+    const cargar = async () => {
+      setLoading(true);
+      const c = await fetchCuentasBancarias(empresaId);
+      setCuentas(c);
+      setLoading(false);
+    };
+    useEffect(() => { cargar(); /* eslint-disable-next-line */ }, []);
+
+    const agregar = async () => {
+      if (!nueva.banco.trim()) { alert('El banco es requerido'); return; }
+      await upsertCuentaBancaria({
+        empresaId,
+        banco: nueva.banco.trim(),
+        numeroCuenta: nueva.numeroCuenta.trim(),
+        tipo: nueva.tipo,
+        moneda: nueva.moneda,
+        reservaMinima: parseFloat(nueva.reservaMinima) || 0,
+        orden: cuentas.length,
+      });
+      setNueva({ banco:'', numeroCuenta:'', tipo:'corriente', moneda:'MXN', reservaMinima:'' });
+      cargar();
+    };
+    
+    const guardarEdit = async () => {
+      await upsertCuentaBancaria({
+        ...editForm,
+        empresaId,
+        reservaMinima: parseFloat(editForm.reservaMinima) || 0,
+      });
+      setEditId(null);
+      cargar();
+    };
+
+    const eliminar = async (c) => {
+      if (!confirm(`¿Eliminar la cuenta ${c.banco} ${c.moneda}? El histórico se conservará pero la cuenta no se podrá usar más.`)) return;
+      await deleteCuentaBancaria(c.id);
+      cargar();
+    };
+
+    return (
+      <div onClick={onClose} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(31,41,55,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:20}}>
+        <div onClick={(e) => e.stopPropagation()} style={{background:'#fff',borderRadius:14,padding:24,maxWidth:760,width:'100%',maxHeight:'90vh',overflow:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:18,paddingBottom:14,borderBottom:`1px solid ${C.border}`}}>
+            <div>
+              <h3 style={{fontSize:17,fontWeight:800,color:C.navy,margin:0}}>⚙️ Gestión de Cuentas Bancarias</h3>
+              <p style={{fontSize:12,color:C.muted,margin:'4px 0 0'}}>{empresa.nombre} · La reserva mínima se descuenta automáticamente del disponible</p>
+            </div>
+            <button onClick={onClose} style={{background:'transparent',border:'none',fontSize:24,cursor:'pointer',color:C.muted,padding:0,lineHeight:1}}>×</button>
+          </div>
+
+          {loading ? <div style={{textAlign:'center',padding:30,color:C.muted}}>Cargando...</div> : (
+            <>
+              {cuentas.length === 0 ? (
+                <div style={{textAlign:'center',padding:30,color:C.muted,fontSize:13}}>No hay cuentas. Agrega la primera abajo.</div>
+              ) : (
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,marginBottom:16}}>
+                  <thead>
+                    <tr style={{background:'#F3F4F6'}}>
+                      <th style={{padding:8,textAlign:'left',fontWeight:700,color:C.navy,fontSize:11,textTransform:'uppercase'}}>Banco</th>
+                      <th style={{padding:8,textAlign:'left',fontWeight:700,color:C.navy,fontSize:11,textTransform:'uppercase'}}>Cuenta</th>
+                      <th style={{padding:8,textAlign:'left',fontWeight:700,color:C.navy,fontSize:11,textTransform:'uppercase'}}>Tipo</th>
+                      <th style={{padding:8,textAlign:'center',fontWeight:700,color:C.navy,fontSize:11,textTransform:'uppercase'}}>Moneda</th>
+                      <th style={{padding:8,textAlign:'right',fontWeight:700,color:C.navy,fontSize:11,textTransform:'uppercase'}}>Reserva</th>
+                      <th style={{padding:8,textAlign:'center',fontWeight:700,color:C.navy,fontSize:11,textTransform:'uppercase'}}>Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cuentas.map(c => editId === c.id ? (
+                      <tr key={c.id} style={{background:'#F0F4FF'}}>
+                        <td style={{padding:6}}><input value={editForm.banco||''} onChange={(e) => setEditForm(f => ({...f, banco:e.target.value}))} style={{width:'100%',padding:'4px 6px',border:`1px solid ${C.border}`,borderRadius:5,fontSize:12,fontFamily:'inherit'}}/></td>
+                        <td style={{padding:6}}><input value={editForm.numeroCuenta||''} onChange={(e) => setEditForm(f => ({...f, numeroCuenta:e.target.value}))} style={{width:'100%',padding:'4px 6px',border:`1px solid ${C.border}`,borderRadius:5,fontSize:12,fontFamily:'monospace'}}/></td>
+                        <td style={{padding:6}}><select value={editForm.tipo||'corriente'} onChange={(e) => setEditForm(f => ({...f, tipo:e.target.value}))} style={{width:'100%',padding:'4px 6px',border:`1px solid ${C.border}`,borderRadius:5,fontSize:12,fontFamily:'inherit'}}><option value="corriente">Cuenta corriente</option><option value="inversion">Inversión</option></select></td>
+                        <td style={{padding:6}}><select value={editForm.moneda||'MXN'} onChange={(e) => setEditForm(f => ({...f, moneda:e.target.value}))} style={{width:'100%',padding:'4px 6px',border:`1px solid ${C.border}`,borderRadius:5,fontSize:12,fontFamily:'inherit'}}><option>MXN</option><option>USD</option><option>EUR</option></select></td>
+                        <td style={{padding:6}}><input value={editForm.reservaMinima||''} onChange={(e) => setEditForm(f => ({...f, reservaMinima:e.target.value.replace(/[^\d.]/g,'')}))} style={{width:'100%',padding:'4px 6px',border:`1px solid ${C.border}`,borderRadius:5,fontSize:12,textAlign:'right',fontFamily:'monospace'}}/></td>
+                        <td style={{padding:6,textAlign:'center'}}>
+                          <button onClick={guardarEdit} style={{background:C.navy,color:'#fff',border:'none',padding:'4px 10px',borderRadius:5,fontSize:11,marginRight:4,cursor:'pointer',fontFamily:'inherit'}}>✓</button>
+                          <button onClick={() => setEditId(null)} style={{background:'#F3F4F6',color:C.text,border:'none',padding:'4px 10px',borderRadius:5,fontSize:11,cursor:'pointer',fontFamily:'inherit'}}>×</button>
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr key={c.id} style={{borderBottom:`1px solid ${C.border}`}}>
+                        <td style={{padding:8,fontWeight:600}}>{c.banco}</td>
+                        <td style={{padding:8,fontFamily:'monospace',color:'#555'}}>{c.numeroCuenta || '—'}</td>
+                        <td style={{padding:8}}>{c.tipo === 'inversion' ? <span style={{background:'#FFF3E0',color:'#E65100',padding:'2px 6px',borderRadius:4,fontSize:10,fontWeight:700}}>Inversión</span> : 'Cuenta corriente'}</td>
+                        <td style={{padding:8,textAlign:'center'}}><span style={{background:{MXN:'#E3F2FD',USD:'#E8F5E9',EUR:'#F3E5F5'}[c.moneda],color:{MXN:'#1565C0',USD:'#2E7D32',EUR:'#6A1B9A'}[c.moneda],padding:'2px 8px',borderRadius:10,fontSize:10,fontWeight:700}}>{c.moneda}</span></td>
+                        <td style={{padding:8,textAlign:'right',color:c.reservaMinima > 0 ? C.navy : '#888',fontWeight:c.reservaMinima > 0 ? 700 : 400,fontFamily:'monospace'}}>${fmt(c.reservaMinima)}</td>
+                        <td style={{padding:8,textAlign:'center'}}>
+                          <button onClick={() => { setEditId(c.id); setEditForm({...c, reservaMinima:String(c.reservaMinima || '')}); }} title="Editar" style={{background:'transparent',border:'none',cursor:'pointer',fontSize:13,marginRight:4}}>✏️</button>
+                          <button onClick={() => eliminar(c)} title="Eliminar" style={{background:'transparent',border:'none',cursor:'pointer',fontSize:13}}>🗑️</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              <div style={{background:'#F0F4FF',border:`1px dashed ${C.navy}`,borderRadius:10,padding:14}}>
+                <div style={{fontSize:12,fontWeight:700,color:C.navy,marginBottom:10}}>+ Agregar nueva cuenta</div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 80px 100px auto',gap:6,alignItems:'center'}}>
+                  <input placeholder="Banco" value={nueva.banco} onChange={(e) => setNueva(n => ({...n, banco:e.target.value}))} style={{padding:'6px 8px',border:`1px solid ${C.border}`,borderRadius:6,fontSize:12,fontFamily:'inherit'}}/>
+                  <input placeholder="Núm. cuenta" value={nueva.numeroCuenta} onChange={(e) => setNueva(n => ({...n, numeroCuenta:e.target.value}))} style={{padding:'6px 8px',border:`1px solid ${C.border}`,borderRadius:6,fontSize:12,fontFamily:'monospace'}}/>
+                  <select value={nueva.tipo} onChange={(e) => setNueva(n => ({...n, tipo:e.target.value}))} style={{padding:'6px 8px',border:`1px solid ${C.border}`,borderRadius:6,fontSize:12,fontFamily:'inherit'}}>
+                    <option value="corriente">Cuenta corriente</option>
+                    <option value="inversion">Inversión</option>
+                  </select>
+                  <select value={nueva.moneda} onChange={(e) => setNueva(n => ({...n, moneda:e.target.value}))} style={{padding:'6px 8px',border:`1px solid ${C.border}`,borderRadius:6,fontSize:12,fontFamily:'inherit'}}>
+                    <option>MXN</option><option>USD</option><option>EUR</option>
+                  </select>
+                  <input placeholder="Reserva" value={nueva.reservaMinima} onChange={(e) => setNueva(n => ({...n, reservaMinima:e.target.value.replace(/[^\d.]/g,'')}))} style={{padding:'6px 8px',border:`1px solid ${C.border}`,borderRadius:6,fontSize:12,textAlign:'right',fontFamily:'monospace'}}/>
+                  <button onClick={agregar} style={{background:C.navy,color:'#fff',border:'none',padding:'7px 14px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Agregar</button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  /* ── MODAL: Movimientos Pendientes ──────────────────────────────────── */
+  const ModalPendientes = ({ onClose, cuentas, saldosHoy, fechaHoy, momento, temaPrimario }) => {
+    const [pendientes, setPendientes] = useState({});
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+      const map = {};
+      cuentas.forEach(c => {
+        map[c.id] = String(saldosHoy[c.id]?.movsPendientes || 0);
+      });
+      setPendientes(map);
+    }, [cuentas, saldosHoy]);
+
+    const calcDisp = (c) => {
+      const real = saldosHoy[c.id]?.saldoReal || 0;
+      const reserva = +c.reservaMinima || 0;
+      const pend = parseFloat(pendientes[c.id]) || 0;
+      return Math.max(0, real - reserva - pend);
+    };
+
+    const guardar = async () => {
+      setSaving(true);
+      for (const c of cuentas) {
+        const real = saldosHoy[c.id]?.saldoReal || 0;
+        const pendNuevo = parseFloat(pendientes[c.id]) || 0;
+        const pendActual = saldosHoy[c.id]?.movsPendientes || 0;
+        if (pendNuevo !== pendActual) {
+          await upsertSaldoDiario({
+            cuentaId: c.id, empresaId, fecha: fechaHoy, momento,
+            saldoReal: real, movsPendientes: pendNuevo,
+          }, user?.nombre || 'desconocido');
+        }
+      }
+      setSaving(false);
+      onClose();
+    };
+
+    const sym = (m) => m === 'EUR' ? '€' : '$';
+    const colorTema = temaPrimario || C.navy;
+
+    return (
+      <div onClick={onClose} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(31,41,55,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:20}}>
+        <div onClick={(e) => e.stopPropagation()} style={{background:'#fff',borderRadius:14,padding:24,maxWidth:720,width:'100%',maxHeight:'90vh',overflow:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:18,paddingBottom:14,borderBottom:`1px solid ${C.border}`}}>
+            <div>
+              <h3 style={{fontSize:17,fontWeight:800,color:colorTema,margin:0}}>⚡ Movimientos Pendientes · {momento==='cierre'?'CIERRE':'INICIO'} DE DÍA</h3>
+              <p style={{fontSize:12,color:C.muted,margin:'4px 0 0'}}>Captura cheques en tránsito, transferencias en proceso, etc. Se descuentan del disponible. Los pendientes se guardan por separado para inicio y cierre del día.</p>
+            </div>
+            <button onClick={onClose} style={{background:'transparent',border:'none',fontSize:24,cursor:'pointer',color:C.muted,padding:0,lineHeight:1}}>×</button>
+          </div>
+
+          {cuentas.length === 0 ? (
+            <div style={{textAlign:'center',padding:30,color:C.muted,fontSize:13}}>No hay cuentas configuradas.</div>
+          ) : (
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,marginBottom:14}}>
+              <thead>
+                <tr style={{background:'#F3F4F6'}}>
+                  <th style={{padding:8,textAlign:'left',fontWeight:700,color:C.navy,fontSize:11,textTransform:'uppercase'}}>Cuenta</th>
+                  <th style={{padding:8,textAlign:'right',fontWeight:700,color:C.navy,fontSize:11,textTransform:'uppercase'}}>Saldo Real</th>
+                  <th style={{padding:8,textAlign:'right',fontWeight:700,color:C.navy,fontSize:11,textTransform:'uppercase'}}>Reserva</th>
+                  <th style={{padding:8,textAlign:'right',fontWeight:700,color:C.navy,fontSize:11,textTransform:'uppercase'}}>Pendientes</th>
+                  <th style={{padding:8,textAlign:'right',fontWeight:700,color:C.navy,fontSize:11,textTransform:'uppercase'}}>Disponible</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cuentas.map(c => (
+                  <tr key={c.id} style={{borderBottom:`1px solid ${C.border}`}}>
+                    <td style={{padding:'10px 8px'}}>
+                      <div style={{fontWeight:700,color:'#1F2937'}}>{c.banco} {c.tipo === 'inversion' ? '(Inv.)' : c.moneda}</div>
+                      <div style={{fontSize:10,color:'#888',fontFamily:'monospace'}}>{c.tipo === 'inversion' ? 'Inversión' : `CTA. ${c.numeroCuenta || '—'}`}</div>
+                    </td>
+                    <td style={{padding:'10px 8px',textAlign:'right',color:'#555',fontFamily:'monospace'}}>{sym(c.moneda)}{fmt(saldosHoy[c.id]?.saldoReal || 0)}</td>
+                    <td style={{padding:'10px 8px',textAlign:'right',color:c.reservaMinima > 0 ? colorTema : '#888',fontFamily:'monospace',fontWeight:c.reservaMinima > 0 ? 700 : 400}}>{sym(c.moneda)}{fmt(c.reservaMinima)}</td>
+                    <td style={{padding:'10px 8px',textAlign:'right'}}>
+                      <input
+                        value={pendientes[c.id] || ''}
+                        onChange={(e) => setPendientes(p => ({...p, [c.id]: e.target.value.replace(/[^\d.\-]/g,'')}))}
+                        style={{border:`1px solid ${C.border}`,borderRadius:5,padding:'4px 8px',fontSize:12,textAlign:'right',width:95,fontFamily:'monospace'}}
+                        placeholder="0.00"
+                      />
+                    </td>
+                    <td style={{padding:'10px 8px',textAlign:'right',fontWeight:800,color:colorTema,fontFamily:'monospace'}}>{sym(c.moneda)}{fmt(calcDisp(c))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+            <div style={{fontSize:11,color:C.muted}}>Los pendientes se guardan por día. Mañana se inicializan en 0.</div>
+            <div style={{display:'flex',gap:8}}>
+              <button onClick={onClose} style={{background:'#fff',border:`1px solid ${C.border}`,padding:'8px 16px',borderRadius:8,fontSize:12,color:C.text,cursor:'pointer',fontFamily:'inherit'}}>Cancelar</button>
+              <button onClick={guardar} disabled={saving} style={{background:colorTema,color:'#fff',border:'none',padding:'8px 18px',borderRadius:8,fontSize:12,fontWeight:700,cursor:saving?'not-allowed':'pointer',opacity:saving?0.6:1,fontFamily:'inherit'}}>{saving ? 'Guardando...' : 'Guardar Cambios'}</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  /* ── MODAL: Histórico ───────────────────────────────────────────────── */
+  const ModalHistorico = ({ onClose, onSelectFecha }) => {
+    const [fechas, setFechas] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [periodo, setPeriodo] = useState(30);
+
+    useEffect(() => {
+      const cargar = async () => {
+        setLoading(true);
+        const desde = new Date();
+        desde.setDate(desde.getDate() - periodo);
+        const desdeStr = desde.toISOString().slice(0,10);
+        const data = await fetchFechasHistoricoSaldos(empresaId, desdeStr);
+        setFechas(data);
+        setLoading(false);
+      };
+      cargar();
+    }, [periodo]);
+
+    const fmtFecha = (f) => {
+      const d = new Date(f + 'T12:00:00');
+      return d.toLocaleDateString('es-MX', { weekday:'short', day:'2-digit', month:'short', year:'numeric' });
+    };
+    const hoy = today();
+
+    return (
+      <div onClick={onClose} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(31,41,55,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:20}}>
+        <div onClick={(e) => e.stopPropagation()} style={{background:'#fff',borderRadius:14,padding:24,maxWidth:560,width:'100%',maxHeight:'90vh',overflow:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:18,paddingBottom:14,borderBottom:`1px solid ${C.border}`}}>
+            <div>
+              <h3 style={{fontSize:17,fontWeight:800,color:C.navy,margin:0}}>📜 Histórico de Saldos</h3>
+              <p style={{fontSize:12,color:C.muted,margin:'4px 0 0'}}>{empresa.nombre}</p>
+            </div>
+            <button onClick={onClose} style={{background:'transparent',border:'none',fontSize:24,cursor:'pointer',color:C.muted,padding:0,lineHeight:1}}>×</button>
+          </div>
+
+          <div style={{display:'flex',gap:6,marginBottom:14,alignItems:'center'}}>
+            <span style={{fontSize:12,color:C.muted}}>Periodo:</span>
+            {[7, 30, 90].map(p => (
+              <button key={p} onClick={() => setPeriodo(p)} style={{background:periodo===p?C.navy:'#fff',color:periodo===p?'#fff':C.text,border:`1px solid ${periodo===p?C.navy:C.border}`,padding:'4px 10px',borderRadius:6,fontSize:11,cursor:'pointer',fontWeight:600,fontFamily:'inherit'}}>{p} días</button>
+            ))}
+          </div>
+
+          {loading ? <div style={{textAlign:'center',padding:30,color:C.muted}}>Cargando...</div> : fechas.length === 0 ? (
+            <div style={{textAlign:'center',padding:30,color:C.muted,fontSize:13}}>No hay registros en este periodo.</div>
+          ) : (
+            <div style={{maxHeight:400,overflow:'auto'}}>
+              {fechas.map(f => {
+                const esCierre = f.momento === 'cierre';
+                const colorMomento = esCierre ? '#1B5E20' : C.navy;
+                const fondoMomento = esCierre ? '#E8F5E9' : '#E8EAF6';
+                return (
+                  <button key={`${f.fecha}__${f.momento}`} onClick={() => onSelectFecha(f.fecha, f.momento)} style={{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 12px',marginBottom:6,background:f.fecha===hoy?'#FAFAFA':'#FAFAFA',border:`1px solid ${C.border}`,borderRadius:8,cursor:'pointer',textAlign:'left',fontFamily:'inherit'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:10}}>
+                      <span style={{background:fondoMomento,color:colorMomento,padding:'4px 10px',borderRadius:6,fontSize:10,fontWeight:800,whiteSpace:'nowrap'}}>{esCierre ? '🌙 CIERRE' : '🌅 INICIO'}</span>
+                      <div>
+                        <div style={{fontSize:13,fontWeight:700,color:colorMomento,textTransform:'capitalize'}}>{fmtFecha(f.fecha)}{f.fecha === hoy && <span style={{marginLeft:8,background:colorMomento,color:'#fff',padding:'2px 6px',borderRadius:4,fontSize:9,fontWeight:700}}>HOY</span>}</div>
+                        <div style={{fontSize:10,color:C.muted,marginTop:2}}>Capturó: {f.updatedBy || '—'}</div>
+                      </div>
+                    </div>
+                    <div style={{fontSize:14,color:colorMomento}}>👁</div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   /* ── IMPORTAR ───────────────────────────────────────────────────────── */
   const renderImportar = () => (
     <div>
@@ -4394,6 +5039,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         <NavItem id="proveedores" icon="🏢" label="Proveedores"/>
         <NavItem id="proyeccion" icon="📅" label="Proyección"/>
         <NavItem id="importar" icon="📥" label="Importar"/>
+        <NavItem id="saldos" icon="🏦" label="Saldos Bancarios"/>
         <NavItem id="cxc" icon="💵" label="CxC — Ingresos"/>
         <NavItem id="clientes" icon="👥" label="Clientes CxC"/>
         <NavItem id="config" icon="⚙️" label="Configuración"/>
@@ -4440,6 +5086,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         {view==="proyeccion" && renderProyeccionCxP()}
         {view==="importar" && renderImportar()}
         {view==="config" && renderConfig()}
+        {view==="saldos" && <SaldosBancarios />}
         {view==="cxc" && (
           <CxcView
             invoices={invoices}
