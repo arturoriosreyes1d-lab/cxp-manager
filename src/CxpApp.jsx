@@ -21,6 +21,7 @@ import {
   fetchReporteSaldos, upsertReporteSaldos,
   fetchCuentasBancarias, upsertCuentaBancaria, deleteCuentaBancaria,
   fetchSaldosDiarios, upsertSaldoDiario, fetchFechasHistoricoSaldos,
+  fetchIngresosDia, upsertIngresoDia, deleteIngresoDia,
 } from "./db.js";
 import CxcView from "./CxcView.jsx";
 import { EMPRESAS } from "./empresas.js";
@@ -3148,6 +3149,12 @@ export default function CxpApp({ user, onLogout }) {
     const [sortBy, setSortBy] = useState(null);   // 'proveedor' | 'moneda' | 'importeAdeudado' | 'pagoHoy' | 'saldoDespuesPago' | 'facturas' | null
     const [sortDir, setSortDir] = useState('desc'); // 'asc' | 'desc'
 
+    // Ingresos del día
+    const [ingresosDia, setIngresosDia] = useState([]);     // filas de ingresos
+    const [ingresosLoading, setIngresosLoading] = useState(true);
+    const [editandoIngreso, setEditandoIngreso] = useState(null); // `${id}_${campo}` en edición
+    const [valorIngreso, setValorIngreso] = useState("");
+
     // Cargar saldos desde Supabase al abrir o cambiar de empresa
     useEffect(() => {
       let cancelado = false;
@@ -3165,6 +3172,79 @@ export default function CxpApp({ user, onLogout }) {
       });
       return () => { cancelado = true; };
     }, [empresaId]);
+
+    // Cargar ingresos del día
+    const cargarIngresos = async () => {
+      setIngresosLoading(true);
+      const data = await fetchIngresosDia(empresaId, today());
+      setIngresosDia(data);
+      setIngresosLoading(false);
+    };
+    useEffect(() => { cargarIngresos(); /* eslint-disable-next-line */ }, [empresaId]);
+
+    // Agregar fila vacía
+    const agregarIngreso = async () => {
+      if (esConsulta) return;
+      const nuevo = {
+        empresaId,
+        fecha: today(),
+        concepto: '',
+        montoMXN: 0, montoUSD: 0, montoEUR: 0,
+        orden: ingresosDia.length,
+      };
+      const id = await upsertIngresoDia(nuevo, user?.nombre || 'desconocido');
+      if (id) {
+        setIngresosDia(prev => [...prev, { ...nuevo, id }]);
+        // Auto-foco en el concepto nuevo
+        setTimeout(() => {
+          setEditandoIngreso(`${id}_concepto`);
+          setValorIngreso('');
+        }, 50);
+      }
+    };
+
+    // Guardar cambio de una celda
+    const guardarCeldaIngreso = async () => {
+      if (!editandoIngreso) return;
+      const [id, campo] = editandoIngreso.split('_');
+      const ing = ingresosDia.find(x => x.id === id);
+      if (!ing) { setEditandoIngreso(null); return; }
+      let valor;
+      if (campo === 'concepto') {
+        valor = valorIngreso.trim();
+      } else {
+        valor = parseFloat(valorIngreso.replace(/[,$€]/g, '')) || 0;
+      }
+      const nuevo = { ...ing };
+      if (campo === 'concepto') nuevo.concepto = valor;
+      if (campo === 'MXN') nuevo.montoMXN = valor;
+      if (campo === 'USD') nuevo.montoUSD = valor;
+      if (campo === 'EUR') nuevo.montoEUR = valor;
+      await upsertIngresoDia(nuevo, user?.nombre || 'desconocido');
+      setIngresosDia(prev => prev.map(x => x.id === id ? nuevo : x));
+      setEditandoIngreso(null);
+      setValorIngreso("");
+    };
+    const cancelarCeldaIngreso = () => { setEditandoIngreso(null); setValorIngreso(""); };
+
+    // Eliminar fila
+    const eliminarIngreso = async (id) => {
+      if (esConsulta) return;
+      if (!confirm('¿Eliminar esta fila?')) return;
+      await deleteIngresoDia(id);
+      setIngresosDia(prev => prev.filter(x => x.id !== id));
+    };
+
+    // Totales de ingresos
+    const totalesIngresos = useMemo(() => {
+      const t = { MXN: 0, USD: 0, EUR: 0 };
+      ingresosDia.forEach(x => {
+        t.MXN += +x.montoMXN || 0;
+        t.USD += +x.montoUSD || 0;
+        t.EUR += +x.montoEUR || 0;
+      });
+      return t;
+    }, [ingresosDia]);
 
     const hoy = today();
     
@@ -3627,6 +3707,38 @@ ${detallado ? `
 </div>
 `}
 
+${ingresosDia.length > 0 ? `
+<h2>💵 Ingresos del día<span class="num">(${ingresosDia.length} ${ingresosDia.length === 1 ? 'entrada' : 'entradas'})</span></h2>
+<table>
+  <thead>
+    <tr>
+      <th>Concepto</th>
+      <th class="r">MXN</th>
+      <th class="r">USD</th>
+      <th class="r">EUR</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${ingresosDia.map(ing => `
+      <tr>
+        <td>${ing.concepto || '—'}</td>
+        <td class="r">${ing.montoMXN > 0 ? '$' + fmt(ing.montoMXN) : '—'}</td>
+        <td class="r">${ing.montoUSD > 0 ? '$' + fmt(ing.montoUSD) : '—'}</td>
+        <td class="r">${ing.montoEUR > 0 ? '€' + fmt(ing.montoEUR) : '—'}</td>
+      </tr>
+    `).join('')}
+  </tbody>
+  <tfoot>
+    <tr style="background:#E8F5E9;font-weight:800;">
+      <td style="color:#1B5E20;">TOTAL</td>
+      <td class="r" style="color:#1B5E20;">${totalesIngresos.MXN > 0 ? '$' + fmt(totalesIngresos.MXN) : '—'}</td>
+      <td class="r" style="color:#1B5E20;">${totalesIngresos.USD > 0 ? '$' + fmt(totalesIngresos.USD) : '—'}</td>
+      <td class="r" style="color:#1B5E20;">${totalesIngresos.EUR > 0 ? '€' + fmt(totalesIngresos.EUR) : '—'}</td>
+    </tr>
+  </tfoot>
+</table>
+` : ''}
+
 <h2>Pagos programados para hoy<span class="num">(${pagosProgramadosHoy.length} ${pagosProgramadosHoy.length === 1 ? 'proveedor' : 'proveedores'}${detallado ? ' · con detalle de facturas' : ''})</span></h2>
 <table>
   <thead>
@@ -3663,6 +3775,18 @@ ${detallado ? `
     };
 
     const copiarResumen = () => {
+      const ingresosTxt = ingresosDia.length > 0 ? `
+
+💵 INGRESOS DEL DÍA (${ingresosDia.length}):
+${ingresosDia.map(i => {
+  const partes = [];
+  if (i.montoMXN > 0) partes.push(`$${fmt(i.montoMXN)} MXN`);
+  if (i.montoUSD > 0) partes.push(`$${fmt(i.montoUSD)} USD`);
+  if (i.montoEUR > 0) partes.push(`€${fmt(i.montoEUR)} EUR`);
+  return `• ${i.concepto || '(sin concepto)'}: ${partes.join(' · ') || '—'}`;
+}).join('\n')}
+Total: ${totalesIngresos.MXN > 0 ? `$${fmt(totalesIngresos.MXN)} MXN` : ''}${totalesIngresos.USD > 0 ? ` · $${fmt(totalesIngresos.USD)} USD` : ''}${totalesIngresos.EUR > 0 ? ` · €${fmt(totalesIngresos.EUR)} EUR` : ''}` : '';
+
       const resumen = `📊 REPORTE DE PAGOS - ${new Date().toLocaleDateString()}
 💼 Empresa: ${empresa.nombre}
 
@@ -3673,7 +3797,7 @@ ${detallado ? `
 
 🏦 ANÁLISIS DE LIQUIDEZ:
 • MXN: ${analisisLiquidez.statusMXN} ${analisisLiquidez.deficit.MXN >= 0 ? 'Excedente' : 'Déficit'}: $${fmt(Math.abs(analisisLiquidez.deficit.MXN))}
-• USD: ${analisisLiquidez.statusUSD} ${analisisLiquidez.deficit.USD >= 0 ? 'Excedente' : 'Déficit'}: $${fmt(Math.abs(analisisLiquidez.deficit.USD))}
+• USD: ${analisisLiquidez.statusUSD} ${analisisLiquidez.deficit.USD >= 0 ? 'Excedente' : 'Déficit'}: $${fmt(Math.abs(analisisLiquidez.deficit.USD))}${ingresosTxt}
 
 📋 PROVEEDORES (${pagosProgramadosHoy.length}):
 ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeudado)} ${p.moneda}, Pago hoy $${fmt(p.pagoHoy)} ${p.moneda}`).join('\n')}`;
@@ -3888,6 +4012,122 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             </div>
           </div>
         )}
+
+        {/* ═══════════ INGRESOS DEL DÍA ═══════════ */}
+        <div style={{background:C.surface,border:'2px solid #1B5E20',borderRadius:14,overflow:'hidden',marginBottom:20}}>
+          <div style={{padding:'16px 20px',background:'#1B5E20',color:'#fff',display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+            <div>
+              <h3 style={{fontSize:16,fontWeight:700,margin:0}}>💵 Ingresos del Día</h3>
+              <p style={{fontSize:13,margin:'4px 0 0',opacity:0.85}}>Captura manual · {ingresosDia.length} {ingresosDia.length === 1 ? 'entrada' : 'entradas'}</p>
+            </div>
+            {!esConsulta && (
+              <button onClick={agregarIngreso} style={{background:'#fff',color:'#1B5E20',border:'none',padding:'8px 14px',borderRadius:8,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>+ Agregar ingreso</button>
+            )}
+          </div>
+
+          {ingresosLoading ? (
+            <div style={{padding:30,textAlign:'center',color:C.muted,fontSize:13}}>Cargando ingresos...</div>
+          ) : ingresosDia.length === 0 ? (
+            <div style={{padding:40,textAlign:'center',color:C.muted}}>
+              <div style={{fontSize:40,marginBottom:8}}>💵</div>
+              <div style={{fontSize:14,fontWeight:600,color:'#1B5E20',marginBottom:6}}>Aún no hay ingresos capturados hoy</div>
+              <div style={{fontSize:12}}>Haz clic en "+ Agregar ingreso" para registrar la primera entrada</div>
+            </div>
+          ) : (
+            <>
+              <div style={{overflow:'auto'}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+                  <thead>
+                    <tr style={{background:'#E8F5E9'}}>
+                      <th style={{padding:'10px 14px',textAlign:'left',fontWeight:700,color:'#1B5E20',fontSize:12,textTransform:'uppercase',letterSpacing:0.5}}>Concepto</th>
+                      <th style={{padding:'10px 14px',textAlign:'right',fontWeight:700,color:'#1B5E20',fontSize:12,textTransform:'uppercase',letterSpacing:0.5,width:140}}>MXN</th>
+                      <th style={{padding:'10px 14px',textAlign:'right',fontWeight:700,color:'#1B5E20',fontSize:12,textTransform:'uppercase',letterSpacing:0.5,width:140}}>USD</th>
+                      <th style={{padding:'10px 14px',textAlign:'right',fontWeight:700,color:'#1B5E20',fontSize:12,textTransform:'uppercase',letterSpacing:0.5,width:140}}>EUR</th>
+                      {!esConsulta && <th style={{padding:'10px 14px',textAlign:'center',width:50}}></th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ingresosDia.map(ing => {
+                      const keyConcepto = `${ing.id}_concepto`;
+                      const keyMXN = `${ing.id}_MXN`;
+                      const keyUSD = `${ing.id}_USD`;
+                      const keyEUR = `${ing.id}_EUR`;
+                      const editable = !esConsulta;
+
+                      const renderCelda = (key, valorMostrar, alignRight = true) => {
+                        const enEdicion = editandoIngreso === key;
+                        if (enEdicion) {
+                          return (
+                            <input
+                              autoFocus
+                              value={valorIngreso}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setValorIngreso(key.endsWith('_concepto') ? v : v.replace(/[^\d.]/g, ''));
+                              }}
+                              onBlur={guardarCeldaIngreso}
+                              onKeyDown={(e) => { if (e.key === 'Enter') guardarCeldaIngreso(); if (e.key === 'Escape') cancelarCeldaIngreso(); }}
+                              style={{width:'100%',border:'2px solid #1B5E20',borderRadius:5,padding:'6px 10px',fontSize:13,textAlign:alignRight?'right':'left',fontFamily:alignRight?'monospace':'inherit',fontVariantNumeric:alignRight?'tabular-nums':'normal',outline:'none'}}
+                            />
+                          );
+                        }
+                        return (
+                          <div
+                            onClick={() => {
+                              if (!editable) return;
+                              setEditandoIngreso(key);
+                              if (key.endsWith('_concepto')) setValorIngreso(ing.concepto || '');
+                              else if (key.endsWith('_MXN')) setValorIngreso(String(ing.montoMXN || ''));
+                              else if (key.endsWith('_USD')) setValorIngreso(String(ing.montoUSD || ''));
+                              else if (key.endsWith('_EUR')) setValorIngreso(String(ing.montoEUR || ''));
+                            }}
+                            style={{padding:'6px 8px',borderRadius:5,cursor:editable?'pointer':'default',transition:'background 0.15s',minHeight:20}}
+                            onMouseEnter={(e) => { if (editable) e.currentTarget.style.background = '#E8F5E9'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                            title={editable ? 'Clic para editar' : ''}
+                          >
+                            {valorMostrar}
+                          </div>
+                        );
+                      };
+
+                      return (
+                        <tr key={ing.id} style={{borderBottom:`1px solid ${C.border}`}}>
+                          <td style={{padding:'8px 14px'}}>
+                            {renderCelda(keyConcepto, ing.concepto || <span style={{color:'#aaa',fontStyle:'italic'}}>Sin concepto — clic para editar</span>, false)}
+                          </td>
+                          <td style={{padding:'8px 14px',textAlign:'right',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontWeight:ing.montoMXN>0?700:400,color:ing.montoMXN>0?'#1F2937':'#bbb'}}>
+                            {renderCelda(keyMXN, ing.montoMXN > 0 ? `$${fmt(ing.montoMXN)}` : '—')}
+                          </td>
+                          <td style={{padding:'8px 14px',textAlign:'right',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontWeight:ing.montoUSD>0?700:400,color:ing.montoUSD>0?'#1F2937':'#bbb'}}>
+                            {renderCelda(keyUSD, ing.montoUSD > 0 ? `$${fmt(ing.montoUSD)}` : '—')}
+                          </td>
+                          <td style={{padding:'8px 14px',textAlign:'right',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontWeight:ing.montoEUR>0?700:400,color:ing.montoEUR>0?'#1F2937':'#bbb'}}>
+                            {renderCelda(keyEUR, ing.montoEUR > 0 ? `€${fmt(ing.montoEUR)}` : '—')}
+                          </td>
+                          {!esConsulta && (
+                            <td style={{padding:'8px 14px',textAlign:'center'}}>
+                              <button onClick={() => eliminarIngreso(ing.id)} title="Eliminar" style={{background:'transparent',border:'none',cursor:'pointer',fontSize:14,color:'#999',padding:4}}>🗑️</button>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{background:'#E8F5E9',borderTop:'2px solid #1B5E20'}}>
+                      <td style={{padding:'12px 14px',fontWeight:800,color:'#1B5E20',fontSize:14}}>TOTAL</td>
+                      <td style={{padding:'12px 14px',textAlign:'right',fontWeight:800,color:'#1B5E20',fontSize:15,fontFamily:'monospace',fontVariantNumeric:'tabular-nums'}}>{totalesIngresos.MXN > 0 ? `$${fmt(totalesIngresos.MXN)}` : '—'}</td>
+                      <td style={{padding:'12px 14px',textAlign:'right',fontWeight:800,color:'#1B5E20',fontSize:15,fontFamily:'monospace',fontVariantNumeric:'tabular-nums'}}>{totalesIngresos.USD > 0 ? `$${fmt(totalesIngresos.USD)}` : '—'}</td>
+                      <td style={{padding:'12px 14px',textAlign:'right',fontWeight:800,color:'#1B5E20',fontSize:15,fontFamily:'monospace',fontVariantNumeric:'tabular-nums'}}>{totalesIngresos.EUR > 0 ? `€${fmt(totalesIngresos.EUR)}` : '—'}</td>
+                      {!esConsulta && <td/>}
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
 
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",marginBottom:20}}>
           <div style={{padding:"16px 20px",background:C.navy,color:"#fff"}}>

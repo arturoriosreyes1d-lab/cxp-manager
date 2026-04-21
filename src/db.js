@@ -957,3 +957,56 @@ export async function fetchFechasHistoricoSaldos(empresaId, desde, hasta) {
   });
   return Array.from(map.values());
 }
+
+/* ── Ingresos del Día (tabla editable del Reporte Diario) ─────────── */
+
+export async function fetchIngresosDia(empresaId, fecha) {
+  const { data, error } = await supabase
+    .from('ingresos_diarios')
+    .select('*')
+    .eq('empresa_id', empresaId)
+    .eq('fecha', fecha)
+    .order('orden', { ascending: true });
+  if (error) { console.error('fetchIngresosDia:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id,
+    empresaId: r.empresa_id,
+    fecha: r.fecha,
+    concepto: r.concepto || '',
+    montoMXN: +r.monto_mxn || 0,
+    montoUSD: +r.monto_usd || 0,
+    montoEUR: +r.monto_eur || 0,
+    orden: +r.orden || 0,
+    updatedAt: r.updated_at,
+    updatedBy: r.updated_by,
+  }));
+}
+
+export async function upsertIngresoDia(ingreso, usuario) {
+  const row = {
+    empresa_id: ingreso.empresaId,
+    fecha: ingreso.fecha,
+    concepto: ingreso.concepto || '',
+    monto_mxn: +ingreso.montoMXN || 0,
+    monto_usd: +ingreso.montoUSD || 0,
+    monto_eur: +ingreso.montoEUR || 0,
+    orden: +ingreso.orden || 0,
+    updated_at: new Date().toISOString(),
+    updated_by: usuario || 'desconocido',
+  };
+  const isUUID = ingreso.id && /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(ingreso.id);
+  if (isUUID) {
+    const { data, error } = await supabase.from('ingresos_diarios').update(row).eq('id', ingreso.id).select().single();
+    if (error) { console.error('upsertIngresoDia update:', error); return null; }
+    return data?.id;
+  } else {
+    const { data, error } = await supabase.from('ingresos_diarios').insert(row).select().single();
+    if (error) { console.error('upsertIngresoDia insert:', error); return null; }
+    return data?.id;
+  }
+}
+
+export async function deleteIngresoDia(id) {
+  const { error } = await supabase.from('ingresos_diarios').delete().eq('id', id);
+  if (error) console.error('deleteIngresoDia:', error);
+}
