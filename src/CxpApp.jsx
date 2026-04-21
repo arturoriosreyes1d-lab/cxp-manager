@@ -4239,41 +4239,22 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         </div>
 
         <div style={{background:"#F0FFF4",border:`1px solid #A5D6A7`,borderRadius:14,padding:20}}>
-          <h3 style={{fontSize:16,fontWeight:700,color:"#1B5E20",margin:"0 0 16px"}}>💰 Flujo del Día</h3>
+          <h3 style={{fontSize:16,fontWeight:700,color:"#1B5E20",margin:"0 0 16px"}}>💰 Saldos Después de Pagos</h3>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16}}>
             {['MXN','USD','EUR'].map(mon => {
               const sym = mon === 'EUR' ? '€' : '$';
-              const saldoInicial = analisisLiquidez.saldoInicial[mon];
-              const ingresos = analisisLiquidez.ingresos[mon];
               const disponible = analisisLiquidez.disponible[mon];
               const pagos = totalesPagos[mon];
               const saldoFinal = disponible - pagos;
               const esPositivo = saldoFinal >= 0;
-              // No mostrar moneda si está vacía por completo
-              if (saldoInicial === 0 && ingresos === 0 && pagos === 0 && disponible === 0) return null;
               return (
-                <div key={mon} style={{background:'#fff',border:'1px solid #C8E6C9',borderRadius:10,padding:'14px 16px'}}>
-                  <div style={{fontSize:13,fontWeight:700,color:'#1B5E20',marginBottom:10,textAlign:'center',letterSpacing:0.5}}>{mon}</div>
-                  <div style={{display:'grid',gridTemplateColumns:'1fr auto',gap:'5px 10px',fontSize:12,fontVariantNumeric:'tabular-nums'}}>
-                    <div style={{color:'#555'}}>Saldo inicial</div>
-                    <div style={{textAlign:'right',fontWeight:600,color:'#1F2937',fontFamily:'monospace'}}>{sym}{fmt(saldoInicial)}</div>
-                    {ingresos > 0 && (<>
-                      <div style={{color:'#2E7D32'}}>+ Ingresos del día</div>
-                      <div style={{textAlign:'right',fontWeight:600,color:'#2E7D32',fontFamily:'monospace'}}>+{sym}{fmt(ingresos)}</div>
-                    </>)}
-                    <div style={{color:'#E65100',fontWeight:700,paddingTop:4,borderTop:'1px solid #E0E0E0',marginTop:3}}>Disponible</div>
-                    <div style={{textAlign:'right',fontWeight:800,color:'#E65100',fontFamily:'monospace',paddingTop:4,borderTop:'1px solid #E0E0E0',marginTop:3}}>{sym}{fmt(disponible)}</div>
-                    {pagos > 0 && (<>
-                      <div style={{color:'#C62828'}}>− Pagos del día</div>
-                      <div style={{textAlign:'right',fontWeight:600,color:'#C62828',fontFamily:'monospace'}}>−{sym}{fmt(pagos)}</div>
-                    </>)}
-                    <div style={{color:esPositivo?'#1B5E20':'#C62828',fontWeight:800,paddingTop:5,borderTop:`2px solid ${esPositivo?'#1B5E20':'#C62828'}`,marginTop:4,fontSize:13}}>Saldo final</div>
-                    <div style={{textAlign:'right',paddingTop:5,borderTop:`2px solid ${esPositivo?'#1B5E20':'#C62828'}`,marginTop:4}}>
-                      <span style={{background:esPositivo?'#1B5E20':'#C62828',color:'#fff',padding:'4px 10px',borderRadius:5,fontWeight:800,fontSize:14,fontFamily:'monospace'}}>{sym}{fmt(saldoFinal)}</span>
-                    </div>
-                    <div style={{fontSize:10,color:esPositivo?'#2E7D32':'#C62828',fontWeight:700,marginTop:2,gridColumn:'1 / -1',textAlign:'right'}}>
-                      {esPositivo ? '✅ Excedente' : '🔴 Déficit'}
-                    </div>
+                <div key={mon} style={{textAlign:"center"}}>
+                  <div style={{fontSize:14,fontWeight:600,color:"#2E7D32",marginBottom:4}}>{mon}</div>
+                  <div style={{fontSize:20,fontWeight:800,color:esPositivo ? "#1B5E20" : "#D32F2F",fontVariantNumeric:'tabular-nums',letterSpacing:0.2}}>
+                    {saldoFinal < 0 ? '-' : ''}{sym}{fmt(Math.abs(saldoFinal))}
+                  </div>
+                  <div style={{fontSize:11,color:esPositivo?"#2E7D32":"#C62828",marginTop:2,fontWeight:600}}>
+                    {esPositivo ? '+ Excedente' : '- Déficit'}
                   </div>
                 </div>
               );
