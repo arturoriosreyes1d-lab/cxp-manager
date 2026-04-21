@@ -22,6 +22,7 @@ import {
   fetchCuentasBancarias, upsertCuentaBancaria, deleteCuentaBancaria,
   fetchSaldosDiarios, upsertSaldoDiario, fetchFechasHistoricoSaldos,
   fetchIngresosDia, upsertIngresoDia, deleteIngresoDia,
+  fetchCambiosDia, upsertCambioDia, deleteCambioDia,
 } from "./db.js";
 import CxcView from "./CxcView.jsx";
 import { EMPRESAS } from "./empresas.js";
@@ -3154,6 +3155,11 @@ export default function CxpApp({ user, onLogout }) {
     const [ingresosLoading, setIngresosLoading] = useState(true);
     const [editandoIngreso, setEditandoIngreso] = useState(null); // `${id}_${campo}` en edición
     const [valorIngreso, setValorIngreso] = useState("");
+    
+    // Cambios de divisa de hoy (afectan saldos visibles del Reporte Diario)
+    const [cambiosHoy, setCambiosHoy] = useState([]);
+    const [editandoCambio, setEditandoCambio] = useState(null); // `${direccion}_${campo}` ej: 'USD_MXN_vendido'
+    const [valorCambio, setValorCambio] = useState('');
 
     // Cargar saldos desde Supabase al abrir o cambiar de empresa
     useEffect(() => {
@@ -3181,6 +3187,46 @@ export default function CxpApp({ user, onLogout }) {
       setIngresosLoading(false);
     };
     useEffect(() => { cargarIngresos(); /* eslint-disable-next-line */ }, [empresaId]);
+
+    // Cargar cambios de divisa de HOY (4 direcciones)
+    const cargarCambios = async () => {
+      const data = await fetchCambiosDia(empresaId, today());
+      setCambiosHoy(data || []);
+    };
+    useEffect(() => { cargarCambios(); /* eslint-disable-next-line */ }, [empresaId]);
+
+    // Helper: obtener un cambio por dirección
+    const getCambio = (direccion) => {
+      return cambiosHoy.find(c => c.direccion === direccion) || { direccion, montoVendido: 0, montoComprado: 0 };
+    };
+
+    // Guardar una celda de cambio (vendido o comprado)
+    const guardarCeldaCambio = async () => {
+      if (!editandoCambio) return;
+      // Formato: USD_MXN_vendido o EUR_MXN_comprado
+      const partes = editandoCambio.split('_');
+      const direccion = `${partes[0]}_${partes[1]}`;
+      const campo = partes[2]; // 'vendido' | 'comprado'
+      const actual = getCambio(direccion);
+      const valor = parseFloat(valorCambio.replace(/[,$€]/g, '')) || 0;
+      const nuevo = {
+        empresaId,
+        fecha: today(),
+        direccion,
+        montoVendido: campo === 'vendido' ? valor : actual.montoVendido,
+        montoComprado: campo === 'comprado' ? valor : actual.montoComprado,
+      };
+      await upsertCambioDia(nuevo, user?.nombre || 'desconocido');
+      // Actualizar estado local
+      setCambiosHoy(prev => {
+        const otros = prev.filter(c => c.direccion !== direccion);
+        if (nuevo.montoVendido === 0 && nuevo.montoComprado === 0) return otros; // si ambos son 0, no guardamos fila
+        return [...otros, nuevo];
+      });
+      setEditandoCambio(null);
+      setValorCambio('');
+    };
+    const cancelarCeldaCambio = () => { setEditandoCambio(null); setValorCambio(''); };
 
     // Agregar fila vacía
     const agregarIngreso = async () => {
@@ -3406,10 +3452,27 @@ export default function CxpApp({ user, onLogout }) {
       const ingresosUSD = ingresosDia.reduce((s, i) => s + (+i.montoUSD || 0), 0);
       const ingresosEUR = ingresosDia.reduce((s, i) => s + (+i.montoEUR || 0), 0);
       
-      // Saldo inicial después de conversiones entre monedas
-      const saldoInicialMXN = saldoMXN + convUSD + convEUR;
-      const saldoInicialUSD = saldoUSD - parseSaldo(conversiones.usd_to_mxn);
-      const saldoInicialEUR = saldoEUR - parseSaldo(conversiones.eur_to_mxn);
+      // Cambios de divisa de HOY (efecto neto por moneda)
+      // direcciones: 'USD_MXN', 'MXN_USD', 'EUR_MXN', 'MXN_EUR'
+      // USD_MXN: vendo USD (sale), compro MXN (entra)
+      // MXN_USD: vendo MXN (sale), compro USD (entra)
+      // etc.
+      const porDir = {};
+      cambiosHoy.forEach(c => { porDir[c.direccion] = c; });
+      const usdMxn = porDir['USD_MXN'] || { montoVendido: 0, montoComprado: 0 };
+      const mxnUsd = porDir['MXN_USD'] || { montoVendido: 0, montoComprado: 0 };
+      const eurMxn = porDir['EUR_MXN'] || { montoVendido: 0, montoComprado: 0 };
+      const mxnEur = porDir['MXN_EUR'] || { montoVendido: 0, montoComprado: 0 };
+      
+      const cambiosNetoMXN = (+usdMxn.montoComprado || 0) + (+eurMxn.montoComprado || 0) - (+mxnUsd.montoVendido || 0) - (+mxnEur.montoVendido || 0);
+      const cambiosNetoUSD = (+mxnUsd.montoComprado || 0) - (+usdMxn.montoVendido || 0);
+      const cambiosNetoEUR = (+mxnEur.montoComprado || 0) - (+eurMxn.montoVendido || 0);
+      
+      // Saldo inicial ajustado por cambios de divisa
+      // (conversiones antiguas se mantienen por compatibilidad pero conversiones siempre es 0 porque se eliminó la UI)
+      const saldoInicialMXN = saldoMXN + convUSD + convEUR + cambiosNetoMXN;
+      const saldoInicialUSD = saldoUSD - parseSaldo(conversiones.usd_to_mxn) + cambiosNetoUSD;
+      const saldoInicialEUR = saldoEUR - parseSaldo(conversiones.eur_to_mxn) + cambiosNetoEUR;
       
       // Saldo disponible = saldo inicial + ingresos del día
       const disponibleMXN = saldoInicialMXN + ingresosMXN;
@@ -3424,6 +3487,7 @@ export default function CxpApp({ user, onLogout }) {
       return {
         saldoInicial: { MXN: saldoInicialMXN, USD: saldoInicialUSD, EUR: saldoInicialEUR },
         ingresos: { MXN: ingresosMXN, USD: ingresosUSD, EUR: ingresosEUR },
+        cambios: { MXN: cambiosNetoMXN, USD: cambiosNetoUSD, EUR: cambiosNetoEUR },
         disponible: { MXN: disponibleMXN, USD: disponibleUSD, EUR: disponibleEUR },
         saldoFinal: { MXN: disponibleMXN, USD: disponibleUSD, EUR: disponibleEUR }, // compat: ahora es el disponible
         deficit: { MXN: deficitMXN, USD: deficitUSD, EUR: deficitEUR },
@@ -3431,7 +3495,7 @@ export default function CxpApp({ user, onLogout }) {
         statusUSD: deficitUSD >= 0 ? '✅' : deficitUSD > -5000 ? '🟡' : '🔴',
         statusEUR: deficitEUR >= 0 ? '✅' : '🟡'
       };
-    }, [saldosEmpresas, conversiones, tiposCambio, totalesPagos, empresaId, ingresosDia]);
+    }, [saldosEmpresas, conversiones, tiposCambio, totalesPagos, empresaId, ingresosDia, cambiosHoy]);
 
     const handleSaldoChange = (moneda, value) => {
       // Solo actualiza estado local en cada keystroke (sin tocar Supabase)
@@ -4103,25 +4167,111 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           </div>
         </div>
 
-        {/* Análisis de Liquidez */}
-        <div style={{background:'linear-gradient(135deg, #F3E5F5 0%, #FAF4FB 50%, #EDE7F6 100%)',border:`2px solid #9575CD`,borderRadius:14,padding:16,marginBottom:20,position:'relative',overflow:'hidden'}}>
-          
+        {/* ═══════════ CAMBIO DE DIVISAS ═══════════ */}
+        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:16,marginBottom:20}}>
+          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
+            <div style={{width:34,height:34,borderRadius:10,background:'#E3F2FD',display:'flex',alignItems:'center',justifyContent:'center',fontSize:17}}>💱</div>
+            <div>
+              <h3 style={{fontSize:15,fontWeight:700,color:C.navy,margin:0}}>Cambio de Divisas</h3>
+              <p style={{fontSize:11,color:C.muted,margin:'2px 0 0'}}>Operaciones de cambio del día · afectan el Saldo Disponible</p>
+            </div>
+          </div>
+
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(240px, 1fr))',gap:12}}>
+            {(() => {
+              const casillas = [
+                { dir: 'USD_MXN', label: 'USD → MXN', badgeFrom: 'USD', badgeTo: 'MXN', simFrom: '$', simTo: '$', colFrom: C.usd, colTo: C.mxn, bgFrom: '#E8F5E9', bgTo: '#E3F2FD' },
+                { dir: 'MXN_USD', label: 'MXN → USD', badgeFrom: 'MXN', badgeTo: 'USD', simFrom: '$', simTo: '$', colFrom: C.mxn, colTo: C.usd, bgFrom: '#E3F2FD', bgTo: '#E8F5E9' },
+                { dir: 'EUR_MXN', label: 'EUR → MXN', badgeFrom: 'EUR', badgeTo: 'MXN', simFrom: '€', simTo: '$', colFrom: C.eur, colTo: C.mxn, bgFrom: '#F3E5F5', bgTo: '#E3F2FD' },
+                { dir: 'MXN_EUR', label: 'MXN → EUR', badgeFrom: 'MXN', badgeTo: 'EUR', simFrom: '$', simTo: '€', colFrom: C.mxn, colTo: C.eur, bgFrom: '#E3F2FD', bgTo: '#F3E5F5' },
+              ];
+              return casillas.map(cs => {
+                const ca = getCambio(cs.dir);
+                const keyV = `${cs.dir}_vendido`;
+                const keyC = `${cs.dir}_comprado`;
+                const enEdicionV = editandoCambio === keyV;
+                const enEdicionC = editandoCambio === keyC;
+                const editable = !esConsulta;
+                const tc = (ca.montoVendido > 0 && ca.montoComprado > 0)
+                  ? (cs.badgeFrom === 'MXN' ? (ca.montoVendido / ca.montoComprado) : (ca.montoComprado / ca.montoVendido))
+                  : 0;
+
+                const renderCelda = (key, valorMostrar, sim, color, bg) => {
+                  const enEdicion = editandoCambio === key;
+                  if (enEdicion) {
+                    return (
+                      <input
+                        autoFocus
+                        value={valorCambio}
+                        onChange={(e) => setValorCambio(e.target.value.replace(/[^\d.]/g, ''))}
+                        onBlur={guardarCeldaCambio}
+                        onKeyDown={(e) => { if (e.key === 'Enter') guardarCeldaCambio(); if (e.key === 'Escape') cancelarCeldaCambio(); }}
+                        style={{width:'100%',border:`2px solid ${color}`,borderRadius:6,padding:'6px 10px',fontSize:14,fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontWeight:700,textAlign:'right',outline:'none',boxSizing:'border-box'}}
+                      />
+                    );
+                  }
+                  return (
+                    <div
+                      onClick={() => {
+                        if (!editable) return;
+                        setEditandoCambio(key);
+                        const campo = key.endsWith('_vendido') ? 'vendido' : 'comprado';
+                        setValorCambio(campo === 'vendido' ? String(ca.montoVendido || '') : String(ca.montoComprado || ''));
+                      }}
+                      style={{padding:'7px 10px',borderRadius:6,cursor:editable?'pointer':'default',background:bg,border:`1px solid ${color}30`,textAlign:'right',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontWeight:700,color,fontSize:14,transition:'background 0.15s'}}
+                      onMouseEnter={(e) => { if (editable) e.currentTarget.style.background = `${color}20`; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = bg; }}
+                      title={editable ? 'Clic para editar' : ''}
+                    >
+                      {valorMostrar}
+                    </div>
+                  );
+                };
+
+                return (
+                  <div key={cs.dir} style={{border:`1px solid ${C.border}`,borderRadius:10,padding:12,background:'#FAFBFC'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${C.border}`}}>
+                      <span style={{fontSize:11,fontWeight:800,color:cs.colFrom,background:cs.bgFrom,padding:'2px 8px',borderRadius:10}}>{cs.badgeFrom}</span>
+                      <span style={{fontSize:13,color:C.muted}}>→</span>
+                      <span style={{fontSize:11,fontWeight:800,color:cs.colTo,background:cs.bgTo,padding:'2px 8px',borderRadius:10}}>{cs.badgeTo}</span>
+                    </div>
+
+                    <div style={{fontSize:11,color:C.muted,fontWeight:600,marginBottom:3}}>Vendió ({cs.badgeFrom})</div>
+                    {renderCelda(keyV, ca.montoVendido > 0 ? `${cs.simFrom}${fmt(ca.montoVendido)}` : `${cs.simFrom}0.00`, cs.colFrom, cs.bgFrom)}
+
+                    <div style={{fontSize:11,color:C.muted,fontWeight:600,margin:'8px 0 3px'}}>Compró ({cs.badgeTo})</div>
+                    {renderCelda(keyC, ca.montoComprado > 0 ? `${cs.simTo}${fmt(ca.montoComprado)}` : `${cs.simTo}0.00`, cs.colTo, cs.bgTo)}
+
+                    {tc > 0 && (
+                      <div style={{marginTop:8,paddingTop:6,borderTop:`1px dashed ${C.border}`,fontSize:11,color:C.muted,display:'flex',justifyContent:'space-between'}}>
+                        <span>T.C. efectivo:</span>
+                        <span style={{fontFamily:'monospace',fontWeight:700,color:'#4A148C'}}>{tc.toFixed(4)}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        </div>
+
+        {/* Saldo Disponible = Saldos + Ingresos ± Cambio de Divisas */}
+        <div style={{background:'linear-gradient(135deg, #E3F2FD 0%, #F5FAFF 50%, #E1F5FE 100%)',border:`2px solid #1976D2`,borderRadius:14,padding:16,marginBottom:20,position:'relative',overflow:'hidden'}}>
           <div style={{position:'relative',zIndex:1}}>
             <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
-              <div style={{fontSize:20}}>⚠️</div>
+              <div style={{fontSize:20}}>💰</div>
               <div>
-                <h3 style={{fontSize:15,fontWeight:800,color:"#4A148C",margin:0}}>Análisis de Liquidez</h3>
-                <p style={{fontSize:11,color:"#6A1B9A",margin:"1px 0 0",opacity:0.75}}>Estado financiero después de pagos del día</p>
+                <h3 style={{fontSize:15,fontWeight:800,color:"#0D47A1",margin:0}}>Saldo Disponible</h3>
+                <p style={{fontSize:11,color:"#1565C0",margin:"1px 0 0",opacity:0.8}}>Saldos bancarios + Ingresos ± Cambio de divisas</p>
               </div>
             </div>
 
-            {/* Estado por Moneda */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
               {[
-                {moneda: 'MXN', status: analisisLiquidez.statusMXN, deficit: analisisLiquidez.deficit.MXN, color: C.mxn, bg: '#E3F2FD', border: '#90CAF9'},
-                {moneda: 'USD', status: analisisLiquidez.statusUSD, deficit: analisisLiquidez.deficit.USD, color: C.usd, bg: '#E8F5E9', border: '#A5D6A7'},
-                {moneda: 'EUR', status: analisisLiquidez.statusEUR, deficit: analisisLiquidez.deficit.EUR, color: C.eur, bg: '#F3E5F5', border: '#CE93D8'}
-              ].map(({moneda, status, deficit, color, bg, border}) => (
+                {moneda: 'MXN', disponible: analisisLiquidez.disponible.MXN, color: C.mxn, bg: '#E3F2FD', border: '#90CAF9', sym: '$'},
+                {moneda: 'USD', disponible: analisisLiquidez.disponible.USD, color: C.usd, bg: '#E8F5E9', border: '#A5D6A7', sym: '$'},
+                {moneda: 'EUR', disponible: analisisLiquidez.disponible.EUR, color: C.eur, bg: '#F3E5F5', border: '#CE93D8', sym: '€'}
+              ].map(({moneda, disponible, color, bg, border, sym}) => (
                 <div key={moneda} style={{
                   background:bg,
                   border:`2px solid ${border}`,
@@ -4129,59 +4279,15 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                   padding:'14px 16px',
                   textAlign:'center'
                 }}>
-                  <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginBottom:6}}>
-                    <span style={{fontSize:20,lineHeight:1}}>{status}</span>
-                    <span style={{fontSize:15,fontWeight:800,color}}>{moneda}</span>
-                  </div>
-                  <div style={{fontSize:22,fontWeight:800,color: deficit >= 0 ? '#1B5E20' : '#D32F2F',marginBottom:4,lineHeight:1.1}}>
-                    {moneda === 'EUR' ? '€' : '$'}{fmt(Math.abs(deficit))}
-                  </div>
-                  <div style={{fontSize:11,fontWeight:600,color: deficit >= 0 ? '#1B5E20' : '#D32F2F',textTransform:'uppercase',letterSpacing:0.4,opacity:0.85}}>
-                    {deficit >= 0 ? 'Excedente' : 'Déficit'}
+                  <div style={{fontSize:14,fontWeight:700,color,marginBottom:6,letterSpacing:0.3}}>{moneda}</div>
+                  <div style={{fontSize:24,fontWeight:800,color,lineHeight:1.1,fontVariantNumeric:'tabular-nums'}}>
+                    {sym}{fmt(disponible)}
                   </div>
                 </div>
               ))}
             </div>
           </div>
         </div>
-
-        {(analisisLiquidez.deficit.MXN < 0 && (saldosEmpresas[empresaId]?.usd || saldosEmpresas[empresaId]?.eur)) && (
-          <div style={{background:"#E8F0FE",border:`1px solid ${C.blue}`,borderRadius:14,padding:20,marginBottom:20}}>
-            <h3 style={{fontSize:16,fontWeight:700,color:C.navy,margin:"0 0 16px"}}>🔄 Convertir Divisas</h3>
-            
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-              <div>
-                <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>USD → MXN</label>
-                <input 
-                  value={conversiones.usd_to_mxn} 
-                  onChange={(e) => handleConversionChange('usd_to_mxn', e.target.value)}
-                  placeholder="$0.00 USD" 
-                  style={{...inputStyle,textAlign:"right"}} 
-                />
-                {conversiones.usd_to_mxn && tiposCambio.usdMxn && (
-                  <div style={{fontSize:11,color:C.muted,marginTop:2}}>
-                    = ${fmt(parseFloat(conversiones.usd_to_mxn || 0) * parseFloat(tiposCambio.usdMxn || 1))} MXN
-                  </div>
-                )}
-              </div>
-              <div>
-                <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>EUR → MXN</label>
-                <input 
-                  value={conversiones.eur_to_mxn} 
-                  onChange={(e) => handleConversionChange('eur_to_mxn', e.target.value)}
-                  placeholder="€0.00 EUR" 
-                  style={{...inputStyle,textAlign:"right"}} 
-                />
-                {conversiones.eur_to_mxn && tiposCambio.eurMxn && (
-                  <div style={{fontSize:11,color:C.muted,marginTop:2}}>
-                    = ${fmt(parseFloat(conversiones.eur_to_mxn || 0) * parseFloat(tiposCambio.eurMxn || 1))} MXN
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
 
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",marginBottom:20}}>
           <div style={{padding:"16px 20px",background:C.navy,color:"#fff"}}>

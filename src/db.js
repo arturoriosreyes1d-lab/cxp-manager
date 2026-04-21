@@ -1014,3 +1014,55 @@ export async function deleteIngresoDia(id) {
   const { error } = await supabase.from('ingresos_diarios').delete().eq('id', id);
   if (error) console.error('deleteIngresoDia:', error);
 }
+
+/* ── Cambio de Divisas (4 direcciones fijas por empresa+fecha) ───── */
+/* Direcciones: 'USD_MXN', 'MXN_USD', 'EUR_MXN', 'MXN_EUR' */
+
+export async function fetchCambiosDia(empresaId, fecha) {
+  const { data, error } = await supabase
+    .from('cambios_divisa_diarios')
+    .select('*')
+    .eq('empresa_id', empresaId)
+    .eq('fecha', fecha);
+  if (error) { console.error('fetchCambiosDia:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id,
+    empresaId: r.empresa_id,
+    fecha: r.fecha,
+    direccion: r.direccion,          // 'USD_MXN', 'MXN_USD', 'EUR_MXN', 'MXN_EUR'
+    montoVendido: +r.monto_vendido || 0,
+    montoComprado: +r.monto_comprado || 0,
+    updatedAt: r.updated_at,
+    updatedBy: r.updated_by,
+  }));
+}
+
+export async function upsertCambioDia({ empresaId, fecha, direccion, montoVendido, montoComprado }, usuario) {
+  // upsert por (empresa_id, fecha, direccion)
+  const row = {
+    empresa_id: empresaId,
+    fecha,
+    direccion,
+    monto_vendido: +montoVendido || 0,
+    monto_comprado: +montoComprado || 0,
+    updated_at: new Date().toISOString(),
+    updated_by: usuario || 'desconocido',
+  };
+  const { data, error } = await supabase
+    .from('cambios_divisa_diarios')
+    .upsert(row, { onConflict: 'empresa_id,fecha,direccion' })
+    .select()
+    .single();
+  if (error) { console.error('upsertCambioDia:', error); return null; }
+  return data?.id;
+}
+
+export async function deleteCambioDia(empresaId, fecha, direccion) {
+  const { error } = await supabase
+    .from('cambios_divisa_diarios')
+    .delete()
+    .eq('empresa_id', empresaId)
+    .eq('fecha', fecha)
+    .eq('direccion', direccion);
+  if (error) console.error('deleteCambioDia:', error);
+}
