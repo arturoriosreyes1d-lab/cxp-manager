@@ -3528,6 +3528,10 @@ export default function CxpApp({ user, onLogout }) {
     };
 
     const [pdfModalOpen, setPdfModalOpen] = useState(false);
+    const [exportModalOpen, setExportModalOpen] = useState(false); // nuevo: modal unificado PDF/PNG
+    const [generandoPng, setGenerandoPng] = useState(false);
+    const refResumen = useRef(null);   // Saldos + Ingresos + Cambios + Flujo
+    const refDetalle = useRef(null);   // Pagos Programados + Saldos Después
 
     const generarPDF = (modo = 'resumen', orientacion = 'portrait') => {
       setPdfModalOpen(false);
@@ -3601,18 +3605,29 @@ export default function CxpApp({ user, onLogout }) {
       const filaSaldoFinal = (k, label, sm) => {
         const inicial = saldoNum(k);
         const ingresos = analisisLiquidez.ingresos[label] || 0;
-        const disponible = inicial + ingresos;
+        const cambios = analisisLiquidez.cambios[label] || 0;
+        const disponible = inicial + ingresos + cambios;
         const pago = totalesPagos[label] || 0;
         const final = disponible - pago;
         const colorClass = final >= 0 ? 'ok' : 'pend';
         const ingresosCell = ingresos > 0
           ? `<td class="r" style="color:#2E7D32;">+${sm}${fmt(ingresos)}</td>`
           : `<td class="r" style="color:#999;">—</td>`;
+        // cambios puede ser positivo o negativo
+        let cambiosCell;
+        if (cambios === 0) {
+          cambiosCell = `<td class="r" style="color:#999;">—</td>`;
+        } else if (cambios > 0) {
+          cambiosCell = `<td class="r" style="color:#2E7D32;">+${sm}${fmt(cambios)}</td>`;
+        } else {
+          cambiosCell = `<td class="r" style="color:#C62828;">−${sm}${fmt(Math.abs(cambios))}</td>`;
+        }
         return `
           <tr>
             <td>${label}</td>
             <td class="r">${sm}${fmt(inicial)}</td>
             ${ingresosCell}
+            ${cambiosCell}
             <td class="r"><b>${sm}${fmt(disponible)}</b></td>
             <td class="r" style="color:#C62828;">−${sm}${fmt(pago)}</td>
             <td class="r ${colorClass}">${sm}${fmt(final)}</td>
@@ -3755,7 +3770,7 @@ ${detallado ? `
 
 <h2>Flujo del día — Saldos finales después de pagos</h2>
 <table class="saldos-final">
-  <thead><tr><th>Moneda</th><th class="r">Saldo inicial</th><th class="r">+ Ingresos</th><th class="r">= Disponible</th><th class="r">− Pagos</th><th class="r">Saldo final</th></tr></thead>
+  <thead><tr><th>Moneda</th><th class="r">Saldo inicial</th><th class="r">+ Ingresos</th><th class="r">± Cambio Divisas</th><th class="r">= Disponible</th><th class="r">− Pagos</th><th class="r">Saldo final</th></tr></thead>
   <tbody>
     ${filaSaldoFinal('mxn','MXN','$')}
     ${filaSaldoFinal('usd','USD','$')}
@@ -3772,15 +3787,18 @@ ${detallado ? `
     const s = k === 'eur' ? '€' : '$';
     const inicial = saldoNum(k);
     const ingresos = analisisLiquidez.ingresos[m] || 0;
-    const disponible = inicial + ingresos;
+    const cambios = analisisLiquidez.cambios[m] || 0;
+    const disponible = inicial + ingresos + cambios;
     const pago = totalesPagos[m] || 0;
     const final = disponible - pago;
     const colorFinal = final >= 0 ? '#1B5E20' : '#C62828';
     return `<div class="card ${k}">
-      <div class="lbl">${m} · Inicial${ingresos>0?' + Ingresos':''} − Pagos = Final</div>
+      <div class="lbl">${m} · Inicial${ingresos>0?' + Ingresos':''}${cambios!==0?' ± Cambios':''} − Pagos = Final</div>
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px;margin-top:2px;flex-wrap:wrap;">
         <div style="font-size:11px;color:#6B7280;">${s}${fmt(inicial)}</div>
         ${ingresos>0?`<div style="font-size:11px;color:#2E7D32;">+${s}${fmt(ingresos)}</div>`:''}
+        ${cambios>0?`<div style="font-size:11px;color:#2E7D32;">+${s}${fmt(cambios)}</div>`:''}
+        ${cambios<0?`<div style="font-size:11px;color:#C62828;">−${s}${fmt(Math.abs(cambios))}</div>`:''}
         <div style="font-size:11px;color:#C62828;">−${s}${fmt(pago)}</div>
         <div style="font-size:14px;font-weight:800;color:${colorFinal};">${s}${fmt(final)}</div>
       </div>
@@ -3824,6 +3842,64 @@ ${ingresosDia.length > 0 ? `
   </tfoot>
 </table>
 ` : ''}
+
+${(() => {
+  // Cambios de divisa: solo mostrar si hay al menos una operación capturada
+  const cambiosActivos = cambiosHoy.filter(c => (+c.montoVendido || 0) > 0 || (+c.montoComprado || 0) > 0);
+  if (cambiosActivos.length === 0) return '';
+  const labelDir = (dir) => {
+    const map = { USD_MXN: 'USD → MXN', MXN_USD: 'MXN → USD', EUR_MXN: 'EUR → MXN', MXN_EUR: 'MXN → EUR' };
+    return map[dir] || dir;
+  };
+  const simByMon = (m) => m === 'EUR' ? '€' : '$';
+  // Asegurar orden lógico
+  const orden = ['USD_MXN', 'MXN_USD', 'EUR_MXN', 'MXN_EUR'];
+  const cambiosOrdenados = orden
+    .map(d => cambiosActivos.find(c => c.direccion === d))
+    .filter(Boolean);
+  return `
+<h2>💱 Cambio de divisas hoy<span class="num">(${cambiosOrdenados.length} ${cambiosOrdenados.length === 1 ? 'operación' : 'operaciones'})</span></h2>
+<table>
+  <thead>
+    <tr>
+      <th style="width:22%;">Operación</th>
+      <th class="r" style="width:23%;">Vendió</th>
+      <th style="width:4%;text-align:center;"></th>
+      <th class="r" style="width:23%;">Compró</th>
+      <th class="r" style="width:14%;">T.C. efectivo</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${cambiosOrdenados.map(c => {
+      const [monedaV, monedaC] = c.direccion.split('_');
+      const simV = simByMon(monedaV);
+      const simC = simByMon(monedaC);
+      const tc = (c.montoVendido > 0 && c.montoComprado > 0)
+        ? (monedaV === 'MXN' ? (c.montoVendido / c.montoComprado) : (c.montoComprado / c.montoVendido))
+        : 0;
+      return `
+      <tr>
+        <td><b>${labelDir(c.direccion)}</b></td>
+        <td class="r" style="color:#C62828;">−${simV}${fmt(c.montoVendido)} ${monedaV}</td>
+        <td style="text-align:center;color:#999;">→</td>
+        <td class="r" style="color:#2E7D32;">+${simC}${fmt(c.montoComprado)} ${monedaC}</td>
+        <td class="r">${tc > 0 ? tc.toFixed(4) : '—'}</td>
+      </tr>`;
+    }).join('')}
+  </tbody>
+  <tfoot>
+    <tr style="background:#E3F2FD;font-weight:800;">
+      <td colspan="5" style="color:#0D47A1;font-size:11px;">
+        Efecto neto: 
+        ${analisisLiquidez.cambios.MXN !== 0 ? `MXN ${analisisLiquidez.cambios.MXN >= 0 ? '+' : '−'}$${fmt(Math.abs(analisisLiquidez.cambios.MXN))}` : ''}
+        ${analisisLiquidez.cambios.USD !== 0 ? ` · USD ${analisisLiquidez.cambios.USD >= 0 ? '+' : '−'}$${fmt(Math.abs(analisisLiquidez.cambios.USD))}` : ''}
+        ${analisisLiquidez.cambios.EUR !== 0 ? ` · EUR ${analisisLiquidez.cambios.EUR >= 0 ? '+' : '−'}€${fmt(Math.abs(analisisLiquidez.cambios.EUR))}` : ''}
+      </td>
+    </tr>
+  </tfoot>
+</table>
+`;
+})()}
 
 <h2>Pagos programados para hoy<span class="num">(${pagosProgramadosHoy.length} ${pagosProgramadosHoy.length === 1 ? 'proveedor' : 'proveedores'}${detallado ? ' · con detalle de facturas' : ''})</span></h2>
 <table>
@@ -3892,6 +3968,74 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
       alert("Resumen copiado al portapapeles");
     };
 
+    // ── Generación de PNG de secciones del reporte ──────────────────────
+    const capturarNodoPNG = async (node, nombreArchivo) => {
+      if (!node) return null;
+      try {
+        const canvas = await html2canvas(node, {
+          scale: 2,
+          backgroundColor: '#ffffff',
+          logging: false,
+          useCORS: true,
+          windowWidth: node.scrollWidth,
+        });
+        return new Promise(resolve => {
+          canvas.toBlob(blob => {
+            if (!blob) { resolve(null); return; }
+            // Descargar automáticamente
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = nombreArchivo;
+            a.click();
+            URL.revokeObjectURL(url);
+            resolve(blob);
+          }, 'image/png');
+        });
+      } catch (err) {
+        console.error('capturarNodoPNG:', err);
+        return null;
+      }
+    };
+
+    const generarPNG = async (modo) => {
+      setExportModalOpen(false);
+      setGenerandoPng(true);
+      const fechaStr = today();
+      const empresaSlug = empresa.nombre.replace(/\s+/g, '_');
+      try {
+        if (modo === 'resumen') {
+          await capturarNodoPNG(refResumen.current, `Resumen_${empresaSlug}_${fechaStr}.png`);
+        } else if (modo === 'detalle') {
+          // Genera ambas en secuencia: descarga 2 archivos
+          await capturarNodoPNG(refResumen.current, `1_Resumen_${empresaSlug}_${fechaStr}.png`);
+          await new Promise(r => setTimeout(r, 300));
+          await capturarNodoPNG(refDetalle.current, `2_Detalle_${empresaSlug}_${fechaStr}.png`);
+        } else if (modo === 'completo') {
+          // Capturar ambos dentro de un wrapper temporal
+          const wrapper = document.createElement('div');
+          wrapper.style.cssText = 'position:absolute;top:-99999px;left:0;width:' + (refResumen.current?.scrollWidth || 1000) + 'px;background:#fff;padding:16px;';
+          const c1 = refResumen.current.cloneNode(true);
+          const c2 = refDetalle.current.cloneNode(true);
+          wrapper.appendChild(c1);
+          const sep = document.createElement('div');
+          sep.style.cssText = 'height:20px;';
+          wrapper.appendChild(sep);
+          wrapper.appendChild(c2);
+          document.body.appendChild(wrapper);
+          try {
+            await capturarNodoPNG(wrapper, `Reporte_Completo_${empresaSlug}_${fechaStr}.png`);
+          } finally {
+            document.body.removeChild(wrapper);
+          }
+        }
+      } catch (err) {
+        console.error('generarPNG error:', err);
+        alert('Hubo un error al generar la imagen. Intenta de nuevo.');
+      }
+      setGenerandoPng(false);
+    };
+
     const monedaSym = (moneda) => ({ MXN: "$", USD: "$", EUR: "€" }[moneda] || "$");
 
     return (
@@ -3922,10 +4066,15 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                 style={{width:50,background:"#fff",border:`1px solid ${C.eur}`,borderRadius:6,padding:"3px 6px",fontSize:12,fontWeight:700,textAlign:"center",color:C.eur,outline:"none"}}
               />
             </div>
-            <button onClick={() => setPdfModalOpen(true)} style={{...btnStyle,background:"#E53E3E",color:"#fff",padding:"8px 16px",fontSize:13}}>📄 PDF</button>
+            <button onClick={() => setExportModalOpen(true)} disabled={generandoPng} style={{...btnStyle,background:generandoPng ? "#999" : "#E53E3E",color:"#fff",padding:"8px 16px",fontSize:13,cursor:generandoPng?'wait':'pointer'}}>
+              {generandoPng ? '⏳ Generando...' : '📤 Exportar'}
+            </button>
             <button onClick={copiarResumen} style={{...btnStyle,background:"#38A169",color:"#fff",padding:"8px 16px",fontSize:13}}>📋 Copiar</button>
           </div>
         </div>
+
+        {/* ═══════ WRAPPER PARA CAPTURA PNG - RESUMEN ═══════ */}
+        <div ref={refResumen}>
 
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:20,marginBottom:20}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:8}}>
@@ -4305,6 +4454,12 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           </div>
         </div>
 
+        </div>
+        {/* ═══════ FIN WRAPPER RESUMEN ═══════ */}
+
+        {/* ═══════ WRAPPER PARA CAPTURA PNG - DETALLE ═══════ */}
+        <div ref={refDetalle}>
+
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",marginBottom:20}}>
           <div style={{padding:"16px 20px",background:C.navy,color:"#fff"}}>
             <h3 style={{fontSize:16,fontWeight:700,margin:0}}>📋 Pagos Programados para Hoy</h3>
@@ -4406,53 +4561,100 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           </div>
         </div>
 
-        {/* MODAL: Selector de tipo de PDF */}
-        {pdfModalOpen && (
-          <div onClick={() => setPdfModalOpen(false)} style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(31,41,55,0.55)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:9999,padding:20}}>
-            <div onClick={(e) => e.stopPropagation()} style={{background:"#fff",borderRadius:18,padding:28,maxWidth:720,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}}>
+        </div>
+        {/* ═══════ FIN WRAPPER DETALLE ═══════ */}
+
+        {/* MODAL: Exportar (PDF + Imágenes) */}
+        {exportModalOpen && (
+          <div onClick={() => setExportModalOpen(false)} style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(31,41,55,0.55)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:9999,padding:20,overflow:'auto'}}>
+            <div onClick={(e) => e.stopPropagation()} style={{background:"#fff",borderRadius:18,padding:28,maxWidth:820,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.3)",maxHeight:'92vh',overflow:'auto'}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
                 <div>
-                  <div style={{fontSize:11,fontWeight:700,color:"#9575CD",letterSpacing:2,textTransform:"uppercase",marginBottom:4}}>Generar Reporte</div>
-                  <h2 style={{fontSize:20,fontWeight:800,color:"#1F2937",margin:0,letterSpacing:-0.3}}>¿Cómo quieres exportar?</h2>
-                  <p style={{fontSize:13,color:"#6B7280",margin:"6px 0 0"}}>Elige el formato según el detalle que necesite tu jefe.</p>
+                  <div style={{fontSize:11,fontWeight:700,color:"#E53E3E",letterSpacing:2,textTransform:"uppercase",marginBottom:4}}>Exportar Reporte</div>
+                  <h2 style={{fontSize:20,fontWeight:800,color:"#1F2937",margin:0,letterSpacing:-0.3}}>¿En qué formato lo quieres?</h2>
+                  <p style={{fontSize:13,color:"#6B7280",margin:"6px 0 0"}}>Elige PDF para imprimir o Imagen para compartir por WhatsApp.</p>
                 </div>
-                <button onClick={() => setPdfModalOpen(false)} style={{background:"transparent",border:"none",fontSize:24,cursor:"pointer",color:"#9CA3AF",padding:0,lineHeight:1}}>×</button>
+                <button onClick={() => setExportModalOpen(false)} style={{background:"transparent",border:"none",fontSize:26,cursor:"pointer",color:"#9CA3AF",padding:0,lineHeight:1}}>×</button>
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14}}>
-                {[
-                  {id:'r',  modo:'resumen',   ori:'portrait',  icon:'📋', titulo:'Resumen',   sub:'Solo totales por proveedor',          paginas:'1 hoja',     reco:true},
-                  {id:'dv', modo:'detallado', ori:'portrait',  icon:'📑', titulo:'Detallado vertical', sub:'Con desglose de facturas pagadas hoy', paginas:'2-3 hojas', reco:false},
-                  {id:'dh', modo:'detallado', ori:'landscape', icon:'📑', titulo:'Detallado horizontal', sub:'Más espacio por fila',         paginas:'1-2 hojas', reco:false},
-                ].map(opt => (
-                  <button
-                    key={opt.id}
-                    onClick={() => generarPDF(opt.modo, opt.ori)}
-                    style={{
-                      background:opt.reco ? "linear-gradient(135deg, #F3E5F5 0%, #FAF4FB 100%)" : "#FAFAFA",
-                      border:`2px solid ${opt.reco ? '#9575CD' : '#E5E7EB'}`,
-                      borderRadius:14,
-                      padding:20,
-                      cursor:"pointer",
-                      textAlign:"left",
-                      transition:"all 0.15s ease",
-                      position:"relative",
-                      fontFamily:"inherit"
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#9575CD'; e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(74,20,140,0.15)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = opt.reco ? '#9575CD' : '#E5E7EB'; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}
-                  >
-                    {opt.reco && (
-                      <div style={{position:"absolute",top:-9,right:12,background:"#9575CD",color:"#fff",fontSize:9,fontWeight:700,padding:"3px 8px",borderRadius:10,letterSpacing:0.5}}>RECOMENDADO</div>
-                    )}
-                    <div style={{fontSize:32,marginBottom:10}}>{opt.icon}</div>
-                    <div style={{fontSize:15,fontWeight:800,color:"#1F2937",marginBottom:4}}>{opt.titulo}</div>
-                    <div style={{fontSize:12,color:"#6B7280",lineHeight:1.4,marginBottom:12,minHeight:34}}>{opt.sub}</div>
-                    <div style={{display:"inline-block",fontSize:10,fontWeight:700,color:"#4A148C",background:"#EDE7F6",padding:"3px 8px",borderRadius:6,letterSpacing:0.5,textTransform:"uppercase"}}>~{opt.paginas}</div>
-                  </button>
-                ))}
+
+              {/* SECCIÓN PDF */}
+              <div style={{marginBottom:24}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
+                  <span style={{fontSize:18}}>📄</span>
+                  <h3 style={{fontSize:14,fontWeight:800,color:"#1F2937",margin:0,textTransform:'uppercase',letterSpacing:0.5}}>PDF · para imprimir o archivar</h3>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+                  {[
+                    {id:'r',  modo:'resumen',   ori:'portrait',  icon:'📋', titulo:'Resumen',   sub:'Solo totales por proveedor',          paginas:'1 hoja'},
+                    {id:'dv', modo:'detallado', ori:'portrait',  icon:'📑', titulo:'Detallado vertical', sub:'Con desglose de facturas', paginas:'2-3 hojas'},
+                    {id:'dh', modo:'detallado', ori:'landscape', icon:'📑', titulo:'Detallado horizontal', sub:'Más espacio por fila',   paginas:'1-2 hojas'},
+                  ].map(opt => (
+                    <button
+                      key={opt.id}
+                      onClick={() => { setExportModalOpen(false); generarPDF(opt.modo, opt.ori); }}
+                      style={{
+                        background:"#FFF5F5",
+                        border:`2px solid #FEB2B2`,
+                        borderRadius:12,
+                        padding:14,
+                        cursor:"pointer",
+                        textAlign:"left",
+                        transition:"all 0.15s ease",
+                        fontFamily:"inherit"
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#E53E3E'; e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(229,62,62,0.2)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#FEB2B2'; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}
+                    >
+                      <div style={{fontSize:24,marginBottom:6}}>{opt.icon}</div>
+                      <div style={{fontSize:13,fontWeight:800,color:"#1F2937",marginBottom:2}}>{opt.titulo}</div>
+                      <div style={{fontSize:11,color:"#6B7280",lineHeight:1.3,marginBottom:8,minHeight:28}}>{opt.sub}</div>
+                      <div style={{display:"inline-block",fontSize:9,fontWeight:700,color:"#C53030",background:"#FED7D7",padding:"2px 6px",borderRadius:5,letterSpacing:0.4,textTransform:"uppercase"}}>~{opt.paginas}</div>
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              {/* SECCIÓN IMÁGENES */}
+              <div>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
+                  <span style={{fontSize:18}}>📸</span>
+                  <h3 style={{fontSize:14,fontWeight:800,color:"#1F2937",margin:0,textTransform:'uppercase',letterSpacing:0.5}}>Imágenes · para WhatsApp o móvil</h3>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+                  {[
+                    {id:'png_r', modo:'resumen',  icon:'📊', titulo:'Solo Resumen',           sub:'Saldos + ingresos + cambios + flujo', imgs:'1 imagen'},
+                    {id:'png_d', modo:'detalle',  icon:'📁', titulo:'Resumen + Detalle',     sub:'Dos imágenes separadas',              imgs:'2 imágenes'},
+                    {id:'png_c', modo:'completo', icon:'📑', titulo:'Todo en una',            sub:'Una sola imagen larga',              imgs:'1 imagen'},
+                  ].map(opt => (
+                    <button
+                      key={opt.id}
+                      onClick={() => generarPNG(opt.modo)}
+                      disabled={generandoPng}
+                      style={{
+                        background:"#EBF8FF",
+                        border:`2px solid #90CDF4`,
+                        borderRadius:12,
+                        padding:14,
+                        cursor:generandoPng?"wait":"pointer",
+                        textAlign:"left",
+                        transition:"all 0.15s ease",
+                        fontFamily:"inherit",
+                        opacity:generandoPng?0.6:1,
+                      }}
+                      onMouseEnter={(e) => { if(!generandoPng){ e.currentTarget.style.borderColor = '#3182CE'; e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(49,130,206,0.2)'; } }}
+                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#90CDF4'; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}
+                    >
+                      <div style={{fontSize:24,marginBottom:6}}>{opt.icon}</div>
+                      <div style={{fontSize:13,fontWeight:800,color:"#1F2937",marginBottom:2}}>{opt.titulo}</div>
+                      <div style={{fontSize:11,color:"#6B7280",lineHeight:1.3,marginBottom:8,minHeight:28}}>{opt.sub}</div>
+                      <div style={{display:"inline-block",fontSize:9,fontWeight:700,color:"#2C5282",background:"#BEE3F8",padding:"2px 6px",borderRadius:5,letterSpacing:0.4,textTransform:"uppercase"}}>{opt.imgs}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div style={{marginTop:20,paddingTop:14,borderTop:"1px solid #F3F4F6",fontSize:11,color:"#9CA3AF",textAlign:"center"}}>
-                Después de elegir, aparecerá el diálogo de impresión. Puedes elegir "Guardar como PDF" para descargarlo.
+                Las imágenes se descargarán automáticamente. El PDF abrirá el diálogo de impresión.
               </div>
             </div>
           </div>
