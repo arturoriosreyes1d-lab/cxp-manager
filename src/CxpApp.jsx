@@ -3533,8 +3533,7 @@ export default function CxpApp({ user, onLogout }) {
     const refResumen = useRef(null);   // Saldos + Ingresos + Cambios + Flujo
     const refDetalle = useRef(null);   // Pagos Programados + Saldos Después
 
-    const generarPDF = (modo = 'resumen', orientacion = 'portrait') => {
-      setPdfModalOpen(false);
+    const construirHtmlReporte = (modo = 'resumen', orientacion = 'portrait') => {
       const detallado = modo === 'detallado';
       const fechaTexto = new Date().toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
       const horaTexto = new Date().toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' });
@@ -3636,7 +3635,7 @@ export default function CxpApp({ user, onLogout }) {
 
       const html = `<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8">
-<title>Reporte Pagos ${empresa.nombre} - ${new Date().toISOString().slice(0,10)}</title>
+<title>Reporte Tesorería ${empresa.nombre} - ${new Date().toISOString().slice(0,10)}</title>
 <style>
   @page { size: A4 ${orientacion}; margin: 10mm; }
   * { box-sizing: border-box; }
@@ -3747,7 +3746,7 @@ export default function CxpApp({ user, onLogout }) {
 <div class="header">
   <div>
     <div class="brand">CxP Manager</div>
-    <h1>Reporte de Pagos del Día</h1>
+    <h1>Reporte de Tesorería del Día</h1>
     <div class="empresa">${empresa.nombre}</div>
   </div>
   <div class="meta-right">
@@ -3926,6 +3925,12 @@ ${(() => {
 </script>
 </body></html>`;
 
+      return html;
+    };
+
+    const generarPDF = (modo = 'resumen', orientacion = 'portrait') => {
+      setPdfModalOpen(false);
+      const html = construirHtmlReporte(modo, orientacion);
       const win = window.open('', '_blank');
       if (!win) {
         alert('El navegador bloqueó la ventana emergente. Permite ventanas emergentes para este sitio e intenta de nuevo.');
@@ -3998,6 +4003,62 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
       }
     };
 
+    // Captura de HTML detallado (el del PDF) como imagen
+    const capturarHtmlDetalladoPNG = async (nombreArchivo) => {
+      const html = construirHtmlReporte('detallado', 'portrait');
+      // Crear iframe oculto para renderizar el HTML completo
+      const iframe = document.createElement('iframe');
+      iframe.style.cssText = 'position:absolute;top:-99999px;left:0;width:900px;height:2000px;border:0;';
+      document.body.appendChild(iframe);
+      try {
+        const doc = iframe.contentDocument || iframe.contentWindow.document;
+        // Escribir el HTML pero sin el script que dispara window.print()
+        const htmlSinPrint = html.replace(/window\.onload\s*=\s*function\(\)\s*\{[^}]*\};?/g, '');
+        doc.open();
+        doc.write(htmlSinPrint);
+        doc.close();
+        // Esperar a que renderice (fuentes, imágenes)
+        await new Promise(resolve => {
+          if (doc.readyState === 'complete') {
+            setTimeout(resolve, 500);
+          } else {
+            iframe.onload = () => setTimeout(resolve, 500);
+            setTimeout(resolve, 2000); // timeout por si onload no dispara
+          }
+        });
+        // Medir altura real del contenido
+        const body = doc.body;
+        const alturaReal = Math.max(body.scrollHeight, body.offsetHeight, 600);
+        iframe.style.height = alturaReal + 'px';
+        await new Promise(r => setTimeout(r, 200));
+        // Capturar el body entero
+        const canvas = await html2canvas(body, {
+          scale: 2,
+          backgroundColor: '#ffffff',
+          logging: false,
+          useCORS: true,
+          width: 900,
+          height: alturaReal,
+          windowWidth: 900,
+          windowHeight: alturaReal,
+        });
+        return new Promise(resolve => {
+          canvas.toBlob(blob => {
+            if (!blob) { resolve(null); return; }
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = nombreArchivo;
+            a.click();
+            URL.revokeObjectURL(url);
+            resolve(blob);
+          }, 'image/png');
+        });
+      } finally {
+        if (iframe.parentNode) document.body.removeChild(iframe);
+      }
+    };
+
     const generarPNG = async (modo) => {
       setExportModalOpen(false);
       setGenerandoPng(true);
@@ -4005,29 +4066,16 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
       const empresaSlug = empresa.nombre.replace(/\s+/g, '_');
       try {
         if (modo === 'resumen') {
-          await capturarNodoPNG(refResumen.current, `Resumen_${empresaSlug}_${fechaStr}.png`);
+          // Solo captura la sección de arriba (saldos, ingresos, cambios, saldo disponible)
+          await capturarNodoPNG(refResumen.current, `Resumen_Tesoreria_${empresaSlug}_${fechaStr}.png`);
         } else if (modo === 'detalle') {
-          // Genera ambas en secuencia: descarga 2 archivos
+          // 2 imágenes: la de resumen (pantalla) + el detallado completo (HTML del PDF)
           await capturarNodoPNG(refResumen.current, `1_Resumen_${empresaSlug}_${fechaStr}.png`);
-          await new Promise(r => setTimeout(r, 300));
-          await capturarNodoPNG(refDetalle.current, `2_Detalle_${empresaSlug}_${fechaStr}.png`);
+          await new Promise(r => setTimeout(r, 400));
+          await capturarHtmlDetalladoPNG(`2_Detalle_${empresaSlug}_${fechaStr}.png`);
         } else if (modo === 'completo') {
-          // Capturar ambos dentro de un wrapper temporal
-          const wrapper = document.createElement('div');
-          wrapper.style.cssText = 'position:absolute;top:-99999px;left:0;width:' + (refResumen.current?.scrollWidth || 1000) + 'px;background:#fff;padding:16px;';
-          const c1 = refResumen.current.cloneNode(true);
-          const c2 = refDetalle.current.cloneNode(true);
-          wrapper.appendChild(c1);
-          const sep = document.createElement('div');
-          sep.style.cssText = 'height:20px;';
-          wrapper.appendChild(sep);
-          wrapper.appendChild(c2);
-          document.body.appendChild(wrapper);
-          try {
-            await capturarNodoPNG(wrapper, `Reporte_Completo_${empresaSlug}_${fechaStr}.png`);
-          } finally {
-            document.body.removeChild(wrapper);
-          }
+          // Una sola imagen larga: el HTML detallado completo (incluye todo)
+          await capturarHtmlDetalladoPNG(`Reporte_Tesoreria_Completo_${empresaSlug}_${fechaStr}.png`);
         }
       } catch (err) {
         console.error('generarPNG error:', err);
@@ -4042,9 +4090,9 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
       <div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
           <div>
-            <h2 style={{fontSize:18,fontWeight:800,color:C.navy,margin:0}}>📊 Reporte de Pagos del Día</h2>
+            <h2 style={{fontSize:18,fontWeight:800,color:C.navy,margin:0}}>📊 Reporte de Tesorería del Día</h2>
             <p style={{color:C.muted,fontSize:13,margin:"4px 0 0"}}>
-              Análisis de liquidez para {empresa.nombre}
+              Flujo de tesorería diario · {empresa.nombre}
             </p>
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
@@ -4623,8 +4671,8 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                 <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
                   {[
                     {id:'png_r', modo:'resumen',  icon:'📊', titulo:'Solo Resumen',           sub:'Saldos + ingresos + cambios + flujo', imgs:'1 imagen'},
-                    {id:'png_d', modo:'detalle',  icon:'📁', titulo:'Resumen + Detalle',     sub:'Dos imágenes separadas',              imgs:'2 imágenes'},
-                    {id:'png_c', modo:'completo', icon:'📑', titulo:'Todo en una',            sub:'Una sola imagen larga',              imgs:'1 imagen'},
+                    {id:'png_d', modo:'detalle',  icon:'📁', titulo:'Resumen + Detalle',     sub:'Resumen + reporte completo con facturas',              imgs:'2 imágenes'},
+                    {id:'png_c', modo:'completo', icon:'📑', titulo:'Reporte Completo',            sub:'Todo con desglose de facturas por proveedor',              imgs:'1 imagen'},
                   ].map(opt => (
                     <button
                       key={opt.id}
