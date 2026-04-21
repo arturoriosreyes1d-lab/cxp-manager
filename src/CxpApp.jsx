@@ -3304,22 +3304,10 @@ export default function CxpApp({ user, onLogout }) {
             } else {
               pagosHoy.set(proveedorKey, { pagoHoy: totalPagoHoy, tipo: 'programado', detalleFacturas: [detalleFactura] });
             }
-          } else if (factura.vencimiento === hoy) {
-            // Factura vence hoy sin pago programado: se asume pago completo del saldo
-            const detalleFactura = {
-              serie: factura.serie || '',
-              folio: factura.folio || '',
-              concepto: factura.concepto || '',
-              pagoHoy: saldoFactura
-            };
-            if (pagosHoy.has(proveedorKey)) {
-              const ex = pagosHoy.get(proveedorKey);
-              ex.pagoHoy += saldoFactura;
-              ex.detalleFacturas.push(detalleFactura);
-            } else {
-              pagosHoy.set(proveedorKey, { pagoHoy: saldoFactura, tipo: 'vencimiento', detalleFacturas: [detalleFactura] });
-            }
           }
+          // Nota: ya NO usamos factura.vencimiento === hoy como fallback.
+          // El Reporte Diario ahora respeta la misma regla que la Matriz de Pagos:
+          // solo se consideran pagos con tipo='programado' y fechaPago=hoy.
         });
       });
       
