@@ -4048,30 +4048,28 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     };
 
     // ── Partición automática del detalle en múltiples imágenes ─────────
-    // Agrupa las filas del tbody de pagos en bloques de proveedores completos
-    // (fila del proveedor + todas sus subfilas de facturas) y parte cuando
-    // el bloque acumulado excede el umbral de altura.
-    const particionarDetalle = (umbralPx = 2400) => {
+    // Divide el tbody en "páginas" de ~20 filas respetando siempre al proveedor
+    // completo (una fila de proveedor + todas sus subfilas de facturas).
+    const particionarDetalle = (filasPorPagina = 20) => {
       const refNodo = refDetalle.current;
       if (!refNodo) return [];
-      // Si cabe en una sola, no partimos
-      const alturaTotal = refNodo.scrollHeight;
-      if (alturaTotal <= umbralPx) return [refNodo.cloneNode(true)];
-
-      // Localizamos la tabla de pagos (primera tabla dentro del nodo de detalle)
       const originalClon = refNodo.cloneNode(true);
       const tabla = originalClon.querySelector('table');
-      if (!tabla) return [originalClon]; // fallback
+      if (!tabla) return [originalClon];
       const tbody = tabla.querySelector('tbody');
       if (!tbody) return [originalClon];
 
-      // Agrupar filas del tbody por "bloque de proveedor" (una fila + sus subfilas de facturas)
-      // Una subfila se identifica por tener un <span> con flecha ↳ como marcador.
       const filas = Array.from(tbody.children);
+      // Si son pocas filas, no dividir
+      if (filas.length <= filasPorPagina + 5) return [originalClon];
+
+      // Agrupar filas en bloques: fila de proveedor + sus subfilas de facturas.
+      // Una subfila tiene padding-left grande (32px) y contiene el símbolo ↳.
       const bloques = [];
       let bloqueActual = null;
       filas.forEach(fila => {
-        const esSubfila = fila.textContent.includes('↳') || fila.querySelector('td:first-child > div')?.textContent?.includes('↳');
+        const textoFila = fila.textContent || '';
+        const esSubfila = textoFila.includes('↳');
         if (esSubfila && bloqueActual) {
           bloqueActual.push(fila);
         } else {
@@ -4081,71 +4079,50 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
       });
       if (bloqueActual) bloques.push(bloqueActual);
 
-      if (bloques.length <= 1) return [originalClon]; // no hay como partir
+      if (bloques.length <= 1) return [originalClon];
 
-      // Construir una altura estimada por bloque midiendo filas en el nodo original
-      // Hacemos medición usando el DOM real: calculamos la altura de cada bloque
-      const filasOriginales = Array.from(refNodo.querySelector('tbody')?.children || []);
-      const alturasFilas = filasOriginales.map(f => f.getBoundingClientRect().height);
-
-      // Emparejar las alturas con los bloques (mismas índices)
-      let idxFila = 0;
-      const alturasBloques = bloques.map(bloque => {
-        let h = 0;
-        for (let i = 0; i < bloque.length; i++) {
-          h += alturasFilas[idxFila] || 40;
-          idxFila++;
-        }
-        return h;
-      });
-
-      // Altura del contenido fijo (thead, tfoot, header, saldos después) que se repite en cada parte
-      const alturaFija = alturaTotal - alturasFilas.reduce((s, h) => s + h, 0);
-      // Margen disponible por imagen = umbral - altura fija
-      const alturaDisponible = Math.max(800, umbralPx - alturaFija);
-
-      // Agrupar bloques en "páginas" según umbral
+      // Agrupar bloques en páginas de máximo ~filasPorPagina filas
       const paginas = [];
       let paginaActual = [];
-      let alturaAcumulada = 0;
-      bloques.forEach((bloque, i) => {
-        const hBloque = alturasBloques[i];
-        if (paginaActual.length > 0 && alturaAcumulada + hBloque > alturaDisponible) {
+      let filasAcumuladas = 0;
+      bloques.forEach(bloque => {
+        const filasBloque = bloque.length;
+        // Si el bloque por sí solo excede el límite, lo dejamos en su propia página
+        // (un proveedor con 27 facturas — no partimos dentro)
+        if (paginaActual.length > 0 && filasAcumuladas + filasBloque > filasPorPagina) {
           paginas.push(paginaActual);
           paginaActual = [];
-          alturaAcumulada = 0;
+          filasAcumuladas = 0;
         }
         paginaActual.push(bloque);
-        alturaAcumulada += hBloque;
+        filasAcumuladas += filasBloque;
       });
       if (paginaActual.length > 0) paginas.push(paginaActual);
 
       if (paginas.length === 1) return [originalClon];
 
-      // Crear un clon por página con solo sus bloques de proveedores
+      // Crear un clon por página con solo sus bloques
       const clones = paginas.map((pagina, idx) => {
         const clon = refNodo.cloneNode(true);
         const tablaClon = clon.querySelector('table');
         const tbodyClon = tablaClon?.querySelector('tbody');
         const tfootClon = tablaClon?.querySelector('tfoot');
         if (!tbodyClon) return clon;
-        // Limpiar tbody y meter solo los bloques de esta página
         tbodyClon.innerHTML = '';
         pagina.forEach(bloque => {
           bloque.forEach(fila => tbodyClon.appendChild(fila.cloneNode(true)));
         });
-        // tfoot y saldos después: solo en la ÚLTIMA página
+        // tfoot (totales) y chips verdes "Saldos Después de Pagos": solo en la ÚLTIMA página
         const esUltima = idx === paginas.length - 1;
         if (!esUltima) {
-          // Quitar tfoot (totales)
           if (tfootClon) tfootClon.remove();
-          // Quitar bloque verde "Saldos Después de Pagos" (el siguiente div después de la tabla)
+          // Quitar bloque verde "Saldos Después de Pagos"
           const saldosDespues = clon.querySelector('div[style*="F0FFF4"]');
           if (saldosDespues) saldosDespues.remove();
-          // Agregar una nota "Continúa..."
+          // Nota "Continúa..."
           const nota = document.createElement('div');
-          nota.style.cssText = 'text-align:center;padding:12px;font-size:11px;color:#6B7280;font-style:italic;background:#F9FAFB;border-top:1px solid #E5E7EB;';
-          nota.textContent = '… Continúa en la siguiente imagen';
+          nota.style.cssText = 'text-align:center;padding:14px 16px;font-size:12px;color:#6B7280;font-style:italic;background:#F9FAFB;border:1px dashed #D1D5DB;border-radius:10px;margin-top:8px;';
+          nota.textContent = '⋯ Continúa en la siguiente imagen ⋯';
           clon.appendChild(nota);
         }
         return clon;
@@ -4169,8 +4146,8 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           );
           await capturarWrapper(w, `Tesoreria_Resumen_${empresaSlug}_${fechaStr}.png`);
         } else if (modo === 'detalle') {
-          // Particionar el detalle en múltiples imágenes si es muy largo
-          const partesDetalle = particionarDetalle(2400);
+          // Particionar el detalle en múltiples imágenes (~20 filas por imagen)
+          const partesDetalle = particionarDetalle(20);
           const totalImagenes = 1 + partesDetalle.length; // 1 resumen + N partes detalle
 
           // Imagen 1: resumen (arriba)
