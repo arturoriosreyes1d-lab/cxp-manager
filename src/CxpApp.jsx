@@ -3986,7 +3986,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         <div>
           <div style="font-size:10px;font-weight:700;color:#6366F1;letter-spacing:3px;text-transform:uppercase;margin-bottom:4px;">CxP Manager</div>
           <div style="font-size:22px;font-weight:800;color:#1A237E;letter-spacing:-0.4px;line-height:1.15;">${tituloImg}</div>
-          <div style="font-size:13px;color:#4C1D95;margin-top:4px;font-weight:500;">${subtitulo}</div>
+          <div style="font-size:13px;color:#1F2937;margin-top:4px;font-weight:500;">${subtitulo}</div>
         </div>
         <div style="text-align:right;">
           <div style="font-size:12px;color:#4B5563;font-weight:600;">${new Date().toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long', year:'numeric' })}</div>
@@ -4554,16 +4554,33 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                 </thead>
                 <tbody>
                   {pagosOrdenados.map((pago, i) => (
-                    <tr key={i} style={{borderBottom:`1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFC"}}>
-                      <td style={{padding:"12px 16px",fontWeight:600,color:C.navy}}>{pago.proveedor}</td>
-                      <td style={{padding:"12px 16px",textAlign:"center"}}>
-                        <span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[pago.moneda],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[pago.moneda],padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{pago.moneda}</span>
-                      </td>
-                      <td style={{padding:"12px 16px",textAlign:"right",fontWeight:700,fontSize:13}}>{monedaSym(pago.moneda)}{fmt(pago.importeAdeudado)}</td>
-                      <td style={{padding:"12px 16px",textAlign:"right",fontWeight:800,fontSize:14,color:"#D32F2F"}}>{monedaSym(pago.moneda)}{fmt(pago.pagoHoy)}</td>
-                      <td style={{padding:"12px 16px",textAlign:"right",fontWeight:700,fontSize:13,color:pago.saldoDespuesPago <= 0 ? "#2E7D32" : "#F57C00"}}>{monedaSym(pago.moneda)}{fmt(pago.saldoDespuesPago)}</td>
-                      <td style={{padding:"12px 16px",textAlign:"center",color:C.muted}}>{pago.facturas}</td>
-                    </tr>
+                    <React.Fragment key={i}>
+                      <tr style={{borderBottom:(pago.detalleFacturas && pago.detalleFacturas.length > 0) ? 'none' : `1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFC"}}>
+                        <td style={{padding:"12px 16px",fontWeight:600,color:C.navy}}>{pago.proveedor}</td>
+                        <td style={{padding:"12px 16px",textAlign:"center"}}>
+                          <span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[pago.moneda],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[pago.moneda],padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{pago.moneda}</span>
+                        </td>
+                        <td style={{padding:"12px 16px",textAlign:"right",fontWeight:700,fontSize:13}}>{monedaSym(pago.moneda)}{fmt(pago.importeAdeudado)}</td>
+                        <td style={{padding:"12px 16px",textAlign:"right",fontWeight:800,fontSize:14,color:"#D32F2F"}}>{monedaSym(pago.moneda)}{fmt(pago.pagoHoy)}</td>
+                        <td style={{padding:"12px 16px",textAlign:"right",fontWeight:700,fontSize:13,color:pago.saldoDespuesPago <= 0 ? "#2E7D32" : "#F57C00"}}>{monedaSym(pago.moneda)}{fmt(pago.saldoDespuesPago)}</td>
+                        <td style={{padding:"12px 16px",textAlign:"center",color:C.muted}}>{pago.facturas}</td>
+                      </tr>
+                      {/* Subfilas: desglose de facturas que se pagan hoy */}
+                      {pago.detalleFacturas && pago.detalleFacturas.length > 0 && pago.detalleFacturas.map((f, j) => (
+                        <tr key={`${i}-f-${j}`} style={{borderBottom:j === pago.detalleFacturas.length - 1 ? `1px solid ${C.border}` : 'none', background:i%2===0?"#F9FAFB":"#F5F6F8"}}>
+                          <td style={{padding:"6px 16px 6px 32px",fontSize:11,color:"#6B7280",display:'flex',alignItems:'center',gap:6}}>
+                            <span style={{color:'#9CA3AF',fontSize:10}}>↳</span>
+                            <span style={{fontFamily:'monospace',fontWeight:700,background:'#E5E7EB',padding:'1px 6px',borderRadius:4,color:'#374151',fontSize:10,letterSpacing:0.3}}>{f.serie}{f.folio ? ` ${f.folio}` : ''}</span>
+                            <span style={{color:'#4B5563',fontSize:11}}>{f.concepto || '—'}</span>
+                          </td>
+                          <td></td>
+                          <td></td>
+                          <td style={{padding:"6px 16px",textAlign:"right",fontSize:12,fontWeight:600,color:"#6B7280",fontVariantNumeric:'tabular-nums'}}>{monedaSym(pago.moneda)}{fmt(f.pagoHoy)}</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                      ))}
+                    </React.Fragment>
                   ))}
                 </tbody>
                 <tfoot>
