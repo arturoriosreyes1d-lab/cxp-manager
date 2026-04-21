@@ -972,6 +972,8 @@ export async function fetchIngresosDia(empresaId, fecha) {
     id: r.id,
     empresaId: r.empresa_id,
     fecha: r.fecha,
+    rubro: r.rubro || '',
+    cliente: r.cliente || '',
     concepto: r.concepto || '',
     montoMXN: +r.monto_mxn || 0,
     montoUSD: +r.monto_usd || 0,
@@ -986,6 +988,8 @@ export async function upsertIngresoDia(ingreso, usuario) {
   const row = {
     empresa_id: ingreso.empresaId,
     fecha: ingreso.fecha,
+    rubro: ingreso.rubro || '',
+    cliente: ingreso.cliente || '',
     concepto: ingreso.concepto || '',
     monto_mxn: +ingreso.montoMXN || 0,
     monto_usd: +ingreso.montoUSD || 0,

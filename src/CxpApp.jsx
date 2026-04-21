@@ -3188,6 +3188,8 @@ export default function CxpApp({ user, onLogout }) {
       const nuevo = {
         empresaId,
         fecha: today(),
+        rubro: '',
+        cliente: '',
         concepto: '',
         montoMXN: 0, montoUSD: 0, montoEUR: 0,
         orden: ingresosDia.length,
@@ -3195,9 +3197,9 @@ export default function CxpApp({ user, onLogout }) {
       const id = await upsertIngresoDia(nuevo, user?.nombre || 'desconocido');
       if (id) {
         setIngresosDia(prev => [...prev, { ...nuevo, id }]);
-        // Auto-foco en el concepto nuevo
+        // Auto-foco en el rubro nuevo
         setTimeout(() => {
-          setEditandoIngreso(`${id}_concepto`);
+          setEditandoIngreso(`${id}_rubro`);
           setValorIngreso('');
         }, 50);
       }
@@ -3209,13 +3211,16 @@ export default function CxpApp({ user, onLogout }) {
       const [id, campo] = editandoIngreso.split('_');
       const ing = ingresosDia.find(x => x.id === id);
       if (!ing) { setEditandoIngreso(null); return; }
+      const esTexto = ['rubro', 'cliente', 'concepto'].includes(campo);
       let valor;
-      if (campo === 'concepto') {
+      if (esTexto) {
         valor = valorIngreso.trim();
       } else {
         valor = parseFloat(valorIngreso.replace(/[,$€]/g, '')) || 0;
       }
       const nuevo = { ...ing };
+      if (campo === 'rubro') nuevo.rubro = valor;
+      if (campo === 'cliente') nuevo.cliente = valor;
       if (campo === 'concepto') nuevo.concepto = valor;
       if (campo === 'MXN') nuevo.montoMXN = valor;
       if (campo === 'USD') nuevo.montoUSD = valor;
@@ -3737,15 +3742,19 @@ ${ingresosDia.length > 0 ? `
 <table>
   <thead>
     <tr>
-      <th>Concepto</th>
-      <th class="r">MXN</th>
-      <th class="r">USD</th>
-      <th class="r">EUR</th>
+      <th style="width:16%;">Rubro</th>
+      <th style="width:20%;">Cliente</th>
+      <th style="width:26%;">Concepto</th>
+      <th class="r" style="width:13%;">MXN</th>
+      <th class="r" style="width:13%;">USD</th>
+      <th class="r" style="width:12%;">EUR</th>
     </tr>
   </thead>
   <tbody>
     ${ingresosDia.map(ing => `
       <tr>
+        <td><b>${ing.rubro || '—'}</b></td>
+        <td>${ing.cliente || '—'}</td>
         <td>${ing.concepto || '—'}</td>
         <td class="r">${ing.montoMXN > 0 ? '$' + fmt(ing.montoMXN) : '—'}</td>
         <td class="r">${ing.montoUSD > 0 ? '$' + fmt(ing.montoUSD) : '—'}</td>
@@ -3755,7 +3764,7 @@ ${ingresosDia.length > 0 ? `
   </tbody>
   <tfoot>
     <tr style="background:#E8F5E9;font-weight:800;">
-      <td style="color:#1B5E20;">TOTAL</td>
+      <td colspan="3" style="color:#1B5E20;">TOTAL</td>
       <td class="r" style="color:#1B5E20;">${totalesIngresos.MXN > 0 ? '$' + fmt(totalesIngresos.MXN) : '—'}</td>
       <td class="r" style="color:#1B5E20;">${totalesIngresos.USD > 0 ? '$' + fmt(totalesIngresos.USD) : '—'}</td>
       <td class="r" style="color:#1B5E20;">${totalesIngresos.EUR > 0 ? '€' + fmt(totalesIngresos.EUR) : '—'}</td>
@@ -3808,7 +3817,8 @@ ${ingresosDia.map(i => {
   if (i.montoMXN > 0) partes.push(`$${fmt(i.montoMXN)} MXN`);
   if (i.montoUSD > 0) partes.push(`$${fmt(i.montoUSD)} USD`);
   if (i.montoEUR > 0) partes.push(`€${fmt(i.montoEUR)} EUR`);
-  return `• ${i.concepto || '(sin concepto)'}: ${partes.join(' · ') || '—'}`;
+  const etiqueta = [i.rubro, i.cliente, i.concepto].filter(s => s && s.trim()).join(' / ') || '(sin detalle)';
+  return `• ${etiqueta}: ${partes.join(' · ') || '—'}`;
 }).join('\n')}
 Total: ${totalesIngresos.MXN > 0 ? `$${fmt(totalesIngresos.MXN)} MXN` : ''}${totalesIngresos.USD > 0 ? ` · $${fmt(totalesIngresos.USD)} USD` : ''}${totalesIngresos.EUR > 0 ? ` · €${fmt(totalesIngresos.EUR)} EUR` : ''}` : '';
 
@@ -3987,18 +3997,31 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           ) : (
             <>
               <div style={{overflow:'auto'}}>
-                <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:13,tableLayout:'fixed'}}>
+                  <colgroup>
+                    <col style={{width:'16%'}}/>
+                    <col style={{width:'18%'}}/>
+                    <col style={{width:'22%'}}/>
+                    <col style={{width:'12%'}}/>
+                    <col style={{width:'12%'}}/>
+                    <col style={{width:'12%'}}/>
+                    {!esConsulta && <col style={{width:'8%'}}/>}
+                  </colgroup>
                   <thead>
                     <tr style={{background:'#E8F5E9'}}>
-                      <th style={{padding:'10px 14px',textAlign:'left',fontWeight:700,color:'#1B5E20',fontSize:12,textTransform:'uppercase',letterSpacing:0.5}}>Concepto</th>
-                      <th style={{padding:'10px 14px',textAlign:'right',fontWeight:700,color:'#1B5E20',fontSize:12,textTransform:'uppercase',letterSpacing:0.5,width:140}}>MXN</th>
-                      <th style={{padding:'10px 14px',textAlign:'right',fontWeight:700,color:'#1B5E20',fontSize:12,textTransform:'uppercase',letterSpacing:0.5,width:140}}>USD</th>
-                      <th style={{padding:'10px 14px',textAlign:'right',fontWeight:700,color:'#1B5E20',fontSize:12,textTransform:'uppercase',letterSpacing:0.5,width:140}}>EUR</th>
-                      {!esConsulta && <th style={{padding:'10px 14px',textAlign:'center',width:50}}></th>}
+                      <th style={{padding:'10px 12px',textAlign:'left',fontWeight:700,color:'#1B5E20',fontSize:11,textTransform:'uppercase',letterSpacing:0.5}}>Rubro</th>
+                      <th style={{padding:'10px 12px',textAlign:'left',fontWeight:700,color:'#1B5E20',fontSize:11,textTransform:'uppercase',letterSpacing:0.5}}>Cliente</th>
+                      <th style={{padding:'10px 12px',textAlign:'left',fontWeight:700,color:'#1B5E20',fontSize:11,textTransform:'uppercase',letterSpacing:0.5}}>Concepto</th>
+                      <th style={{padding:'10px 12px',textAlign:'right',fontWeight:700,color:'#1B5E20',fontSize:11,textTransform:'uppercase',letterSpacing:0.5}}>MXN</th>
+                      <th style={{padding:'10px 12px',textAlign:'right',fontWeight:700,color:'#1B5E20',fontSize:11,textTransform:'uppercase',letterSpacing:0.5}}>USD</th>
+                      <th style={{padding:'10px 12px',textAlign:'right',fontWeight:700,color:'#1B5E20',fontSize:11,textTransform:'uppercase',letterSpacing:0.5}}>EUR</th>
+                      {!esConsulta && <th style={{padding:'10px 12px',textAlign:'center'}}></th>}
                     </tr>
                   </thead>
                   <tbody>
                     {ingresosDia.map(ing => {
+                      const keyRubro = `${ing.id}_rubro`;
+                      const keyCliente = `${ing.id}_cliente`;
                       const keyConcepto = `${ing.id}_concepto`;
                       const keyMXN = `${ing.id}_MXN`;
                       const keyUSD = `${ing.id}_USD`;
@@ -4007,6 +4030,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
                       const renderCelda = (key, valorMostrar, alignRight = true) => {
                         const enEdicion = editandoIngreso === key;
+                        const esCampoTexto = key.endsWith('_rubro') || key.endsWith('_cliente') || key.endsWith('_concepto');
                         if (enEdicion) {
                           return (
                             <input
@@ -4014,11 +4038,11 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                               value={valorIngreso}
                               onChange={(e) => {
                                 const v = e.target.value;
-                                setValorIngreso(key.endsWith('_concepto') ? v : v.replace(/[^\d.]/g, ''));
+                                setValorIngreso(esCampoTexto ? v : v.replace(/[^\d.]/g, ''));
                               }}
                               onBlur={guardarCeldaIngreso}
                               onKeyDown={(e) => { if (e.key === 'Enter') guardarCeldaIngreso(); if (e.key === 'Escape') cancelarCeldaIngreso(); }}
-                              style={{width:'100%',border:'2px solid #1B5E20',borderRadius:5,padding:'6px 10px',fontSize:13,textAlign:alignRight?'right':'left',fontFamily:alignRight?'monospace':'inherit',fontVariantNumeric:alignRight?'tabular-nums':'normal',outline:'none'}}
+                              style={{width:'100%',border:'2px solid #1B5E20',borderRadius:5,padding:'6px 8px',fontSize:12,textAlign:alignRight?'right':'left',fontFamily:alignRight?'monospace':'inherit',fontVariantNumeric:alignRight?'tabular-nums':'normal',outline:'none',boxSizing:'border-box'}}
                             />
                           );
                         }
@@ -4027,37 +4051,47 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                             onClick={() => {
                               if (!editable) return;
                               setEditandoIngreso(key);
-                              if (key.endsWith('_concepto')) setValorIngreso(ing.concepto || '');
+                              if (key.endsWith('_rubro')) setValorIngreso(ing.rubro || '');
+                              else if (key.endsWith('_cliente')) setValorIngreso(ing.cliente || '');
+                              else if (key.endsWith('_concepto')) setValorIngreso(ing.concepto || '');
                               else if (key.endsWith('_MXN')) setValorIngreso(String(ing.montoMXN || ''));
                               else if (key.endsWith('_USD')) setValorIngreso(String(ing.montoUSD || ''));
                               else if (key.endsWith('_EUR')) setValorIngreso(String(ing.montoEUR || ''));
                             }}
-                            style={{padding:'6px 8px',borderRadius:5,cursor:editable?'pointer':'default',transition:'background 0.15s',minHeight:20}}
+                            style={{padding:'6px 8px',borderRadius:5,cursor:editable?'pointer':'default',transition:'background 0.15s',minHeight:20,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}
                             onMouseEnter={(e) => { if (editable) e.currentTarget.style.background = '#E8F5E9'; }}
                             onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                            title={editable ? 'Clic para editar' : ''}
+                            title={editable ? (typeof valorMostrar === 'string' ? valorMostrar : 'Clic para editar') : ''}
                           >
                             {valorMostrar}
                           </div>
                         );
                       };
 
+                      const placeholderVacio = (txt) => <span style={{color:'#bbb',fontStyle:'italic',fontSize:12}}>{txt}</span>;
+
                       return (
                         <tr key={ing.id} style={{borderBottom:`1px solid ${C.border}`}}>
-                          <td style={{padding:'8px 14px'}}>
-                            {renderCelda(keyConcepto, ing.concepto || <span style={{color:'#aaa',fontStyle:'italic'}}>Sin concepto — clic para editar</span>, false)}
+                          <td style={{padding:'6px 8px',fontWeight:600,color:'#1F2937'}}>
+                            {renderCelda(keyRubro, ing.rubro || placeholderVacio('— Rubro —'), false)}
                           </td>
-                          <td style={{padding:'8px 14px',textAlign:'right',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontWeight:ing.montoMXN>0?700:400,color:ing.montoMXN>0?'#1F2937':'#bbb'}}>
+                          <td style={{padding:'6px 8px',color:'#374151'}}>
+                            {renderCelda(keyCliente, ing.cliente || placeholderVacio('— Cliente —'), false)}
+                          </td>
+                          <td style={{padding:'6px 8px',color:'#374151'}}>
+                            {renderCelda(keyConcepto, ing.concepto || placeholderVacio('— Concepto —'), false)}
+                          </td>
+                          <td style={{padding:'6px 8px',textAlign:'right',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontWeight:ing.montoMXN>0?700:400,color:ing.montoMXN>0?'#1F2937':'#bbb'}}>
                             {renderCelda(keyMXN, ing.montoMXN > 0 ? `$${fmt(ing.montoMXN)}` : '—')}
                           </td>
-                          <td style={{padding:'8px 14px',textAlign:'right',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontWeight:ing.montoUSD>0?700:400,color:ing.montoUSD>0?'#1F2937':'#bbb'}}>
+                          <td style={{padding:'6px 8px',textAlign:'right',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontWeight:ing.montoUSD>0?700:400,color:ing.montoUSD>0?'#1F2937':'#bbb'}}>
                             {renderCelda(keyUSD, ing.montoUSD > 0 ? `$${fmt(ing.montoUSD)}` : '—')}
                           </td>
-                          <td style={{padding:'8px 14px',textAlign:'right',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontWeight:ing.montoEUR>0?700:400,color:ing.montoEUR>0?'#1F2937':'#bbb'}}>
+                          <td style={{padding:'6px 8px',textAlign:'right',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontWeight:ing.montoEUR>0?700:400,color:ing.montoEUR>0?'#1F2937':'#bbb'}}>
                             {renderCelda(keyEUR, ing.montoEUR > 0 ? `€${fmt(ing.montoEUR)}` : '—')}
                           </td>
                           {!esConsulta && (
-                            <td style={{padding:'8px 14px',textAlign:'center'}}>
+                            <td style={{padding:'6px 8px',textAlign:'center'}}>
                               <button onClick={() => eliminarIngreso(ing.id)} title="Eliminar" style={{background:'transparent',border:'none',cursor:'pointer',fontSize:14,color:'#999',padding:4}}>🗑️</button>
                             </td>
                           )}
@@ -4067,10 +4101,10 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                   </tbody>
                   <tfoot>
                     <tr style={{background:'#E8F5E9',borderTop:'2px solid #1B5E20'}}>
-                      <td style={{padding:'12px 14px',fontWeight:800,color:'#1B5E20',fontSize:14}}>TOTAL</td>
-                      <td style={{padding:'12px 14px',textAlign:'right',fontWeight:800,color:'#1B5E20',fontSize:15,fontFamily:'monospace',fontVariantNumeric:'tabular-nums'}}>{totalesIngresos.MXN > 0 ? `$${fmt(totalesIngresos.MXN)}` : '—'}</td>
-                      <td style={{padding:'12px 14px',textAlign:'right',fontWeight:800,color:'#1B5E20',fontSize:15,fontFamily:'monospace',fontVariantNumeric:'tabular-nums'}}>{totalesIngresos.USD > 0 ? `$${fmt(totalesIngresos.USD)}` : '—'}</td>
-                      <td style={{padding:'12px 14px',textAlign:'right',fontWeight:800,color:'#1B5E20',fontSize:15,fontFamily:'monospace',fontVariantNumeric:'tabular-nums'}}>{totalesIngresos.EUR > 0 ? `€${fmt(totalesIngresos.EUR)}` : '—'}</td>
+                      <td colSpan={3} style={{padding:'12px',fontWeight:800,color:'#1B5E20',fontSize:14}}>TOTAL</td>
+                      <td style={{padding:'12px 8px',textAlign:'right',fontWeight:800,color:'#1B5E20',fontSize:14,fontFamily:'monospace',fontVariantNumeric:'tabular-nums'}}>{totalesIngresos.MXN > 0 ? `$${fmt(totalesIngresos.MXN)}` : '—'}</td>
+                      <td style={{padding:'12px 8px',textAlign:'right',fontWeight:800,color:'#1B5E20',fontSize:14,fontFamily:'monospace',fontVariantNumeric:'tabular-nums'}}>{totalesIngresos.USD > 0 ? `$${fmt(totalesIngresos.USD)}` : '—'}</td>
+                      <td style={{padding:'12px 8px',textAlign:'right',fontWeight:800,color:'#1B5E20',fontSize:14,fontFamily:'monospace',fontVariantNumeric:'tabular-nums'}}>{totalesIngresos.EUR > 0 ? `€${fmt(totalesIngresos.EUR)}` : '—'}</td>
                       {!esConsulta && <td/>}
                     </tr>
                   </tfoot>
