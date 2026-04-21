@@ -3408,22 +3408,37 @@ export default function CxpApp({ user, onLogout }) {
       const convUSD = parseSaldo(conversiones.usd_to_mxn) * parseTc(tiposCambio.usdMxn);
       const convEUR = parseSaldo(conversiones.eur_to_mxn) * parseTc(tiposCambio.eurMxn);
       
-      const saldoFinalMXN = saldoMXN + convUSD + convEUR;
-      const saldoFinalUSD = saldoUSD - parseSaldo(conversiones.usd_to_mxn);
-      const saldoFinalEUR = saldoEUR - parseSaldo(conversiones.eur_to_mxn);
+      // Ingresos del día (sumados por moneda)
+      const ingresosMXN = ingresosDia.reduce((s, i) => s + (+i.montoMXN || 0), 0);
+      const ingresosUSD = ingresosDia.reduce((s, i) => s + (+i.montoUSD || 0), 0);
+      const ingresosEUR = ingresosDia.reduce((s, i) => s + (+i.montoEUR || 0), 0);
       
-      const deficitMXN = saldoFinalMXN - totalesPagos.MXN;
-      const deficitUSD = saldoFinalUSD - totalesPagos.USD;
-      const deficitEUR = saldoFinalEUR - totalesPagos.EUR;
+      // Saldo inicial después de conversiones entre monedas
+      const saldoInicialMXN = saldoMXN + convUSD + convEUR;
+      const saldoInicialUSD = saldoUSD - parseSaldo(conversiones.usd_to_mxn);
+      const saldoInicialEUR = saldoEUR - parseSaldo(conversiones.eur_to_mxn);
+      
+      // Saldo disponible = saldo inicial + ingresos del día
+      const disponibleMXN = saldoInicialMXN + ingresosMXN;
+      const disponibleUSD = saldoInicialUSD + ingresosUSD;
+      const disponibleEUR = saldoInicialEUR + ingresosEUR;
+      
+      // Déficit/Excedente = disponible - pagos
+      const deficitMXN = disponibleMXN - totalesPagos.MXN;
+      const deficitUSD = disponibleUSD - totalesPagos.USD;
+      const deficitEUR = disponibleEUR - totalesPagos.EUR;
       
       return {
-        saldoFinal: { MXN: saldoFinalMXN, USD: saldoFinalUSD, EUR: saldoFinalEUR },
+        saldoInicial: { MXN: saldoInicialMXN, USD: saldoInicialUSD, EUR: saldoInicialEUR },
+        ingresos: { MXN: ingresosMXN, USD: ingresosUSD, EUR: ingresosEUR },
+        disponible: { MXN: disponibleMXN, USD: disponibleUSD, EUR: disponibleEUR },
+        saldoFinal: { MXN: disponibleMXN, USD: disponibleUSD, EUR: disponibleEUR }, // compat: ahora es el disponible
         deficit: { MXN: deficitMXN, USD: deficitUSD, EUR: deficitEUR },
         statusMXN: deficitMXN >= 0 ? '✅' : deficitMXN > -50000 ? '🟡' : '🔴',
         statusUSD: deficitUSD >= 0 ? '✅' : deficitUSD > -5000 ? '🟡' : '🔴',
         statusEUR: deficitEUR >= 0 ? '✅' : '🟡'
       };
-    }, [saldosEmpresas, conversiones, tiposCambio, totalesPagos, empresaId]);
+    }, [saldosEmpresas, conversiones, tiposCambio, totalesPagos, empresaId, ingresosDia]);
 
     const handleSaldoChange = (moneda, value) => {
       // Solo actualiza estado local en cada keystroke (sin tocar Supabase)
@@ -3528,14 +3543,21 @@ export default function CxpApp({ user, onLogout }) {
 
       const filaSaldoFinal = (k, label, sm) => {
         const inicial = saldoNum(k);
+        const ingresos = analisisLiquidez.ingresos[label] || 0;
+        const disponible = inicial + ingresos;
         const pago = totalesPagos[label] || 0;
-        const final = inicial - pago;
+        const final = disponible - pago;
         const colorClass = final >= 0 ? 'ok' : 'pend';
+        const ingresosCell = ingresos > 0
+          ? `<td class="r" style="color:#2E7D32;">+${sm}${fmt(ingresos)}</td>`
+          : `<td class="r" style="color:#999;">—</td>`;
         return `
           <tr>
             <td>${label}</td>
             <td class="r">${sm}${fmt(inicial)}</td>
-            <td class="r">${sm}${fmt(pago)}</td>
+            ${ingresosCell}
+            <td class="r"><b>${sm}${fmt(disponible)}</b></td>
+            <td class="r" style="color:#C62828;">−${sm}${fmt(pago)}</td>
             <td class="r ${colorClass}">${sm}${fmt(final)}</td>
           </tr>`;
       };
@@ -3674,9 +3696,9 @@ ${detallado ? `
   💱 Tipos de cambio aplicados &middot; USD/MXN <b>${tiposCambio.usdMxn}</b> &middot; EUR/MXN <b>${tiposCambio.eurMxn}</b>
 </div>
 
-<h2>Saldos finales después de pagos</h2>
+<h2>Flujo del día — Saldos finales después de pagos</h2>
 <table class="saldos-final">
-  <thead><tr><th>Moneda</th><th class="r">Saldo inicial</th><th class="r">Pagos del día</th><th class="r">Saldo final</th></tr></thead>
+  <thead><tr><th>Moneda</th><th class="r">Saldo inicial</th><th class="r">+ Ingresos</th><th class="r">= Disponible</th><th class="r">− Pagos</th><th class="r">Saldo final</th></tr></thead>
   <tbody>
     ${filaSaldoFinal('mxn','MXN','$')}
     ${filaSaldoFinal('usd','USD','$')}
@@ -3692,13 +3714,16 @@ ${detallado ? `
     const m = k.toUpperCase();
     const s = k === 'eur' ? '€' : '$';
     const inicial = saldoNum(k);
+    const ingresos = analisisLiquidez.ingresos[m] || 0;
+    const disponible = inicial + ingresos;
     const pago = totalesPagos[m] || 0;
-    const final = inicial - pago;
+    const final = disponible - pago;
     const colorFinal = final >= 0 ? '#1B5E20' : '#C62828';
     return `<div class="card ${k}">
-      <div class="lbl">${m} · Inicial → Pagos → Final</div>
-      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px;margin-top:2px;">
+      <div class="lbl">${m} · Inicial${ingresos>0?' + Ingresos':''} − Pagos = Final</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px;margin-top:2px;flex-wrap:wrap;">
         <div style="font-size:11px;color:#6B7280;">${s}${fmt(inicial)}</div>
+        ${ingresos>0?`<div style="font-size:11px;color:#2E7D32;">+${s}${fmt(ingresos)}</div>`:''}
         <div style="font-size:11px;color:#C62828;">−${s}${fmt(pago)}</div>
         <div style="font-size:14px;font-weight:800;color:${colorFinal};">${s}${fmt(final)}</div>
       </div>
@@ -3932,106 +3957,32 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
               );
             })}
           </div>
-        </div>
 
-        {/* Análisis de Liquidez */}
-        <div style={{background:'linear-gradient(135deg, #F3E5F5 0%, #FAF4FB 50%, #EDE7F6 100%)',border:`2px solid #9575CD`,borderRadius:14,padding:16,marginBottom:20,position:'relative',overflow:'hidden'}}>
-          
-          <div style={{position:'relative',zIndex:1}}>
-            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
-              <div style={{fontSize:20}}>⚠️</div>
+          {/* Separador sutil */}
+          <div style={{borderTop:`1px solid ${C.border}`,marginTop:22,marginBottom:18}}/>
+
+          {/* Sub-sección: Ingresos del Día */}
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14,flexWrap:'wrap',gap:8}}>
+            <div style={{display:'flex',alignItems:'center',gap:10}}>
+              <div style={{width:36,height:36,borderRadius:10,background:'#E8F5E9',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>💵</div>
               <div>
-                <h3 style={{fontSize:15,fontWeight:800,color:"#4A148C",margin:0}}>Análisis de Liquidez</h3>
-                <p style={{fontSize:11,color:"#6A1B9A",margin:"1px 0 0",opacity:0.75}}>Estado financiero después de pagos del día</p>
+                <h4 style={{fontSize:15,fontWeight:700,color:'#1B5E20',margin:0}}>Ingresos del Día</h4>
+                <p style={{fontSize:11,color:C.muted,margin:'2px 0 0'}}>Captura manual · {ingresosDia.length} {ingresosDia.length === 1 ? 'entrada' : 'entradas'}</p>
               </div>
-            </div>
-
-            {/* Estado por Moneda */}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
-              {[
-                {moneda: 'MXN', status: analisisLiquidez.statusMXN, deficit: analisisLiquidez.deficit.MXN, color: C.mxn, bg: '#E3F2FD', border: '#90CAF9'},
-                {moneda: 'USD', status: analisisLiquidez.statusUSD, deficit: analisisLiquidez.deficit.USD, color: C.usd, bg: '#E8F5E9', border: '#A5D6A7'},
-                {moneda: 'EUR', status: analisisLiquidez.statusEUR, deficit: analisisLiquidez.deficit.EUR, color: C.eur, bg: '#F3E5F5', border: '#CE93D8'}
-              ].map(({moneda, status, deficit, color, bg, border}) => (
-                <div key={moneda} style={{
-                  background:bg,
-                  border:`2px solid ${border}`,
-                  borderRadius:12,
-                  padding:'14px 16px',
-                  textAlign:'center'
-                }}>
-                  <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginBottom:6}}>
-                    <span style={{fontSize:20,lineHeight:1}}>{status}</span>
-                    <span style={{fontSize:15,fontWeight:800,color}}>{moneda}</span>
-                  </div>
-                  <div style={{fontSize:22,fontWeight:800,color: deficit >= 0 ? '#1B5E20' : '#D32F2F',marginBottom:4,lineHeight:1.1}}>
-                    {moneda === 'EUR' ? '€' : '$'}{fmt(Math.abs(deficit))}
-                  </div>
-                  <div style={{fontSize:11,fontWeight:600,color: deficit >= 0 ? '#1B5E20' : '#D32F2F',textTransform:'uppercase',letterSpacing:0.4,opacity:0.85}}>
-                    {deficit >= 0 ? 'Excedente' : 'Déficit'}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {(analisisLiquidez.deficit.MXN < 0 && (saldosEmpresas[empresaId]?.usd || saldosEmpresas[empresaId]?.eur)) && (
-          <div style={{background:"#E8F0FE",border:`1px solid ${C.blue}`,borderRadius:14,padding:20,marginBottom:20}}>
-            <h3 style={{fontSize:16,fontWeight:700,color:C.navy,margin:"0 0 16px"}}>🔄 Convertir Divisas</h3>
-            
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-              <div>
-                <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>USD → MXN</label>
-                <input 
-                  value={conversiones.usd_to_mxn} 
-                  onChange={(e) => handleConversionChange('usd_to_mxn', e.target.value)}
-                  placeholder="$0.00 USD" 
-                  style={{...inputStyle,textAlign:"right"}} 
-                />
-                {conversiones.usd_to_mxn && tiposCambio.usdMxn && (
-                  <div style={{fontSize:11,color:C.muted,marginTop:2}}>
-                    = ${fmt(parseFloat(conversiones.usd_to_mxn || 0) * parseFloat(tiposCambio.usdMxn || 1))} MXN
-                  </div>
-                )}
-              </div>
-              <div>
-                <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>EUR → MXN</label>
-                <input 
-                  value={conversiones.eur_to_mxn} 
-                  onChange={(e) => handleConversionChange('eur_to_mxn', e.target.value)}
-                  placeholder="€0.00 EUR" 
-                  style={{...inputStyle,textAlign:"right"}} 
-                />
-                {conversiones.eur_to_mxn && tiposCambio.eurMxn && (
-                  <div style={{fontSize:11,color:C.muted,marginTop:2}}>
-                    = ${fmt(parseFloat(conversiones.eur_to_mxn || 0) * parseFloat(tiposCambio.eurMxn || 1))} MXN
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ═══════════ INGRESOS DEL DÍA ═══════════ */}
-        <div style={{background:C.surface,border:'2px solid #1B5E20',borderRadius:14,overflow:'hidden',marginBottom:20}}>
-          <div style={{padding:'16px 20px',background:'#1B5E20',color:'#fff',display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}}>
-            <div>
-              <h3 style={{fontSize:16,fontWeight:700,margin:0}}>💵 Ingresos del Día</h3>
-              <p style={{fontSize:13,margin:'4px 0 0',opacity:0.85}}>Captura manual · {ingresosDia.length} {ingresosDia.length === 1 ? 'entrada' : 'entradas'}</p>
             </div>
             {!esConsulta && (
-              <button onClick={agregarIngreso} style={{background:'#fff',color:'#1B5E20',border:'none',padding:'8px 14px',borderRadius:8,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>+ Agregar ingreso</button>
+              <button onClick={agregarIngreso} style={{background:'#1B5E20',color:'#fff',border:'none',padding:'8px 14px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 1px 3px rgba(27,94,32,0.25)'}}>+ Agregar ingreso</button>
             )}
           </div>
 
+          <div style={{border:`1px solid #C8E6C9`,borderRadius:10,overflow:'hidden',background:'#fff'}}>
           {ingresosLoading ? (
-            <div style={{padding:30,textAlign:'center',color:C.muted,fontSize:13}}>Cargando ingresos...</div>
+            <div style={{padding:20,textAlign:'center',color:C.muted,fontSize:13}}>Cargando ingresos...</div>
           ) : ingresosDia.length === 0 ? (
-            <div style={{padding:40,textAlign:'center',color:C.muted}}>
-              <div style={{fontSize:40,marginBottom:8}}>💵</div>
-              <div style={{fontSize:14,fontWeight:600,color:'#1B5E20',marginBottom:6}}>Aún no hay ingresos capturados hoy</div>
-              <div style={{fontSize:12}}>Haz clic en "+ Agregar ingreso" para registrar la primera entrada</div>
+            <div style={{padding:'22px 20px',textAlign:'center',color:C.muted,display:'flex',alignItems:'center',justifyContent:'center',gap:10,flexWrap:'wrap'}}>
+              <div style={{fontSize:22}}>💵</div>
+              <div style={{fontSize:13,color:'#1B5E20',fontWeight:600}}>Aún no hay ingresos capturados hoy.</div>
+              <div style={{fontSize:12,color:C.muted}}>Usa "+ Agregar ingreso" para la primera entrada.</div>
             </div>
           ) : (
             <>
@@ -4127,7 +4078,88 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
               </div>
             </>
           )}
+          </div>
         </div>
+
+        {/* Análisis de Liquidez */}
+        <div style={{background:'linear-gradient(135deg, #F3E5F5 0%, #FAF4FB 50%, #EDE7F6 100%)',border:`2px solid #9575CD`,borderRadius:14,padding:16,marginBottom:20,position:'relative',overflow:'hidden'}}>
+          
+          <div style={{position:'relative',zIndex:1}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
+              <div style={{fontSize:20}}>⚠️</div>
+              <div>
+                <h3 style={{fontSize:15,fontWeight:800,color:"#4A148C",margin:0}}>Análisis de Liquidez</h3>
+                <p style={{fontSize:11,color:"#6A1B9A",margin:"1px 0 0",opacity:0.75}}>Estado financiero después de pagos del día</p>
+              </div>
+            </div>
+
+            {/* Estado por Moneda */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
+              {[
+                {moneda: 'MXN', status: analisisLiquidez.statusMXN, deficit: analisisLiquidez.deficit.MXN, color: C.mxn, bg: '#E3F2FD', border: '#90CAF9'},
+                {moneda: 'USD', status: analisisLiquidez.statusUSD, deficit: analisisLiquidez.deficit.USD, color: C.usd, bg: '#E8F5E9', border: '#A5D6A7'},
+                {moneda: 'EUR', status: analisisLiquidez.statusEUR, deficit: analisisLiquidez.deficit.EUR, color: C.eur, bg: '#F3E5F5', border: '#CE93D8'}
+              ].map(({moneda, status, deficit, color, bg, border}) => (
+                <div key={moneda} style={{
+                  background:bg,
+                  border:`2px solid ${border}`,
+                  borderRadius:12,
+                  padding:'14px 16px',
+                  textAlign:'center'
+                }}>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginBottom:6}}>
+                    <span style={{fontSize:20,lineHeight:1}}>{status}</span>
+                    <span style={{fontSize:15,fontWeight:800,color}}>{moneda}</span>
+                  </div>
+                  <div style={{fontSize:22,fontWeight:800,color: deficit >= 0 ? '#1B5E20' : '#D32F2F',marginBottom:4,lineHeight:1.1}}>
+                    {moneda === 'EUR' ? '€' : '$'}{fmt(Math.abs(deficit))}
+                  </div>
+                  <div style={{fontSize:11,fontWeight:600,color: deficit >= 0 ? '#1B5E20' : '#D32F2F',textTransform:'uppercase',letterSpacing:0.4,opacity:0.85}}>
+                    {deficit >= 0 ? 'Excedente' : 'Déficit'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {(analisisLiquidez.deficit.MXN < 0 && (saldosEmpresas[empresaId]?.usd || saldosEmpresas[empresaId]?.eur)) && (
+          <div style={{background:"#E8F0FE",border:`1px solid ${C.blue}`,borderRadius:14,padding:20,marginBottom:20}}>
+            <h3 style={{fontSize:16,fontWeight:700,color:C.navy,margin:"0 0 16px"}}>🔄 Convertir Divisas</h3>
+            
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div>
+                <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>USD → MXN</label>
+                <input 
+                  value={conversiones.usd_to_mxn} 
+                  onChange={(e) => handleConversionChange('usd_to_mxn', e.target.value)}
+                  placeholder="$0.00 USD" 
+                  style={{...inputStyle,textAlign:"right"}} 
+                />
+                {conversiones.usd_to_mxn && tiposCambio.usdMxn && (
+                  <div style={{fontSize:11,color:C.muted,marginTop:2}}>
+                    = ${fmt(parseFloat(conversiones.usd_to_mxn || 0) * parseFloat(tiposCambio.usdMxn || 1))} MXN
+                  </div>
+                )}
+              </div>
+              <div>
+                <label style={{fontSize:12,color:C.muted,fontWeight:600,display:"block",marginBottom:4}}>EUR → MXN</label>
+                <input 
+                  value={conversiones.eur_to_mxn} 
+                  onChange={(e) => handleConversionChange('eur_to_mxn', e.target.value)}
+                  placeholder="€0.00 EUR" 
+                  style={{...inputStyle,textAlign:"right"}} 
+                />
+                {conversiones.eur_to_mxn && tiposCambio.eurMxn && (
+                  <div style={{fontSize:11,color:C.muted,marginTop:2}}>
+                    = ${fmt(parseFloat(conversiones.eur_to_mxn || 0) * parseFloat(tiposCambio.eurMxn || 1))} MXN
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
 
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",marginBottom:20}}>
           <div style={{padding:"16px 20px",background:C.navy,color:"#fff"}}>
@@ -4207,35 +4239,45 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         </div>
 
         <div style={{background:"#F0FFF4",border:`1px solid #A5D6A7`,borderRadius:14,padding:20}}>
-          <h3 style={{fontSize:16,fontWeight:700,color:"#1B5E20",margin:"0 0 16px"}}>💰 Saldos Después de Pagos</h3>
+          <h3 style={{fontSize:16,fontWeight:700,color:"#1B5E20",margin:"0 0 16px"}}>💰 Flujo del Día</h3>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16}}>
-            <div style={{textAlign:"center"}}>
-              <div style={{fontSize:14,fontWeight:600,color:"#2E7D32",marginBottom:4}}>MXN</div>
-              <div style={{fontSize:18,fontWeight:800,color:analisisLiquidez.deficit.MXN >= 0 ? "#1B5E20" : "#D32F2F"}}>
-                ${fmt(analisisLiquidez.saldoFinal.MXN - totalesPagos.MXN)}
-              </div>
-              <div style={{fontSize:11,color:"#4CAF50",marginTop:2}}>
-                {analisisLiquidez.deficit.MXN >= 0 ? '+ Excedente' : '- Déficit'}
-              </div>
-            </div>
-            <div style={{textAlign:"center"}}>
-              <div style={{fontSize:14,fontWeight:600,color:"#2E7D32",marginBottom:4}}>USD</div>
-              <div style={{fontSize:18,fontWeight:800,color:analisisLiquidez.deficit.USD >= 0 ? "#1B5E20" : "#D32F2F"}}>
-                ${fmt(analisisLiquidez.saldoFinal.USD - totalesPagos.USD)}
-              </div>
-              <div style={{fontSize:11,color:"#4CAF50",marginTop:2}}>
-                {analisisLiquidez.deficit.USD >= 0 ? '+ Excedente' : '- Déficit'}
-              </div>
-            </div>
-            <div style={{textAlign:"center"}}>
-              <div style={{fontSize:14,fontWeight:600,color:"#2E7D32",marginBottom:4}}>EUR</div>
-              <div style={{fontSize:18,fontWeight:800,color:analisisLiquidez.deficit.EUR >= 0 ? "#1B5E20" : "#D32F2F"}}>
-                €{fmt(analisisLiquidez.saldoFinal.EUR - totalesPagos.EUR)}
-              </div>
-              <div style={{fontSize:11,color:"#4CAF50",marginTop:2}}>
-                {analisisLiquidez.deficit.EUR >= 0 ? '+ Excedente' : '- Déficit'}
-              </div>
-            </div>
+            {['MXN','USD','EUR'].map(mon => {
+              const sym = mon === 'EUR' ? '€' : '$';
+              const saldoInicial = analisisLiquidez.saldoInicial[mon];
+              const ingresos = analisisLiquidez.ingresos[mon];
+              const disponible = analisisLiquidez.disponible[mon];
+              const pagos = totalesPagos[mon];
+              const saldoFinal = disponible - pagos;
+              const esPositivo = saldoFinal >= 0;
+              // No mostrar moneda si está vacía por completo
+              if (saldoInicial === 0 && ingresos === 0 && pagos === 0 && disponible === 0) return null;
+              return (
+                <div key={mon} style={{background:'#fff',border:'1px solid #C8E6C9',borderRadius:10,padding:'14px 16px'}}>
+                  <div style={{fontSize:13,fontWeight:700,color:'#1B5E20',marginBottom:10,textAlign:'center',letterSpacing:0.5}}>{mon}</div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr auto',gap:'5px 10px',fontSize:12,fontVariantNumeric:'tabular-nums'}}>
+                    <div style={{color:'#555'}}>Saldo inicial</div>
+                    <div style={{textAlign:'right',fontWeight:600,color:'#1F2937',fontFamily:'monospace'}}>{sym}{fmt(saldoInicial)}</div>
+                    {ingresos > 0 && (<>
+                      <div style={{color:'#2E7D32'}}>+ Ingresos del día</div>
+                      <div style={{textAlign:'right',fontWeight:600,color:'#2E7D32',fontFamily:'monospace'}}>+{sym}{fmt(ingresos)}</div>
+                    </>)}
+                    <div style={{color:'#E65100',fontWeight:700,paddingTop:4,borderTop:'1px solid #E0E0E0',marginTop:3}}>Disponible</div>
+                    <div style={{textAlign:'right',fontWeight:800,color:'#E65100',fontFamily:'monospace',paddingTop:4,borderTop:'1px solid #E0E0E0',marginTop:3}}>{sym}{fmt(disponible)}</div>
+                    {pagos > 0 && (<>
+                      <div style={{color:'#C62828'}}>− Pagos del día</div>
+                      <div style={{textAlign:'right',fontWeight:600,color:'#C62828',fontFamily:'monospace'}}>−{sym}{fmt(pagos)}</div>
+                    </>)}
+                    <div style={{color:esPositivo?'#1B5E20':'#C62828',fontWeight:800,paddingTop:5,borderTop:`2px solid ${esPositivo?'#1B5E20':'#C62828'}`,marginTop:4,fontSize:13}}>Saldo final</div>
+                    <div style={{textAlign:'right',paddingTop:5,borderTop:`2px solid ${esPositivo?'#1B5E20':'#C62828'}`,marginTop:4}}>
+                      <span style={{background:esPositivo?'#1B5E20':'#C62828',color:'#fff',padding:'4px 10px',borderRadius:5,fontWeight:800,fontSize:14,fontFamily:'monospace'}}>{sym}{fmt(saldoFinal)}</span>
+                    </div>
+                    <div style={{fontSize:10,color:esPositivo?'#2E7D32':'#C62828',fontWeight:700,marginTop:2,gridColumn:'1 / -1',textAlign:'right'}}>
+                      {esPositivo ? '✅ Excedente' : '🔴 Déficit'}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
