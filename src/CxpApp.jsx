@@ -3974,73 +3974,61 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     };
 
     // ── Generación de PNG de secciones del reporte ──────────────────────
-    const capturarNodoPNG = async (node, nombreArchivo) => {
-      if (!node) return null;
-      try {
-        const canvas = await html2canvas(node, {
-          scale: 2,
-          backgroundColor: '#ffffff',
-          logging: false,
-          useCORS: true,
-          windowWidth: node.scrollWidth,
-        });
-        return new Promise(resolve => {
-          canvas.toBlob(blob => {
-            if (!blob) { resolve(null); return; }
-            // Descargar automáticamente
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = nombreArchivo;
-            a.click();
-            URL.revokeObjectURL(url);
-            resolve(blob);
-          }, 'image/png');
-        });
-      } catch (err) {
-        console.error('capturarNodoPNG:', err);
-        return null;
-      }
+    // Construir nodo decorado con header + contenido a capturar
+    const construirNodoCapturable = (tituloImg, subtitulo, contenidos) => {
+      const wrapper = document.createElement('div');
+      wrapper.style.cssText = 'position:absolute;top:-99999px;left:0;width:1100px;background:#ffffff;padding:24px 28px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,Ubuntu,sans-serif;box-sizing:border-box;';
+
+      // Header elegante
+      const header = document.createElement('div');
+      header.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:14px;border-bottom:3px solid #1A237E;margin-bottom:20px;';
+      header.innerHTML = `
+        <div>
+          <div style="font-size:10px;font-weight:700;color:#6366F1;letter-spacing:3px;text-transform:uppercase;margin-bottom:4px;">CxP Manager</div>
+          <div style="font-size:22px;font-weight:800;color:#1A237E;letter-spacing:-0.4px;line-height:1.15;">${tituloImg}</div>
+          <div style="font-size:13px;color:#4C1D95;margin-top:4px;font-weight:500;">${subtitulo}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:12px;color:#4B5563;font-weight:600;">${new Date().toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long', year:'numeric' })}</div>
+          <div style="font-size:11px;color:#6B7280;margin-top:2px;">Generado ${new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})} hrs · ${user?.nombre || 'usuario'}</div>
+        </div>
+      `;
+      wrapper.appendChild(header);
+
+      // Clones de los contenidos
+      contenidos.forEach((nodoOriginal, idx) => {
+        if (!nodoOriginal) return;
+        const clon = nodoOriginal.cloneNode(true);
+        // Remover bordes redondeados externos para look más continuo
+        clon.style.marginBottom = idx === contenidos.length - 1 ? '0' : '18px';
+        wrapper.appendChild(clon);
+      });
+
+      // Footer
+      const footer = document.createElement('div');
+      footer.style.cssText = 'margin-top:22px;padding-top:12px;border-top:1px solid #E5E7EB;display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#9CA3AF;';
+      footer.innerHTML = `
+        <div style="font-weight:600;letter-spacing:0.3px;">${empresa.nombre}</div>
+        <div style="font-style:italic;">Reporte generado automáticamente por CxP Manager</div>
+      `;
+      wrapper.appendChild(footer);
+
+      return wrapper;
     };
 
-    // Captura de HTML detallado (el del PDF) como imagen
-    const capturarHtmlDetalladoPNG = async (nombreArchivo) => {
-      const html = construirHtmlReporte('detallado', 'portrait');
-      // Crear iframe oculto para renderizar el HTML completo
-      const iframe = document.createElement('iframe');
-      iframe.style.cssText = 'position:absolute;top:-99999px;left:0;width:900px;height:2000px;border:0;';
-      document.body.appendChild(iframe);
+    // Captura un nodo construido y descarga el PNG
+    const capturarWrapper = async (wrapper, nombreArchivo) => {
+      document.body.appendChild(wrapper);
       try {
-        const doc = iframe.contentDocument || iframe.contentWindow.document;
-        // Escribir el HTML pero sin el script que dispara window.print()
-        const htmlSinPrint = html.replace(/window\.onload\s*=\s*function\(\)\s*\{[^}]*\};?/g, '');
-        doc.open();
-        doc.write(htmlSinPrint);
-        doc.close();
-        // Esperar a que renderice (fuentes, imágenes)
-        await new Promise(resolve => {
-          if (doc.readyState === 'complete') {
-            setTimeout(resolve, 500);
-          } else {
-            iframe.onload = () => setTimeout(resolve, 500);
-            setTimeout(resolve, 2000); // timeout por si onload no dispara
-          }
-        });
-        // Medir altura real del contenido
-        const body = doc.body;
-        const alturaReal = Math.max(body.scrollHeight, body.offsetHeight, 600);
-        iframe.style.height = alturaReal + 'px';
-        await new Promise(r => setTimeout(r, 200));
-        // Capturar el body entero
-        const canvas = await html2canvas(body, {
+        // Pequeña espera para que el browser pinte
+        await new Promise(r => setTimeout(r, 150));
+        const canvas = await html2canvas(wrapper, {
           scale: 2,
           backgroundColor: '#ffffff',
           logging: false,
           useCORS: true,
-          width: 900,
-          height: alturaReal,
-          windowWidth: 900,
-          windowHeight: alturaReal,
+          windowWidth: wrapper.scrollWidth,
+          windowHeight: wrapper.scrollHeight,
         });
         return new Promise(resolve => {
           canvas.toBlob(blob => {
@@ -4055,7 +4043,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           }, 'image/png');
         });
       } finally {
-        if (iframe.parentNode) document.body.removeChild(iframe);
+        if (wrapper.parentNode) document.body.removeChild(wrapper);
       }
     };
 
@@ -4064,18 +4052,40 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
       setGenerandoPng(true);
       const fechaStr = today();
       const empresaSlug = empresa.nombre.replace(/\s+/g, '_');
+      const fechaBonita = new Date().toLocaleDateString('es-MX', { day:'numeric', month:'long', year:'numeric' });
       try {
         if (modo === 'resumen') {
-          // Solo captura la sección de arriba (saldos, ingresos, cambios, saldo disponible)
-          await capturarNodoPNG(refResumen.current, `Resumen_Tesoreria_${empresaSlug}_${fechaStr}.png`);
+          // Solo la parte superior (saldos, ingresos, cambios, saldo disponible)
+          const w = construirNodoCapturable(
+            'Reporte de Tesorería del Día',
+            `Resumen financiero · ${fechaBonita}`,
+            [refResumen.current]
+          );
+          await capturarWrapper(w, `Tesoreria_Resumen_${empresaSlug}_${fechaStr}.png`);
         } else if (modo === 'detalle') {
-          // 2 imágenes: la de resumen (pantalla) + el detallado completo (HTML del PDF)
-          await capturarNodoPNG(refResumen.current, `1_Resumen_${empresaSlug}_${fechaStr}.png`);
+          // Imagen 1: resumen (arriba)
+          const w1 = construirNodoCapturable(
+            'Reporte de Tesorería del Día',
+            `Resumen financiero · ${fechaBonita} · Parte 1/2`,
+            [refResumen.current]
+          );
+          await capturarWrapper(w1, `1_Tesoreria_Resumen_${empresaSlug}_${fechaStr}.png`);
           await new Promise(r => setTimeout(r, 400));
-          await capturarHtmlDetalladoPNG(`2_Detalle_${empresaSlug}_${fechaStr}.png`);
+          // Imagen 2: detalle de pagos + saldos después (sin duplicar saldos iniciales)
+          const w2 = construirNodoCapturable(
+            'Detalle de Pagos Programados',
+            `Proveedores y saldos después de pagos · ${fechaBonita} · Parte 2/2`,
+            [refDetalle.current]
+          );
+          await capturarWrapper(w2, `2_Tesoreria_Detalle_${empresaSlug}_${fechaStr}.png`);
         } else if (modo === 'completo') {
-          // Una sola imagen larga: el HTML detallado completo (incluye todo)
-          await capturarHtmlDetalladoPNG(`Reporte_Tesoreria_Completo_${empresaSlug}_${fechaStr}.png`);
+          // Todo en una imagen larga: resumen + detalle sin duplicación
+          const w = construirNodoCapturable(
+            'Reporte de Tesorería del Día',
+            `Reporte completo · ${fechaBonita}`,
+            [refResumen.current, refDetalle.current]
+          );
+          await capturarWrapper(w, `Tesoreria_Completo_${empresaSlug}_${fechaStr}.png`);
         }
       } catch (err) {
         console.error('generarPNG error:', err);
@@ -4670,9 +4680,9 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
                   {[
-                    {id:'png_r', modo:'resumen',  icon:'📊', titulo:'Solo Resumen',           sub:'Saldos + ingresos + cambios + flujo', imgs:'1 imagen'},
-                    {id:'png_d', modo:'detalle',  icon:'📁', titulo:'Resumen + Detalle',     sub:'Resumen + reporte completo con facturas',              imgs:'2 imágenes'},
-                    {id:'png_c', modo:'completo', icon:'📑', titulo:'Reporte Completo',            sub:'Todo con desglose de facturas por proveedor',              imgs:'1 imagen'},
+                    {id:'png_r', modo:'resumen',  icon:'📊', titulo:'Solo Resumen',           sub:'Saldos + ingresos + cambios + disponible', imgs:'1 imagen'},
+                    {id:'png_d', modo:'detalle',  icon:'📁', titulo:'Resumen + Detalle',     sub:'Dos imágenes: resumen y pagos por proveedor',              imgs:'2 imágenes'},
+                    {id:'png_c', modo:'completo', icon:'📑', titulo:'Reporte Completo',            sub:'Todo en una imagen larga',              imgs:'1 imagen'},
                   ].map(opt => (
                     <button
                       key={opt.id}
