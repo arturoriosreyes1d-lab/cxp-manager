@@ -4196,8 +4196,10 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                   ? (cs.badgeFrom === 'MXN' ? (ca.montoVendido / ca.montoComprado) : (ca.montoComprado / ca.montoVendido))
                   : 0;
 
-                const renderCelda = (key, valorMostrar, sim, color, bg) => {
+                const renderCelda = (key, valor, sim, color) => {
                   const enEdicion = editandoCambio === key;
+                  const tieneValor = valor > 0;
+                  const textoMostrar = tieneValor ? `${sim}${fmt(valor)}` : `${sim}0.00`;
                   if (enEdicion) {
                     return (
                       <input
@@ -4206,7 +4208,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                         onChange={(e) => setValorCambio(e.target.value.replace(/[^\d.]/g, ''))}
                         onBlur={guardarCeldaCambio}
                         onKeyDown={(e) => { if (e.key === 'Enter') guardarCeldaCambio(); if (e.key === 'Escape') cancelarCeldaCambio(); }}
-                        style={{width:'100%',border:`2px solid ${color}`,borderRadius:6,padding:'6px 10px',fontSize:14,fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontWeight:700,textAlign:'right',outline:'none',boxSizing:'border-box'}}
+                        style={{width:'100%',border:`2px solid ${color}`,borderRadius:6,padding:'7px 10px',fontSize:15,fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontWeight:700,textAlign:'right',outline:'none',boxSizing:'border-box',color:'#1F2937',background:'#fff'}}
                       />
                     );
                   }
@@ -4218,12 +4220,26 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                         const campo = key.endsWith('_vendido') ? 'vendido' : 'comprado';
                         setValorCambio(campo === 'vendido' ? String(ca.montoVendido || '') : String(ca.montoComprado || ''));
                       }}
-                      style={{padding:'7px 10px',borderRadius:6,cursor:editable?'pointer':'default',background:bg,border:`1px solid ${color}30`,textAlign:'right',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontWeight:700,color,fontSize:14,transition:'background 0.15s'}}
-                      onMouseEnter={(e) => { if (editable) e.currentTarget.style.background = `${color}20`; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = bg; }}
+                      style={{
+                        padding:'7px 10px',
+                        borderRadius:6,
+                        cursor:editable?'pointer':'default',
+                        background: tieneValor ? '#fff' : '#F9FAFB',
+                        border:`1px solid ${C.border}`,
+                        borderLeft:`4px solid ${color}`,
+                        textAlign:'right',
+                        fontFamily:'monospace',
+                        fontVariantNumeric:'tabular-nums',
+                        fontWeight: tieneValor ? 700 : 500,
+                        color: tieneValor ? '#1F2937' : '#9CA3AF',
+                        fontSize:15,
+                        transition:'background 0.15s, border-color 0.15s',
+                      }}
+                      onMouseEnter={(e) => { if (editable) { e.currentTarget.style.background = '#F0F4FF'; e.currentTarget.style.borderColor = color; e.currentTarget.style.borderLeftColor = color; } }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = tieneValor ? '#fff' : '#F9FAFB'; e.currentTarget.style.borderColor = C.border; e.currentTarget.style.borderLeftColor = color; }}
                       title={editable ? 'Clic para editar' : ''}
                     >
-                      {valorMostrar}
+                      {textoMostrar}
                     </div>
                   );
                 };
@@ -4237,10 +4253,10 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                     </div>
 
                     <div style={{fontSize:11,color:C.muted,fontWeight:600,marginBottom:3}}>Vendió ({cs.badgeFrom})</div>
-                    {renderCelda(keyV, ca.montoVendido > 0 ? `${cs.simFrom}${fmt(ca.montoVendido)}` : `${cs.simFrom}0.00`, cs.colFrom, cs.bgFrom)}
+                    {renderCelda(keyV, ca.montoVendido, cs.simFrom, cs.colFrom)}
 
                     <div style={{fontSize:11,color:C.muted,fontWeight:600,margin:'8px 0 3px'}}>Compró ({cs.badgeTo})</div>
-                    {renderCelda(keyC, ca.montoComprado > 0 ? `${cs.simTo}${fmt(ca.montoComprado)}` : `${cs.simTo}0.00`, cs.colTo, cs.bgTo)}
+                    {renderCelda(keyC, ca.montoComprado, cs.simTo, cs.colTo)}
 
                     {tc > 0 && (
                       <div style={{marginTop:8,paddingTop:6,borderTop:`1px dashed ${C.border}`,fontSize:11,color:C.muted,display:'flex',justifyContent:'space-between'}}>
