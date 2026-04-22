@@ -1066,3 +1066,26 @@ export async function deleteCambioDia(empresaId, fecha, direccion) {
     .eq('direccion', direccion);
   if (error) console.error('deleteCambioDia:', error);
 }
+
+/* ── Reconstrucción de saldos por fecha histórica ────────────────────
+   Suma los saldos del momento "inicio" de cada cuenta activa, agrupados
+   por moneda. Útil para reconstruir el estado de un día pasado. */
+export async function fetchSaldosTotalesPorFecha(empresaId, fecha) {
+  // 1. Obtener cuentas activas
+  const cuentas = await fetchCuentasBancarias(empresaId);
+  if (cuentas.length === 0) return { mxn: 0, usd: 0, eur: 0, hayDatos: false };
+  // 2. Saldos del día (momento 'inicio')
+  const saldosDia = await fetchSaldosDiarios(empresaId, fecha, 'inicio');
+  if (saldosDia.length === 0) return { mxn: 0, usd: 0, eur: 0, hayDatos: false };
+  // 3. Agrupar por moneda
+  const totales = { mxn: 0, usd: 0, eur: 0 };
+  saldosDia.forEach(saldo => {
+    const cuenta = cuentas.find(c => c.id === saldo.cuentaId);
+    if (!cuenta) return;
+    const monedaKey = (cuenta.moneda || 'MXN').toLowerCase();
+    if (totales[monedaKey] !== undefined) {
+      totales[monedaKey] += (+saldo.saldoReal || 0);
+    }
+  });
+  return { ...totales, hayDatos: true };
+}

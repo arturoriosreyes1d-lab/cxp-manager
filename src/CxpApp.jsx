@@ -23,6 +23,7 @@ import {
   fetchSaldosDiarios, upsertSaldoDiario, fetchFechasHistoricoSaldos,
   fetchIngresosDia, upsertIngresoDia, deleteIngresoDia,
   fetchCambiosDia, upsertCambioDia, deleteCambioDia,
+  fetchSaldosTotalesPorFecha,
 } from "./db.js";
 import CxcView from "./CxcView.jsx";
 import { EMPRESAS } from "./empresas.js";
@@ -2948,44 +2949,8 @@ export default function CxpApp({ user, onLogout }) {
     return (
       <div>
         <h1 style={{fontSize:22,fontWeight:800,color:C.navy,marginBottom:4}}>Proyección de Pagos</h1>
-        <p style={{color:C.muted,fontSize:14,marginBottom:16}}>Matriz de proveedores y reporte diario</p>
-        
-        {/* Tab Navigation */}
-        <div style={{display:"flex",gap:4,marginBottom:24,background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:4}}>
-          <button
-            onClick={() => setProyeccionTab("matriz")}
-            style={{
-              ...btnStyle,
-              background: proyeccionTab === "matriz" ? C.navy : "transparent",
-              color: proyeccionTab === "matriz" ? "#fff" : C.text,
-              border: "none",
-              borderRadius: 8,
-              fontWeight: proyeccionTab === "matriz" ? 700 : 500,
-              fontSize: 14,
-              padding: "8px 16px"
-            }}
-          >
-            📊 Matriz de Pagos
-          </button>
-          <button
-            onClick={() => setProyeccionTab("reporte")}
-            style={{
-              ...btnStyle,
-              background: proyeccionTab === "reporte" ? C.navy : "transparent",
-              color: proyeccionTab === "reporte" ? "#fff" : C.text,
-              border: "none",
-              borderRadius: 8,
-              fontWeight: proyeccionTab === "reporte" ? 700 : 500,
-              fontSize: 14,
-              padding: "8px 16px"
-            }}
-          >
-            📋 Reporte Diario
-          </button>
-        </div>
-
-        {/* Tab Content */}
-        {proyeccionTab === "matriz" ? renderMatrizProyeccion() : <ReporteDiarioCxP />}
+        <p style={{color:C.muted,fontSize:14,marginBottom:24}}>Matriz de proveedores por día</p>
+        {renderMatrizProyeccion()}
       </div>
     );
   };
@@ -3140,6 +3105,11 @@ export default function CxpApp({ user, onLogout }) {
 
   /* ── Reporte Diario de Pagos (CxP) ─────────────────────────────── */
   const ReporteDiarioCxP = () => {
+    // Selector de fecha (default = hoy)
+    const [fechaSeleccionada, setFechaSeleccionada] = useState(today());
+    const esHoy = fechaSeleccionada === today();
+    const esVistaHistorica = !esHoy;
+
     const [saldosEmpresas, setSaldosEmpresas] = useState({ [empresaId]: { mxn: "0", usd: "0", eur: "0" } });
     const [saldosMeta, setSaldosMeta] = useState({ updatedAt: null, updatedBy: null });
     const [saldosLoading, setSaldosLoading] = useState(true);
@@ -3161,39 +3131,55 @@ export default function CxpApp({ user, onLogout }) {
     const [editandoCambio, setEditandoCambio] = useState(null); // `${direccion}_${campo}` ej: 'USD_MXN_vendido'
     const [valorCambio, setValorCambio] = useState('');
 
-    // Cargar saldos desde Supabase al abrir o cambiar de empresa
+    // Cargar saldos:
+    // - Si es HOY: usar reporte_saldos (el actual editable)
+    // - Si es histórico: reconstruir desde saldos_diarios + cuentas_bancarias
     useEffect(() => {
       let cancelado = false;
       setSaldosLoading(true);
-      fetchReporteSaldos(empresaId).then(data => {
-        if (cancelado) return;
-        if (data) {
-          setSaldosEmpresas({ [empresaId]: { mxn: data.mxn, usd: data.usd, eur: data.eur } });
-          setSaldosMeta({ updatedAt: data.updatedAt, updatedBy: data.updatedBy });
+      const cargar = async () => {
+        if (esHoy) {
+          const data = await fetchReporteSaldos(empresaId);
+          if (cancelado) return;
+          if (data) {
+            setSaldosEmpresas({ [empresaId]: { mxn: data.mxn, usd: data.usd, eur: data.eur } });
+            setSaldosMeta({ updatedAt: data.updatedAt, updatedBy: data.updatedBy });
+          } else {
+            setSaldosEmpresas({ [empresaId]: { mxn: "0", usd: "0", eur: "0" } });
+            setSaldosMeta({ updatedAt: null, updatedBy: null });
+          }
         } else {
-          setSaldosEmpresas({ [empresaId]: { mxn: "0", usd: "0", eur: "0" } });
-          setSaldosMeta({ updatedAt: null, updatedBy: null });
+          // Vista histórica: reconstruir saldos del día seleccionado
+          const totales = await fetchSaldosTotalesPorFecha(empresaId, fechaSeleccionada);
+          if (cancelado) return;
+          setSaldosEmpresas({ [empresaId]: {
+            mxn: String(totales.mxn || 0),
+            usd: String(totales.usd || 0),
+            eur: String(totales.eur || 0)
+          }});
+          setSaldosMeta({ updatedAt: null, updatedBy: totales.hayDatos ? null : 'sin_datos' });
         }
         setSaldosLoading(false);
-      });
+      };
+      cargar();
       return () => { cancelado = true; };
-    }, [empresaId]);
+    }, [empresaId, fechaSeleccionada, esHoy]);
 
-    // Cargar ingresos del día
+    // Cargar ingresos del día (de la fecha seleccionada)
     const cargarIngresos = async () => {
       setIngresosLoading(true);
-      const data = await fetchIngresosDia(empresaId, today());
+      const data = await fetchIngresosDia(empresaId, fechaSeleccionada);
       setIngresosDia(data);
       setIngresosLoading(false);
     };
-    useEffect(() => { cargarIngresos(); /* eslint-disable-next-line */ }, [empresaId]);
+    useEffect(() => { cargarIngresos(); /* eslint-disable-next-line */ }, [empresaId, fechaSeleccionada]);
 
-    // Cargar cambios de divisa de HOY (4 direcciones)
+    // Cargar cambios de divisa (4 direcciones) de la fecha seleccionada
     const cargarCambios = async () => {
-      const data = await fetchCambiosDia(empresaId, today());
+      const data = await fetchCambiosDia(empresaId, fechaSeleccionada);
       setCambiosHoy(data || []);
     };
-    useEffect(() => { cargarCambios(); /* eslint-disable-next-line */ }, [empresaId]);
+    useEffect(() => { cargarCambios(); /* eslint-disable-next-line */ }, [empresaId, fechaSeleccionada]);
 
     // Helper: obtener un cambio por dirección
     const getCambio = (direccion) => {
@@ -3202,6 +3188,7 @@ export default function CxpApp({ user, onLogout }) {
 
     // Guardar una celda de cambio (vendido o comprado)
     const guardarCeldaCambio = async () => {
+      if (esVistaHistorica) { setEditandoCambio(null); setValorCambio(''); return; }
       if (!editandoCambio) return;
       // Formato: USD_MXN_vendido o EUR_MXN_comprado
       const partes = editandoCambio.split('_');
@@ -3230,7 +3217,7 @@ export default function CxpApp({ user, onLogout }) {
 
     // Agregar fila vacía
     const agregarIngreso = async () => {
-      if (esConsulta) return;
+      if (esConsulta || esVistaHistorica) return;
       const nuevo = {
         empresaId,
         fecha: today(),
@@ -3253,6 +3240,7 @@ export default function CxpApp({ user, onLogout }) {
 
     // Guardar cambio de una celda
     const guardarCeldaIngreso = async () => {
+      if (esVistaHistorica) { setEditandoIngreso(null); setValorIngreso(""); return; }
       if (!editandoIngreso) return;
       const [id, campo] = editandoIngreso.split('_');
       const ing = ingresosDia.find(x => x.id === id);
@@ -3280,7 +3268,7 @@ export default function CxpApp({ user, onLogout }) {
 
     // Eliminar fila
     const eliminarIngreso = async (id) => {
-      if (esConsulta) return;
+      if (esConsulta || esVistaHistorica) return;
       if (!confirm('¿Eliminar esta fila?')) return;
       await deleteIngresoDia(id);
       setIngresosDia(prev => prev.filter(x => x.id !== id));
@@ -3297,82 +3285,128 @@ export default function CxpApp({ user, onLogout }) {
       return t;
     }, [ingresosDia]);
 
-    const hoy = today();
+    // En vista histórica: la fecha de referencia para "qué se programó pagar"
+    // En vista actual: hoy
+    const fechaRef = fechaSeleccionada;
     
     const pagosProgramadosHoy = useMemo(() => {
       // PASO 1: Construir mapa de adeudo TOTAL por proveedor+moneda (todas las facturas activas)
       const adeudoTotal = new Map();   // key: "proveedor-moneda" → { adeudado, facturasActivas }
       // PASO 2: Construir mapa de pagos del día por proveedor+moneda
-      const pagosHoy = new Map();      // key: "proveedor-moneda" → { pagoHoy, tipo }
+      const pagosHoy = new Map();      // key: "proveedor-moneda" → { pagoHoy, tipo, detalleFacturas, estado }
       
       Object.entries(invoices).forEach(([moneda, facturas]) => {
         facturas.forEach(factura => {
           if (factura.empresaId !== empresaId) return;
           
           const saldoFactura = (+factura.total || 0) - (+factura.montoPagado || 0);
-          if (saldoFactura <= 0) return; // Solo facturas con saldo pendiente
+          // En vista de hoy: solo facturas con saldo pendiente
+          // En vista histórica: incluir también las que ya están pagadas (saldo 0) si tenían pago programado para esa fecha
+          if (saldoFactura <= 0 && esHoy) return;
           
           const proveedorKey = `${factura.proveedor}-${moneda}`;
           
-          // Acumular adeudo total del proveedor
-          if (adeudoTotal.has(proveedorKey)) {
-            const ex = adeudoTotal.get(proveedorKey);
-            ex.adeudado += saldoFactura;
-            ex.facturasActivas += 1;
-          } else {
-            adeudoTotal.set(proveedorKey, {
-              proveedor: factura.proveedor,
-              moneda,
-              adeudado: saldoFactura,
-              facturasActivas: 1
-            });
+          // Acumular adeudo total del proveedor (solo cuenta el saldo actual real)
+          if (saldoFactura > 0) {
+            if (adeudoTotal.has(proveedorKey)) {
+              const ex = adeudoTotal.get(proveedorKey);
+              ex.adeudado += saldoFactura;
+              ex.facturasActivas += 1;
+            } else {
+              adeudoTotal.set(proveedorKey, {
+                proveedor: factura.proveedor,
+                moneda,
+                adeudado: saldoFactura,
+                facturasActivas: 1
+              });
+            }
           }
           
-          // Verificar si tiene pago programado para hoy
-          const pagosProgHoy = payments.filter(p => 
+          // Buscar pagos programados para fechaRef (puede ser hoy o histórico)
+          const pagosProgFecha = payments.filter(p => 
             p.invoiceId === factura.id && 
             p.tipo === 'programado' && 
-            p.fechaPago === hoy
+            p.fechaPago === fechaRef
           );
           
-          if (pagosProgHoy.length > 0) {
-            const totalPagoHoy = pagosProgHoy.reduce((sum, p) => sum + p.monto, 0);
+          // En vista histórica también buscamos pagos realizados que se hicieron en esa fecha
+          // (lo que pagamos efectivamente ese día, sin importar la fecha programada)
+          const pagosRealizadosFecha = !esHoy ? payments.filter(p =>
+            p.invoiceId === factura.id &&
+            p.tipo === 'realizado' &&
+            p.fechaPago === fechaRef
+          ) : [];
+          
+          // Combinar: programados de la fecha + realizados de la fecha (en histórico)
+          const todosPagosFecha = [...pagosProgFecha, ...pagosRealizadosFecha];
+          
+          if (todosPagosFecha.length > 0) {
+            const totalPagoHoy = todosPagosFecha.reduce((sum, p) => sum + p.monto, 0);
+            // Determinar estado:
+            // - Si hay pagos realizados, está pagado
+            // - Si solo hay programados sin realizar, está pendiente
+            // - Si la fecha es pasada y no hay pago realizado pero sí programado: atrasado
+            let estado = 'programado'; // default
+            if (pagosRealizadosFecha.length > 0) {
+              estado = 'pagado';
+            } else if (pagosProgFecha.length > 0) {
+              // Verificar si la factura tiene pago realizado en cualquier fecha posterior
+              const pagosPosteriores = payments.filter(p =>
+                p.invoiceId === factura.id &&
+                p.tipo === 'realizado' &&
+                p.fechaPago > fechaRef
+              );
+              if (pagosPosteriores.length > 0) {
+                estado = 'pagado_atraso';
+              } else if (esHoy) {
+                estado = 'programado';
+              } else {
+                // Vista histórica, fecha pasada, no hay pago realizado: atrasado
+                estado = 'atrasado';
+              }
+            }
+            
             const detalleFactura = {
               serie: factura.serie || '',
               folio: factura.folio || '',
               concepto: factura.concepto || '',
-              pagoHoy: totalPagoHoy
+              pagoHoy: totalPagoHoy,
+              estado
             };
             if (pagosHoy.has(proveedorKey)) {
               const ex = pagosHoy.get(proveedorKey);
               ex.pagoHoy += totalPagoHoy;
               ex.detalleFacturas.push(detalleFactura);
+              // Estado del proveedor: el "peor" de sus facturas (atrasado > programado > pagado_atraso > pagado)
+              const ranking = { atrasado: 4, programado: 3, pagado_atraso: 2, pagado: 1 };
+              if ((ranking[estado] || 0) > (ranking[ex.estado] || 0)) ex.estado = estado;
             } else {
-              pagosHoy.set(proveedorKey, { pagoHoy: totalPagoHoy, tipo: 'programado', detalleFacturas: [detalleFactura] });
+              pagosHoy.set(proveedorKey, { pagoHoy: totalPagoHoy, tipo: 'programado', detalleFacturas: [detalleFactura], estado });
             }
           }
-          // Nota: ya NO usamos factura.vencimiento === hoy como fallback.
-          // El Reporte Diario ahora respeta la misma regla que la Matriz de Pagos:
-          // solo se consideran pagos con tipo='programado' y fechaPago=hoy.
         });
       });
       
-      // PASO 3: Combinar — solo proveedores con pago hoy
+      // PASO 3: Combinar — proveedores con pago en la fecha
       const resultado = [];
       pagosHoy.forEach((pagoInfo, key) => {
-        const adeudoInfo = adeudoTotal.get(key);
-        if (!adeudoInfo) return; // Salvaguarda: no debería pasar
-        // Ordenar facturas por monto descendente
+        const adeudoInfo = adeudoTotal.get(key) || { 
+          proveedor: key.split('-')[0],
+          moneda: key.split('-')[1] || 'MXN',
+          adeudado: 0,
+          facturasActivas: 0
+        };
         const detalleOrdenado = [...pagoInfo.detalleFacturas].sort((a,b) => b.pagoHoy - a.pagoHoy);
         resultado.push({
           proveedor: adeudoInfo.proveedor,
           moneda: adeudoInfo.moneda,
-          importeAdeudado: adeudoInfo.adeudado,        // TOTAL del proveedor en esa moneda
+          importeAdeudado: adeudoInfo.adeudado,
           pagoHoy: pagoInfo.pagoHoy,
-          facturas: adeudoInfo.facturasActivas,         // Total de facturas activas
+          facturas: adeudoInfo.facturasActivas,
           tipo: pagoInfo.tipo,
+          estado: pagoInfo.estado,
           saldoDespuesPago: Math.max(0, adeudoInfo.adeudado - pagoInfo.pagoHoy),
-          detalleFacturas: detalleOrdenado              // Facturas que se pagan hoy (con concepto)
+          detalleFacturas: detalleOrdenado
         });
       });
 
@@ -3382,9 +3416,9 @@ export default function CxpApp({ user, onLogout }) {
         if (b.moneda === 'USD' && a.moneda !== 'USD') return 1;
         if (a.moneda === 'MXN' && b.moneda === 'EUR') return -1;
         if (b.moneda === 'MXN' && a.moneda === 'EUR') return 1;
-        return b.pagoHoy - a.pagoHoy; // Mayor a menor dentro de la misma moneda
+        return b.pagoHoy - a.pagoHoy;
       });
-    }, [invoices, payments, empresaId, hoy]);
+    }, [invoices, payments, empresaId, fechaRef, esHoy]);
 
     const totalesPagos = useMemo(() => {
       const totales = { MXN: 0, USD: 0, EUR: 0 };
@@ -3498,6 +3532,8 @@ export default function CxpApp({ user, onLogout }) {
     }, [saldosEmpresas, conversiones, tiposCambio, totalesPagos, empresaId, ingresosDia, cambiosHoy]);
 
     const handleSaldoChange = (moneda, value) => {
+      // Bloquear edición en vista histórica
+      if (esVistaHistorica) return;
       // Solo actualiza estado local en cada keystroke (sin tocar Supabase)
       setSaldosEmpresas(prev => ({
         ...prev,
@@ -3506,6 +3542,8 @@ export default function CxpApp({ user, onLogout }) {
     };
 
     const guardarSaldosEnSupabase = async () => {
+      // Bloquear guardado en vista histórica
+      if (esVistaHistorica) return;
       const saldosActuales = saldosEmpresas[empresaId] || { mxn: "0", usd: "0", eur: "0" };
       setSaldosSaving(true);
       const ok = await upsertReporteSaldos(empresaId, saldosActuales, user?.nombre || "desconocido");
@@ -4116,9 +4154,14 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         const esUltima = idx === paginas.length - 1;
         if (!esUltima) {
           if (tfootClon) tfootClon.remove();
-          // Quitar bloque verde "Saldos Después de Pagos"
-          const saldosDespues = clon.querySelector('div[style*="F0FFF4"]');
-          if (saldosDespues) saldosDespues.remove();
+          // Quitar bloque verde "Saldos Después de Pagos" — lo identificamos por el texto del h3
+          const headers = Array.from(clon.querySelectorAll('h3'));
+          const headerSaldosDespues = headers.find(h => (h.textContent || '').includes('Saldos Después de Pagos'));
+          if (headerSaldosDespues) {
+            // Encontrar el div ancestro más cercano (el contenedor verde)
+            const bloqueVerde = headerSaldosDespues.closest('div');
+            if (bloqueVerde) bloqueVerde.remove();
+          }
           // Nota "Continúa..."
           const nota = document.createElement('div');
           nota.style.cssText = 'text-align:center;padding:14px 16px;font-size:12px;color:#6B7280;font-style:italic;background:#F9FAFB;border:1px dashed #D1D5DB;border-radius:10px;margin-top:8px;';
@@ -4196,14 +4239,46 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
     return (
       <div>
+        {/* Banner de vista histórica */}
+        {esVistaHistorica && (
+          <div style={{background:'linear-gradient(135deg, #FFF8E1 0%, #FFFDE7 100%)',border:'1px solid #FFB300',borderRadius:10,padding:'10px 16px',marginBottom:14,display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+            <div style={{display:'flex',alignItems:'center',gap:10}}>
+              <span style={{fontSize:18}}>📅</span>
+              <div>
+                <div style={{fontSize:13,fontWeight:800,color:'#E65100'}}>Vista histórica · solo lectura</div>
+                <div style={{fontSize:11,color:'#BF6E0A'}}>Estás viendo el reporte de una fecha pasada. Los datos son históricos y no se pueden modificar.</div>
+              </div>
+            </div>
+            <button
+              onClick={() => setFechaSeleccionada(today())}
+              style={{background:'#FFB300',color:'#fff',border:'none',padding:'6px 14px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}
+            >
+              ↻ Volver a Hoy
+            </button>
+          </div>
+        )}
+
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
           <div>
-            <h2 style={{fontSize:18,fontWeight:800,color:C.navy,margin:0}}>📊 Reporte de Tesorería del Día</h2>
+            <h2 style={{fontSize:18,fontWeight:800,color:C.navy,margin:0}}>
+              📊 Reporte de Tesorería {esHoy ? 'del Día' : 'Histórico'}
+            </h2>
             <p style={{color:C.muted,fontSize:13,margin:"4px 0 0"}}>
-              Flujo de tesorería diario · {empresa.nombre}
+              Flujo de tesorería · {empresa.nombre}
             </p>
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            {/* Selector de fecha */}
+            <div style={{display:"flex",alignItems:"center",gap:6,background:esHoy?"#E3F2FD":"#FFF8E1",border:`1px solid ${esHoy?C.blue:'#FFB300'}`,borderRadius:10,padding:"4px 10px"}}>
+              <span style={{fontSize:13}}>📅</span>
+              <input
+                type="date"
+                value={fechaSeleccionada}
+                max={today()}
+                onChange={(e) => setFechaSeleccionada(e.target.value || today())}
+                style={{background:"transparent",border:"none",fontSize:12,fontWeight:700,color:esHoy?C.navy:'#E65100',outline:"none",fontFamily:"inherit",cursor:"pointer"}}
+              />
+            </div>
             {/* Tipos de cambio compactos */}
             <div style={{display:"flex",alignItems:"center",gap:6,background:"#F3E5F5",border:"1px solid #CE93D8",borderRadius:10,padding:"4px 8px"}}>
               <span style={{fontSize:11,fontWeight:700,color:C.eur,letterSpacing:0.3}}>TC</span>
@@ -4637,9 +4712,10 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                       {k:'proveedor',         label:'Proveedor',         align:'left'},
                       {k:'moneda',            label:'Moneda',            align:'center'},
                       {k:'importeAdeudado',   label:'Importe Adeudado',  align:'right'},
-                      {k:'pagoHoy',           label:'Pago del Día',      align:'right'},
+                      {k:'pagoHoy',           label:esHoy ? 'Pago del Día' : 'Pago Programado',      align:'right'},
                       {k:'saldoDespuesPago',  label:'Saldo Después',     align:'right'},
                       {k:'facturas',          label:'Facturas',          align:'center'},
+                      ...(esVistaHistorica ? [{k:'estado', label:'Estado', align:'center'}] : []),
                     ].map(h => (
                       <th key={h.k}
                           onClick={() => toggleSort(h.k)}
@@ -4651,7 +4727,15 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                   </tr>
                 </thead>
                 <tbody>
-                  {pagosOrdenados.map((pago, i) => (
+                  {pagosOrdenados.map((pago, i) => {
+                    // Helper de estado visual
+                    const estadoMeta = {
+                      pagado:        { label: '✅ Pagado',        bg: '#E8F5E9', color: '#1B5E20' },
+                      pagado_atraso: { label: '💰 Pagado tarde',  bg: '#FFF3E0', color: '#E65100' },
+                      programado:    { label: '📅 Programado',    bg: '#E3F2FD', color: '#1565C0' },
+                      atrasado:      { label: '⚠️ Atrasado',       bg: '#FFEBEE', color: '#C62828' },
+                    }[pago.estado] || { label: pago.estado, bg: '#F5F5F5', color: '#666' };
+                    return (
                     <React.Fragment key={i}>
                       <tr style={{borderBottom:(pago.detalleFacturas && pago.detalleFacturas.length > 0) ? 'none' : `1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFC"}}>
                         <td style={{padding:"12px 16px",fontWeight:600,color:C.navy}}>{pago.proveedor}</td>
@@ -4662,6 +4746,11 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                         <td style={{padding:"12px 16px",textAlign:"right",fontWeight:800,fontSize:14,color:"#D32F2F"}}>{monedaSym(pago.moneda)}{fmt(pago.pagoHoy)}</td>
                         <td style={{padding:"12px 16px",textAlign:"right",fontWeight:700,fontSize:13,color:pago.saldoDespuesPago <= 0 ? "#2E7D32" : "#F57C00"}}>{monedaSym(pago.moneda)}{fmt(pago.saldoDespuesPago)}</td>
                         <td style={{padding:"12px 16px",textAlign:"center",color:C.muted}}>{pago.facturas}</td>
+                        {esVistaHistorica && (
+                          <td style={{padding:"12px 16px",textAlign:"center"}}>
+                            <span style={{background:estadoMeta.bg,color:estadoMeta.color,padding:"3px 10px",borderRadius:12,fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>{estadoMeta.label}</span>
+                          </td>
+                        )}
                       </tr>
                       {/* Subfilas: desglose de facturas que se pagan hoy */}
                       {pago.detalleFacturas && pago.detalleFacturas.length > 0 && pago.detalleFacturas.map((f, j) => (
@@ -4676,10 +4765,12 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                           <td style={{padding:"6px 16px",textAlign:"right",fontSize:12,fontWeight:600,color:"#6B7280",fontVariantNumeric:'tabular-nums'}}>{monedaSym(pago.moneda)}{fmt(f.pagoHoy)}</td>
                           <td></td>
                           <td></td>
+                          {esVistaHistorica && <td></td>}
                         </tr>
                       ))}
                     </React.Fragment>
-                  ))}
+                    );
+                  })}
                 </tbody>
                 <tfoot>
                   {['USD','MXN','EUR'].filter(m => totalesCompletos[m].pago > 0 || totalesCompletos[m].adeudado > 0).map((m, idx, arr) => (
@@ -4702,6 +4793,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                       <td style={{padding:"14px 16px",textAlign:"center",fontWeight:800,color:C.navy,fontSize:14}}>
                         {totalesCompletos[m].facturas}
                       </td>
+                      {esVistaHistorica && <td></td>}
                     </tr>
                   ))}
                 </tfoot>
@@ -5914,9 +6006,10 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         <NavItem id="dashboard" icon="📊" label="Dashboard"/>
         <NavItem id="cartera" icon="🧾" label="Cartera (CxP)"/>
         <NavItem id="pagos" icon="💰" label="Pagos"/>
-        <NavItem id="proveedores" icon="🏢" label="Proveedores"/>
         <NavItem id="proyeccion" icon="📅" label="Proyección"/>
+        <NavItem id="reporte" icon="📊" label="Reporte Diario"/>
         <NavItem id="importar" icon="📥" label="Importar"/>
+        <NavItem id="proveedores" icon="🏢" label="Proveedores"/>
         <NavItem id="saldos" icon="🏦" label="Saldos Bancarios"/>
         <NavItem id="cxc" icon="💵" label="CxC — Ingresos"/>
         <NavItem id="clientes" icon="👥" label="Clientes CxC"/>
@@ -5962,6 +6055,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         {view==="pagos" && renderPagos()}
         {view==="proveedores" && renderProveedores()}
         {view==="proyeccion" && renderProyeccionCxP()}
+        {view==="reporte" && <ReporteDiarioCxP />}
         {view==="importar" && renderImportar()}
         {view==="config" && renderConfig()}
         {view==="saldos" && <SaldosBancarios />}
