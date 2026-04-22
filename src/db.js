@@ -1089,3 +1089,72 @@ export async function fetchSaldosTotalesPorFecha(empresaId, fecha) {
   });
   return { ...totales, hayDatos: true };
 }
+
+/* ── Snapshots de Saldos del Reporte Diario por Fecha ───────────────
+   Guarda el saldo MXN/USD/EUR usado como saldo inicial en cada día del
+   Reporte Diario. Permite herencia día-a-día y edición histórica. */
+
+export async function fetchSaldoReporteDia(empresaId, fecha) {
+  const { data, error } = await supabase
+    .from('saldos_reporte_dia')
+    .select('*')
+    .eq('empresa_id', empresaId)
+    .eq('fecha', fecha)
+    .maybeSingle();
+  if (error) { console.error('fetchSaldoReporteDia:', error); return null; }
+  if (!data) return null;
+  return {
+    mxn: String(+data.mxn || 0),
+    usd: String(+data.usd || 0),
+    eur: String(+data.eur || 0),
+    updatedAt: data.updated_at || null,
+    updatedBy: data.updated_by || null,
+  };
+}
+
+export async function upsertSaldoReporteDia(empresaId, fecha, saldos, usuario) {
+  const row = {
+    empresa_id: empresaId,
+    fecha,
+    mxn: parseFloat(String(saldos.mxn || '0').replace(/[,$]/g, '')) || 0,
+    usd: parseFloat(String(saldos.usd || '0').replace(/[,$]/g, '')) || 0,
+    eur: parseFloat(String(saldos.eur || '0').replace(/[,$]/g, '')) || 0,
+    updated_at: new Date().toISOString(),
+    updated_by: usuario || 'desconocido',
+  };
+  const { error } = await supabase
+    .from('saldos_reporte_dia')
+    .upsert(row, { onConflict: 'empresa_id,fecha' });
+  if (error) { console.error('upsertSaldoReporteDia:', error); return false; }
+  return true;
+}
+
+// Encuentra el saldo más reciente anterior a una fecha (para herencia)
+export async function fetchUltimoSaldoReporteAntes(empresaId, fecha) {
+  const { data, error } = await supabase
+    .from('saldos_reporte_dia')
+    .select('*')
+    .eq('empresa_id', empresaId)
+    .lt('fecha', fecha)
+    .order('fecha', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) { console.error('fetchUltimoSaldoReporteAntes:', error); return null; }
+  if (!data) return null;
+  return {
+    fecha: data.fecha,
+    mxn: +data.mxn || 0,
+    usd: +data.usd || 0,
+    eur: +data.eur || 0,
+  };
+}
+
+// Para calcular el "saldo final" de un día anterior necesitamos sumarle/restarle 
+// los ingresos, cambios y pagos de ese día. Esta función obtiene los ingresos y cambios.
+export async function fetchMovimientosDia(empresaId, fecha) {
+  const [ingresos, cambios] = await Promise.all([
+    fetchIngresosDia(empresaId, fecha),
+    fetchCambiosDia(empresaId, fecha),
+  ]);
+  return { ingresos, cambios };
+}

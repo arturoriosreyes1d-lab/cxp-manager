@@ -24,6 +24,8 @@ import {
   fetchIngresosDia, upsertIngresoDia, deleteIngresoDia,
   fetchCambiosDia, upsertCambioDia, deleteCambioDia,
   fetchSaldosTotalesPorFecha,
+  fetchSaldoReporteDia, upsertSaldoReporteDia,
+  fetchUltimoSaldoReporteAntes, fetchMovimientosDia,
 } from "./db.js";
 import CxcView from "./CxcView.jsx";
 import { EMPRESAS } from "./empresas.js";
@@ -3110,60 +3112,115 @@ export default function CxpApp({ user, onLogout }) {
     const esHoy = fechaSeleccionada === today();
     const esVistaHistorica = !esHoy;
 
+    // Edición histórica: solo admin, requiere confirmación
+    const [edicionHistoricaHabilitada, setEdicionHistoricaHabilitada] = useState(false);
+    const esAdmin = (user?.rol || '').toLowerCase() === 'admin';
+    // bloqueoEdicion = true cuando NO se puede editar
+    const bloqueoEdicion = esVistaHistorica && !edicionHistoricaHabilitada;
+
+    // Si cambia la fecha, resetear edición histórica
+    useEffect(() => { setEdicionHistoricaHabilitada(false); }, [fechaSeleccionada]);
+
     const [saldosEmpresas, setSaldosEmpresas] = useState({ [empresaId]: { mxn: "0", usd: "0", eur: "0" } });
-    const [saldosMeta, setSaldosMeta] = useState({ updatedAt: null, updatedBy: null });
+    const [saldosMeta, setSaldosMeta] = useState({ updatedAt: null, updatedBy: null, fuente: null });
     const [saldosLoading, setSaldosLoading] = useState(true);
     const [saldosSaving, setSaldosSaving] = useState(false);
     const [editando, setEditando] = useState({});
     const [tiposCambio, setTiposCambio] = useState({ usdMxn: "20.00", eurMxn: "22.00" });
     const [conversiones, setConversiones] = useState({ usd_to_mxn: "", eur_to_mxn: "" });
-    const [sortBy, setSortBy] = useState(null);   // 'proveedor' | 'moneda' | 'importeAdeudado' | 'pagoHoy' | 'saldoDespuesPago' | 'facturas' | null
-    const [sortDir, setSortDir] = useState('desc'); // 'asc' | 'desc'
+    const [sortBy, setSortBy] = useState(null);
+    const [sortDir, setSortDir] = useState('desc');
 
     // Ingresos del día
-    const [ingresosDia, setIngresosDia] = useState([]);     // filas de ingresos
+    const [ingresosDia, setIngresosDia] = useState([]);
     const [ingresosLoading, setIngresosLoading] = useState(true);
-    const [editandoIngreso, setEditandoIngreso] = useState(null); // `${id}_${campo}` en edición
+    const [editandoIngreso, setEditandoIngreso] = useState(null);
     const [valorIngreso, setValorIngreso] = useState("");
     
-    // Cambios de divisa de hoy (afectan saldos visibles del Reporte Diario)
+    // Cambios de divisa
     const [cambiosHoy, setCambiosHoy] = useState([]);
-    const [editandoCambio, setEditandoCambio] = useState(null); // `${direccion}_${campo}` ej: 'USD_MXN_vendido'
+    const [editandoCambio, setEditandoCambio] = useState(null);
     const [valorCambio, setValorCambio] = useState('');
 
-    // Cargar saldos:
-    // - Si es HOY: usar reporte_saldos (el actual editable)
-    // - Si es histórico: reconstruir desde saldos_diarios + cuentas_bancarias
+    // Cargar saldos del Reporte Diario por fecha:
+    // 1. Si la fecha tiene saldo guardado en saldos_reporte_dia → usarlo
+    // 2. Si no: buscar el último saldo guardado anterior, calcular el saldo final
+    //    de ese día (saldo + ingresos ± cambios − pagos) y heredarlo
+    // 3. Si no hay nada anterior: ceros (primer día de uso)
     useEffect(() => {
       let cancelado = false;
       setSaldosLoading(true);
       const cargar = async () => {
-        if (esHoy) {
-          const data = await fetchReporteSaldos(empresaId);
-          if (cancelado) return;
-          if (data) {
-            setSaldosEmpresas({ [empresaId]: { mxn: data.mxn, usd: data.usd, eur: data.eur } });
-            setSaldosMeta({ updatedAt: data.updatedAt, updatedBy: data.updatedBy });
-          } else {
-            setSaldosEmpresas({ [empresaId]: { mxn: "0", usd: "0", eur: "0" } });
-            setSaldosMeta({ updatedAt: null, updatedBy: null });
-          }
-        } else {
-          // Vista histórica: reconstruir saldos del día seleccionado
-          const totales = await fetchSaldosTotalesPorFecha(empresaId, fechaSeleccionada);
-          if (cancelado) return;
-          setSaldosEmpresas({ [empresaId]: {
-            mxn: String(totales.mxn || 0),
-            usd: String(totales.usd || 0),
-            eur: String(totales.eur || 0)
-          }});
-          setSaldosMeta({ updatedAt: null, updatedBy: totales.hayDatos ? null : 'sin_datos' });
+        // Paso 1: ¿hay saldo guardado para la fecha seleccionada?
+        const guardado = await fetchSaldoReporteDia(empresaId, fechaSeleccionada);
+        if (cancelado) return;
+        if (guardado) {
+          setSaldosEmpresas({ [empresaId]: { mxn: guardado.mxn, usd: guardado.usd, eur: guardado.eur } });
+          setSaldosMeta({ updatedAt: guardado.updatedAt, updatedBy: guardado.updatedBy, fuente: 'guardado' });
+          setSaldosLoading(false);
+          return;
         }
+        // Paso 2: heredar del último día anterior con saldo guardado
+        const ultimo = await fetchUltimoSaldoReporteAntes(empresaId, fechaSeleccionada);
+        if (cancelado) return;
+        if (!ultimo) {
+          // Sin histórico: arrancar en ceros
+          setSaldosEmpresas({ [empresaId]: { mxn: "0", usd: "0", eur: "0" } });
+          setSaldosMeta({ updatedAt: null, updatedBy: null, fuente: 'inicial' });
+          setSaldosLoading(false);
+          return;
+        }
+        // Reconstruir el "saldo final" del día anterior
+        const movs = await fetchMovimientosDia(empresaId, ultimo.fecha);
+        if (cancelado) return;
+        // Sumar ingresos por moneda
+        const ingMXN = movs.ingresos.reduce((s, i) => s + (+i.montoMXN || 0), 0);
+        const ingUSD = movs.ingresos.reduce((s, i) => s + (+i.montoUSD || 0), 0);
+        const ingEUR = movs.ingresos.reduce((s, i) => s + (+i.montoEUR || 0), 0);
+        // Calcular efecto neto de cambios de divisa por moneda
+        const porDir = {};
+        movs.cambios.forEach(c => { porDir[c.direccion] = c; });
+        const usdMxn = porDir['USD_MXN'] || { montoVendido:0, montoComprado:0 };
+        const mxnUsd = porDir['MXN_USD'] || { montoVendido:0, montoComprado:0 };
+        const eurMxn = porDir['EUR_MXN'] || { montoVendido:0, montoComprado:0 };
+        const mxnEur = porDir['MXN_EUR'] || { montoVendido:0, montoComprado:0 };
+        const camMXN = (+usdMxn.montoComprado||0) + (+eurMxn.montoComprado||0)
+                     - (+mxnUsd.montoVendido||0)  - (+mxnEur.montoVendido||0);
+        const camUSD = (+mxnUsd.montoComprado||0) - (+usdMxn.montoVendido||0);
+        const camEUR = (+mxnEur.montoComprado||0) - (+eurMxn.montoVendido||0);
+        // Calcular pagos del día anterior (filtrando payments del estado)
+        const pagosFecha = (payments || []).filter(p => p.tipo === 'programado' && p.fechaPago === ultimo.fecha);
+        const pagosPorMon = { MXN:0, USD:0, EUR:0 };
+        pagosFecha.forEach(p => {
+          // Buscar la factura para saber su moneda
+          let monedaFactura = 'MXN';
+          for (const mon of ['MXN','USD','EUR']) {
+            if ((invoices[mon] || []).find(f => f.id === p.invoiceId && f.empresaId === empresaId)) {
+              monedaFactura = mon; break;
+            }
+          }
+          pagosPorMon[monedaFactura] += (+p.monto || 0);
+        });
+        // Saldo final del día anterior = inicial + ingresos + cambios − pagos
+        const finalMXN = ultimo.mxn + ingMXN + camMXN - pagosPorMon.MXN;
+        const finalUSD = ultimo.usd + ingUSD + camUSD - pagosPorMon.USD;
+        const finalEUR = ultimo.eur + ingEUR + camEUR - pagosPorMon.EUR;
+        setSaldosEmpresas({ [empresaId]: {
+          mxn: String(finalMXN),
+          usd: String(finalUSD),
+          eur: String(finalEUR)
+        }});
+        setSaldosMeta({
+          updatedAt: null,
+          updatedBy: null,
+          fuente: 'heredado',
+          fechaOrigen: ultimo.fecha,
+        });
         setSaldosLoading(false);
       };
       cargar();
       return () => { cancelado = true; };
-    }, [empresaId, fechaSeleccionada, esHoy]);
+    }, [empresaId, fechaSeleccionada, payments, invoices]);
 
     // Cargar ingresos del día (de la fecha seleccionada)
     const cargarIngresos = async () => {
@@ -3188,7 +3245,7 @@ export default function CxpApp({ user, onLogout }) {
 
     // Guardar una celda de cambio (vendido o comprado)
     const guardarCeldaCambio = async () => {
-      if (esVistaHistorica) { setEditandoCambio(null); setValorCambio(''); return; }
+      if (bloqueoEdicion) { setEditandoCambio(null); setValorCambio(''); return; }
       if (!editandoCambio) return;
       // Formato: USD_MXN_vendido o EUR_MXN_comprado
       const partes = editandoCambio.split('_');
@@ -3198,7 +3255,7 @@ export default function CxpApp({ user, onLogout }) {
       const valor = parseFloat(valorCambio.replace(/[,$€]/g, '')) || 0;
       const nuevo = {
         empresaId,
-        fecha: today(),
+        fecha: fechaSeleccionada,
         direccion,
         montoVendido: campo === 'vendido' ? valor : actual.montoVendido,
         montoComprado: campo === 'comprado' ? valor : actual.montoComprado,
@@ -3217,10 +3274,10 @@ export default function CxpApp({ user, onLogout }) {
 
     // Agregar fila vacía
     const agregarIngreso = async () => {
-      if (esConsulta || esVistaHistorica) return;
+      if (esConsulta || bloqueoEdicion) return;
       const nuevo = {
         empresaId,
-        fecha: today(),
+        fecha: fechaSeleccionada,
         rubro: '',
         cliente: '',
         concepto: '',
@@ -3240,7 +3297,7 @@ export default function CxpApp({ user, onLogout }) {
 
     // Guardar cambio de una celda
     const guardarCeldaIngreso = async () => {
-      if (esVistaHistorica) { setEditandoIngreso(null); setValorIngreso(""); return; }
+      if (bloqueoEdicion) { setEditandoIngreso(null); setValorIngreso(""); return; }
       if (!editandoIngreso) return;
       const [id, campo] = editandoIngreso.split('_');
       const ing = ingresosDia.find(x => x.id === id);
@@ -3268,7 +3325,7 @@ export default function CxpApp({ user, onLogout }) {
 
     // Eliminar fila
     const eliminarIngreso = async (id) => {
-      if (esConsulta || esVistaHistorica) return;
+      if (esConsulta || bloqueoEdicion) return;
       if (!confirm('¿Eliminar esta fila?')) return;
       await deleteIngresoDia(id);
       setIngresosDia(prev => prev.filter(x => x.id !== id));
@@ -3532,9 +3589,8 @@ export default function CxpApp({ user, onLogout }) {
     }, [saldosEmpresas, conversiones, tiposCambio, totalesPagos, empresaId, ingresosDia, cambiosHoy]);
 
     const handleSaldoChange = (moneda, value) => {
-      // Bloquear edición en vista histórica
-      if (esVistaHistorica) return;
-      // Solo actualiza estado local en cada keystroke (sin tocar Supabase)
+      // Bloquear edición si vista histórica sin habilitar
+      if (bloqueoEdicion) return;
       setSaldosEmpresas(prev => ({
         ...prev,
         [empresaId]: { ...(prev[empresaId] || {}), [moneda]: value }
@@ -3542,13 +3598,13 @@ export default function CxpApp({ user, onLogout }) {
     };
 
     const guardarSaldosEnSupabase = async () => {
-      // Bloquear guardado en vista histórica
-      if (esVistaHistorica) return;
+      if (bloqueoEdicion) return;
       const saldosActuales = saldosEmpresas[empresaId] || { mxn: "0", usd: "0", eur: "0" };
       setSaldosSaving(true);
-      const ok = await upsertReporteSaldos(empresaId, saldosActuales, user?.nombre || "desconocido");
+      // Guarda en saldos_reporte_dia (por fecha)
+      const ok = await upsertSaldoReporteDia(empresaId, fechaSeleccionada, saldosActuales, user?.nombre || "desconocido");
       if (ok) {
-        setSaldosMeta({ updatedAt: new Date().toISOString(), updatedBy: user?.nombre || "desconocido" });
+        setSaldosMeta({ updatedAt: new Date().toISOString(), updatedBy: user?.nombre || "desconocido", fuente: 'guardado' });
       }
       setSaldosSaving(false);
     };
@@ -4240,7 +4296,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     return (
       <div>
         {/* Banner de vista histórica */}
-        {esVistaHistorica && (
+        {esVistaHistorica && !edicionHistoricaHabilitada && (
           <div style={{background:'linear-gradient(135deg, #FFF8E1 0%, #FFFDE7 100%)',border:'1px solid #FFB300',borderRadius:10,padding:'10px 16px',marginBottom:14,display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}}>
             <div style={{display:'flex',alignItems:'center',gap:10}}>
               <span style={{fontSize:18}}>📅</span>
@@ -4249,12 +4305,62 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                 <div style={{fontSize:11,color:'#BF6E0A'}}>Estás viendo el reporte de una fecha pasada. Los datos son históricos y no se pueden modificar.</div>
               </div>
             </div>
-            <button
-              onClick={() => setFechaSeleccionada(today())}
-              style={{background:'#FFB300',color:'#fff',border:'none',padding:'6px 14px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}
-            >
-              ↻ Volver a Hoy
-            </button>
+            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+              {esAdmin && (
+                <button
+                  onClick={() => {
+                    const fechaTxt = new Date(fechaSeleccionada+'T12:00:00').toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'});
+                    if (confirm(`¿Habilitar edición del reporte del ${fechaTxt}?\n\nVas a poder editar saldos, ingresos y cambios de divisa de esa fecha.\nLos cambios afectan el histórico permanentemente.`)) {
+                      setEdicionHistoricaHabilitada(true);
+                    }
+                  }}
+                  style={{background:'#fff',color:'#E65100',border:'1px solid #FFB300',padding:'6px 14px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}
+                >
+                  🔓 Habilitar edición
+                </button>
+              )}
+              <button
+                onClick={() => setFechaSeleccionada(today())}
+                style={{background:'#FFB300',color:'#fff',border:'none',padding:'6px 14px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}
+              >
+                ↻ Volver a Hoy
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Banner de modo EDICIÓN histórica (solo admin) */}
+        {esVistaHistorica && edicionHistoricaHabilitada && (
+          <div style={{background:'linear-gradient(135deg, #FFEBEE 0%, #FFCDD2 100%)',border:'2px solid #C62828',borderRadius:10,padding:'10px 16px',marginBottom:14,display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap',animation:'pulse 2s infinite'}}>
+            <div style={{display:'flex',alignItems:'center',gap:10}}>
+              <span style={{fontSize:20}}>✏️</span>
+              <div>
+                <div style={{fontSize:13,fontWeight:800,color:'#B71C1C'}}>EDITANDO vista histórica · {new Date(fechaSeleccionada+'T12:00:00').toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'})}</div>
+                <div style={{fontSize:11,color:'#C62828'}}>Los cambios afectan el histórico permanentemente. Termina la edición cuando hayas terminado.</div>
+              </div>
+            </div>
+            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+              <button
+                onClick={() => setEdicionHistoricaHabilitada(false)}
+                style={{background:'#fff',color:'#B71C1C',border:'1px solid #C62828',padding:'6px 14px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}
+              >
+                🔒 Terminar edición
+              </button>
+              <button
+                onClick={() => { setEdicionHistoricaHabilitada(false); setFechaSeleccionada(today()); }}
+                style={{background:'#C62828',color:'#fff',border:'none',padding:'6px 14px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}
+              >
+                ↻ Volver a Hoy
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Mostrar origen del saldo cuando es heredado */}
+        {esHoy && saldosMeta.fuente === 'heredado' && saldosMeta.fechaOrigen && (
+          <div style={{background:'#E8F5E9',border:'1px solid #66BB6A',borderRadius:8,padding:'8px 14px',marginBottom:14,fontSize:12,color:'#1B5E20',display:'flex',alignItems:'center',gap:8}}>
+            <span style={{fontSize:14}}>📥</span>
+            <span><b>Saldo heredado del cierre del {new Date(saldosMeta.fechaOrigen+'T12:00:00').toLocaleDateString('es-MX',{day:'numeric',month:'long'})}.</b> Puedes ajustarlo si difiere del banco real.</span>
           </div>
         )}
 
