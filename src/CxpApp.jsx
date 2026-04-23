@@ -3201,10 +3201,26 @@ export default function CxpApp({ user, onLogout }) {
                        - (+mxnUsd.montoVendido||0)  - (+mxnEur.montoVendido||0);
           const camUSD = (+mxnUsd.montoComprado||0) - (+usdMxn.montoVendido||0);
           const camEUR = (+mxnEur.montoComprado||0) - (+eurMxn.montoVendido||0);
-          // Pagos de ese día: INCLUIR tanto programados como realizados (ambos salen del banco)
-          const pagosFecha = (payments || []).filter(p => 
+          // Pagos de ese día: si una factura tiene pago realizado en esa fecha,
+          // ignoramos el programado (es el mismo pago, ya ejecutado).
+          const todosLosPagos = (payments || []).filter(p => 
             (p.tipo === 'programado' || p.tipo === 'realizado') && p.fechaPago === f
           );
+          // Agrupar por invoiceId y priorizar realizados
+          const pagosPorFactura = new Map(); // invoiceId → array de pagos
+          todosLosPagos.forEach(p => {
+            if (!pagosPorFactura.has(p.invoiceId)) pagosPorFactura.set(p.invoiceId, []);
+            pagosPorFactura.get(p.invoiceId).push(p);
+          });
+          const pagosFecha = [];
+          pagosPorFactura.forEach((arr) => {
+            const realizados = arr.filter(p => p.tipo === 'realizado');
+            if (realizados.length > 0) {
+              pagosFecha.push(...realizados);
+            } else {
+              pagosFecha.push(...arr);
+            }
+          });
           const pagosPorMon = { MXN:0, USD:0, EUR:0 };
           pagosFecha.forEach(p => {
             let monedaFactura = 'MXN';
@@ -3404,15 +3420,17 @@ export default function CxpApp({ user, onLogout }) {
           );
           
           // En vista histórica también buscamos pagos realizados que se hicieron en esa fecha
-          // (lo que pagamos efectivamente ese día, sin importar la fecha programada)
           const pagosRealizadosFecha = !esHoy ? payments.filter(p =>
             p.invoiceId === factura.id &&
             p.tipo === 'realizado' &&
             p.fechaPago === fechaRef
           ) : [];
           
-          // Combinar: programados de la fecha + realizados de la fecha (en histórico)
-          const todosPagosFecha = [...pagosProgFecha, ...pagosRealizadosFecha];
+          // Combinar: si hay pagos realizados, esos son la fuente de verdad (el programado ya se ejecutó).
+          // Si no hay realizados, usar los programados.
+          const todosPagosFecha = pagosRealizadosFecha.length > 0
+            ? pagosRealizadosFecha
+            : pagosProgFecha;
           
           if (todosPagosFecha.length > 0) {
             const totalPagoHoy = todosPagosFecha.reduce((sum, p) => sum + p.monto, 0);
