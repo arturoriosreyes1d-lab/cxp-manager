@@ -22,6 +22,7 @@ import {
   fetchCuentasBancarias, upsertCuentaBancaria, deleteCuentaBancaria,
   fetchSaldosDiarios, upsertSaldoDiario, fetchFechasHistoricoSaldos,
   fetchIngresosDia, upsertIngresoDia, deleteIngresoDia,
+  fetchSugerenciasIngresos,
   fetchCambiosDia, upsertCambioDia, deleteCambioDia,
   fetchSaldosTotalesPorFecha,
   fetchSaldoReporteDia, upsertSaldoReporteDia,
@@ -3142,6 +3143,13 @@ export default function CxpApp({ user, onLogout }) {
     const [editandoCambio, setEditandoCambio] = useState(null);
     const [valorCambio, setValorCambio] = useState('');
 
+    // Sugerencias de autocompletado para Ingresos (rubro/cliente/concepto)
+    const [sugerencias, setSugerencias] = useState({ rubros: [], clientes: [], conceptos: [] });
+    const [sugerenciaIdx, setSugerenciaIdx] = useState(-1); // índice navegado con flechas
+    useEffect(() => {
+      fetchSugerenciasIngresos(empresaId).then(setSugerencias);
+    }, [empresaId, ingresosDia.length]); // recargar si cambia la cantidad (nueva captura)
+
     // Cargar saldos del Reporte Diario por fecha:
     // 1. Si la fecha tiene saldo guardado en saldos_reporte_dia → usarlo
     // 2. Si no: buscar el último saldo guardado anterior, calcular el saldo final
@@ -4605,18 +4613,105 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                         const enEdicion = editandoIngreso === key;
                         const esCampoTexto = key.endsWith('_rubro') || key.endsWith('_cliente') || key.endsWith('_concepto');
                         if (enEdicion) {
+                          // Calcular sugerencias filtradas (solo para campos de texto)
+                          let sugerenciasFiltradas = [];
+                          if (esCampoTexto && valorIngreso.trim().length >= 2) {
+                            const lista = key.endsWith('_rubro') ? sugerencias.rubros
+                                       : key.endsWith('_cliente') ? sugerencias.clientes
+                                       : sugerencias.conceptos;
+                            const q = valorIngreso.trim().toLowerCase();
+                            // Primero matches que empiezan con la query
+                            const empiezan = lista.filter(s => s.toLowerCase().startsWith(q) && s.toLowerCase() !== q);
+                            // Luego matches que la contienen pero no empiezan
+                            const contienen = lista.filter(s => {
+                              const sl = s.toLowerCase();
+                              return sl.includes(q) && !sl.startsWith(q) && sl !== q;
+                            });
+                            sugerenciasFiltradas = [...empiezan, ...contienen].slice(0, 8);
+                          }
+
+                          const seleccionarSugerencia = async (texto) => {
+                            // Guarda el ingreso con el valor seleccionado y actualiza también las sugerencias
+                            setValorIngreso(texto);
+                            // Pequeño hack: usar setTimeout para que el setState se aplique antes de guardar
+                            setTimeout(() => {
+                              // Reusamos la lógica de guardarCeldaIngreso pero forzando el valor
+                              const [id, campo] = key.split('_');
+                              const ingActual = ingresosDia.find(x => x.id === id);
+                              if (ingActual) {
+                                const nuevo = { ...ingActual };
+                                if (campo === 'rubro') nuevo.rubro = texto;
+                                if (campo === 'cliente') nuevo.cliente = texto;
+                                if (campo === 'concepto') nuevo.concepto = texto;
+                                upsertIngresoDia(nuevo, user?.nombre || 'desconocido');
+                                setIngresosDia(prev => prev.map(x => x.id === id ? nuevo : x));
+                              }
+                              setEditandoIngreso(null);
+                              setValorIngreso('');
+                              setSugerenciaIdx(-1);
+                            }, 0);
+                          };
+
                           return (
-                            <input
-                              autoFocus
-                              value={valorIngreso}
-                              onChange={(e) => {
-                                const v = e.target.value;
-                                setValorIngreso(esCampoTexto ? v : v.replace(/[^\d.]/g, ''));
-                              }}
-                              onBlur={guardarCeldaIngreso}
-                              onKeyDown={(e) => { if (e.key === 'Enter') guardarCeldaIngreso(); if (e.key === 'Escape') cancelarCeldaIngreso(); }}
-                              style={{width:'100%',border:'2px solid #1B5E20',borderRadius:5,padding:'6px 8px',fontSize:12,textAlign:alignRight?'right':'left',fontFamily:alignRight?'monospace':'inherit',fontVariantNumeric:alignRight?'tabular-nums':'normal',outline:'none',boxSizing:'border-box'}}
-                            />
+                            <div style={{position:'relative'}}>
+                              <input
+                                autoFocus
+                                value={valorIngreso}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setValorIngreso(esCampoTexto ? v : v.replace(/[^\d.]/g, ''));
+                                  setSugerenciaIdx(-1);
+                                }}
+                                onBlur={() => {
+                                  // Pequeño delay para permitir click en sugerencia antes de cerrar
+                                  setTimeout(() => guardarCeldaIngreso(), 150);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (esCampoTexto && sugerenciasFiltradas.length > 0) {
+                                    if (e.key === 'ArrowDown') {
+                                      e.preventDefault();
+                                      setSugerenciaIdx(prev => Math.min(prev + 1, sugerenciasFiltradas.length - 1));
+                                      return;
+                                    }
+                                    if (e.key === 'ArrowUp') {
+                                      e.preventDefault();
+                                      setSugerenciaIdx(prev => Math.max(prev - 1, -1));
+                                      return;
+                                    }
+                                    if (e.key === 'Enter' && sugerenciaIdx >= 0) {
+                                      e.preventDefault();
+                                      seleccionarSugerencia(sugerenciasFiltradas[sugerenciaIdx]);
+                                      return;
+                                    }
+                                  }
+                                  if (e.key === 'Enter') guardarCeldaIngreso();
+                                  if (e.key === 'Escape') { cancelarCeldaIngreso(); setSugerenciaIdx(-1); }
+                                }}
+                                style={{width:'100%',border:'2px solid #1B5E20',borderRadius:5,padding:'6px 8px',fontSize:12,textAlign:alignRight?'right':'left',fontFamily:alignRight?'monospace':'inherit',fontVariantNumeric:alignRight?'tabular-nums':'normal',outline:'none',boxSizing:'border-box'}}
+                              />
+                              {esCampoTexto && sugerenciasFiltradas.length > 0 && (
+                                <div style={{position:'absolute',top:'100%',left:0,right:0,background:'#fff',border:'1px solid #1B5E20',borderTop:'none',borderRadius:'0 0 6px 6px',boxShadow:'0 4px 12px rgba(0,0,0,0.12)',zIndex:1000,maxHeight:240,overflowY:'auto'}}>
+                                  {sugerenciasFiltradas.map((s, idx) => (
+                                    <div
+                                      key={s}
+                                      onMouseDown={(e) => { e.preventDefault(); seleccionarSugerencia(s); }}
+                                      onMouseEnter={() => setSugerenciaIdx(idx)}
+                                      style={{
+                                        padding:'8px 12px',
+                                        fontSize:12,
+                                        cursor:'pointer',
+                                        background: idx === sugerenciaIdx ? '#E8F5E9' : 'transparent',
+                                        borderBottom: idx < sugerenciasFiltradas.length - 1 ? '1px solid #F3F4F6' : 'none',
+                                        color: '#1F2937',
+                                        fontFamily: 'inherit',
+                                      }}
+                                    >
+                                      {s}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           );
                         }
                         return (
@@ -4624,6 +4719,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                             onClick={() => {
                               if (!editable) return;
                               setEditandoIngreso(key);
+                              setSugerenciaIdx(-1);
                               if (key.endsWith('_rubro')) setValorIngreso(ing.rubro || '');
                               else if (key.endsWith('_cliente')) setValorIngreso(ing.cliente || '');
                               else if (key.endsWith('_concepto')) setValorIngreso(ing.concepto || '');

@@ -1158,3 +1158,28 @@ export async function fetchMovimientosDia(empresaId, fecha) {
   ]);
   return { ingresos, cambios };
 }
+
+/* ── Sugerencias para autocompletado de Ingresos del Día ──────────
+   Trae todos los valores únicos de rubro/cliente/concepto del histórico
+   de ingresos de la empresa, para autocompletar al capturar nuevos. */
+export async function fetchSugerenciasIngresos(empresaId) {
+  const { data, error } = await supabase
+    .from('ingresos_diarios')
+    .select('rubro,cliente,concepto')
+    .eq('empresa_id', empresaId);
+  if (error) { console.error('fetchSugerenciasIngresos:', error); return { rubros: [], clientes: [], conceptos: [] }; }
+  const rubros = new Set();
+  const clientes = new Set();
+  const conceptos = new Set();
+  (data || []).forEach(r => {
+    if (r.rubro && String(r.rubro).trim()) rubros.add(String(r.rubro).trim());
+    if (r.cliente && String(r.cliente).trim()) clientes.add(String(r.cliente).trim());
+    if (r.concepto && String(r.concepto).trim()) conceptos.add(String(r.concepto).trim());
+  });
+  // Ordenar alfabéticamente
+  return {
+    rubros: [...rubros].sort((a, b) => a.localeCompare(b, 'es')),
+    clientes: [...clientes].sort((a, b) => a.localeCompare(b, 'es')),
+    conceptos: [...conceptos].sort((a, b) => a.localeCompare(b, 'es')),
+  };
+}
