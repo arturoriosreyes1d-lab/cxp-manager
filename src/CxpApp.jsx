@@ -3160,61 +3160,78 @@ export default function CxpApp({ user, onLogout }) {
           setSaldosLoading(false);
           return;
         }
-        // Paso 2: heredar del último día anterior con saldo guardado
+        // Paso 2: buscar el último día con saldo guardado anterior a la fecha seleccionada
         const ultimo = await fetchUltimoSaldoReporteAntes(empresaId, fechaSeleccionada);
         if (cancelado) return;
         if (!ultimo) {
-          // Sin histórico: arrancar en ceros
           setSaldosEmpresas({ [empresaId]: { mxn: "0", usd: "0", eur: "0" } });
           setSaldosMeta({ updatedAt: null, updatedBy: null, fuente: 'inicial' });
           setSaldosLoading(false);
           return;
         }
-        // Reconstruir el "saldo final" del día anterior
-        const movs = await fetchMovimientosDia(empresaId, ultimo.fecha);
-        if (cancelado) return;
-        // Sumar ingresos por moneda
-        const ingMXN = movs.ingresos.reduce((s, i) => s + (+i.montoMXN || 0), 0);
-        const ingUSD = movs.ingresos.reduce((s, i) => s + (+i.montoUSD || 0), 0);
-        const ingEUR = movs.ingresos.reduce((s, i) => s + (+i.montoEUR || 0), 0);
-        // Calcular efecto neto de cambios de divisa por moneda
-        const porDir = {};
-        movs.cambios.forEach(c => { porDir[c.direccion] = c; });
-        const usdMxn = porDir['USD_MXN'] || { montoVendido:0, montoComprado:0 };
-        const mxnUsd = porDir['MXN_USD'] || { montoVendido:0, montoComprado:0 };
-        const eurMxn = porDir['EUR_MXN'] || { montoVendido:0, montoComprado:0 };
-        const mxnEur = porDir['MXN_EUR'] || { montoVendido:0, montoComprado:0 };
-        const camMXN = (+usdMxn.montoComprado||0) + (+eurMxn.montoComprado||0)
-                     - (+mxnUsd.montoVendido||0)  - (+mxnEur.montoVendido||0);
-        const camUSD = (+mxnUsd.montoComprado||0) - (+usdMxn.montoVendido||0);
-        const camEUR = (+mxnEur.montoComprado||0) - (+eurMxn.montoVendido||0);
-        // Calcular pagos del día anterior (filtrando payments del estado)
-        const pagosFecha = (payments || []).filter(p => p.tipo === 'programado' && p.fechaPago === ultimo.fecha);
-        const pagosPorMon = { MXN:0, USD:0, EUR:0 };
-        pagosFecha.forEach(p => {
-          // Buscar la factura para saber su moneda
-          let monedaFactura = 'MXN';
-          for (const mon of ['MXN','USD','EUR']) {
-            if ((invoices[mon] || []).find(f => f.id === p.invoiceId && f.empresaId === empresaId)) {
-              monedaFactura = mon; break;
+        // Reconstrucción en cadena: aplicar movimientos de TODOS los días desde `ultimo.fecha`
+        // hasta el día anterior a `fechaSeleccionada`.
+        let saldoMXN = ultimo.mxn;
+        let saldoUSD = ultimo.usd;
+        let saldoEUR = ultimo.eur;
+        // Generar todas las fechas desde ultimo.fecha hasta fechaSeleccionada-1
+        const fechas = [];
+        const cursor = new Date(ultimo.fecha + 'T12:00:00');
+        const fin = new Date(fechaSeleccionada + 'T12:00:00');
+        while (cursor < fin) {
+          fechas.push(cursor.toISOString().slice(0, 10));
+          cursor.setDate(cursor.getDate() + 1);
+        }
+        // Para cada fecha, aplicar: + ingresos ± cambios − pagos (programados Y realizados)
+        for (const f of fechas) {
+          const movs = await fetchMovimientosDia(empresaId, f);
+          if (cancelado) return;
+          // Ingresos
+          const ingMXN = movs.ingresos.reduce((s, i) => s + (+i.montoMXN || 0), 0);
+          const ingUSD = movs.ingresos.reduce((s, i) => s + (+i.montoUSD || 0), 0);
+          const ingEUR = movs.ingresos.reduce((s, i) => s + (+i.montoEUR || 0), 0);
+          // Cambios de divisa
+          const porDir = {};
+          movs.cambios.forEach(c => { porDir[c.direccion] = c; });
+          const usdMxn = porDir['USD_MXN'] || { montoVendido:0, montoComprado:0 };
+          const mxnUsd = porDir['MXN_USD'] || { montoVendido:0, montoComprado:0 };
+          const eurMxn = porDir['EUR_MXN'] || { montoVendido:0, montoComprado:0 };
+          const mxnEur = porDir['MXN_EUR'] || { montoVendido:0, montoComprado:0 };
+          const camMXN = (+usdMxn.montoComprado||0) + (+eurMxn.montoComprado||0)
+                       - (+mxnUsd.montoVendido||0)  - (+mxnEur.montoVendido||0);
+          const camUSD = (+mxnUsd.montoComprado||0) - (+usdMxn.montoVendido||0);
+          const camEUR = (+mxnEur.montoComprado||0) - (+eurMxn.montoVendido||0);
+          // Pagos de ese día: INCLUIR tanto programados como realizados (ambos salen del banco)
+          const pagosFecha = (payments || []).filter(p => 
+            (p.tipo === 'programado' || p.tipo === 'realizado') && p.fechaPago === f
+          );
+          const pagosPorMon = { MXN:0, USD:0, EUR:0 };
+          pagosFecha.forEach(p => {
+            let monedaFactura = 'MXN';
+            for (const mon of ['MXN','USD','EUR']) {
+              if ((invoices[mon] || []).find(f2 => f2.id === p.invoiceId && f2.empresaId === empresaId)) {
+                monedaFactura = mon; break;
+              }
             }
-          }
-          pagosPorMon[monedaFactura] += (+p.monto || 0);
-        });
-        // Saldo final del día anterior = inicial + ingresos + cambios − pagos
-        const finalMXN = ultimo.mxn + ingMXN + camMXN - pagosPorMon.MXN;
-        const finalUSD = ultimo.usd + ingUSD + camUSD - pagosPorMon.USD;
-        const finalEUR = ultimo.eur + ingEUR + camEUR - pagosPorMon.EUR;
+            pagosPorMon[monedaFactura] += (+p.monto || 0);
+          });
+          // Aplicar movimientos del día al saldo acumulado
+          saldoMXN = saldoMXN + ingMXN + camMXN - pagosPorMon.MXN;
+          saldoUSD = saldoUSD + ingUSD + camUSD - pagosPorMon.USD;
+          saldoEUR = saldoEUR + ingEUR + camEUR - pagosPorMon.EUR;
+        }
+        // Determinar fecha del último día procesado (el que realmente le da su saldo al nuevo día)
+        const fechaOrigen = fechas.length > 0 ? fechas[fechas.length - 1] : ultimo.fecha;
         setSaldosEmpresas({ [empresaId]: {
-          mxn: String(finalMXN),
-          usd: String(finalUSD),
-          eur: String(finalEUR)
+          mxn: String(saldoMXN),
+          usd: String(saldoUSD),
+          eur: String(saldoEUR)
         }});
         setSaldosMeta({
           updatedAt: null,
           updatedBy: null,
           fuente: 'heredado',
-          fechaOrigen: ultimo.fecha,
+          fechaOrigen,
         });
         setSaldosLoading(false);
       };
