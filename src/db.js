@@ -979,6 +979,7 @@ export async function fetchIngresosDia(empresaId, fecha) {
     montoUSD: +r.monto_usd || 0,
     montoEUR: +r.monto_eur || 0,
     orden: +r.orden || 0,
+    confirmado: r.confirmado !== false,  // default true si null (retro-compat)
     updatedAt: r.updated_at,
     updatedBy: r.updated_by,
   }));
@@ -995,6 +996,7 @@ export async function upsertIngresoDia(ingreso, usuario) {
     monto_usd: +ingreso.montoUSD || 0,
     monto_eur: +ingreso.montoEUR || 0,
     orden: +ingreso.orden || 0,
+    confirmado: ingreso.confirmado !== false,  // default true
     updated_at: new Date().toISOString(),
     updated_by: usuario || 'desconocido',
   };

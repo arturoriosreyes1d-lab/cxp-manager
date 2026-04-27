@@ -3324,16 +3324,26 @@ export default function CxpApp({ user, onLogout }) {
         concepto: '',
         montoMXN: 0, montoUSD: 0, montoEUR: 0,
         orden: ingresosDia.length,
+        confirmado: true, // por defecto: real
       };
       const id = await upsertIngresoDia(nuevo, user?.nombre || 'desconocido');
       if (id) {
         setIngresosDia(prev => [...prev, { ...nuevo, id }]);
-        // Auto-foco en el rubro nuevo
         setTimeout(() => {
           setEditandoIngreso(`${id}_rubro`);
           setValorIngreso('');
         }, 50);
       }
+    };
+
+    // Toggle real ↔ proyectado
+    const toggleConfirmadoIngreso = async (id) => {
+      if (esConsulta || bloqueoEdicion) return;
+      const ing = ingresosDia.find(x => x.id === id);
+      if (!ing) return;
+      const nuevo = { ...ing, confirmado: !(ing.confirmado !== false) };
+      await upsertIngresoDia(nuevo, user?.nombre || 'desconocido');
+      setIngresosDia(prev => prev.map(x => x.id === id ? nuevo : x));
     };
 
     // Guardar cambio de una celda
@@ -3372,10 +3382,26 @@ export default function CxpApp({ user, onLogout }) {
       setIngresosDia(prev => prev.filter(x => x.id !== id));
     };
 
-    // Totales de ingresos
+    // Totales de ingresos: separados entre reales (confirmados) y proyectados.
+    // totalesIngresos sigue siendo "solo reales" para mantener compat con el resto del código
+    // (Saldo Disponible, PDF, copiar resumen, etc. ya usan esta variable).
     const totalesIngresos = useMemo(() => {
       const t = { MXN: 0, USD: 0, EUR: 0 };
       ingresosDia.forEach(x => {
+        // Solo reales (confirmado !== false → default true)
+        if (x.confirmado === false) return;
+        t.MXN += +x.montoMXN || 0;
+        t.USD += +x.montoUSD || 0;
+        t.EUR += +x.montoEUR || 0;
+      });
+      return t;
+    }, [ingresosDia]);
+
+    // Totales solo de proyectados (para mostrar separado en la tabla)
+    const totalesIngresosProyectados = useMemo(() => {
+      const t = { MXN: 0, USD: 0, EUR: 0 };
+      ingresosDia.forEach(x => {
+        if (x.confirmado !== false) return; // excluir reales
         t.MXN += +x.montoMXN || 0;
         t.USD += +x.montoUSD || 0;
         t.EUR += +x.montoEUR || 0;
@@ -4600,7 +4626,12 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                     </tr>
                   </thead>
                   <tbody>
-                    {ingresosDia.map(ing => {
+                    {(() => {
+                      // Separar ingresos en reales (confirmado!==false) y proyectados
+                      const reales = ingresosDia.filter(x => x.confirmado !== false);
+                      const proyectados = ingresosDia.filter(x => x.confirmado === false);
+
+                      const renderFila = (ing, esProyectado) => {
                       const keyRubro = `${ing.id}_rubro`;
                       const keyCliente = `${ing.id}_cliente`;
                       const keyConcepto = `${ing.id}_concepto`;
@@ -4620,9 +4651,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                                        : key.endsWith('_cliente') ? sugerencias.clientes
                                        : sugerencias.conceptos;
                             const q = valorIngreso.trim().toLowerCase();
-                            // Primero matches que empiezan con la query
                             const empiezan = lista.filter(s => s.toLowerCase().startsWith(q) && s.toLowerCase() !== q);
-                            // Luego matches que la contienen pero no empiezan
                             const contienen = lista.filter(s => {
                               const sl = s.toLowerCase();
                               return sl.includes(q) && !sl.startsWith(q) && sl !== q;
@@ -4631,11 +4660,8 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                           }
 
                           const seleccionarSugerencia = async (texto) => {
-                            // Guarda el ingreso con el valor seleccionado y actualiza también las sugerencias
                             setValorIngreso(texto);
-                            // Pequeño hack: usar setTimeout para que el setState se aplique antes de guardar
                             setTimeout(() => {
-                              // Reusamos la lógica de guardarCeldaIngreso pero forzando el valor
                               const [id, campo] = key.split('_');
                               const ingActual = ingresosDia.find(x => x.id === id);
                               if (ingActual) {
@@ -4662,52 +4688,27 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                                   setValorIngreso(esCampoTexto ? v : v.replace(/[^\d.]/g, ''));
                                   setSugerenciaIdx(-1);
                                 }}
-                                onBlur={() => {
-                                  // Pequeño delay para permitir click en sugerencia antes de cerrar
-                                  setTimeout(() => guardarCeldaIngreso(), 150);
-                                }}
+                                onBlur={() => { setTimeout(() => guardarCeldaIngreso(), 150); }}
                                 onKeyDown={(e) => {
                                   if (esCampoTexto && sugerenciasFiltradas.length > 0) {
-                                    if (e.key === 'ArrowDown') {
-                                      e.preventDefault();
-                                      setSugerenciaIdx(prev => Math.min(prev + 1, sugerenciasFiltradas.length - 1));
-                                      return;
-                                    }
-                                    if (e.key === 'ArrowUp') {
-                                      e.preventDefault();
-                                      setSugerenciaIdx(prev => Math.max(prev - 1, -1));
-                                      return;
-                                    }
-                                    if (e.key === 'Enter' && sugerenciaIdx >= 0) {
-                                      e.preventDefault();
-                                      seleccionarSugerencia(sugerenciasFiltradas[sugerenciaIdx]);
-                                      return;
-                                    }
+                                    if (e.key === 'ArrowDown') { e.preventDefault(); setSugerenciaIdx(prev => Math.min(prev + 1, sugerenciasFiltradas.length - 1)); return; }
+                                    if (e.key === 'ArrowUp')   { e.preventDefault(); setSugerenciaIdx(prev => Math.max(prev - 1, -1)); return; }
+                                    if (e.key === 'Enter' && sugerenciaIdx >= 0) { e.preventDefault(); seleccionarSugerencia(sugerenciasFiltradas[sugerenciaIdx]); return; }
                                   }
                                   if (e.key === 'Enter') guardarCeldaIngreso();
                                   if (e.key === 'Escape') { cancelarCeldaIngreso(); setSugerenciaIdx(-1); }
                                 }}
-                                style={{width:'100%',border:'2px solid #1B5E20',borderRadius:5,padding:'6px 8px',fontSize:12,textAlign:alignRight?'right':'left',fontFamily:alignRight?'monospace':'inherit',fontVariantNumeric:alignRight?'tabular-nums':'normal',outline:'none',boxSizing:'border-box'}}
+                                style={{width:'100%',border:`2px solid ${esProyectado ? '#6A1B9A' : '#1B5E20'}`,borderRadius:5,padding:'6px 8px',fontSize:12,textAlign:alignRight?'right':'left',fontFamily:alignRight?'monospace':'inherit',fontVariantNumeric:alignRight?'tabular-nums':'normal',outline:'none',boxSizing:'border-box'}}
                               />
                               {esCampoTexto && sugerenciasFiltradas.length > 0 && (
-                                <div style={{position:'absolute',top:'100%',left:0,right:0,background:'#fff',border:'1px solid #1B5E20',borderTop:'none',borderRadius:'0 0 6px 6px',boxShadow:'0 4px 12px rgba(0,0,0,0.12)',zIndex:1000,maxHeight:240,overflowY:'auto'}}>
+                                <div style={{position:'absolute',top:'100%',left:0,right:0,background:'#fff',border:`1px solid ${esProyectado ? '#6A1B9A' : '#1B5E20'}`,borderTop:'none',borderRadius:'0 0 6px 6px',boxShadow:'0 4px 12px rgba(0,0,0,0.12)',zIndex:1000,maxHeight:240,overflowY:'auto'}}>
                                   {sugerenciasFiltradas.map((s, idx) => (
                                     <div
                                       key={s}
                                       onMouseDown={(e) => { e.preventDefault(); seleccionarSugerencia(s); }}
                                       onMouseEnter={() => setSugerenciaIdx(idx)}
-                                      style={{
-                                        padding:'8px 12px',
-                                        fontSize:12,
-                                        cursor:'pointer',
-                                        background: idx === sugerenciaIdx ? '#E8F5E9' : 'transparent',
-                                        borderBottom: idx < sugerenciasFiltradas.length - 1 ? '1px solid #F3F4F6' : 'none',
-                                        color: '#1F2937',
-                                        fontFamily: 'inherit',
-                                      }}
-                                    >
-                                      {s}
-                                    </div>
+                                      style={{padding:'8px 12px',fontSize:12,cursor:'pointer',background: idx === sugerenciaIdx ? (esProyectado?'#F3E5F5':'#E8F5E9') : 'transparent',borderBottom: idx < sugerenciasFiltradas.length - 1 ? '1px solid #F3F4F6' : 'none',color: '#1F2937',fontFamily: 'inherit'}}
+                                    >{s}</div>
                                   ))}
                                 </div>
                               )}
@@ -4727,21 +4728,21 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                               else if (key.endsWith('_USD')) setValorIngreso(String(ing.montoUSD || ''));
                               else if (key.endsWith('_EUR')) setValorIngreso(String(ing.montoEUR || ''));
                             }}
-                            style={{padding:'6px 8px',borderRadius:5,cursor:editable?'pointer':'default',transition:'background 0.15s',minHeight:20,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}
-                            onMouseEnter={(e) => { if (editable) e.currentTarget.style.background = '#E8F5E9'; }}
+                            style={{padding:'6px 8px',borderRadius:5,cursor:editable?'pointer':'default',transition:'background 0.15s',minHeight:20,wordBreak:'break-word',whiteSpace:'normal'}}
+                            onMouseEnter={(e) => { if (editable) e.currentTarget.style.background = esProyectado ? '#F3E5F5' : '#E8F5E9'; }}
                             onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                             title={editable ? (typeof valorMostrar === 'string' ? valorMostrar : 'Clic para editar') : ''}
-                          >
-                            {valorMostrar}
-                          </div>
+                          >{valorMostrar}</div>
                         );
                       };
 
                       const placeholderVacio = (txt) => <span style={{color:'#bbb',fontStyle:'italic',fontSize:12}}>{txt}</span>;
+                      const bgFila = esProyectado ? '#FAFAFD' : undefined;
+                      const colorMonto = esProyectado ? '#6A1B9A' : '#1F2937';
 
                       return (
-                        <tr key={ing.id} style={{borderBottom:`1px solid ${C.border}`}}>
-                          <td style={{padding:'6px 8px',fontWeight:600,color:'#1F2937'}}>
+                        <tr key={ing.id} style={{borderBottom:`1px solid ${C.border}`, background: bgFila}}>
+                          <td style={{padding:'6px 8px',fontWeight:600,color: esProyectado ? '#6A1B9A' : '#1F2937'}}>
                             {renderCelda(keyRubro, ing.rubro || placeholderVacio('— Rubro —'), false)}
                           </td>
                           <td style={{padding:'6px 8px',color:'#374151'}}>
@@ -4750,32 +4751,74 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                           <td style={{padding:'6px 8px',color:'#374151'}}>
                             {renderCelda(keyConcepto, ing.concepto || placeholderVacio('— Concepto —'), false)}
                           </td>
-                          <td style={{padding:'6px 8px',textAlign:'right',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontWeight:ing.montoMXN>0?700:400,color:ing.montoMXN>0?'#1F2937':'#bbb'}}>
+                          <td style={{padding:'6px 8px',textAlign:'right',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontWeight:ing.montoMXN>0?700:400,color:ing.montoMXN>0?colorMonto:'#bbb'}}>
                             {renderCelda(keyMXN, ing.montoMXN > 0 ? `$${fmt(ing.montoMXN)}` : '—')}
                           </td>
-                          <td style={{padding:'6px 8px',textAlign:'right',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontWeight:ing.montoUSD>0?700:400,color:ing.montoUSD>0?'#1F2937':'#bbb'}}>
+                          <td style={{padding:'6px 8px',textAlign:'right',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontWeight:ing.montoUSD>0?700:400,color:ing.montoUSD>0?colorMonto:'#bbb'}}>
                             {renderCelda(keyUSD, ing.montoUSD > 0 ? `$${fmt(ing.montoUSD)}` : '—')}
                           </td>
-                          <td style={{padding:'6px 8px',textAlign:'right',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontWeight:ing.montoEUR>0?700:400,color:ing.montoEUR>0?'#1F2937':'#bbb'}}>
+                          <td style={{padding:'6px 8px',textAlign:'right',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontWeight:ing.montoEUR>0?700:400,color:ing.montoEUR>0?colorMonto:'#bbb'}}>
                             {renderCelda(keyEUR, ing.montoEUR > 0 ? `€${fmt(ing.montoEUR)}` : '—')}
                           </td>
                           {!esConsulta && (
-                            <td style={{padding:'6px 8px',textAlign:'center'}}>
+                            <td style={{padding:'6px 8px',textAlign:'center',whiteSpace:'nowrap'}}>
+                              <button
+                                onClick={() => toggleConfirmadoIngreso(ing.id)}
+                                title={esProyectado ? 'Confirmar como real' : 'Cambiar a proyectado'}
+                                style={{background:esProyectado?'#6A1B9A':'#E8F5E9',color:esProyectado?'#fff':'#1B5E20',border:esProyectado?'none':'1px solid #A5D6A7',cursor:'pointer',fontSize:10,fontWeight:700,padding:'3px 7px',borderRadius:5,marginRight:4,fontFamily:'inherit'}}
+                              >{esProyectado ? '✅' : '⏳'}</button>
                               <button onClick={() => eliminarIngreso(ing.id)} title="Eliminar" style={{background:'transparent',border:'none',cursor:'pointer',fontSize:14,color:'#999',padding:4}}>🗑️</button>
                             </td>
                           )}
                         </tr>
                       );
-                    })}
+                      };
+
+                      return (
+                        <>
+                          {/* Subheader Reales (solo si hay proyectados, para no saturar) */}
+                          {reales.length > 0 && proyectados.length > 0 && (
+                            <tr style={{background:'#F1F8E9'}}>
+                              <td colSpan={!esConsulta ? 7 : 6} style={{padding:'7px 12px',fontSize:10,fontWeight:800,color:'#1B5E20',letterSpacing:0.5,textTransform:'uppercase',borderBottom:'1px solid #C8E6C9'}}>
+                                ✅ Reales · {reales.length} {reales.length === 1 ? 'entrada' : 'entradas'}
+                              </td>
+                            </tr>
+                          )}
+                          {reales.map(ing => renderFila(ing, false))}
+                          {/* Subheader Proyectados */}
+                          {proyectados.length > 0 && (
+                            <tr style={{background:'#F3E5F5'}}>
+                              <td colSpan={!esConsulta ? 7 : 6} style={{padding:'7px 12px',fontSize:10,fontWeight:800,color:'#6A1B9A',letterSpacing:0.5,textTransform:'uppercase',borderTop:'1px solid #CE93D8',borderBottom:'1px solid #CE93D8'}}>
+                                ⏳ Proyectados · {proyectados.length} {proyectados.length === 1 ? 'entrada' : 'entradas'} · no suman al Saldo Disponible
+                              </td>
+                            </tr>
+                          )}
+                          {proyectados.map(ing => renderFila(ing, true))}
+                        </>
+                      );
+                    })()}
                   </tbody>
                   <tfoot>
+                    {/* TOTAL REAL (siempre visible) */}
                     <tr style={{background:'#E8F5E9',borderTop:'2px solid #1B5E20'}}>
-                      <td colSpan={3} style={{padding:'12px',fontWeight:800,color:'#1B5E20',fontSize:14}}>TOTAL</td>
+                      <td colSpan={3} style={{padding:'12px',fontWeight:800,color:'#1B5E20',fontSize:14}}>
+                        {totalesIngresosProyectados.MXN+totalesIngresosProyectados.USD+totalesIngresosProyectados.EUR > 0 ? 'TOTAL REAL' : 'TOTAL'}
+                      </td>
                       <td style={{padding:'12px 8px',textAlign:'right',fontWeight:800,color:'#1B5E20',fontSize:14,fontFamily:'monospace',fontVariantNumeric:'tabular-nums'}}>{totalesIngresos.MXN > 0 ? `$${fmt(totalesIngresos.MXN)}` : '—'}</td>
                       <td style={{padding:'12px 8px',textAlign:'right',fontWeight:800,color:'#1B5E20',fontSize:14,fontFamily:'monospace',fontVariantNumeric:'tabular-nums'}}>{totalesIngresos.USD > 0 ? `$${fmt(totalesIngresos.USD)}` : '—'}</td>
                       <td style={{padding:'12px 8px',textAlign:'right',fontWeight:800,color:'#1B5E20',fontSize:14,fontFamily:'monospace',fontVariantNumeric:'tabular-nums'}}>{totalesIngresos.EUR > 0 ? `€${fmt(totalesIngresos.EUR)}` : '—'}</td>
                       {!esConsulta && <td/>}
                     </tr>
+                    {/* TOTAL PROYECTADO (solo si hay proyectados) */}
+                    {(totalesIngresosProyectados.MXN+totalesIngresosProyectados.USD+totalesIngresosProyectados.EUR) > 0 && (
+                      <tr style={{background:'#F3E5F5',borderTop:'1px solid #CE93D8'}}>
+                        <td colSpan={3} style={{padding:'12px',fontWeight:800,color:'#6A1B9A',fontSize:14}}>TOTAL PROYECTADO</td>
+                        <td style={{padding:'12px 8px',textAlign:'right',fontWeight:800,color:'#6A1B9A',fontSize:14,fontFamily:'monospace',fontVariantNumeric:'tabular-nums'}}>{totalesIngresosProyectados.MXN > 0 ? `$${fmt(totalesIngresosProyectados.MXN)}` : '—'}</td>
+                        <td style={{padding:'12px 8px',textAlign:'right',fontWeight:800,color:'#6A1B9A',fontSize:14,fontFamily:'monospace',fontVariantNumeric:'tabular-nums'}}>{totalesIngresosProyectados.USD > 0 ? `$${fmt(totalesIngresosProyectados.USD)}` : '—'}</td>
+                        <td style={{padding:'12px 8px',textAlign:'right',fontWeight:800,color:'#6A1B9A',fontSize:14,fontFamily:'monospace',fontVariantNumeric:'tabular-nums'}}>{totalesIngresosProyectados.EUR > 0 ? `€${fmt(totalesIngresosProyectados.EUR)}` : '—'}</td>
+                        {!esConsulta && <td/>}
+                      </tr>
+                    )}
                   </tfoot>
                 </table>
               </div>
