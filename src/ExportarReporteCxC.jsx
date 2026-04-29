@@ -204,8 +204,10 @@ export default function ExportarReporteCxC({
   // ─── KPIs MXN (los principales que se ven en pantalla) ──────
   const kpisMostrar = useMemo(() => {
     const k = kpis.MXN || {};
-    const mxnTotal = (k.monto || 0);
-    const totalCxc = (k.porCobrar || 0);
+    // FIX: el chip "MXN Total" en pantalla usa k.porCobrar (no k.monto)
+    // k.monto = monto facturado total (incluye ya cobrado)
+    // k.porCobrar = monto pendiente de cobrar (lo que muestra la pantalla)
+    const mxnTotal = (k.porCobrar || 0);
     // Por Facturar = suma de porFacturar en MXN
     const pf = (porFacturar || []).filter(p => (p.moneda || "MXN") === "MXN")
       .reduce((s,p) => s + (+p.monto||0), 0);
@@ -224,7 +226,7 @@ export default function ExportarReporteCxC({
     return {
       mxnTotal,
       porFacturar: pf,
-      totalCxc: totalCxc + pf, // Por Cobrar + Por Facturar
+      totalCxc: mxnTotal + pf, // Por Cobrar + Por Facturar (igual que el chip "Total CxC")
       cobradoMes,
       mesActualLabel: `COBRADO EN ${MESES_ES[ahora.getMonth()].toUpperCase()} ${ahora.getFullYear()}`,
     };
@@ -256,9 +258,10 @@ export default function ExportarReporteCxC({
     while (celdas.length % 7 !== 0) celdas.push(null);
 
     const mostrarResumen   = parte === 'completo' || parte === 'resumen';
-    const mostrarProyCal   = parte === 'completo' || parte === 'proyeccion';
+    const mostrarProyCal   = parte === 'completo' || parte === 'proyeccion' || parte === 'calendario';
     const mostrarDesglose  = parte === 'completo' || parte === 'proyeccion' || parte === 'desglose';
     const desgloseSolo     = parte === 'desglose';
+    const calendarioSolo   = parte === 'calendario';
 
     return (
       <div ref={reportRef} style={{
@@ -294,7 +297,7 @@ export default function ExportarReporteCxC({
         {/* Bloque 1: Resumen Financiero */}
         {mostrarResumen && (
         <Block>
-          <Eyebrow>RESUMEN FINANCIERO</Eyebrow>
+          <Eyebrow>CUENTAS POR COBRAR</Eyebrow>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
             <Kpi color="azul"   label="MXN TOTAL"     value={fmt(kpisMostrar.mxnTotal)} />
             <Kpi color="rosa"   label="POR FACTURAR"  value={fmt(kpisMostrar.porFacturar)} />
@@ -361,8 +364,16 @@ export default function ExportarReporteCxC({
         <Block last>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
             <div>
-              <Eyebrow style={{ margin: 0 }}>{desgloseSolo ? 'DESGLOSE DE COBROS (CONTINUACIÓN)' : 'PROYECCIÓN DE COBROS'}</Eyebrow>
-              <div style={{ fontSize: 10, color: "#777", marginTop: 2 }}>{desgloseSolo ? 'Continuación del desglose detallado por día' : 'Calendario y desglose detallado por día'}</div>
+              <Eyebrow style={{ margin: 0 }}>{
+                calendarioSolo ? 'CALENDARIO DE COBROS PROYECTADOS'
+                : desgloseSolo ? 'DESGLOSE DE COBROS POR DÍA'
+                : 'PROYECCIÓN DE COBROS'
+              }</Eyebrow>
+              <div style={{ fontSize: 10, color: "#777", marginTop: 2 }}>{
+                calendarioSolo ? 'Vista mensual de cobros esperados'
+                : desgloseSolo ? 'Detalle de cliente y monto por cada día'
+                : 'Calendario y desglose detallado por día'
+              }</div>
             </div>
             <div style={{ background: "#EEEDFE", padding: "6px 14px", borderRadius: 999 }}>
               <div style={{ fontSize: 9, color: "#534AB7", letterSpacing: "0.05em" }}>ESTE MES</div>
@@ -403,11 +414,11 @@ export default function ExportarReporteCxC({
                       if (monto) {
                         return (
                           <td key={c} style={calCellStyle(true)}>
-                            <div style={{ fontWeight: 500, color: "#4B2A8A", fontSize: 11 }}>{dia}</div>
+                            <div style={{ fontWeight: 500, color: "#4B2A8A", fontSize: 12 }}>{dia}</div>
                             <div style={{
-                              background: "#6B3FA0", color: "white", fontSize: 8.5,
-                              padding: "2px 5px", borderRadius: 999, marginTop: 3,
-                              fontWeight: 600, display: "inline-block",
+                              background: "#6B3FA0", color: "white", fontSize: 13,
+                              padding: "3px 8px", borderRadius: 999, marginTop: 4,
+                              fontWeight: 700, display: "inline-block",
                               whiteSpace: "nowrap",
                               fontVariantNumeric: "tabular-nums",
                             }}>{fmtShort(monto)}</div>
@@ -435,9 +446,11 @@ export default function ExportarReporteCxC({
               : proyeccionMes.cobros;
             return cobrosVis.length > 0 ? (
             <>
-              <div style={{ fontSize: 10, color: "#534AB7", letterSpacing: "0.1em", marginBottom: 10, fontWeight: 500 }}>
-                DESGLOSE DE COBROS POR DÍA{desgloseRange && desgloseRange[0] > 0 ? ' (continuación)' : ''}
-              </div>
+              {!desgloseSolo && (
+                <div style={{ fontSize: 10, color: "#534AB7", letterSpacing: "0.1em", marginBottom: 10, fontWeight: 500 }}>
+                  DESGLOSE DE COBROS POR DÍA{desgloseRange && desgloseRange[0] > 0 ? ' (continuación)' : ''}
+                </div>
+              )}
               <div style={{ border: "0.5px solid #E5E0F0", borderRadius: 8, overflow: "hidden" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10 }}>
                   <thead>
@@ -506,25 +519,15 @@ export default function ExportarReporteCxC({
     });
   });
 
-  // Calcula las "partes" del reporte basado en cantidad de cobros del desglose.
-  // Si hay muchos días (>10), se separa el desglose en una parte adicional.
+  // Calcula las "partes" del reporte. Siempre 3:
+  //   1. Resumen + Cartera por Cliente
+  //   2. Calendario (sin desglose)
+  //   3. Desglose por día (sin calendario)
   const calcularPartes = () => {
-    const totalDiasDesglose = proyeccionMes.cobros.length;
-    // Umbral: si hay >10 días con cobros, partir el desglose
-    const partirDesglose = totalDiasDesglose > 10;
-    if (partirDesglose) {
-      // 3 partes: Resumen+Cartera | Calendario+Desglose(1ra mitad) | Desglose(2da mitad)
-      const mitad = Math.ceil(totalDiasDesglose / 2);
-      return [
-        { parte: 'resumen',    partInfo: { num: 1, total: 3, descripcion: 'Resumen y Cartera' }, desgloseRange: null,        nombreSufijo: 'Resumen' },
-        { parte: 'proyeccion', partInfo: { num: 2, total: 3, descripcion: 'Proyección de Cobros' }, desgloseRange: [0, mitad], nombreSufijo: 'Proyeccion' },
-        { parte: 'desglose',   partInfo: { num: 3, total: 3, descripcion: 'Continuación del Desglose' }, desgloseRange: [mitad, totalDiasDesglose], nombreSufijo: 'Desglose' },
-      ];
-    }
-    // 2 partes: Resumen+Cartera | Calendario+Desglose completo
     return [
-      { parte: 'resumen',    partInfo: { num: 1, total: 2, descripcion: 'Resumen y Cartera' }, desgloseRange: null, nombreSufijo: 'Resumen' },
-      { parte: 'proyeccion', partInfo: { num: 2, total: 2, descripcion: 'Proyección de Cobros' }, desgloseRange: null, nombreSufijo: 'Proyeccion' },
+      { parte: 'resumen',     partInfo: { num: 1, total: 3, descripcion: 'Cuentas por Cobrar' },     desgloseRange: null, nombreSufijo: 'Resumen'    },
+      { parte: 'calendario',  partInfo: { num: 2, total: 3, descripcion: 'Calendario de Cobros' },   desgloseRange: null, nombreSufijo: 'Calendario' },
+      { parte: 'desglose',    partInfo: { num: 3, total: 3, descripcion: 'Desglose por Día' },       desgloseRange: null, nombreSufijo: 'Desglose'   },
     ];
   };
 
@@ -854,8 +857,8 @@ const emptyRowStyle = {
   textAlign: "center", padding: 12, fontSize: 11,
 };
 const calCellStyle = (hasCobro) => ({
-  height: 60,
-  padding: 5,
+  height: 80,
+  padding: 6,
   border: "0.5px solid #ECE3F5",
   verticalAlign: "top",
   background: hasCobro ? "#F4EBFD" : "#FBF8FD",
