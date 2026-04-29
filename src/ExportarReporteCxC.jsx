@@ -38,10 +38,10 @@ const fmt = n => "$" + new Intl.NumberFormat("en-US", {
 
 const fmtShort = n => {
   if (!n) return "—";
-  const a = Math.abs(n);
-  if (a >= 1000000) return "$" + (a/1000000).toFixed(2) + "M";
-  if (a >= 1000)    return "$" + Math.round(a/1000) + "K";
-  return "$" + Math.round(a);
+  // Importe exacto sin decimales (formato compacto, redondeado al entero)
+  return "$" + new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 0, maximumFractionDigits: 0
+  }).format(Math.abs(Math.round(n)));
 };
 
 const MESES_ES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
@@ -231,7 +231,9 @@ export default function ExportarReporteCxC({
   }, [kpis, porFacturar, cobros, ingresos]);
 
   // ─── Render del reporte (offscreen) ─────────────────────────
-  const renderReporteHTML = () => {
+  // parte: 'resumen' | 'proyeccion' | 'desglose' | 'completo'
+  // partInfo: { num, total, descripcion } para mostrar "Parte 1/3 · Resumen"
+  const renderReporteHTML = (parte = 'completo', partInfo = null, desgloseRange = null) => {
     const mesNombre = (() => {
       const opt = mesesOpciones.find(m => m.key === mesSel);
       return opt ? opt.label : mesSel;
@@ -252,6 +254,11 @@ export default function ExportarReporteCxC({
     for (let i = 0; i < dowPrimerDia; i++) celdas.push(null);
     for (let d = 1; d <= diasEnMes; d++) celdas.push(d);
     while (celdas.length % 7 !== 0) celdas.push(null);
+
+    const mostrarResumen   = parte === 'completo' || parte === 'resumen';
+    const mostrarProyCal   = parte === 'completo' || parte === 'proyeccion';
+    const mostrarDesglose  = parte === 'completo' || parte === 'proyeccion' || parte === 'desglose';
+    const desgloseSolo     = parte === 'desglose';
 
     return (
       <div ref={reportRef} style={{
@@ -274,7 +281,9 @@ export default function ExportarReporteCxC({
         }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 500 }}>{empresaNombre}</div>
-            <div style={{ fontSize: 11, opacity: 0.85, marginTop: 2 }}>Reporte CxC · {fechaHoy()}</div>
+            <div style={{ fontSize: 11, opacity: 0.85, marginTop: 2 }}>
+              Reporte CxC · {fechaHoy()}{partInfo ? ` · Parte ${partInfo.num}/${partInfo.total} · ${partInfo.descripcion}` : ''}
+            </div>
           </div>
           <div style={{ textAlign: "right", fontSize: 10, opacity: 0.85 }}>
             <div>Generado por</div>
@@ -283,6 +292,7 @@ export default function ExportarReporteCxC({
         </div>
 
         {/* Bloque 1: Resumen Financiero */}
+        {mostrarResumen && (
         <Block>
           <Eyebrow>RESUMEN FINANCIERO</Eyebrow>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
@@ -292,8 +302,10 @@ export default function ExportarReporteCxC({
             <Kpi color="verde"  label={kpisMostrar.mesActualLabel} value={fmt(kpisMostrar.cobradoMes)} />
           </div>
         </Block>
+        )}
 
         {/* Bloque 2: Cartera por cliente */}
+        {mostrarResumen && (
         <Block>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <Eyebrow style={{ margin: 0 }}>CARTERA POR CLIENTE</Eyebrow>
@@ -342,13 +354,15 @@ export default function ExportarReporteCxC({
             </tbody>
           </table>
         </Block>
+        )}
 
         {/* Bloque 3: Proyección — calendario + desglose */}
+        {(mostrarProyCal || mostrarDesglose) && (
         <Block last>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
             <div>
-              <Eyebrow style={{ margin: 0 }}>PROYECCIÓN DE COBROS</Eyebrow>
-              <div style={{ fontSize: 10, color: "#777", marginTop: 2 }}>Calendario y desglose detallado por día</div>
+              <Eyebrow style={{ margin: 0 }}>{desgloseSolo ? 'DESGLOSE DE COBROS (CONTINUACIÓN)' : 'PROYECCIÓN DE COBROS'}</Eyebrow>
+              <div style={{ fontSize: 10, color: "#777", marginTop: 2 }}>{desgloseSolo ? 'Continuación del desglose detallado por día' : 'Calendario y desglose detallado por día'}</div>
             </div>
             <div style={{ background: "#EEEDFE", padding: "6px 14px", borderRadius: 999 }}>
               <div style={{ fontSize: 9, color: "#534AB7", letterSpacing: "0.05em" }}>ESTE MES</div>
@@ -357,6 +371,7 @@ export default function ExportarReporteCxC({
           </div>
 
           {/* Calendario */}
+          {mostrarProyCal && (
           <div style={{ borderRadius: 10, overflow: "hidden", border: "0.5px solid #E5E0F0", marginBottom: 18 }}>
             <div style={{
               background: "linear-gradient(90deg, #6B3FA0 0%, #4B2A8A 100%)",
@@ -390,9 +405,11 @@ export default function ExportarReporteCxC({
                           <td key={c} style={calCellStyle(true)}>
                             <div style={{ fontWeight: 500, color: "#4B2A8A", fontSize: 11 }}>{dia}</div>
                             <div style={{
-                              background: "#6B3FA0", color: "white", fontSize: 9,
-                              padding: "2px 6px", borderRadius: 999, marginTop: 3,
-                              fontWeight: 500, display: "inline-block",
+                              background: "#6B3FA0", color: "white", fontSize: 8.5,
+                              padding: "2px 5px", borderRadius: 999, marginTop: 3,
+                              fontWeight: 600, display: "inline-block",
+                              whiteSpace: "nowrap",
+                              fontVariantNumeric: "tabular-nums",
                             }}>{fmtShort(monto)}</div>
                           </td>
                         );
@@ -408,12 +425,18 @@ export default function ExportarReporteCxC({
               </tbody>
             </table>
           </div>
+          )}
 
           {/* Desglose */}
-          {proyeccionMes.cobros.length > 0 ? (
+          {mostrarDesglose && (() => {
+            // Filtrar el subconjunto de cobros según desgloseRange (si viene)
+            const cobrosVis = desgloseRange
+              ? proyeccionMes.cobros.slice(desgloseRange[0], desgloseRange[1])
+              : proyeccionMes.cobros;
+            return cobrosVis.length > 0 ? (
             <>
               <div style={{ fontSize: 10, color: "#534AB7", letterSpacing: "0.1em", marginBottom: 10, fontWeight: 500 }}>
-                DESGLOSE DE COBROS POR DÍA
+                DESGLOSE DE COBROS POR DÍA{desgloseRange && desgloseRange[0] > 0 ? ' (continuación)' : ''}
               </div>
               <div style={{ border: "0.5px solid #E5E0F0", borderRadius: 8, overflow: "hidden" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10 }}>
@@ -425,7 +448,7 @@ export default function ExportarReporteCxC({
                     </tr>
                   </thead>
                   <tbody>
-                    {proyeccionMes.cobros.map((d, di) => {
+                    {cobrosVis.map((d, di) => {
                       const fechaLabel = fechaDesgloseLabel(d.fecha);
                       return d.clientes.map((cl, ci) => (
                         <tr key={`${di}-${ci}`} style={{
@@ -452,11 +475,16 @@ export default function ExportarReporteCxC({
             }}>
               Sin cobros proyectados para {mesNombre}
             </div>
-          )}
+          );
+          })()}
         </Block>
+        )}
       </div>
     );
   };
+
+  // Estado de qué "parte" está renderizada off-screen (para captura por bloques)
+  const [parteRender, setParteRender] = useState({ parte: 'completo', partInfo: null, desgloseRange: null });
 
   // ─── Captura + exportación ──────────────────────────────────
   const captureCanvas = async () => {
@@ -471,55 +499,106 @@ export default function ExportarReporteCxC({
     });
   };
 
+  // Espera a que React re-renderice + da tiempo a html2canvas
+  const esperarRenderizado = () => new Promise(r => {
+    requestAnimationFrame(() => {
+      setTimeout(r, 150);
+    });
+  });
+
+  // Calcula las "partes" del reporte basado en cantidad de cobros del desglose.
+  // Si hay muchos días (>10), se separa el desglose en una parte adicional.
+  const calcularPartes = () => {
+    const totalDiasDesglose = proyeccionMes.cobros.length;
+    // Umbral: si hay >10 días con cobros, partir el desglose
+    const partirDesglose = totalDiasDesglose > 10;
+    if (partirDesglose) {
+      // 3 partes: Resumen+Cartera | Calendario+Desglose(1ra mitad) | Desglose(2da mitad)
+      const mitad = Math.ceil(totalDiasDesglose / 2);
+      return [
+        { parte: 'resumen',    partInfo: { num: 1, total: 3, descripcion: 'Resumen y Cartera' }, desgloseRange: null,        nombreSufijo: 'Resumen' },
+        { parte: 'proyeccion', partInfo: { num: 2, total: 3, descripcion: 'Proyección de Cobros' }, desgloseRange: [0, mitad], nombreSufijo: 'Proyeccion' },
+        { parte: 'desglose',   partInfo: { num: 3, total: 3, descripcion: 'Continuación del Desglose' }, desgloseRange: [mitad, totalDiasDesglose], nombreSufijo: 'Desglose' },
+      ];
+    }
+    // 2 partes: Resumen+Cartera | Calendario+Desglose completo
+    return [
+      { parte: 'resumen',    partInfo: { num: 1, total: 2, descripcion: 'Resumen y Cartera' }, desgloseRange: null, nombreSufijo: 'Resumen' },
+      { parte: 'proyeccion', partInfo: { num: 2, total: 2, descripcion: 'Proyección de Cobros' }, desgloseRange: null, nombreSufijo: 'Proyeccion' },
+    ];
+  };
+
   const handleExport = async (formato) => {
     setGenerando(true);
     try {
-      // Asegurar que el reporte está renderizado (esperar 1 frame)
-      setLoadingMsg(formato === "pdf" ? "Generando PDF…" : "Generando imagen…");
-      await new Promise(r => requestAnimationFrame(() => r()));
-      await new Promise(r => setTimeout(r, 100));
-
-      const canvas = await captureCanvas();
+      const partes = calcularPartes();
       const fechaArchivo = new Date().toISOString().slice(0,10);
       const nombreEmpresa = empresaNombre.replace(/ /g, "_");
 
+      // Capturar cada parte → canvas
+      const canvases = [];
+      for (let i = 0; i < partes.length; i++) {
+        const p = partes[i];
+        setLoadingMsg(`Generando ${formato.toUpperCase()} · Parte ${p.partInfo.num} de ${p.partInfo.total}…`);
+        // Cambiar el render off-screen a esta parte
+        setParteRender(p);
+        await esperarRenderizado();
+        const canvas = await captureCanvas();
+        canvases.push({ canvas, sufijo: p.nombreSufijo, partInfo: p.partInfo });
+      }
+
       if (formato === "pdf") {
+        // Un solo PDF con cada parte como página separada
         const jsPDF = await loadJsPdf();
-        const imgData = canvas.toDataURL("image/png");
         const pdfWidth = 210; // mm
-        const ratio = canvas.height / canvas.width;
-        const pdfHeight = pdfWidth * ratio;
-        const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-        if (pdfHeight <= 297) {
-          pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-        } else {
-          const pageHeight = 297;
-          let position = 0;
-          let pageNum = 0;
-          while (position < pdfHeight) {
-            if (pageNum > 0) pdf.addPage();
-            pdf.addImage(imgData, "PNG", 0, -position, pdfWidth, pdfHeight);
-            position += pageHeight;
-            pageNum++;
+        let pdf = null;
+        for (let i = 0; i < canvases.length; i++) {
+          const { canvas } = canvases[i];
+          const imgData = canvas.toDataURL("image/png");
+          const ratio = canvas.height / canvas.width;
+          const pdfHeight = pdfWidth * ratio;
+          if (i === 0) {
+            pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+          } else {
+            pdf.addPage();
+          }
+          // Si una parte es muy alta, partirla en sub-páginas A4
+          if (pdfHeight <= 297) {
+            pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+          } else {
+            const pageHeight = 297;
+            let position = 0;
+            let subPage = 0;
+            while (position < pdfHeight) {
+              if (subPage > 0) pdf.addPage();
+              pdf.addImage(imgData, "PNG", 0, -position, pdfWidth, pdfHeight);
+              position += pageHeight;
+              subPage++;
+            }
           }
         }
         pdf.save(`Reporte_CxC_${nombreEmpresa}_${fechaArchivo}.pdf`);
       } else {
-        // PNG
-        await new Promise((resolve, reject) => {
-          canvas.toBlob(blob => {
-            if (!blob) return reject(new Error("No se pudo crear blob"));
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `Reporte_CxC_WhatsApp_${fechaArchivo}.png`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            resolve();
-          }, "image/png");
-        });
+        // PNG: descargar cada parte como archivo separado (secuencial)
+        for (let i = 0; i < canvases.length; i++) {
+          const { canvas, sufijo } = canvases[i];
+          await new Promise((resolve, reject) => {
+            canvas.toBlob(blob => {
+              if (!blob) return reject(new Error("No se pudo crear blob"));
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `Reporte_CxC_${nombreEmpresa}_${fechaArchivo}_${sufijo}.png`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+              resolve();
+            }, "image/png");
+          });
+          // Pausa breve entre descargas para que el navegador no las junte
+          if (i < canvases.length - 1) await new Promise(r => setTimeout(r, 400));
+        }
       }
 
       setModalOpen(false);
@@ -529,6 +608,8 @@ export default function ExportarReporteCxC({
     } finally {
       setGenerando(false);
       setLoadingMsg("");
+      // Resetear estado de partes para próxima apertura
+      setParteRender({ parte: 'completo', partInfo: null, desgloseRange: null });
     }
   };
 
@@ -555,7 +636,7 @@ export default function ExportarReporteCxC({
         }}
         title="Generar reporte para tu jefe (PDF o WhatsApp)"
       >
-        📊 Exportar Reporte
+        📊 Generar Reporte CxC
       </button>
 
       {/* Reporte renderizado off-screen para captura */}
@@ -566,7 +647,7 @@ export default function ExportarReporteCxC({
         zIndex: -1,
         pointerEvents: "none",
       }}>
-        {modalOpen && renderReporteHTML()}
+        {modalOpen && renderReporteHTML(parteRender.parte, parteRender.partInfo, parteRender.desgloseRange)}
       </div>
 
       {/* Modal */}
@@ -773,7 +854,7 @@ const emptyRowStyle = {
   textAlign: "center", padding: 12, fontSize: 11,
 };
 const calCellStyle = (hasCobro) => ({
-  height: 50,
+  height: 60,
   padding: 5,
   border: "0.5px solid #ECE3F5",
   verticalAlign: "top",

@@ -1948,22 +1948,24 @@ export default function CxcView({
               <button onClick={()=>{setTasPreview(null);setTasModal(true);}} style={{...btnStyle,background:"#C0392B",color:"#fff",padding:"8px 16px",fontSize:13}}>✈️ Importar TAS</button>
               <button onClick={()=>setLimpiarModal(true)} style={{...btnStyle,background:"#7F0000",color:"#fff",padding:"8px 16px",fontSize:13}}>🗑️ Limpiar Cartera</button>
               <button onClick={()=>setPorFacturarModal(true)} style={{...btnStyle,background:"#6A1B9A",color:"#fff",padding:"8px 16px",fontSize:13}}>📋 Por Facturar</button>
-              <ExportarReporteCxC
-                ingresos={ingresos}
-                cobros={cobros}
-                metrics={metrics}
-                kpis={kpis}
-                porFacturar={porFacturar}
-                empresaNombre="Travel Air Solutions"
-                generadoPor="Administrador"
-                diasDiff={diasDiff}
-              />
             </>
           )}
           {!esConsulta && <button onClick={()=>{setImportPreview(null);setImportModal(true);}} style={{...btnStyle,background:"#00897B",color:"#fff",padding:"8px 16px",fontSize:13}}>📥 Importar Excel</button>}
           {!esConsulta && <button onClick={()=>setModalIngreso({id:"",cliente:"",concepto:"",categoria:catList[0]||"Circuito",monto:"",moneda:"MXN",tipoCambio:1,fecha:today(),notas:""})} style={btnStyle}>
             + Nuevo Ingreso
           </button>}
+          {empresaId === "empresa_2" && !esConsulta && (
+            <ExportarReporteCxC
+              ingresos={ingresos}
+              cobros={cobros}
+              metrics={metrics}
+              kpis={kpis}
+              porFacturar={porFacturar}
+              empresaNombre="Travel Air Solutions"
+              generadoPor="Administrador"
+              diasDiff={diasDiff}
+            />
+          )}
         </div>
       </div>
       {/* Hidden file inputs */}
