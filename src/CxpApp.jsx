@@ -279,8 +279,12 @@ export default function CxpApp({ user, onLogout }) {
   const totalPaidViaPayments = (invoiceId) => realizedPayments(invoiceId).reduce((s,p) => s + p.monto, 0);
   const totalScheduled = (invoiceId) => scheduledPayments(invoiceId).reduce((s,p) => s + p.monto, 0);
 
-  const addPayment = async (invoiceId, monto, fechaPago, notas, tipo) => {
-    const saved = await insertPayment({ invoiceId, monto: +monto, fechaPago, notas, tipo: tipo || 'realizado' });
+  const addPayment = async (invoiceId, monto, fechaPago, notas, tipo, metodoPago) => {
+    const saved = await insertPayment({
+      invoiceId, monto: +monto, fechaPago, notas,
+      tipo: tipo || 'realizado',
+      metodoPago: metodoPago || 'banco',
+    });
     setPayments(prev => [saved, ...prev]);
     // Only sync invoice estatus/montoPagado for realized payments
     if(tipo !== 'programado') {
@@ -3492,22 +3496,49 @@ export default function CxpApp({ user, onLogout }) {
               }
             }
             
+            // Detectar método de pago (banco/tdc/otro). Si hay realizados, usar el de éstos; si no, banco por default
+            const pagosParaMetodo = pagosRealizadosFecha.length > 0 ? pagosRealizadosFecha : pagosProgFecha;
+            // Si la factura tiene varios pagos en la misma fecha con distinto método, separamos por método
+            const metodosEstefacha = pagosParaMetodo.reduce((acc, p) => {
+              const m = p.metodoPago || 'banco';
+              acc[m] = (acc[m] || 0) + (p.monto || 0);
+              return acc;
+            }, {});
+            // Método "principal": el que aporta más monto (para el badge del proveedor/factura)
+            const metodoPrincipal = Object.keys(metodosEstefacha).reduce((a, b) => 
+              metodosEstefacha[a] > metodosEstefacha[b] ? a : b, 'banco');
+            
             const detalleFactura = {
               serie: factura.serie || '',
               folio: factura.folio || '',
               concepto: factura.concepto || '',
               pagoHoy: totalPagoHoy,
-              estado
+              estado,
+              metodoPago: metodoPrincipal,
+              pagoBanco: metodosEstefacha.banco || 0,
+              pagoTDC:   metodosEstefacha.tdc   || 0,
+              pagoOtro:  metodosEstefacha.otro  || 0,
             };
             if (pagosHoy.has(proveedorKey)) {
               const ex = pagosHoy.get(proveedorKey);
               ex.pagoHoy += totalPagoHoy;
+              ex.pagoBanco += detalleFactura.pagoBanco;
+              ex.pagoTDC   += detalleFactura.pagoTDC;
+              ex.pagoOtro  += detalleFactura.pagoOtro;
               ex.detalleFacturas.push(detalleFactura);
               // Estado del proveedor: el "peor" de sus facturas (atrasado > programado > pagado_atraso > pagado)
               const ranking = { atrasado: 4, programado: 3, pagado_atraso: 2, pagado: 1 };
               if ((ranking[estado] || 0) > (ranking[ex.estado] || 0)) ex.estado = estado;
             } else {
-              pagosHoy.set(proveedorKey, { pagoHoy: totalPagoHoy, tipo: 'programado', detalleFacturas: [detalleFactura], estado });
+              pagosHoy.set(proveedorKey, {
+                pagoHoy: totalPagoHoy,
+                tipo: 'programado',
+                detalleFacturas: [detalleFactura],
+                estado,
+                pagoBanco: detalleFactura.pagoBanco,
+                pagoTDC:   detalleFactura.pagoTDC,
+                pagoOtro:  detalleFactura.pagoOtro,
+              });
             }
           }
         });
@@ -3528,6 +3559,9 @@ export default function CxpApp({ user, onLogout }) {
           moneda: adeudoInfo.moneda,
           importeAdeudado: adeudoInfo.adeudado,
           pagoHoy: pagoInfo.pagoHoy,
+          pagoBanco: pagoInfo.pagoBanco || 0,
+          pagoTDC:   pagoInfo.pagoTDC   || 0,
+          pagoOtro:  pagoInfo.pagoOtro  || 0,
           facturas: adeudoInfo.facturasActivas,
           tipo: pagoInfo.tipo,
           estado: pagoInfo.estado,
@@ -3546,12 +3580,28 @@ export default function CxpApp({ user, onLogout }) {
       });
     }, [invoices, payments, empresaId, fechaRef, esHoy]);
 
+    // totalesPagos: SOLO suma pagos de método "banco" (los que realmente salen del banco
+    // y afectan el saldo después). Los pagos con TDC/Otro no afectan los saldos bancarios.
     const totalesPagos = useMemo(() => {
       const totales = { MXN: 0, USD: 0, EUR: 0 };
       pagosProgramadosHoy.forEach(p => {
-        totales[p.moneda] = (totales[p.moneda] || 0) + p.pagoHoy;
+        // Solo sumar la parte que se pagó por banco
+        totales[p.moneda] = (totales[p.moneda] || 0) + (p.pagoBanco || 0);
       });
       return totales;
+    }, [pagosProgramadosHoy]);
+
+    // Totales por TDC y Otro (informativos, no afectan saldos)
+    const totalesPagosTDC = useMemo(() => {
+      const t = { MXN: 0, USD: 0, EUR: 0 };
+      pagosProgramadosHoy.forEach(p => { t[p.moneda] = (t[p.moneda] || 0) + (p.pagoTDC || 0); });
+      return t;
+    }, [pagosProgramadosHoy]);
+
+    const totalesPagosOtro = useMemo(() => {
+      const t = { MXN: 0, USD: 0, EUR: 0 };
+      pagosProgramadosHoy.forEach(p => { t[p.moneda] = (t[p.moneda] || 0) + (p.pagoOtro || 0); });
+      return t;
     }, [pagosProgramadosHoy]);
 
     // Lista de pagos en el orden seleccionado por el usuario (o por defecto USD/MXN/EUR)
@@ -5023,7 +5073,15 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                           <span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[pago.moneda],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[pago.moneda],padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{pago.moneda}</span>
                         </td>
                         <td style={{padding:"12px 16px",textAlign:"right",fontWeight:700,fontSize:13}}>{monedaSym(pago.moneda)}{fmt(pago.importeAdeudado)}</td>
-                        <td style={{padding:"12px 16px",textAlign:"right",fontWeight:800,fontSize:14,color:"#D32F2F"}}>{monedaSym(pago.moneda)}{fmt(pago.pagoHoy)}</td>
+                        <td style={{padding:"12px 16px",textAlign:"right",fontWeight:800,fontSize:14,color:"#D32F2F"}}>
+                          {monedaSym(pago.moneda)}{fmt(pago.pagoHoy)}
+                          {pago.pagoTDC > 0 && (
+                            <span title={`Pagado con TDC: ${monedaSym(pago.moneda)}${fmt(pago.pagoTDC)}`} style={{display:'inline-block',marginLeft:6,background:'#F3E5F5',color:'#6A1B9A',padding:'2px 7px',borderRadius:8,fontSize:10,fontWeight:700,verticalAlign:'middle'}}>💳 TDC</span>
+                          )}
+                          {pago.pagoOtro > 0 && (
+                            <span title={`Otro método: ${monedaSym(pago.moneda)}${fmt(pago.pagoOtro)}`} style={{display:'inline-block',marginLeft:6,background:'#F5F5F5',color:'#616161',padding:'2px 7px',borderRadius:8,fontSize:10,fontWeight:700,verticalAlign:'middle'}}>➕ Otro</span>
+                          )}
+                        </td>
                         <td style={{padding:"12px 16px",textAlign:"right",fontWeight:700,fontSize:13,color:pago.saldoDespuesPago <= 0 ? "#2E7D32" : "#F57C00"}}>{monedaSym(pago.moneda)}{fmt(pago.saldoDespuesPago)}</td>
                         <td style={{padding:"12px 16px",textAlign:"center",color:C.muted}}>{pago.facturas}</td>
                         {esVistaHistorica && (
@@ -5042,7 +5100,15 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                           </td>
                           <td></td>
                           <td></td>
-                          <td style={{padding:"6px 16px",textAlign:"right",fontSize:12,fontWeight:600,color:"#6B7280",fontVariantNumeric:'tabular-nums'}}>{monedaSym(pago.moneda)}{fmt(f.pagoHoy)}</td>
+                          <td style={{padding:"6px 16px",textAlign:"right",fontSize:12,fontWeight:600,color:"#6B7280",fontVariantNumeric:'tabular-nums'}}>
+                            {monedaSym(pago.moneda)}{fmt(f.pagoHoy)}
+                            {f.metodoPago === 'tdc' && (
+                              <span style={{display:'inline-block',marginLeft:6,background:'#F3E5F5',color:'#6A1B9A',padding:'1px 6px',borderRadius:6,fontSize:9,fontWeight:700,verticalAlign:'middle'}}>💳</span>
+                            )}
+                            {f.metodoPago === 'otro' && (
+                              <span style={{display:'inline-block',marginLeft:6,background:'#F5F5F5',color:'#616161',padding:'1px 6px',borderRadius:6,fontSize:9,fontWeight:700,verticalAlign:'middle'}}>➕</span>
+                            )}
+                          </td>
                           <td></td>
                           <td></td>
                           {esVistaHistorica && <td></td>}
@@ -5104,6 +5170,44 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
               );
             })}
           </div>
+          {/* Nota informativa de pagos no bancarios */}
+          {(() => {
+            const totalTDC   = totalesPagosTDC.MXN + totalesPagosTDC.USD + totalesPagosTDC.EUR;
+            const totalOtro  = totalesPagosOtro.MXN + totalesPagosOtro.USD + totalesPagosOtro.EUR;
+            if (totalTDC === 0 && totalOtro === 0) return null;
+            return (
+              <div style={{marginTop:14,paddingTop:14,borderTop:'1px dashed #A5D6A7',display:'flex',gap:14,flexWrap:'wrap',justifyContent:'center'}}>
+                {totalTDC > 0 && (
+                  <div style={{background:'#F3E5F5',color:'#6A1B9A',padding:'6px 12px',borderRadius:10,fontSize:11,fontWeight:600,display:'flex',alignItems:'center',gap:6}}>
+                    <span>💳</span>
+                    <span>
+                      Pagado con TDC hoy:&nbsp;
+                      {totalesPagosTDC.MXN > 0 && <b>${fmt(totalesPagosTDC.MXN)} MXN</b>}
+                      {totalesPagosTDC.MXN > 0 && totalesPagosTDC.USD > 0 && ' · '}
+                      {totalesPagosTDC.USD > 0 && <b>${fmt(totalesPagosTDC.USD)} USD</b>}
+                      {totalesPagosTDC.EUR > 0 && (totalesPagosTDC.MXN > 0 || totalesPagosTDC.USD > 0) && ' · '}
+                      {totalesPagosTDC.EUR > 0 && <b>€{fmt(totalesPagosTDC.EUR)} EUR</b>}
+                      <span style={{opacity:0.75,marginLeft:6}}>(no afecta saldo bancario)</span>
+                    </span>
+                  </div>
+                )}
+                {totalOtro > 0 && (
+                  <div style={{background:'#F5F5F5',color:'#616161',padding:'6px 12px',borderRadius:10,fontSize:11,fontWeight:600,display:'flex',alignItems:'center',gap:6}}>
+                    <span>➕</span>
+                    <span>
+                      Otro método hoy:&nbsp;
+                      {totalesPagosOtro.MXN > 0 && <b>${fmt(totalesPagosOtro.MXN)} MXN</b>}
+                      {totalesPagosOtro.USD > 0 && (totalesPagosOtro.MXN > 0) && ' · '}
+                      {totalesPagosOtro.USD > 0 && <b>${fmt(totalesPagosOtro.USD)} USD</b>}
+                      {totalesPagosOtro.EUR > 0 && (totalesPagosOtro.MXN > 0 || totalesPagosOtro.USD > 0) && ' · '}
+                      {totalesPagosOtro.EUR > 0 && <b>€{fmt(totalesPagosOtro.EUR)} EUR</b>}
+                      <span style={{opacity:0.75,marginLeft:6}}>(no afecta saldo bancario)</span>
+                    </span>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
         </div>
@@ -6573,16 +6677,43 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
               {["Fecha","Monto","Notas",""].map(h=><th key={h} style={{padding:"8px 10px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>{h}</th>)}
             </tr></thead>
             <tbody>
-              {items.map(p=>(
+              {items.map(p=>{
+                const metodo = p.metodoPago || 'banco';
+                const metodoMeta = {
+                  banco: { label: '🏦 Banco', bg: '#E3F2FD', color: '#1565C0' },
+                  tdc:   { label: '💳 TDC',   bg: '#F3E5F5', color: '#6A1B9A' },
+                  otro:  { label: '➕ Otro',  bg: '#F5F5F5', color: '#616161' },
+                }[metodo] || { label: metodo, bg: '#F5F5F5', color: '#666' };
+                return (
                 <tr key={p.id} style={{borderTop:`1px solid ${C.border}`}}>
                   <td style={{padding:"8px 10px",fontWeight:600}}>{p.fechaPago}</td>
                   <td style={{padding:"8px 10px",fontWeight:800,color:color}}>${fmt(p.monto)}</td>
-                  <td style={{padding:"8px 10px",color:C.muted}}>{p.notas||"—"}</td>
+                  <td style={{padding:"8px 10px",color:C.muted}}>
+                    {!esConsulta ? (
+                      <select
+                        value={metodo}
+                        onChange={async (e) => {
+                          const nuevoMetodo = e.target.value;
+                          await updatePayment(p.id, { metodoPago: nuevoMetodo });
+                          setPayments(prev => prev.map(x => x.id === p.id ? { ...x, metodoPago: nuevoMetodo } : x));
+                        }}
+                        style={{background:metodoMeta.bg,color:metodoMeta.color,border:'none',padding:'3px 8px',borderRadius:6,fontSize:11,fontWeight:700,fontFamily:'inherit',cursor:'pointer'}}
+                      >
+                        <option value="banco">🏦 Banco</option>
+                        <option value="tdc">💳 TDC</option>
+                        <option value="otro">➕ Otro</option>
+                      </select>
+                    ) : (
+                      <span style={{background:metodoMeta.bg,color:metodoMeta.color,padding:'3px 8px',borderRadius:6,fontSize:11,fontWeight:700}}>{metodoMeta.label}</span>
+                    )}
+                    {p.notas ? <span style={{marginLeft:8,color:C.muted}}>{p.notas}</span> : null}
+                  </td>
                   <td style={{padding:"8px 10px",textAlign:"right"}}>
                     {!esConsulta && <button onClick={()=>removePayment(p.id,payModal.invoiceId)} style={{background:"none",border:"none",cursor:"pointer",color:C.danger,fontSize:14}} title="Eliminar">🗑️</button>}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         );
@@ -6598,6 +6729,16 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                 <label style={{fontSize:11,fontWeight:600,color:C.muted,display:"block",marginBottom:4}}>Fecha</label>
                 <input id={`pay-${tipo}-fecha`} type="date" defaultValue={today()} style={{...inputStyle,width:160}}/>
               </div>
+              {tipo === 'realizado' && (
+                <div>
+                  <label style={{fontSize:11,fontWeight:600,color:C.muted,display:"block",marginBottom:4}}>Método</label>
+                  <select id={`pay-${tipo}-metodo`} defaultValue="banco" style={{...inputStyle,width:130}}>
+                    <option value="banco">🏦 Banco</option>
+                    <option value="tdc">💳 TDC</option>
+                    <option value="otro">➕ Otro</option>
+                  </select>
+                </div>
+              )}
               <div style={{flex:1,minWidth:120}}>
                 <label style={{fontSize:11,fontWeight:600,color:C.muted,display:"block",marginBottom:4}}>Notas</label>
                 <input id={`pay-${tipo}-notas`} type="text" placeholder={tipo==='programado'?"Pago parcial, 50%…":"Transferencia, cheque…"} style={{...inputStyle,width:"100%"}}/>
@@ -6606,8 +6747,10 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                 const m = +document.getElementById(`pay-${tipo}-monto`).value;
                 const f = document.getElementById(`pay-${tipo}-fecha`).value;
                 const n = document.getElementById(`pay-${tipo}-notas`).value;
+                const metodoEl = document.getElementById(`pay-${tipo}-metodo`);
+                const metodo = metodoEl ? metodoEl.value : 'banco';
                 if(!m||m<=0||!f) return;
-                addPayment(payModal.invoiceId, m, f, n, tipo);
+                addPayment(payModal.invoiceId, m, f, n, tipo, metodo);
                 document.getElementById(`pay-${tipo}-monto`).value="";
                 document.getElementById(`pay-${tipo}-notas`).value="";
               }} disabled={esConsulta} style={{...btnStyle,padding:"8px 20px",fontSize:13,background:tipo==='programado'?"#F57F17":C.blue,color:"#fff",opacity:esConsulta?0.4:1}}>+ Agregar</button>

@@ -235,6 +235,7 @@ export async function fetchPayments(empresaId) {
     return (data || []).map(r => ({
       id: r.id, invoiceId: r.invoice_id, monto: +r.monto || 0,
       fechaPago: r.fecha_pago || '', notas: r.notas || '', tipo: r.tipo || 'realizado',
+      metodoPago: r.metodo_pago || 'banco',  // 'banco' | 'tdc' | 'otro'
     }));
   }
   const { data, error } = await supabase.from('payments').select('*').order('fecha_pago', { ascending: false });
@@ -242,14 +243,23 @@ export async function fetchPayments(empresaId) {
   return (data || []).map(r => ({
     id: r.id, invoiceId: r.invoice_id, monto: +r.monto || 0,
     fechaPago: r.fecha_pago || '', notas: r.notas || '', tipo: r.tipo || 'realizado',
+    metodoPago: r.metodo_pago || 'banco',
   }));
 }
 
 export async function insertPayment(p) {
-  const row = { invoice_id: p.invoiceId, monto: p.monto, fecha_pago: p.fechaPago, notas: p.notas || '', tipo: p.tipo || 'realizado' };
+  const row = {
+    invoice_id: p.invoiceId, monto: p.monto, fecha_pago: p.fechaPago,
+    notas: p.notas || '', tipo: p.tipo || 'realizado',
+    metodo_pago: p.metodoPago || 'banco',
+  };
   const { data, error } = await supabase.from('payments').insert(row).select().single();
   if (error) { console.error('insertPayment:', error); return p; }
-  return { id: data.id, invoiceId: data.invoice_id, monto: +data.monto, fechaPago: data.fecha_pago, notas: data.notas || '', tipo: data.tipo || 'realizado' };
+  return {
+    id: data.id, invoiceId: data.invoice_id, monto: +data.monto,
+    fechaPago: data.fecha_pago, notas: data.notas || '', tipo: data.tipo || 'realizado',
+    metodoPago: data.metodo_pago || 'banco',
+  };
 }
 
 export async function deletePayment(id) {
@@ -263,6 +273,7 @@ export async function updatePayment(id, fields) {
   if ('fechaPago' in fields) dbFields.fecha_pago = fields.fechaPago;
   if ('notas' in fields) dbFields.notas = fields.notas;
   if ('tipo' in fields) dbFields.tipo = fields.tipo;
+  if ('metodoPago' in fields) dbFields.metodo_pago = fields.metodoPago;
   const { error } = await supabase.from('payments').update(dbFields).eq('id', id);
   if (error) console.error('updatePayment:', error);
 }
