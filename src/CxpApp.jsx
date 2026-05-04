@@ -6611,11 +6611,20 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
     // Parser flexible de fechas: soporta múltiples formatos
     // Devuelve string YYYY-MM-DD o null si no se puede parsear
+    // En MX se usa DD/MM/YYYY → preferimos esa interpretación cuando sea ambigua
     const parsearFecha = (raw) => {
-      if (!raw) return null;
+      if (!raw && raw !== 0) return null;
+      // Caso 1: ya es un objeto Date (xlsx con cellDates:true)
+      if (raw instanceof Date) {
+        if (isNaN(raw.getTime())) return null;
+        const yyyy = raw.getFullYear();
+        const mm = String(raw.getMonth() + 1).padStart(2, '0');
+        const dd = String(raw.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+      }
       const s = String(raw).trim();
       if (!s) return null;
-      // Si Excel devuelve un número serial (días desde 1900-01-01)
+      // Caso 2: número serial Excel (días desde 1900-01-01)
       if (/^\d+(\.\d+)?$/.test(s) && +s > 25569 && +s < 60000) {
         const dias = Math.floor(+s);
         const ms = (dias - 25569) * 86400 * 1000; // 25569 = 1970-01-01 desde Excel epoch
@@ -6627,7 +6636,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           return `${yyyy}-${mm}-${dd}`;
         }
       }
-      // Formato ISO YYYY-MM-DD
+      // Caso 3: ISO YYYY-MM-DD (4 dígitos primero)
       const iso = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
       if (iso) {
         const yyyy = iso[1];
@@ -6635,16 +6644,24 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         const dd = String(+iso[3]).padStart(2, '0');
         return `${yyyy}-${mm}-${dd}`;
       }
-      // Formato DD/MM/YYYY o DD-MM-YYYY (también acepta YY)
-      const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+      // Caso 4: DD/MM/YYYY o MM/DD/YYYY (ambiguos)
+      // En MX se usa DD/MM/YYYY → preferimos DD/MM cuando ambiguo.
+      // Pero si el primer número > 12 → SEGURO es DD/MM
+      // Si el segundo número > 12 → SEGURO es MM/DD (caso raro, archivos en inglés)
+      const dmy = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
       if (dmy) {
-        const dd = String(+dmy[1]).padStart(2, '0');
-        const mm = String(+dmy[2]).padStart(2, '0');
+        const a = +dmy[1];
+        const b = +dmy[2];
         let yyyy = dmy[3];
         if (yyyy.length === 2) yyyy = (+yyyy > 50 ? '19' : '20') + yyyy;
-        return `${yyyy}-${mm}-${dd}`;
+        let dd, mm;
+        if (a > 12 && b <= 12)       { dd = a; mm = b; }       // claramente DD/MM
+        else if (b > 12 && a <= 12)  { dd = b; mm = a; }       // claramente MM/DD (gringo)
+        else                          { dd = a; mm = b; }       // ambiguo → DD/MM (formato MX)
+        if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+        return `${yyyy}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
       }
-      // Formato con nombre de mes en español: "30 abril 2026", "30/Abr/2026", "30 abr 26"
+      // Caso 5: con nombre de mes en español: "30 abril 2026", "30/Abr/2026", "30 abr 26"
       const mesesEs = { ene: '01', feb: '02', mar: '03', abr: '04', may: '05', jun: '06', jul: '07', ago: '08', sep: '09', oct: '10', nov: '11', dic: '12' };
       const conMes = s.toLowerCase().match(/(\d{1,2})\s*[\/\-\s]\s*([a-záéíóú]+)\s*[\/\-\s]\s*(\d{2,4})/i);
       if (conMes) {
@@ -6712,14 +6729,33 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
       const cols = detectarColumnas(filas[0]);
       const datos = cols.hayHeader ? filas.slice(1) : filas;
       const rows = [];
+      // Helper para convertir cualquier celda a string razonable (excepto fechas que se manejan aparte)
+      const cellToStr = (v) => {
+        if (v === null || v === undefined) return '';
+        if (v instanceof Date) {
+          // Fechas en columnas de texto: convertir a YYYY-MM-DD
+          if (isNaN(v.getTime())) return '';
+          return `${v.getFullYear()}-${String(v.getMonth()+1).padStart(2,'0')}-${String(v.getDate()).padStart(2,'0')}`;
+        }
+        return String(v).trim();
+      };
       datos.forEach(fila => {
         if (!fila || fila.length === 0) return;
-        const clasifRaw = String(fila[cols.idxSegmento] ?? '').trim();      // SEGMENTO del Excel = Clasificación
-        const concepto  = String(fila[cols.idxEgreso] ?? '').trim();        // EGRESOS → concepto principal
-        const montoRaw  = String(fila[cols.idxMonto] ?? '').trim();
-        const notas     = String(fila[cols.idxConcepto] ?? '').trim();      // CONCEPTO → notas
-        const fechaRaw  = cols.idxFecha >= 0 ? String(fila[cols.idxFecha] ?? '').trim() : '';
-        const fechaParsed = fechaRaw ? parsearFecha(fechaRaw) : null;
+        const clasifRaw = cellToStr(fila[cols.idxSegmento]);                // SEGMENTO del Excel = Clasificación
+        const concepto  = cellToStr(fila[cols.idxEgreso]);                  // EGRESOS → concepto principal
+        const montoRaw  = cellToStr(fila[cols.idxMonto]);
+        const notas     = cellToStr(fila[cols.idxConcepto]);                // CONCEPTO → notas
+        // La fecha puede venir como Date (xlsx con cellDates), número (serial), o string (texto pegado)
+        const fechaCelda = cols.idxFecha >= 0 ? fila[cols.idxFecha] : null;
+        let fechaParsed = null;
+        let fechaRaw = '';
+        if (fechaCelda instanceof Date) {
+          fechaParsed = parsearFecha(fechaCelda);
+          fechaRaw = fechaParsed || '';
+        } else if (fechaCelda !== null && fechaCelda !== undefined && String(fechaCelda).trim()) {
+          fechaRaw = String(fechaCelda).trim();
+          fechaParsed = parsearFecha(fechaRaw);
+        }
         const montoNum = parseFloat(montoRaw.replace(/[\$,\s]/g, '')) || 0;
         if (montoNum <= 0 || !concepto) return;
         // Intentar matchear con clasificación oficial (tolerante)
@@ -6761,11 +6797,16 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
       reader.onload = (ev) => {
         try {
           const data = new Uint8Array(ev.target.result);
-          const wb = XLSX.read(data, { type: 'array' });
+          const wb = XLSX.read(data, { type: 'array', cellDates: true });
           const ws = wb.Sheets[wb.SheetNames[0]];
-          const filas = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+          // raw:true → fechas vienen como objetos Date (gracias a cellDates),
+          // números como números. Texto sin tocar. Sin reformateo regional.
+          const filas = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
           // Filtrar filas completamente vacías
-          const filasNoVacias = filas.filter(f => f.some(c => String(c || '').trim()));
+          const filasNoVacias = filas.filter(f => f.some(c => {
+            if (c instanceof Date) return true;
+            return String(c || '').trim();
+          }));
           const rows = parsearFilas(filasNoVacias);
           if (rows.length === 0) {
             alert('No se detectaron filas válidas en el archivo.');
