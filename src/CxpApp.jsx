@@ -6531,26 +6531,85 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     const [textoPegado, setTextoPegado] = useState('');
     const set = (k, v) => setForm(f => ({...f, [k]: v}));
 
+    // Parser flexible de fechas: soporta múltiples formatos
+    // Devuelve string YYYY-MM-DD o null si no se puede parsear
+    const parsearFecha = (raw) => {
+      if (!raw) return null;
+      const s = String(raw).trim();
+      if (!s) return null;
+      // Si Excel devuelve un número serial (días desde 1900-01-01)
+      if (/^\d+(\.\d+)?$/.test(s) && +s > 25569 && +s < 60000) {
+        const dias = Math.floor(+s);
+        const ms = (dias - 25569) * 86400 * 1000; // 25569 = 1970-01-01 desde Excel epoch
+        const d = new Date(ms);
+        if (!isNaN(d.getTime())) {
+          const yyyy = d.getUTCFullYear();
+          const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+          const dd = String(d.getUTCDate()).padStart(2, '0');
+          return `${yyyy}-${mm}-${dd}`;
+        }
+      }
+      // Formato ISO YYYY-MM-DD
+      const iso = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+      if (iso) {
+        const yyyy = iso[1];
+        const mm = String(+iso[2]).padStart(2, '0');
+        const dd = String(+iso[3]).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+      }
+      // Formato DD/MM/YYYY o DD-MM-YYYY (también acepta YY)
+      const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+      if (dmy) {
+        const dd = String(+dmy[1]).padStart(2, '0');
+        const mm = String(+dmy[2]).padStart(2, '0');
+        let yyyy = dmy[3];
+        if (yyyy.length === 2) yyyy = (+yyyy > 50 ? '19' : '20') + yyyy;
+        return `${yyyy}-${mm}-${dd}`;
+      }
+      // Formato con nombre de mes en español: "30 abril 2026", "30/Abr/2026", "30 abr 26"
+      const mesesEs = { ene: '01', feb: '02', mar: '03', abr: '04', may: '05', jun: '06', jul: '07', ago: '08', sep: '09', oct: '10', nov: '11', dic: '12' };
+      const conMes = s.toLowerCase().match(/(\d{1,2})\s*[\/\-\s]\s*([a-záéíóú]+)\s*[\/\-\s]\s*(\d{2,4})/i);
+      if (conMes) {
+        const dd = String(+conMes[1]).padStart(2, '0');
+        const mesKey = conMes[2].slice(0, 3).normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const mm = mesesEs[mesKey];
+        let yyyy = conMes[3];
+        if (yyyy.length === 2) yyyy = (+yyyy > 50 ? '19' : '20') + yyyy;
+        if (mm) return `${yyyy}-${mm}-${dd}`;
+      }
+      // Último recurso: Date.parse (fechas en inglés tipo "Apr 30 2026")
+      const t = Date.parse(s);
+      if (!isNaN(t)) {
+        const d = new Date(t);
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+      }
+      return null;
+    };
+
     // Detecta columnas a partir de un array de cells de la primera fila
-    // Devuelve { idxSegmento, idxEgreso, idxMonto, idxConcepto, hayHeader }
+    // Devuelve { idxSegmento, idxEgreso, idxMonto, idxConcepto, idxFecha, hayHeader }
     const detectarColumnas = (firstRow) => {
       const norm = (s) => String(s || '').toUpperCase().trim();
-      let idxSegmento = -1, idxEgreso = -1, idxMonto = -1, idxConcepto = -1;
+      let idxSegmento = -1, idxEgreso = -1, idxMonto = -1, idxConcepto = -1, idxFecha = -1;
       firstRow.forEach((cel, i) => {
         const c = norm(cel);
         if (c === 'SEGMENTO' || c === 'RUBRO') idxSegmento = i;
         else if (c === 'EGRESOS' || c === 'EGRESO' || c === 'BENEFICIARIO' || c === 'PROVEEDOR') idxEgreso = i;
         else if (c === 'MONTO' || c === 'IMPORTE' || c === 'CANTIDAD') idxMonto = i;
         else if (c === 'CONCEPTO' || c === 'NOTAS' || c === 'DESCRIPCION' || c === 'DESCRIPCIÓN') idxConcepto = i;
+        else if (c === 'FECHA' || c === 'DATE' || c === 'FECHA_PAGO' || c === 'FECHA PAGO' || c === 'DIA' || c === 'DÍA') idxFecha = i;
       });
-      const hayHeader = (idxSegmento !== -1 || idxEgreso !== -1 || idxMonto !== -1 || idxConcepto !== -1);
-      // Si no detectamos headers, asumir orden por defecto: 0=SEGMENTO, 1=EGRESO, 2=MONTO, 3=CONCEPTO
-      if (!hayHeader) { idxSegmento = 0; idxEgreso = 1; idxMonto = 2; idxConcepto = 3; }
-      return { idxSegmento, idxEgreso, idxMonto, idxConcepto, hayHeader };
+      const hayHeader = (idxSegmento !== -1 || idxEgreso !== -1 || idxMonto !== -1 || idxConcepto !== -1 || idxFecha !== -1);
+      // Si no detectamos headers, asumir orden por defecto: 0=SEGMENTO, 1=EGRESO, 2=MONTO, 3=CONCEPTO, 4=FECHA (opcional)
+      if (!hayHeader) { idxSegmento = 0; idxEgreso = 1; idxMonto = 2; idxConcepto = 3; idxFecha = 4; }
+      return { idxSegmento, idxEgreso, idxMonto, idxConcepto, idxFecha, hayHeader };
     };
 
     // Parsear filas en formato array-of-arrays.
-    // Mapeo: SEGMENTO→segmento, EGRESOS→concepto (principal), MONTO→monto, CONCEPTO→notas
+    // Mapeo: SEGMENTO→segmento, EGRESOS→concepto (principal), MONTO→monto, CONCEPTO→notas, FECHA→fecha
     const parsearFilas = (filas) => {
       if (!filas || filas.length === 0) return [];
       const cols = detectarColumnas(filas[0]);
@@ -6562,9 +6621,18 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         const concepto = String(fila[cols.idxEgreso] ?? '').trim();        // EGRESOS → concepto principal
         const montoRaw = String(fila[cols.idxMonto] ?? '').trim();
         const notas    = String(fila[cols.idxConcepto] ?? '').trim();      // CONCEPTO → notas
+        const fechaRaw = cols.idxFecha >= 0 ? String(fila[cols.idxFecha] ?? '').trim() : '';
+        const fechaParsed = fechaRaw ? parsearFecha(fechaRaw) : null;
         const montoNum = parseFloat(montoRaw.replace(/[\$,\s]/g, '')) || 0;
         if (montoNum <= 0 || !concepto) return;
-        rows.push({ segmento, concepto, monto: montoNum, notas });
+        rows.push({
+          segmento,
+          concepto,
+          monto: montoNum,
+          notas,
+          fecha: fechaParsed,           // null si no había o no se pudo parsear
+          fechaRaw: fechaRaw,            // para mostrar advertencia si no se pudo parsear
+        });
       });
       return rows;
     };
@@ -6632,17 +6700,19 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         const r = form.rows[idx];
         folioBase++;
         const folio = `NF-${String(folioBase).padStart(3, '0')}`;
+        // Fecha por fila: usa la fecha individual si existe, sino la global
+        const fechaFinal = r.fecha || form.fechaPago || today();
         const invObj = {
           id: uid(), tipo: 'EgresoNF',
-          fecha: form.fechaPago || today(), serie: 'NF', folio, uuid: '',
+          fecha: fechaFinal, serie: 'NF', folio, uuid: '',
           proveedor: r.concepto, clasificacion: form.categoriaEgreso,
           subtotal: r.monto, iva: 0, retIsr: 0, retIva: 0, total: r.monto,
           montoPagado: ya ? r.monto : 0,
           concepto: r.concepto,
           diasCredito: 0,
-          vencimiento: form.fechaPago || today(),
+          vencimiento: fechaFinal,
           estatus: ya ? 'Pagado' : 'Pendiente',
-          fechaProgramacion: form.fechaPago || today(),
+          fechaProgramacion: fechaFinal,
           diasFicticios: 0, referencia: '', notas: r.notas || '',
           moneda: form.moneda || 'MXN',
           voBo: true, autorizadoDireccion: true, empresaId,
@@ -6651,7 +6721,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         };
         const saved = await upsertInvoice(invObj);
         nuevosArr.push(saved);
-        await addPayment(saved.id, r.monto, form.fechaPago || today(),
+        await addPayment(saved.id, r.monto, fechaFinal,
                          r.notas || form.categoriaEgreso, ya ? 'realizado' : 'programado',
                          form.metodoPago || 'banco');
       }
@@ -6671,11 +6741,11 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     return (
       <ModalShell title="📥 Importar Otros Pagos" onClose={() => setModalImportarEgresos(null)}>
         <div style={{background:'#E3F2FD',border:'1px solid #90CAF9',borderRadius:8,padding:'10px 14px',marginBottom:16,fontSize:12,color:'#0D47A1'}}>
-          <b>📋 Formato esperado (4 columnas):</b><br/>
-          <code style={{display:'inline-block',marginTop:4}}>SEGMENTO &nbsp;|&nbsp; EGRESOS &nbsp;|&nbsp; MONTO &nbsp;|&nbsp; CONCEPTO</code><br/>
+          <b>📋 Formato esperado:</b><br/>
+          <code style={{display:'inline-block',marginTop:4}}>SEGMENTO &nbsp;|&nbsp; EGRESOS &nbsp;|&nbsp; MONTO &nbsp;|&nbsp; CONCEPTO &nbsp;|&nbsp; FECHA <span style={{color:'#666'}}>(opcional)</span></code><br/>
           <span style={{fontSize:11,opacity:0.85}}>
-            <b>EGRESOS</b> = beneficiario o descripción corta (ej: <i>Konfio Banco</i>) · <b>CONCEPTO</b> = notas (ej: <i>EDO CTA 14 MZO AL 14 ABR</i>)<br/>
-            Si la primera fila tiene los encabezados, se detectan automáticamente. Puedes pegar texto o subir un archivo .xlsx.
+            <b>EGRESOS</b> = beneficiario o descripción corta (ej: <i>Konfio Banco</i>) · <b>CONCEPTO</b> = notas (ej: <i>EDO CTA 14 MZO AL 14 ABR</i>) · <b>FECHA</b> = fecha de pago (ej: <i>30/04/2026</i>)<br/>
+            Si una fila NO tiene FECHA o es inválida, usa la fecha global de abajo. Formatos aceptados: <code>30/04/2026</code>, <code>2026-04-30</code>, <code>30-Abr-2026</code>, etc. Si la primera fila tiene los encabezados, se detectan automáticamente. Puedes pegar texto o subir un archivo .xlsx.
           </span>
         </div>
         {form.rows.length === 0 ? (
@@ -6690,7 +6760,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             </div>
             <Field label="Pegar datos del Excel (TAB-separadas)">
               <textarea value={textoPegado} onChange={e => setTextoPegado(e.target.value)}
-                placeholder={`SEGMENTO\tEGRESOS\tMONTO\tCONCEPTO\nTraslados\tKonfio Banco\t742130\tEDO CTA 14 MZO AL 14 ABR\nNómina\tSueldos Operadores\t83535.94\tNOM 2DA QNA ABR\n...`}
+                placeholder={`SEGMENTO\tEGRESOS\tMONTO\tCONCEPTO\tFECHA\nTraslados\tKonfio Banco\t742130\tEDO CTA 14 MZO AL 14 ABR\t30/04/2026\nNómina\tSueldos Operadores\t83535.94\tNOM 2DA QNA ABR\t28/04/2026\n...`}
                 style={{...inputStyle, minHeight: 180, fontFamily: 'monospace', fontSize: 12, whiteSpace: 'pre'}}/>
             </Field>
             <div style={{textAlign:'right',marginTop:14}}>
@@ -6708,8 +6778,9 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                   {clases.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </Field>
-              <Field label="Fecha de pago">
-                <input type="date" value={form.fechaPago} onChange={e => set('fechaPago', e.target.value)} style={inputStyle}/>
+              <Field label="Fecha global (fallback)">
+                <input type="date" value={form.fechaPago} onChange={e => set('fechaPago', e.target.value)} style={inputStyle}
+                  title="Esta fecha se usa para las filas que NO tengan fecha individual en el Excel"/>
               </Field>
               <Field label="Moneda">
                 <select value={form.moneda} onChange={e => set('moneda', e.target.value)} style={inputStyle}>
@@ -6731,28 +6802,74 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                 </select>
               </Field>
             </div>
-            <div style={{fontSize:13,fontWeight:700,color:C.navy,marginBottom:8}}>
-              Vista previa · {form.rows.length} {form.rows.length===1?'fila':'filas'}
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+              <div style={{fontSize:13,fontWeight:700,color:C.navy}}>
+                Vista previa · {form.rows.length} {form.rows.length===1?'fila':'filas'}
+              </div>
+              {(() => {
+                const conFecha = form.rows.filter(r => r.fecha).length;
+                const sinFecha = form.rows.length - conFecha;
+                if (form.rows.length === 0) return null;
+                return (
+                  <div style={{fontSize:11,color:C.muted}}>
+                    {conFecha > 0 && <span style={{color:'#1B5E20',fontWeight:600}}>📅 {conFecha} con fecha</span>}
+                    {conFecha > 0 && sinFecha > 0 && ' · '}
+                    {sinFecha > 0 && <span style={{color:'#E65100',fontWeight:600}}>⚠️ {sinFecha} usarán fecha global</span>}
+                  </div>
+                );
+              })()}
             </div>
-            <div style={{maxHeight:300,overflow:'auto',border:`1px solid ${C.border}`,borderRadius:8}}>
+            <div style={{maxHeight:340,overflow:'auto',border:`1px solid ${C.border}`,borderRadius:8}}>
               <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                 <thead>
-                  <tr style={{background:'#F8FAFC',position:'sticky',top:0}}>
+                  <tr style={{background:'#F8FAFC',position:'sticky',top:0,zIndex:1}}>
                     <th style={{padding:'8px',textAlign:'left',borderBottom:`1px solid ${C.border}`}}>Segmento</th>
                     <th style={{padding:'8px',textAlign:'left',borderBottom:`1px solid ${C.border}`}}>Concepto</th>
                     <th style={{padding:'8px',textAlign:'right',borderBottom:`1px solid ${C.border}`}}>Monto</th>
                     <th style={{padding:'8px',textAlign:'left',borderBottom:`1px solid ${C.border}`}}>Notas</th>
+                    <th style={{padding:'8px',textAlign:'center',borderBottom:`1px solid ${C.border}`,width:140}}>Fecha</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {form.rows.map((r, i) => (
-                    <tr key={i} style={{borderBottom:`1px solid ${C.border}`}}>
-                      <td style={{padding:'7px 8px'}}>{r.segmento}</td>
-                      <td style={{padding:'7px 8px',fontWeight:600}}>{r.concepto}</td>
-                      <td style={{padding:'7px 8px',textAlign:'right',fontFamily:'monospace',fontWeight:700,color:'#C62828'}}>${fmt(r.monto)}</td>
-                      <td style={{padding:'7px 8px',color:C.muted}}>{r.notas || '—'}</td>
-                    </tr>
-                  ))}
+                  {form.rows.map((r, i) => {
+                    const fechaUsada = r.fecha || form.fechaPago || today();
+                    const usaFechaIndividual = !!r.fecha;
+                    const errorParseo = r.fechaRaw && !r.fecha;
+                    return (
+                      <tr key={i} style={{borderBottom:`1px solid ${C.border}`}}>
+                        <td style={{padding:'7px 8px'}}>{r.segmento || '—'}</td>
+                        <td style={{padding:'7px 8px',fontWeight:600}}>{r.concepto}</td>
+                        <td style={{padding:'7px 8px',textAlign:'right',fontFamily:'monospace',fontWeight:700,color:'#C62828'}}>${fmt(r.monto)}</td>
+                        <td style={{padding:'7px 8px',color:C.muted}}>{r.notas || '—'}</td>
+                        <td style={{padding:'4px 6px',textAlign:'center'}}>
+                          <input
+                            type="date"
+                            value={fechaUsada}
+                            onChange={(e) => {
+                              const nueva = e.target.value;
+                              set('rows', form.rows.map((rr, j) => j === i ? { ...rr, fecha: nueva || null, fechaRaw: nueva || '' } : rr));
+                            }}
+                            title={errorParseo ? `No se pudo interpretar "${r.fechaRaw}". Edita aquí.` : (usaFechaIndividual ? 'Fecha del Excel' : 'Fecha global (no había en Excel)')}
+                            style={{
+                              fontSize:11,
+                              padding:'4px 6px',
+                              border:`1px solid ${errorParseo ? '#C62828' : (usaFechaIndividual ? '#1B5E20' : '#E5E7EB')}`,
+                              borderRadius:5,
+                              background: errorParseo ? '#FFEBEE' : (usaFechaIndividual ? '#E8F5E9' : '#F8FAFC'),
+                              fontFamily:'inherit',
+                              outline:'none',
+                              width:'100%',
+                              boxSizing:'border-box',
+                              fontWeight: usaFechaIndividual ? 700 : 400,
+                            }}
+                          />
+                          {errorParseo && (
+                            <div title={`Texto original: ${r.fechaRaw}`} style={{fontSize:9,color:'#C62828',marginTop:2}}>⚠ "{r.fechaRaw}"</div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
                 <tfoot>
                   <tr style={{background:'#FFEBEE',borderTop:`2px solid #C62828`}}>
@@ -6760,7 +6877,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                     <td style={{padding:'10px',textAlign:'right',fontFamily:'monospace',fontWeight:800,color:'#C62828'}}>
                       ${fmt(form.rows.reduce((s, r) => s + r.monto, 0))}
                     </td>
-                    <td/>
+                    <td colSpan={2}/>
                   </tr>
                 </tfoot>
               </table>
