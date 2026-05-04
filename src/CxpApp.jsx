@@ -6529,7 +6529,86 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
   const ImportarEgresosModal = () => {
     const [form, setForm] = useState({...modalImportarEgresos});
     const [textoPegado, setTextoPegado] = useState('');
+    // Estados nuevos para edición individual y masiva
+    const [selectedRows, setSelectedRows] = useState(new Set()); // Set de índices seleccionados
+    const [editingCell, setEditingCell] = useState(null);        // { rowIdx, col }
+    const [editingValue, setEditingValue] = useState('');
+    const [bulkClasif, setBulkClasif] = useState('');
+    const [bulkSegmento, setBulkSegmento] = useState('');
+    const [bulkFecha, setBulkFecha] = useState('');
+    const [bulkEstado, setBulkEstado] = useState('');             // 'pagado' | 'programado' | ''
+    const [bulkMetodo, setBulkMetodo] = useState('');             // 'banco' | 'tdc' | 'otro' | ''
     const set = (k, v) => setForm(f => ({...f, [k]: v}));
+
+    // Helpers para selección
+    const toggleSelectRow = (idx) => {
+      setSelectedRows(prev => {
+        const next = new Set(prev);
+        if (next.has(idx)) next.delete(idx); else next.add(idx);
+        return next;
+      });
+    };
+    const toggleSelectAll = () => {
+      setSelectedRows(prev => {
+        if (prev.size === form.rows.length) return new Set();
+        return new Set(form.rows.map((_, i) => i));
+      });
+    };
+    const clearSelection = () => setSelectedRows(new Set());
+
+    // Iniciar edición de celda
+    const startEdit = (rowIdx, col) => {
+      const r = form.rows[rowIdx];
+      let valorInicial = '';
+      if (col === 'segmento') valorInicial = r.segmento || '';
+      else if (col === 'concepto') valorInicial = r.concepto || '';
+      else if (col === 'monto') valorInicial = String(r.monto || '');
+      else if (col === 'notas') valorInicial = r.notas || '';
+      setEditingCell({ rowIdx, col });
+      setEditingValue(valorInicial);
+    };
+    // Guardar edición
+    const saveEdit = () => {
+      if (!editingCell) return;
+      const { rowIdx, col } = editingCell;
+      const nuevo = [...form.rows];
+      const r = { ...nuevo[rowIdx] };
+      if (col === 'monto') {
+        const n = parseFloat(String(editingValue).replace(/[\$,\s]/g, '')) || 0;
+        r.monto = n;
+      } else {
+        r[col] = editingValue;
+      }
+      nuevo[rowIdx] = r;
+      set('rows', nuevo);
+      setEditingCell(null);
+      setEditingValue('');
+    };
+    const cancelEdit = () => {
+      setEditingCell(null);
+      setEditingValue('');
+    };
+
+    // Acciones masivas
+    const aplicarMasivo = (campo, valor) => {
+      if (selectedRows.size === 0) return;
+      const nuevo = form.rows.map((r, i) => {
+        if (!selectedRows.has(i)) return r;
+        const updated = { ...r };
+        if (campo === 'fecha') { updated.fecha = valor || null; updated.fechaRaw = valor || ''; }
+        else if (campo === 'segmento') updated.segmento = valor;
+        else updated[campo] = valor;
+        return updated;
+      });
+      set('rows', nuevo);
+    };
+    const eliminarSeleccionadas = () => {
+      if (selectedRows.size === 0) return;
+      if (!window.confirm(`¿Eliminar ${selectedRows.size} ${selectedRows.size === 1 ? 'fila' : 'filas'} seleccionada${selectedRows.size === 1 ? '' : 's'}?`)) return;
+      const nuevo = form.rows.filter((_, i) => !selectedRows.has(i));
+      set('rows', nuevo);
+      clearSelection();
+    };
 
     // Parser flexible de fechas: soporta múltiples formatos
     // Devuelve string YYYY-MM-DD o null si no se puede parsear
@@ -6755,7 +6834,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     };
 
     return (
-      <ModalShell title="📥 Importar Otros Pagos" onClose={() => setModalImportarEgresos(null)}>
+      <ModalShell title="📥 Importar Otros Pagos" wide={form.rows.length === 0} extraWide={form.rows.length > 0} onClose={() => setModalImportarEgresos(null)}>
         {form.rows.length === 0 ? (
           <>
             {/* SECCIÓN 1: Estructura del Excel */}
@@ -6907,19 +6986,64 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                     {conFecha > 0 && <span style={{color:'#1B5E20',fontWeight:600}}>📅 {conFecha} con fecha</span>}
                     {conFecha > 0 && sinFecha > 0 && ' · '}
                     {sinFecha > 0 && <span style={{color:'#E65100',fontWeight:600}}>⚠️ {sinFecha} usarán fecha global</span>}
+                    <span style={{marginLeft:8,color:C.muted,fontStyle:'italic'}}>· clic en una celda para editar</span>
                   </div>
                 );
               })()}
             </div>
-            <div style={{maxHeight:340,overflow:'auto',border:`1px solid ${C.border}`,borderRadius:8}}>
+
+            {/* Toolbar de edición masiva (aparece cuando hay filas seleccionadas) */}
+            {selectedRows.size > 0 && (
+              <div style={{background:'#FFF8E1',border:'1px solid #FFE082',borderRadius:8,padding:'10px 12px',marginBottom:8,display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
+                <div style={{fontSize:12,fontWeight:800,color:'#E65100',whiteSpace:'nowrap'}}>
+                  ☑️ {selectedRows.size} seleccionada{selectedRows.size === 1 ? '' : 's'} · Aplicar a todas:
+                </div>
+                <select value={bulkClasif} onChange={e => { const v = e.target.value; setBulkClasif(''); if (v) aplicarMasivo('categoriaEgreso', v); }}
+                  style={{...inputStyle, width:'auto', minWidth:140, fontSize:11, padding:'5px 8px'}}>
+                  <option value="">Clasificación…</option>
+                  {clases.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <input type="text" placeholder="Segmento…" value={bulkSegmento} onChange={e => setBulkSegmento(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && bulkSegmento) { aplicarMasivo('segmento', bulkSegmento); setBulkSegmento(''); } }}
+                  style={{...inputStyle, width:130, fontSize:11, padding:'5px 8px'}}/>
+                {bulkSegmento && (
+                  <button onClick={() => { aplicarMasivo('segmento', bulkSegmento); setBulkSegmento(''); }}
+                    style={{background:'#E65100',color:'#fff',border:'none',padding:'5px 10px',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>OK</button>
+                )}
+                <input type="date" value={bulkFecha} onChange={e => { const v = e.target.value; setBulkFecha(''); if (v) aplicarMasivo('fecha', v); }}
+                  style={{...inputStyle, width:140, fontSize:11, padding:'5px 8px'}}
+                  title="Aplicar esta fecha a las filas seleccionadas"/>
+                <span style={{fontSize:10,color:'#9E9E9E',marginLeft:'auto'}}>
+                  <button onClick={clearSelection} style={{background:'transparent',border:'none',color:'#1976D2',cursor:'pointer',fontSize:11,fontWeight:600,fontFamily:'inherit'}}>
+                    Limpiar selección
+                  </button>
+                  &nbsp;·&nbsp;
+                  <button onClick={eliminarSeleccionadas} style={{background:'#C62828',color:'#fff',border:'none',padding:'5px 10px',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>
+                    🗑️ Eliminar {selectedRows.size}
+                  </button>
+                </span>
+              </div>
+            )}
+
+            <div style={{maxHeight:380,overflow:'auto',border:`1px solid ${C.border}`,borderRadius:8}}>
               <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                 <thead>
                   <tr style={{background:'#F8FAFC',position:'sticky',top:0,zIndex:1}}>
+                    <th style={{padding:'8px',textAlign:'center',borderBottom:`1px solid ${C.border}`,width:36}}>
+                      <input
+                        type="checkbox"
+                        checked={selectedRows.size === form.rows.length && form.rows.length > 0}
+                        ref={el => { if (el) el.indeterminate = selectedRows.size > 0 && selectedRows.size < form.rows.length; }}
+                        onChange={toggleSelectAll}
+                        style={{cursor:'pointer'}}
+                        title={selectedRows.size === form.rows.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
+                      />
+                    </th>
                     <th style={{padding:'8px',textAlign:'left',borderBottom:`1px solid ${C.border}`}}>Segmento</th>
                     <th style={{padding:'8px',textAlign:'left',borderBottom:`1px solid ${C.border}`}}>Concepto</th>
-                    <th style={{padding:'8px',textAlign:'right',borderBottom:`1px solid ${C.border}`}}>Monto</th>
+                    <th style={{padding:'8px',textAlign:'right',borderBottom:`1px solid ${C.border}`,width:120}}>Monto</th>
                     <th style={{padding:'8px',textAlign:'left',borderBottom:`1px solid ${C.border}`}}>Notas</th>
-                    <th style={{padding:'8px',textAlign:'center',borderBottom:`1px solid ${C.border}`,width:140}}>Fecha</th>
+                    <th style={{padding:'8px',textAlign:'center',borderBottom:`1px solid ${C.border}`,width:150}}>Fecha</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -6927,12 +7051,77 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                     const fechaUsada = r.fecha || form.fechaPago || today();
                     const usaFechaIndividual = !!r.fecha;
                     const errorParseo = r.fechaRaw && !r.fecha;
+                    const isSelected = selectedRows.has(i);
+                    const isEditing = (col) => editingCell && editingCell.rowIdx === i && editingCell.col === col;
+                    const cellStyle = (extra={}) => ({
+                      padding:'7px 8px',
+                      cursor:'pointer',
+                      borderRight:'1px solid transparent',
+                      ...extra,
+                    });
+                    const editInputStyle = {
+                      width:'100%',
+                      padding:'5px 6px',
+                      border:'1px solid #1976D2',
+                      borderRadius:4,
+                      fontSize:12,
+                      fontFamily:'inherit',
+                      outline:'none',
+                      background:'#fff',
+                      boxSizing:'border-box',
+                    };
+                    const handleKey = (e) => {
+                      if (e.key === 'Enter') saveEdit();
+                      if (e.key === 'Escape') cancelEdit();
+                    };
                     return (
-                      <tr key={i} style={{borderBottom:`1px solid ${C.border}`}}>
-                        <td style={{padding:'7px 8px'}}>{r.segmento || '—'}</td>
-                        <td style={{padding:'7px 8px',fontWeight:600}}>{r.concepto}</td>
-                        <td style={{padding:'7px 8px',textAlign:'right',fontFamily:'monospace',fontWeight:700,color:'#C62828'}}>${fmt(r.monto)}</td>
-                        <td style={{padding:'7px 8px',color:C.muted}}>{r.notas || '—'}</td>
+                      <tr key={i} style={{
+                        borderBottom:`1px solid ${C.border}`,
+                        background: isSelected ? '#FFF8E1' : (i % 2 === 0 ? '#fff' : '#FAFBFC'),
+                      }}>
+                        <td style={{padding:'7px',textAlign:'center'}}>
+                          <input type="checkbox" checked={isSelected} onChange={() => toggleSelectRow(i)} style={{cursor:'pointer'}}/>
+                        </td>
+                        {/* Segmento */}
+                        <td style={cellStyle()} onClick={() => !isEditing('segmento') && startEdit(i, 'segmento')}>
+                          {isEditing('segmento') ? (
+                            <input autoFocus value={editingValue} onChange={e => setEditingValue(e.target.value)}
+                              onBlur={saveEdit} onKeyDown={handleKey} style={editInputStyle}/>
+                          ) : (
+                            <span style={{color: r.segmento ? C.text : '#D1D5DB'}}>{r.segmento || 'clic para editar…'}</span>
+                          )}
+                        </td>
+                        {/* Concepto */}
+                        <td style={cellStyle({fontWeight:600})} onClick={() => !isEditing('concepto') && startEdit(i, 'concepto')}>
+                          {isEditing('concepto') ? (
+                            <input autoFocus value={editingValue} onChange={e => setEditingValue(e.target.value)}
+                              onBlur={saveEdit} onKeyDown={handleKey} style={editInputStyle}/>
+                          ) : (
+                            <span>{r.concepto || <span style={{color:'#D1D5DB',fontWeight:400}}>clic para editar…</span>}</span>
+                          )}
+                        </td>
+                        {/* Monto */}
+                        <td style={cellStyle({textAlign:'right',fontFamily:'monospace',fontWeight:700,color:'#C62828'})}
+                          onClick={() => !isEditing('monto') && startEdit(i, 'monto')}>
+                          {isEditing('monto') ? (
+                            <input autoFocus type="number" step="0.01" min="0" value={editingValue}
+                              onChange={e => setEditingValue(e.target.value)}
+                              onBlur={saveEdit} onKeyDown={handleKey}
+                              style={{...editInputStyle, textAlign:'right', fontFamily:'monospace'}}/>
+                          ) : (
+                            <span>${fmt(r.monto)}</span>
+                          )}
+                        </td>
+                        {/* Notas */}
+                        <td style={cellStyle({color:C.muted})} onClick={() => !isEditing('notas') && startEdit(i, 'notas')}>
+                          {isEditing('notas') ? (
+                            <input autoFocus value={editingValue} onChange={e => setEditingValue(e.target.value)}
+                              onBlur={saveEdit} onKeyDown={handleKey} style={editInputStyle}/>
+                          ) : (
+                            <span style={{color: r.notas ? C.muted : '#D1D5DB'}}>{r.notas || 'clic para editar…'}</span>
+                          )}
+                        </td>
+                        {/* Fecha (sigue siendo date picker directo) */}
                         <td style={{padding:'4px 6px',textAlign:'center'}}>
                           <input
                             type="date"
@@ -6965,6 +7154,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                 </tbody>
                 <tfoot>
                   <tr style={{background:'#FFEBEE',borderTop:`2px solid #C62828`}}>
+                    <td/>
                     <td colSpan={2} style={{padding:'10px',fontWeight:700,color:'#C62828'}}>TOTAL</td>
                     <td style={{padding:'10px',textAlign:'right',fontFamily:'monospace',fontWeight:800,color:'#C62828'}}>
                       ${fmt(form.rows.reduce((s, r) => s + r.monto, 0))}
