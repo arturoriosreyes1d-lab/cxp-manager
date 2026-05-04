@@ -7477,6 +7477,17 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             setInvoices(prev => ({ ...prev, [eg.moneda || currency]: (prev[eg.moneda || currency] || []).filter(i => i.id !== eg.id) }));
             deleteInvoiceDB(eg.id);
           }}
+          onAplicarPagosMasivos={async (egresosArr, fecha, metodo, notas) => {
+            // Aplica un pago realizado a cada egreso por su saldo pendiente individual
+            let aplicados = 0;
+            for (const eg of egresosArr) {
+              const saldoPend = Math.max(0, (+eg.total || 0) - (+eg.montoPagado || 0));
+              if (saldoPend <= 0) continue;
+              await addPayment(eg.id, saldoPend, fecha, notas || 'Pago masivo', 'realizado', metodo);
+              aplicados++;
+            }
+            alert(`✅ Se aplicaron ${aplicados} pago${aplicados === 1 ? '' : 's'} correctamente.`);
+          }}
         />
       )}
       {modalSup && <SupplierModal/>}
