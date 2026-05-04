@@ -6533,8 +6533,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     const [selectedRows, setSelectedRows] = useState(new Set()); // Set de índices seleccionados
     const [editingCell, setEditingCell] = useState(null);        // { rowIdx, col }
     const [editingValue, setEditingValue] = useState('');
-    const [bulkClasif, setBulkClasif] = useState('');
-    const [bulkSegmento, setBulkSegmento] = useState('');
+    const [bulkClasifNF, setBulkClasifNF] = useState('');
     const [bulkFecha, setBulkFecha] = useState('');
     const [bulkEstado, setBulkEstado] = useState('');             // 'pagado' | 'programado' | ''
     const [bulkMetodo, setBulkMetodo] = useState('');             // 'banco' | 'tdc' | 'otro' | ''
@@ -6560,7 +6559,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     const startEdit = (rowIdx, col) => {
       const r = form.rows[rowIdx];
       let valorInicial = '';
-      if (col === 'segmento') valorInicial = r.segmento || '';
+      if (col === 'clasificacion') valorInicial = r.clasificacion || '';
       else if (col === 'concepto') valorInicial = r.concepto || '';
       else if (col === 'monto') valorInicial = String(r.monto || '');
       else if (col === 'notas') valorInicial = r.notas || '';
@@ -6596,7 +6595,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         if (!selectedRows.has(i)) return r;
         const updated = { ...r };
         if (campo === 'fecha') { updated.fecha = valor || null; updated.fechaRaw = valor || ''; }
-        else if (campo === 'segmento') updated.segmento = valor;
+        else if (campo === 'clasificacion') { updated.clasificacion = valor; updated.clasifRaw = valor; }
         else updated[campo] = valor;
         return updated;
       });
@@ -6689,6 +6688,25 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
     // Parsear filas en formato array-of-arrays.
     // Mapeo: SEGMENTO→segmento, EGRESOS→concepto (principal), MONTO→monto, CONCEPTO→notas, FECHA→fecha
+    // Helper: encuentra la clasificación oficial que mejor matchea el texto raw
+    // Ignora mayúsculas, acentos y espacios extras. Devuelve la clasificación oficial o null.
+    const matchClasificacion = (rawText) => {
+      if (!rawText) return null;
+      const norm = (s) => String(s).trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const target = norm(rawText);
+      if (!target) return null;
+      // Match exacto primero
+      for (const c of clases) {
+        if (norm(c) === target) return c;
+      }
+      // Match por inclusión (ej: "Honorarios médicos" contra "Honorarios")
+      for (const c of clases) {
+        const nc = norm(c);
+        if (target.includes(nc) || nc.includes(target)) return c;
+      }
+      return null;
+    };
+
     const parsearFilas = (filas) => {
       if (!filas || filas.length === 0) return [];
       const cols = detectarColumnas(filas[0]);
@@ -6696,21 +6714,24 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
       const rows = [];
       datos.forEach(fila => {
         if (!fila || fila.length === 0) return;
-        const segmento = String(fila[cols.idxSegmento] ?? '').trim();
-        const concepto = String(fila[cols.idxEgreso] ?? '').trim();        // EGRESOS → concepto principal
-        const montoRaw = String(fila[cols.idxMonto] ?? '').trim();
-        const notas    = String(fila[cols.idxConcepto] ?? '').trim();      // CONCEPTO → notas
-        const fechaRaw = cols.idxFecha >= 0 ? String(fila[cols.idxFecha] ?? '').trim() : '';
+        const clasifRaw = String(fila[cols.idxSegmento] ?? '').trim();      // SEGMENTO del Excel = Clasificación
+        const concepto  = String(fila[cols.idxEgreso] ?? '').trim();        // EGRESOS → concepto principal
+        const montoRaw  = String(fila[cols.idxMonto] ?? '').trim();
+        const notas     = String(fila[cols.idxConcepto] ?? '').trim();      // CONCEPTO → notas
+        const fechaRaw  = cols.idxFecha >= 0 ? String(fila[cols.idxFecha] ?? '').trim() : '';
         const fechaParsed = fechaRaw ? parsearFecha(fechaRaw) : null;
         const montoNum = parseFloat(montoRaw.replace(/[\$,\s]/g, '')) || 0;
         if (montoNum <= 0 || !concepto) return;
+        // Intentar matchear con clasificación oficial (tolerante)
+        const clasifValida = matchClasificacion(clasifRaw);
         rows.push({
-          segmento,
+          clasificacion: clasifValida || '',  // string vacío si no matcheó
+          clasifRaw,                          // texto original del Excel (para mostrar la advertencia)
           concepto,
           monto: montoNum,
           notas,
-          fecha: fechaParsed,           // null si no había o no se pudo parsear
-          fechaRaw: fechaRaw,            // para mostrar advertencia si no se pudo parsear
+          fecha: fechaParsed,                 // null si no había o no se pudo parsear
+          fechaRaw,                           // para mostrar advertencia si no se pudo parsear
         });
       });
       return rows;
@@ -6765,12 +6786,12 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
       const data = [
         ['SEGMENTO', 'EGRESOS', 'MONTO', 'CONCEPTO', 'FECHA'],
         ['Traslados', 'Konfio Banco', 742130, 'EDO CTA 14 MZO AL 14 ABR', '30/04/2026'],
-        ['Nómina', 'Sueldos Operadores', 83535.94, 'NOM 2DA QNA ABR', '28/04/2026'],
+        ['Reprotección', 'Seguros Ve por Más', 53811.03, 'POLIZA DE SEGURO GMM DIRECCIÓN', '28/04/2026'],
         ['', '', '', '', ''],
       ];
       const ws = XLSX.utils.aoa_to_sheet(data);
       // Anchos de columna
-      ws['!cols'] = [{ wch: 14 }, { wch: 28 }, { wch: 14 }, { wch: 36 }, { wch: 14 }];
+      ws['!cols'] = [{ wch: 16 }, { wch: 28 }, { wch: 14 }, { wch: 36 }, { wch: 14 }];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Otros Pagos');
       XLSX.writeFile(wb, 'Plantilla_Otros_Pagos.xlsx');
@@ -6778,7 +6799,12 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
     const handleGuardarTodos = async () => {
       if (form.rows.length === 0) { alert('No hay filas para importar'); return; }
-      if (!form.categoriaEgreso) { alert('Selecciona una clasificación para todos los egresos'); return; }
+      // Validar: cada fila debe tener una clasificación válida
+      const filasInvalidas = form.rows.filter(r => !r.clasificacion);
+      if (filasInvalidas.length > 0) {
+        alert(`Hay ${filasInvalidas.length} fila${filasInvalidas.length === 1 ? '' : 's'} sin clasificación válida.\n\nClic en la columna "Clasificación" de cada fila para asignar una válida (las que están en rojo).`);
+        return;
+      }
       const ya = !!form._yaPagado;
       // Generar todos los egresos uno por uno
       let folioBase = (() => {
@@ -6800,7 +6826,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         const invObj = {
           id: uid(), tipo: 'EgresoNF',
           fecha: fechaFinal, serie: 'NF', folio, uuid: '',
-          proveedor: r.concepto, clasificacion: form.categoriaEgreso,
+          proveedor: r.concepto, clasificacion: r.clasificacion,
           subtotal: r.monto, iva: 0, retIsr: 0, retIva: 0, total: r.monto,
           montoPagado: ya ? r.monto : 0,
           concepto: r.concepto,
@@ -6811,13 +6837,13 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           diasFicticios: 0, referencia: '', notas: r.notas || '',
           moneda: form.moneda || 'MXN',
           voBo: true, autorizadoDireccion: true, empresaId,
-          categoriaEgreso: form.categoriaEgreso || 'Otro',
-          segmentoEgreso: r.segmento || '',
+          categoriaEgreso: r.clasificacion,
+          segmentoEgreso: '',
         };
         const saved = await upsertInvoice(invObj);
         nuevosArr.push(saved);
         await addPayment(saved.id, r.monto, fechaFinal,
-                         r.notas || form.categoriaEgreso, ya ? 'realizado' : 'programado',
+                         r.notas || r.clasificacion, ya ? 'realizado' : 'programado',
                          form.metodoPago || 'banco');
       }
       // Actualizar estado: agrupar por moneda
@@ -6844,7 +6870,9 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
               </div>
               <div style={{display:'grid',gridTemplateColumns:'auto 1fr',rowGap:8,columnGap:12,fontSize:12}}>
                 <div style={{fontWeight:700,color:'#1976D2',whiteSpace:'nowrap'}}>① SEGMENTO</div>
-                <div style={{color:'#374151'}}>Categoría libre — ej: <i style={{color:C.muted}}>Traslados, Nómina, Servicios</i></div>
+                <div style={{color:'#374151'}}>
+                  <b style={{color:'#1B5E20'}}>= Clasificación</b> · debe coincidir con una clasificación configurada — ej: <i style={{color:C.muted}}>Traslados, Reprotección, Servicios, Honorarios</i>
+                </div>
 
                 <div style={{fontWeight:700,color:'#1976D2',whiteSpace:'nowrap'}}>② EGRESOS</div>
                 <div style={{color:'#374151'}}>Beneficiario o concepto corto — ej: <i style={{color:C.muted}}>Konfio Banco</i></div>
@@ -6878,17 +6906,17 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                   </thead>
                   <tbody>
                     <tr style={{borderBottom:`1px solid ${C.border}`,background:'#fff'}}>
-                      <td style={{padding:'7px 10px'}}>Traslados</td>
+                      <td style={{padding:'7px 10px',fontWeight:600,color:'#1B5E20'}}>Traslados</td>
                       <td style={{padding:'7px 10px',fontWeight:600}}>Konfio Banco</td>
                       <td style={{padding:'7px 10px',textAlign:'right',fontFamily:'monospace'}}>742,130.00</td>
                       <td style={{padding:'7px 10px',color:C.muted}}>EDO CTA 14 MZO AL 14 ABR</td>
                       <td style={{padding:'7px 10px',textAlign:'center',fontFamily:'monospace'}}>30/04/2026</td>
                     </tr>
                     <tr style={{background:'#FAFBFC'}}>
-                      <td style={{padding:'7px 10px'}}>Nómina</td>
-                      <td style={{padding:'7px 10px',fontWeight:600}}>Sueldos Operadores</td>
-                      <td style={{padding:'7px 10px',textAlign:'right',fontFamily:'monospace'}}>83,535.94</td>
-                      <td style={{padding:'7px 10px',color:C.muted}}>NOM 2DA QNA ABR</td>
+                      <td style={{padding:'7px 10px',fontWeight:600,color:'#1B5E20'}}>Reprotección</td>
+                      <td style={{padding:'7px 10px',fontWeight:600}}>Seguros Ve por Más</td>
+                      <td style={{padding:'7px 10px',textAlign:'right',fontFamily:'monospace'}}>53,811.03</td>
+                      <td style={{padding:'7px 10px',color:C.muted}}>POLIZA DE SEGURO GMM DIRECCIÓN</td>
                       <td style={{padding:'7px 10px',textAlign:'center',fontFamily:'monospace'}}>28/04/2026</td>
                     </tr>
                   </tbody>
@@ -6942,13 +6970,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           </>
         ) : (
           <>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:14,marginBottom:14}}>
-              <Field label="Clasificación (todos)">
-                <select value={form.categoriaEgreso} onChange={e => set('categoriaEgreso', e.target.value)} style={inputStyle}>
-                  <option value="">— Seleccionar —</option>
-                  {clases.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </Field>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:14,marginBottom:14}}>
               <Field label="Fecha global (fallback)">
                 <input type="date" value={form.fechaPago} onChange={e => set('fechaPago', e.target.value)} style={inputStyle}
                   title="Esta fecha se usa para las filas que NO tengan fecha individual en el Excel"/>
@@ -6980,13 +7002,26 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
               {(() => {
                 const conFecha = form.rows.filter(r => r.fecha).length;
                 const sinFecha = form.rows.length - conFecha;
+                const conClasif = form.rows.filter(r => r.clasificacion).length;
+                const sinClasif = form.rows.length - conClasif;
                 if (form.rows.length === 0) return null;
                 return (
-                  <div style={{fontSize:11,color:C.muted}}>
+                  <div style={{fontSize:11,color:C.muted,display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+                    {sinClasif > 0 && (
+                      <span style={{color:'#C62828',fontWeight:700,background:'#FFEBEE',padding:'2px 8px',borderRadius:6}}>
+                        ⚠️ {sinClasif} sin clasificación válida
+                      </span>
+                    )}
+                    {conClasif === form.rows.length && form.rows.length > 0 && (
+                      <span style={{color:'#1B5E20',fontWeight:700,background:'#E8F5E9',padding:'2px 8px',borderRadius:6}}>
+                        ✅ Todas con clasificación
+                      </span>
+                    )}
+                    <span>·</span>
                     {conFecha > 0 && <span style={{color:'#1B5E20',fontWeight:600}}>📅 {conFecha} con fecha</span>}
-                    {conFecha > 0 && sinFecha > 0 && ' · '}
-                    {sinFecha > 0 && <span style={{color:'#E65100',fontWeight:600}}>⚠️ {sinFecha} usarán fecha global</span>}
-                    <span style={{marginLeft:8,color:C.muted,fontStyle:'italic'}}>· clic en una celda para editar</span>
+                    {conFecha > 0 && sinFecha > 0 && <span>·</span>}
+                    {sinFecha > 0 && <span style={{color:'#E65100',fontWeight:600}}>{sinFecha} usarán fecha global</span>}
+                    <span style={{color:C.muted,fontStyle:'italic'}}>· clic en una celda para editar</span>
                   </div>
                 );
               })()}
@@ -6998,26 +7033,18 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                 <div style={{fontSize:12,fontWeight:800,color:'#E65100',whiteSpace:'nowrap'}}>
                   ☑️ {selectedRows.size} seleccionada{selectedRows.size === 1 ? '' : 's'} · Aplicar a todas:
                 </div>
-                <select value={bulkClasif} onChange={e => { const v = e.target.value; setBulkClasif(''); if (v) aplicarMasivo('categoriaEgreso', v); }}
-                  style={{...inputStyle, width:'auto', minWidth:140, fontSize:11, padding:'5px 8px'}}>
+                <select value={bulkClasifNF} onChange={e => { const v = e.target.value; setBulkClasifNF(''); if (v) aplicarMasivo('clasificacion', v); }}
+                  style={{...inputStyle, width:'auto', minWidth:160, fontSize:11, padding:'5px 8px'}}>
                   <option value="">Clasificación…</option>
                   {clases.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
-                <input type="text" placeholder="Segmento…" value={bulkSegmento} onChange={e => setBulkSegmento(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && bulkSegmento) { aplicarMasivo('segmento', bulkSegmento); setBulkSegmento(''); } }}
-                  style={{...inputStyle, width:130, fontSize:11, padding:'5px 8px'}}/>
-                {bulkSegmento && (
-                  <button onClick={() => { aplicarMasivo('segmento', bulkSegmento); setBulkSegmento(''); }}
-                    style={{background:'#E65100',color:'#fff',border:'none',padding:'5px 10px',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>OK</button>
-                )}
                 <input type="date" value={bulkFecha} onChange={e => { const v = e.target.value; setBulkFecha(''); if (v) aplicarMasivo('fecha', v); }}
-                  style={{...inputStyle, width:140, fontSize:11, padding:'5px 8px'}}
+                  style={{...inputStyle, width:150, fontSize:11, padding:'5px 8px'}}
                   title="Aplicar esta fecha a las filas seleccionadas"/>
-                <span style={{fontSize:10,color:'#9E9E9E',marginLeft:'auto'}}>
+                <span style={{fontSize:10,color:'#9E9E9E',marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
                   <button onClick={clearSelection} style={{background:'transparent',border:'none',color:'#1976D2',cursor:'pointer',fontSize:11,fontWeight:600,fontFamily:'inherit'}}>
                     Limpiar selección
                   </button>
-                  &nbsp;·&nbsp;
                   <button onClick={eliminarSeleccionadas} style={{background:'#C62828',color:'#fff',border:'none',padding:'5px 10px',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>
                     🗑️ Eliminar {selectedRows.size}
                   </button>
@@ -7039,7 +7066,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                         title={selectedRows.size === form.rows.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
                       />
                     </th>
-                    <th style={{padding:'8px',textAlign:'left',borderBottom:`1px solid ${C.border}`}}>Segmento</th>
+                    <th style={{padding:'8px',textAlign:'left',borderBottom:`1px solid ${C.border}`,width:170}}>Clasificación</th>
                     <th style={{padding:'8px',textAlign:'left',borderBottom:`1px solid ${C.border}`}}>Concepto</th>
                     <th style={{padding:'8px',textAlign:'right',borderBottom:`1px solid ${C.border}`,width:120}}>Monto</th>
                     <th style={{padding:'8px',textAlign:'left',borderBottom:`1px solid ${C.border}`}}>Notas</th>
@@ -7082,13 +7109,42 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                         <td style={{padding:'7px',textAlign:'center'}}>
                           <input type="checkbox" checked={isSelected} onChange={() => toggleSelectRow(i)} style={{cursor:'pointer'}}/>
                         </td>
-                        {/* Segmento */}
-                        <td style={cellStyle()} onClick={() => !isEditing('segmento') && startEdit(i, 'segmento')}>
-                          {isEditing('segmento') ? (
-                            <input autoFocus value={editingValue} onChange={e => setEditingValue(e.target.value)}
-                              onBlur={saveEdit} onKeyDown={handleKey} style={editInputStyle}/>
-                          ) : (
-                            <span style={{color: r.segmento ? C.text : '#D1D5DB'}}>{r.segmento || 'clic para editar…'}</span>
+                        {/* Clasificación (con dropdown nativo, badge en rojo si inválida) */}
+                        <td style={{padding:'5px 6px'}}>
+                          {(() => {
+                            const esValida = !!r.clasificacion;
+                            return (
+                              <select
+                                value={r.clasificacion || ''}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  set('rows', form.rows.map((rr, j) => j === i ? { ...rr, clasificacion: v, clasifRaw: v } : rr));
+                                }}
+                                title={esValida ? `Clasificación: ${r.clasificacion}` : `"${r.clasifRaw || '(vacío)'}" no es una clasificación válida. Clic para elegir una.`}
+                                style={{
+                                  width:'100%',
+                                  fontSize:11,
+                                  padding:'5px 6px',
+                                  border:`1px solid ${esValida ? '#A5D6A7' : '#C62828'}`,
+                                  borderRadius:5,
+                                  background: esValida ? '#E8F5E9' : '#FFEBEE',
+                                  color: esValida ? '#1B5E20' : '#C62828',
+                                  fontFamily:'inherit',
+                                  outline:'none',
+                                  fontWeight: esValida ? 700 : 600,
+                                  boxSizing:'border-box',
+                                  cursor:'pointer',
+                                }}
+                              >
+                                <option value="">— Seleccionar —</option>
+                                {clases.map(c => <option key={c} value={c}>{c}</option>)}
+                              </select>
+                            );
+                          })()}
+                          {!r.clasificacion && r.clasifRaw && (
+                            <div title={`Texto original: ${r.clasifRaw}`} style={{fontSize:9,color:'#C62828',marginTop:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                              ⚠ "{r.clasifRaw}"
+                            </div>
                           )}
                         </td>
                         {/* Concepto */}
