@@ -6681,6 +6681,22 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
       e.target.value = ''; // reset para poder subir el mismo archivo otra vez
     };
 
+    // Descargar plantilla .xlsx con headers y 1 fila de ejemplo
+    const descargarPlantilla = () => {
+      const data = [
+        ['SEGMENTO', 'EGRESOS', 'MONTO', 'CONCEPTO', 'FECHA'],
+        ['Traslados', 'Konfio Banco', 742130, 'EDO CTA 14 MZO AL 14 ABR', '30/04/2026'],
+        ['Nómina', 'Sueldos Operadores', 83535.94, 'NOM 2DA QNA ABR', '28/04/2026'],
+        ['', '', '', '', ''],
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      // Anchos de columna
+      ws['!cols'] = [{ wch: 14 }, { wch: 28 }, { wch: 14 }, { wch: 36 }, { wch: 14 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Otros Pagos');
+      XLSX.writeFile(wb, 'Plantilla_Otros_Pagos.xlsx');
+    };
+
     const handleGuardarTodos = async () => {
       if (form.rows.length === 0) { alert('No hay filas para importar'); return; }
       if (!form.categoriaEgreso) { alert('Selecciona una clasificación para todos los egresos'); return; }
@@ -6740,33 +6756,109 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
     return (
       <ModalShell title="📥 Importar Otros Pagos" onClose={() => setModalImportarEgresos(null)}>
-        <div style={{background:'#E3F2FD',border:'1px solid #90CAF9',borderRadius:8,padding:'10px 14px',marginBottom:16,fontSize:12,color:'#0D47A1'}}>
-          <b>📋 Formato esperado:</b><br/>
-          <code style={{display:'inline-block',marginTop:4}}>SEGMENTO &nbsp;|&nbsp; EGRESOS &nbsp;|&nbsp; MONTO &nbsp;|&nbsp; CONCEPTO &nbsp;|&nbsp; FECHA <span style={{color:'#666'}}>(opcional)</span></code><br/>
-          <span style={{fontSize:11,opacity:0.85}}>
-            <b>EGRESOS</b> = beneficiario o descripción corta (ej: <i>Konfio Banco</i>) · <b>CONCEPTO</b> = notas (ej: <i>EDO CTA 14 MZO AL 14 ABR</i>) · <b>FECHA</b> = fecha de pago (ej: <i>30/04/2026</i>)<br/>
-            Si una fila NO tiene FECHA o es inválida, usa la fecha global de abajo. Formatos aceptados: <code>30/04/2026</code>, <code>2026-04-30</code>, <code>30-Abr-2026</code>, etc. Si la primera fila tiene los encabezados, se detectan automáticamente. Puedes pegar texto o subir un archivo .xlsx.
-          </span>
-        </div>
         {form.rows.length === 0 ? (
           <>
-            {/* Botón para subir archivo .xlsx */}
-            <div style={{display:'flex',gap:10,marginBottom:14,alignItems:'center'}}>
-              <label style={{...btnStyle, background:'#00897B', padding:'9px 18px', cursor:'pointer', display:'inline-block'}}>
-                📁 Subir archivo .xlsx
-                <input type="file" accept=".xlsx,.xls" onChange={handleArchivo} style={{display:'none'}}/>
-              </label>
-              <span style={{color:C.muted,fontSize:12}}>o pega los datos abajo:</span>
+            {/* SECCIÓN 1: Estructura del Excel */}
+            <div style={{background:'#FAFBFC',border:`1px solid ${C.border}`,borderRadius:10,padding:'14px 16px',marginBottom:14}}>
+              <div style={{fontSize:12,fontWeight:800,color:C.navy,marginBottom:10,letterSpacing:0.3}}>
+                📋 ESTRUCTURA DEL EXCEL
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'auto 1fr',rowGap:8,columnGap:12,fontSize:12}}>
+                <div style={{fontWeight:700,color:'#1976D2',whiteSpace:'nowrap'}}>① SEGMENTO</div>
+                <div style={{color:'#374151'}}>Categoría libre — ej: <i style={{color:C.muted}}>Traslados, Nómina, Servicios</i></div>
+
+                <div style={{fontWeight:700,color:'#1976D2',whiteSpace:'nowrap'}}>② EGRESOS</div>
+                <div style={{color:'#374151'}}>Beneficiario o concepto corto — ej: <i style={{color:C.muted}}>Konfio Banco</i></div>
+
+                <div style={{fontWeight:700,color:'#1976D2',whiteSpace:'nowrap'}}>③ MONTO</div>
+                <div style={{color:'#374151'}}>Cantidad numérica (sin <code>$</code>) — ej: <i style={{color:C.muted}}>742130</i> o <i style={{color:C.muted}}>742,130.00</i></div>
+
+                <div style={{fontWeight:700,color:'#1976D2',whiteSpace:'nowrap'}}>④ CONCEPTO</div>
+                <div style={{color:'#374151'}}>Descripción detallada (notas) — ej: <i style={{color:C.muted}}>EDO CTA 14 MZO AL 14 ABR</i></div>
+
+                <div style={{fontWeight:700,color:'#9E9E9E',whiteSpace:'nowrap'}}>⑤ FECHA <span style={{fontSize:10,fontWeight:600}}>(opcional)</span></div>
+                <div style={{color:'#374151'}}>Fecha de pago — ej: <i style={{color:C.muted}}>30/04/2026</i> · si falta, usa la fecha global</div>
+              </div>
             </div>
-            <Field label="Pegar datos del Excel (TAB-separadas)">
-              <textarea value={textoPegado} onChange={e => setTextoPegado(e.target.value)}
-                placeholder={`SEGMENTO\tEGRESOS\tMONTO\tCONCEPTO\tFECHA\nTraslados\tKonfio Banco\t742130\tEDO CTA 14 MZO AL 14 ABR\t30/04/2026\nNómina\tSueldos Operadores\t83535.94\tNOM 2DA QNA ABR\t28/04/2026\n...`}
-                style={{...inputStyle, minHeight: 180, fontFamily: 'monospace', fontSize: 12, whiteSpace: 'pre'}}/>
-            </Field>
-            <div style={{textAlign:'right',marginTop:14}}>
-              <button onClick={handleParsear} style={{...btnStyle, background:'#1976D2', padding:'9px 24px'}}>
-                Procesar datos →
+
+            {/* SECCIÓN 2: Ejemplo visual como tabla */}
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:6,letterSpacing:0.3}}>
+                💡 EJEMPLO DE FILAS VÁLIDAS
+              </div>
+              <div style={{border:`1px solid ${C.border}`,borderRadius:8,overflow:'hidden'}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
+                  <thead>
+                    <tr style={{background:'#E3F2FD'}}>
+                      <th style={{padding:'7px 10px',textAlign:'left',fontWeight:700,color:'#0D47A1',fontSize:10,textTransform:'uppercase'}}>Segmento</th>
+                      <th style={{padding:'7px 10px',textAlign:'left',fontWeight:700,color:'#0D47A1',fontSize:10,textTransform:'uppercase'}}>Egresos</th>
+                      <th style={{padding:'7px 10px',textAlign:'right',fontWeight:700,color:'#0D47A1',fontSize:10,textTransform:'uppercase'}}>Monto</th>
+                      <th style={{padding:'7px 10px',textAlign:'left',fontWeight:700,color:'#0D47A1',fontSize:10,textTransform:'uppercase'}}>Concepto</th>
+                      <th style={{padding:'7px 10px',textAlign:'center',fontWeight:700,color:'#0D47A1',fontSize:10,textTransform:'uppercase'}}>Fecha</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr style={{borderBottom:`1px solid ${C.border}`,background:'#fff'}}>
+                      <td style={{padding:'7px 10px'}}>Traslados</td>
+                      <td style={{padding:'7px 10px',fontWeight:600}}>Konfio Banco</td>
+                      <td style={{padding:'7px 10px',textAlign:'right',fontFamily:'monospace'}}>742,130.00</td>
+                      <td style={{padding:'7px 10px',color:C.muted}}>EDO CTA 14 MZO AL 14 ABR</td>
+                      <td style={{padding:'7px 10px',textAlign:'center',fontFamily:'monospace'}}>30/04/2026</td>
+                    </tr>
+                    <tr style={{background:'#FAFBFC'}}>
+                      <td style={{padding:'7px 10px'}}>Nómina</td>
+                      <td style={{padding:'7px 10px',fontWeight:600}}>Sueldos Operadores</td>
+                      <td style={{padding:'7px 10px',textAlign:'right',fontFamily:'monospace'}}>83,535.94</td>
+                      <td style={{padding:'7px 10px',color:C.muted}}>NOM 2DA QNA ABR</td>
+                      <td style={{padding:'7px 10px',textAlign:'center',fontFamily:'monospace'}}>28/04/2026</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div style={{fontSize:11,color:C.muted,marginTop:6}}>
+                Formatos de fecha aceptados: <code>30/04/2026</code> · <code>2026-04-30</code> · <code>30-Abr-2026</code>
+              </div>
+            </div>
+
+            {/* Botón descargar plantilla */}
+            <div style={{marginBottom:14,textAlign:'right'}}>
+              <button onClick={descargarPlantilla}
+                style={{background:'transparent',color:'#1976D2',border:`1px solid #1976D2`,padding:'6px 14px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>
+                ⬇ Descargar plantilla .xlsx
               </button>
+            </div>
+
+            {/* SECCIÓN 3: Métodos de importación lado a lado */}
+            <div style={{fontSize:12,fontWeight:800,color:C.navy,marginBottom:10,letterSpacing:0.3,paddingTop:8,borderTop:`1px solid ${C.border}`}}>
+              ELEGIR MÉTODO DE IMPORTACIÓN
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
+              {/* Método 1: subir archivo */}
+              <div style={{background:'#E0F2F1',border:'1px solid #80CBC4',borderRadius:10,padding:14,display:'flex',flexDirection:'column',gap:8}}>
+                <div style={{fontSize:13,fontWeight:800,color:'#00695C'}}>📁 Subir archivo</div>
+                <div style={{fontSize:11,color:'#00695C',opacity:0.85,minHeight:30}}>
+                  Sube tu archivo <code>.xlsx</code> o <code>.xls</code> directamente.
+                </div>
+                <label style={{background:'#00897B',color:'#fff',border:'none',padding:'9px 14px',borderRadius:8,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',textAlign:'center'}}>
+                  Seleccionar archivo
+                  <input type="file" accept=".xlsx,.xls" onChange={handleArchivo} style={{display:'none'}}/>
+                </label>
+              </div>
+              {/* Método 2: pegar texto */}
+              <div style={{background:'#E3F2FD',border:'1px solid #90CAF9',borderRadius:10,padding:14,display:'flex',flexDirection:'column',gap:8}}>
+                <div style={{fontSize:13,fontWeight:800,color:'#0D47A1'}}>✏️ Pegar datos</div>
+                <div style={{fontSize:11,color:'#0D47A1',opacity:0.85,minHeight:30}}>
+                  Copia las celdas desde Excel y pégalas aquí (separadas por TAB).
+                </div>
+                <textarea value={textoPegado} onChange={e => setTextoPegado(e.target.value)}
+                  placeholder={`SEGMENTO\tEGRESOS\tMONTO\tCONCEPTO\tFECHA\nTraslados\tKonfio Banco\t742130\tEDO CTA 14 MZO AL 14 ABR\t30/04/2026`}
+                  style={{...inputStyle, minHeight: 90, fontFamily: 'monospace', fontSize: 11, whiteSpace: 'pre', background:'#fff'}}/>
+                <button onClick={handleParsear}
+                  style={{background:'#1976D2',color:'#fff',border:'none',padding:'9px 14px',borderRadius:8,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}
+                  disabled={!textoPegado.trim()}>
+                  Procesar datos →
+                </button>
+              </div>
             </div>
           </>
         ) : (
