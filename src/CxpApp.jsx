@@ -161,6 +161,10 @@ export default function CxpApp({ user, onLogout }) {
   const [grupoPor, setGrupoPor] = useState("proveedor");
   const [grupo2, setGrupo2] = useState(""); // secondary grouping
   const [modalInv, setModalInv] = useState(null);
+  // Egresos No Facturados
+  const [modalEgreso, setModalEgreso] = useState(null);
+  const [modalImportarEgresos, setModalImportarEgresos] = useState(null);
+  const [filtroTipo, setFiltroTipo] = useState('todos'); // 'todos' | 'facturas' | 'egresos'
   const [modalSup, setModalSup] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null); // {id, cur}
   const [importMsg, setImportMsg] = useState("");
@@ -335,6 +339,9 @@ export default function CxpApp({ user, onLogout }) {
   const filtered = useMemo(() => {
     const getSupGrupo = (nombre) => suppliers.find(s=>s.nombre===nombre)?.grupo || "";
     let result = curInvoices.filter(inv => {
+      // Filtro Tipo: facturas / egresos / todos
+      if (filtroTipo === 'facturas' && inv.tipo === 'EgresoNF') return false;
+      if (filtroTipo === 'egresos'  && inv.tipo !== 'EgresoNF') return false;
       // Tab filter
       if(carteraTab === "activas" && inv.estatus === "Pagado") return false;
       if(carteraTab === "pagadas" && inv.estatus !== "Pagado") return false;
@@ -374,7 +381,7 @@ export default function CxpApp({ user, onLogout }) {
       });
     }
     return result;
-  }, [curInvoices, filters, search, sortCol, sortDir, carteraTab, filtroGrupo, filtroProveedoresKey, suppliers, filtroMesConcepto]);
+  }, [curInvoices, filters, search, sortCol, sortDir, carteraTab, filtroGrupo, filtroProveedoresKey, suppliers, filtroMesConcepto, filtroTipo]);
 
   const kpis = useMemo(() => {
     const allInvs = [...invoices.MXN,...invoices.USD,...invoices.EUR];
@@ -574,6 +581,75 @@ export default function CxpApp({ user, onLogout }) {
       return result;
     });
     setModalInv(null);
+  };
+
+  /* ── Egresos No Facturados ─────────────────────────────────────── */
+  // Generar folio interno NF-001, NF-002...
+  const generarFolioEgreso = () => {
+    const todos = ['MXN','USD','EUR'].flatMap(c => invoices[c] || [])
+      .filter(i => i.tipo === 'EgresoNF' && i.empresaId === empresaId);
+    const numeros = todos.map(i => {
+      const m = (i.folio || '').match(/^NF-(\d+)$/);
+      return m ? parseInt(m[1], 10) : 0;
+    });
+    const max = numeros.length > 0 ? Math.max(...numeros) : 0;
+    return `NF-${String(max + 1).padStart(3, '0')}`;
+  };
+
+  const saveEgreso = async (data) => {
+    const monedaFinal = data.moneda || currency;
+    const total = +(parseFloat(data.total) || 0);
+    if (total <= 0) { alert('El monto debe ser mayor a 0'); return; }
+    const folio = data.folio || generarFolioEgreso();
+    const ya = !!data._yaPagado;
+    // Construir factura virtual (tipo='EgresoNF')
+    const invObj = {
+      id: data.id || uid(),
+      tipo: 'EgresoNF',
+      fecha: data.fecha || today(),
+      serie: 'NF',
+      folio,
+      uuid: '',
+      proveedor: data.concepto || data.categoriaEgreso || 'Egreso',
+      clasificacion: data.categoriaEgreso || 'Otro',
+      subtotal: total, iva: 0, retIsr: 0, retIva: 0,
+      total,
+      montoPagado: ya ? total : 0,
+      concepto: data.concepto || '',
+      diasCredito: 0,
+      vencimiento: data.fecha || today(),
+      estatus: ya ? 'Pagado' : 'Pendiente',
+      fechaProgramacion: data.fechaProgramacion || data.fecha || today(),
+      diasFicticios: 0,
+      referencia: '',
+      notas: data.notas || '',
+      moneda: monedaFinal,
+      voBo: true,
+      autorizadoDireccion: true,
+      empresaId,
+      categoriaEgreso: data.categoriaEgreso || 'Otro',
+      segmentoEgreso: data.segmentoEgreso || '',
+    };
+    const saved = await upsertInvoice(invObj);
+    // Guardar en estado
+    setInvoices(prev => {
+      const result = { ...prev };
+      ['MXN','USD','EUR'].forEach(c => {
+        result[c] = (result[c]||[]).filter(i => i.id !== invObj.id && i.id !== saved.id);
+      });
+      result[monedaFinal] = [...(result[monedaFinal]||[]), saved];
+      return result;
+    });
+    // Si se marcó "ya pagado": crear pago realizado en la fecha que indicó
+    if (ya) {
+      await addPayment(saved.id, total, data.fechaProgramacion || data.fecha || today(),
+                       data.notas || 'Egreso no facturado', 'realizado', data.metodoPago || 'banco');
+    } else {
+      // Programar pago en fecha indicada (igual que se programan facturas)
+      await addPayment(saved.id, total, data.fechaProgramacion || data.fecha || today(),
+                       data.notas || 'Egreso programado', 'programado', data.metodoPago || 'banco');
+    }
+    setModalEgreso(null);
   };
 
   const confirmDelete = () => {
@@ -837,8 +913,11 @@ export default function CxpApp({ user, onLogout }) {
         </td>
         <td style={{padding:"11px 8px",fontSize:14}}>{inv.tipo}</td>
         <td style={{padding:"11px 8px",whiteSpace:"nowrap",fontSize:14}}>{inv.fecha}</td>
-        {/* Folio — red if duplicate */}
-        <td style={{padding:"11px 8px",background:isDupe?"#FFEBEE":"transparent",color:isDupe?C.danger:C.text,fontWeight:isDupe?700:600,fontSize:14,borderLeft:isDupe?`3px solid ${C.danger}`:"none"}}>
+        {/* Folio — red if duplicate; badge NF si es Egreso No Facturado */}
+        <td style={{padding:"11px 8px",background:isDupe?"#FFEBEE":(inv.tipo==='EgresoNF'?"#FFF8F8":"transparent"),color:isDupe?C.danger:C.text,fontWeight:isDupe?700:600,fontSize:14,borderLeft:isDupe?`3px solid ${C.danger}`:(inv.tipo==='EgresoNF'?"3px solid #C62828":"none")}}>
+          {inv.tipo === 'EgresoNF' && (
+            <span title="Egreso No Facturado" style={{display:'inline-block',background:'#C62828',color:'#fff',padding:'1px 6px',borderRadius:4,fontSize:9,fontWeight:800,marginRight:6,verticalAlign:'middle'}}>NF</span>
+          )}
           {inv.serie}{inv.folio}
           {isDupe && <span style={{fontSize:11,marginLeft:4}} title="Folio duplicado">⚠️</span>}
         </td>
@@ -989,7 +1068,9 @@ export default function CxpApp({ user, onLogout }) {
 
   /* ── DASHBOARD ──────────────────────────────────────────────────────── */
   const renderDashboard = () => {
-    const allInvs = [...invoices.MXN.map(i=>({...i,moneda:"MXN"})),...invoices.USD.map(i=>({...i,moneda:"USD"})),...invoices.EUR.map(i=>({...i,moneda:"EUR"}))];
+    // Excluimos los Egresos No Facturados del dashboard, métricas y gráficas
+    const allInvs = [...invoices.MXN.map(i=>({...i,moneda:"MXN"})),...invoices.USD.map(i=>({...i,moneda:"USD"})),...invoices.EUR.map(i=>({...i,moneda:"EUR"}))]
+      .filter(i => i.tipo !== 'EgresoNF');
     const pendAll = allInvs.filter(i=>i.estatus!=="Pagado"&&((+i.total||0)-(+i.montoPagado||0))>0);
     const saldoOf = i => (+i.total||0)-(+i.montoPagado||0);
     const daysOf = i => daysUntil(i.vencimiento);
@@ -2605,6 +2686,14 @@ export default function CxpApp({ user, onLogout }) {
               </select>
             )}
 
+            {/* Filtro Tipo: Todos / Facturas / Egresos NF */}
+            <select value={filtroTipo} onChange={e=>setFiltroTipo(e.target.value)}
+              style={{...selectStyle,width:160,borderColor:filtroTipo!=='todos'?'#C62828':C.border,color:filtroTipo!=='todos'?'#C62828':C.text,fontWeight:filtroTipo!=='todos'?700:400,flex:"0 0 auto"}}>
+              <option value="todos">📋 Todos los tipos</option>
+              <option value="facturas">📄 Solo Facturas</option>
+              <option value="egresos">💵 Solo Egresos NF</option>
+            </select>
+
             {(()=>{
               const mesesEnConcepto=[...new Set(curInvoices.filter(i=>i.estatus!=="Pagado").map(i=>detectarMesCxP(i.concepto)).filter(Boolean))];
               const hayNoIdent=curInvoices.filter(i=>i.estatus!=="Pagado"&&!detectarMesCxP(i.concepto)).length>0;
@@ -2655,10 +2744,21 @@ export default function CxpApp({ user, onLogout }) {
                 </select>
                 <div style={{flex:1}}/>
                 {!esConsulta && (
-                  <button onClick={()=>setModalInv({tipo:"Factura",fecha:today(),serie:"",folio:"",uuid:"",proveedor:"",clasificacion:clases[0],subtotal:"",iva:"",retIsr:0,retIva:0,total:"",montoPagado:0,concepto:"",diasCredito:30,vencimiento:"",estatus:"Pendiente",fechaProgramacion:"",diasFicticios:0,referencia:"",notas:"",moneda:currency})}
-                    style={{...btnStyle,padding:"7px 18px",fontSize:13,whiteSpace:"nowrap"}}>
-                    + Nueva Factura
-                  </button>
+                  <>
+                    <button onClick={()=>setModalEgreso({
+                      _esNuevo: true, _yaPagado: true,
+                      fecha: today(), categoriaEgreso: 'Nómina', segmentoEgreso: '',
+                      concepto: '', total: '', moneda: currency,
+                      fechaProgramacion: today(), metodoPago: 'banco', notas: '',
+                    })}
+                      style={{padding:"7px 14px",fontSize:13,whiteSpace:"nowrap",border:`1px solid #C62828`,borderRadius:10,background:"#FFEBEE",color:"#C62828",cursor:"pointer",fontWeight:700,fontFamily:"inherit"}}>
+                      💵 + Egreso NF
+                    </button>
+                    <button onClick={()=>setModalInv({tipo:"Factura",fecha:today(),serie:"",folio:"",uuid:"",proveedor:"",clasificacion:clases[0],subtotal:"",iva:"",retIsr:0,retIva:0,total:"",montoPagado:0,concepto:"",diasCredito:30,vencimiento:"",estatus:"Pendiente",fechaProgramacion:"",diasFicticios:0,referencia:"",notas:"",moneda:currency})}
+                      style={{...btnStyle,padding:"7px 18px",fontSize:13,whiteSpace:"nowrap"}}>
+                      + Nueva Factura
+                    </button>
+                  </>
                 )}
               </>
             ) : (
@@ -2673,10 +2773,21 @@ export default function CxpApp({ user, onLogout }) {
                 )}
                 <div style={{flex:1}}/>
                 {!esConsulta && (
-                  <button onClick={()=>setModalInv({tipo:"Factura",fecha:today(),serie:"",folio:"",uuid:"",proveedor:"",clasificacion:clases[0],subtotal:"",iva:"",retIsr:0,retIva:0,total:"",montoPagado:0,concepto:"",diasCredito:30,vencimiento:"",estatus:"Pendiente",fechaProgramacion:"",diasFicticios:0,referencia:"",notas:"",moneda:currency})}
-                    style={{...btnStyle,padding:"7px 18px",fontSize:13,whiteSpace:"nowrap"}}>
-                    + Nueva Factura
-                  </button>
+                  <>
+                    <button onClick={()=>setModalEgreso({
+                      _esNuevo: true, _yaPagado: true,
+                      fecha: today(), categoriaEgreso: 'Nómina', segmentoEgreso: '',
+                      concepto: '', total: '', moneda: currency,
+                      fechaProgramacion: today(), metodoPago: 'banco', notas: '',
+                    })}
+                      style={{padding:"7px 14px",fontSize:13,whiteSpace:"nowrap",border:`1px solid #C62828`,borderRadius:10,background:"#FFEBEE",color:"#C62828",cursor:"pointer",fontWeight:700,fontFamily:"inherit"}}>
+                      💵 + Egreso NF
+                    </button>
+                    <button onClick={()=>setModalInv({tipo:"Factura",fecha:today(),serie:"",folio:"",uuid:"",proveedor:"",clasificacion:clases[0],subtotal:"",iva:"",retIsr:0,retIva:0,total:"",montoPagado:0,concepto:"",diasCredito:30,vencimiento:"",estatus:"Pendiente",fechaProgramacion:"",diasFicticios:0,referencia:"",notas:"",moneda:currency})}
+                      style={{...btnStyle,padding:"7px 18px",fontSize:13,whiteSpace:"nowrap"}}>
+                      + Nueva Factura
+                    </button>
+                  </>
                 )}
               </>
             )}
@@ -3432,7 +3543,12 @@ export default function CxpApp({ user, onLogout }) {
           // En vista histórica: incluir también las que ya están pagadas (saldo 0) si tenían pago programado para esa fecha
           if (saldoFactura <= 0 && esHoy) return;
           
-          const proveedorKey = `${factura.proveedor}-${moneda}`;
+          // Egresos No Facturados se agrupan todos bajo "Egresos No Facturados" (no por concepto)
+          const esEgresoNF = factura.tipo === 'EgresoNF';
+          const proveedorKey = esEgresoNF
+            ? `__EGRESOS_NF__-${moneda}`
+            : `${factura.proveedor}-${moneda}`;
+          const proveedorDisplay = esEgresoNF ? 'Egresos No Facturados' : factura.proveedor;
           
           // Acumular adeudo total del proveedor (solo cuenta el saldo actual real)
           if (saldoFactura > 0) {
@@ -3442,7 +3558,7 @@ export default function CxpApp({ user, onLogout }) {
               ex.facturasActivas += 1;
             } else {
               adeudoTotal.set(proveedorKey, {
-                proveedor: factura.proveedor,
+                proveedor: proveedorDisplay,
                 moneda,
                 adeudado: saldoFactura,
                 facturasActivas: 1
@@ -6315,6 +6431,274 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     );
   };
 
+  /* ── Egreso No Facturado Modal ──────────────────────────────────── */
+  const EgresoModal = () => {
+    const [form, setForm] = useState({...modalEgreso});
+    const set = (k, v) => setForm(f => ({...f, [k]: v}));
+    const CATEGORIAS = ['Nómina', 'Comisión Bancaria', 'Impuesto', 'Renta', 'Servicios', 'Otro'];
+    const editando = !form._esNuevo;
+    return (
+      <ModalShell title={editando ? "Editar Egreso No Facturado" : "💵 Nuevo Egreso No Facturado"} onClose={() => setModalEgreso(null)}>
+        <div style={{background:'#FFEBEE',border:'1px solid #FFCDD2',borderRadius:8,padding:'10px 14px',marginBottom:18,fontSize:12,color:'#B71C1C',display:'flex',alignItems:'center',gap:8}}>
+          <span style={{fontSize:18}}>💵</span>
+          <div>
+            <b>Egreso sin factura</b> — pagos como nómina, comisiones, impuestos, etc. que no tienen factura formal pero salen del banco.
+            <div style={{fontSize:11,marginTop:2,opacity:0.85}}>Aparecerán en el Reporte Diario junto a los pagos de facturas, pero NO en el Dashboard ni gráficas.</div>
+          </div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+          <Field label="Concepto *">
+            <input value={form.concepto} onChange={e => set('concepto', e.target.value)}
+              placeholder="Ej: Sueldos y salarios Operadores" style={inputStyle} autoFocus/>
+          </Field>
+          <Field label="Categoría">
+            <select value={form.categoriaEgreso} onChange={e => set('categoriaEgreso', e.target.value)} style={inputStyle}>
+              {CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </Field>
+          <Field label="Segmento / Rubro">
+            <input value={form.segmentoEgreso} onChange={e => set('segmentoEgreso', e.target.value)}
+              placeholder="Ej: Transporte, TAS, AFE…" style={inputStyle}/>
+          </Field>
+          <Field label="Moneda">
+            <select value={form.moneda} onChange={e => set('moneda', e.target.value)} style={inputStyle}>
+              <option value="MXN">MXN</option>
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+            </select>
+          </Field>
+          <Field label="Monto *">
+            <input type="number" step="0.01" value={form.total} onChange={e => set('total', e.target.value)}
+              placeholder="0.00" style={inputStyle}/>
+          </Field>
+          <Field label="Fecha de pago">
+            <input type="date" value={form.fechaProgramacion} onChange={e => set('fechaProgramacion', e.target.value)} style={inputStyle}/>
+          </Field>
+          <Field label="Estado del pago">
+            <select value={form._yaPagado ? 'pagado' : 'programado'}
+              onChange={e => set('_yaPagado', e.target.value === 'pagado')} style={inputStyle}>
+              <option value="pagado">✅ Ya pagado</option>
+              <option value="programado">📅 Programado</option>
+            </select>
+          </Field>
+          <Field label="Método de pago">
+            <select value={form.metodoPago} onChange={e => set('metodoPago', e.target.value)} style={inputStyle}>
+              <option value="banco">🏦 Banco (sale del saldo)</option>
+              <option value="tdc">💳 Tarjeta de Crédito (no sale del saldo)</option>
+              <option value="otro">➕ Otro</option>
+            </select>
+          </Field>
+          <div style={{gridColumn:'span 2'}}>
+            <Field label="Notas">
+              <input value={form.notas} onChange={e => set('notas', e.target.value)}
+                placeholder="Ej: NOM 2DA QNA ABR" style={inputStyle}/>
+            </Field>
+          </div>
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',gap:10,marginTop:24,alignItems:'center'}}>
+          {!editando ? (
+            <button onClick={() => { setModalEgreso(null); setModalImportarEgresos({ rows: [], categoriaEgreso: 'Nómina', metodoPago: 'banco', fechaPago: today(), moneda: currency, _yaPagado: true }); }}
+              style={{...btnStyle, background:'#1976D2', padding:'9px 16px', fontSize:13}}>
+              📥 Importar varios desde Excel
+            </button>
+          ) : <div/>}
+          <div style={{display:'flex',gap:10}}>
+            <button onClick={() => setModalEgreso(null)} style={{...btnStyle, background:'#F1F5F9', color:C.text}}>Cancelar</button>
+            <button onClick={() => saveEgreso(form)} style={{...btnStyle, background:'#C62828'}}>Guardar Egreso</button>
+          </div>
+        </div>
+      </ModalShell>
+    );
+  };
+
+  /* ── Importar Egresos desde Excel Modal ────────────────────────── */
+  const ImportarEgresosModal = () => {
+    const [form, setForm] = useState({...modalImportarEgresos});
+    const [textoPegado, setTextoPegado] = useState('');
+    const set = (k, v) => setForm(f => ({...f, [k]: v}));
+    const CATEGORIAS = ['Nómina', 'Comisión Bancaria', 'Impuesto', 'Renta', 'Servicios', 'Otro'];
+
+    // Parsear texto pegado del Excel: cada línea = una fila tab/coma separada
+    // Esperamos: Segmento  Concepto  Monto  [Notas]
+    const parsearTexto = (txt) => {
+      const lineas = txt.split('\n').map(l => l.trim()).filter(l => l);
+      const rows = [];
+      lineas.forEach(linea => {
+        // Soporta tab, múltiples espacios, o ;  como separador
+        const partes = linea.split(/\t|;/).map(p => p.trim()).filter(p => p);
+        if (partes.length < 3) return;
+        // Detectar columnas: segmento, concepto, monto, [notas]
+        // Asumimos formato estándar: Segmento Concepto Monto [Notas]
+        let segmento = '', concepto = '', monto = '', notas = '';
+        if (partes.length >= 4) {
+          [segmento, concepto, monto, notas] = partes;
+        } else if (partes.length === 3) {
+          [segmento, concepto, monto] = partes;
+        }
+        // Limpiar el monto: quitar $, comas, espacios
+        const montoNum = parseFloat(String(monto).replace(/[\$,\s]/g, '')) || 0;
+        if (montoNum <= 0 || !concepto) return;
+        rows.push({ segmento, concepto, monto: montoNum, notas });
+      });
+      return rows;
+    };
+
+    const handleParsear = () => {
+      const rows = parsearTexto(textoPegado);
+      if (rows.length === 0) { alert('No se detectaron filas válidas. Asegúrate de que cada línea tenga: Segmento → Concepto → Monto [→ Notas] separados por tabulador.'); return; }
+      set('rows', rows);
+    };
+
+    const handleGuardarTodos = async () => {
+      if (form.rows.length === 0) { alert('No hay filas para importar'); return; }
+      const ya = !!form._yaPagado;
+      // Generar todos los egresos uno por uno
+      let folioBase = (() => {
+        const todos = ['MXN','USD','EUR'].flatMap(c => invoices[c] || [])
+          .filter(i => i.tipo === 'EgresoNF' && i.empresaId === empresaId);
+        const numeros = todos.map(i => {
+          const m = (i.folio || '').match(/^NF-(\d+)$/);
+          return m ? parseInt(m[1], 10) : 0;
+        });
+        return numeros.length > 0 ? Math.max(...numeros) : 0;
+      })();
+      const nuevosArr = [];
+      for (let idx = 0; idx < form.rows.length; idx++) {
+        const r = form.rows[idx];
+        folioBase++;
+        const folio = `NF-${String(folioBase).padStart(3, '0')}`;
+        const invObj = {
+          id: uid(), tipo: 'EgresoNF',
+          fecha: form.fechaPago || today(), serie: 'NF', folio, uuid: '',
+          proveedor: r.concepto, clasificacion: form.categoriaEgreso,
+          subtotal: r.monto, iva: 0, retIsr: 0, retIva: 0, total: r.monto,
+          montoPagado: ya ? r.monto : 0,
+          concepto: r.concepto,
+          diasCredito: 0,
+          vencimiento: form.fechaPago || today(),
+          estatus: ya ? 'Pagado' : 'Pendiente',
+          fechaProgramacion: form.fechaPago || today(),
+          diasFicticios: 0, referencia: '', notas: r.notas || '',
+          moneda: form.moneda || 'MXN',
+          voBo: true, autorizadoDireccion: true, empresaId,
+          categoriaEgreso: form.categoriaEgreso || 'Otro',
+          segmentoEgreso: r.segmento || '',
+        };
+        const saved = await upsertInvoice(invObj);
+        nuevosArr.push(saved);
+        await addPayment(saved.id, r.monto, form.fechaPago || today(),
+                         r.notas || form.categoriaEgreso, ya ? 'realizado' : 'programado',
+                         form.metodoPago || 'banco');
+      }
+      // Actualizar estado: agrupar por moneda
+      setInvoices(prev => {
+        const result = { ...prev };
+        nuevosArr.forEach(saved => {
+          const c = saved.moneda || 'MXN';
+          result[c] = [...(result[c]||[]), saved];
+        });
+        return result;
+      });
+      alert(`✅ Se importaron ${nuevosArr.length} egresos correctamente.`);
+      setModalImportarEgresos(null);
+    };
+
+    return (
+      <ModalShell title="📥 Importar Egresos No Facturados" onClose={() => setModalImportarEgresos(null)}>
+        <div style={{background:'#E3F2FD',border:'1px solid #90CAF9',borderRadius:8,padding:'10px 14px',marginBottom:16,fontSize:12,color:'#0D47A1'}}>
+          <b>📋 Cómo importar:</b> Copia y pega las celdas de tu Excel (las columnas se separan con TAB).<br/>
+          <b>Formato esperado:</b> <code>Segmento [TAB] Concepto [TAB] Monto [TAB] Notas (opcional)</code>
+        </div>
+        {form.rows.length === 0 ? (
+          <>
+            <Field label="Pegar datos del Excel">
+              <textarea value={textoPegado} onChange={e => setTextoPegado(e.target.value)}
+                placeholder={`Transporte\tSueldos y salarios Operadores\t83535.94\tNOM 2DA QNA ABR\nTAS\tSueldos y salarios Representantes\t71023.80\tNOM 2DA QNA ABR\n...`}
+                style={{...inputStyle, minHeight: 180, fontFamily: 'monospace', fontSize: 12, whiteSpace: 'pre'}}/>
+            </Field>
+            <div style={{textAlign:'right',marginTop:14}}>
+              <button onClick={handleParsear} style={{...btnStyle, background:'#1976D2', padding:'9px 24px'}}>
+                Procesar datos →
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:14,marginBottom:14}}>
+              <Field label="Categoría (todos)">
+                <select value={form.categoriaEgreso} onChange={e => set('categoriaEgreso', e.target.value)} style={inputStyle}>
+                  {CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </Field>
+              <Field label="Fecha de pago">
+                <input type="date" value={form.fechaPago} onChange={e => set('fechaPago', e.target.value)} style={inputStyle}/>
+              </Field>
+              <Field label="Moneda">
+                <select value={form.moneda} onChange={e => set('moneda', e.target.value)} style={inputStyle}>
+                  <option value="MXN">MXN</option><option value="USD">USD</option><option value="EUR">EUR</option>
+                </select>
+              </Field>
+              <Field label="Estado del pago">
+                <select value={form._yaPagado ? 'pagado' : 'programado'}
+                  onChange={e => set('_yaPagado', e.target.value === 'pagado')} style={inputStyle}>
+                  <option value="pagado">✅ Ya pagado</option>
+                  <option value="programado">📅 Programado</option>
+                </select>
+              </Field>
+              <Field label="Método de pago">
+                <select value={form.metodoPago} onChange={e => set('metodoPago', e.target.value)} style={inputStyle}>
+                  <option value="banco">🏦 Banco</option>
+                  <option value="tdc">💳 TDC</option>
+                  <option value="otro">➕ Otro</option>
+                </select>
+              </Field>
+            </div>
+            <div style={{fontSize:13,fontWeight:700,color:C.navy,marginBottom:8}}>
+              Vista previa · {form.rows.length} {form.rows.length===1?'fila':'filas'}
+            </div>
+            <div style={{maxHeight:300,overflow:'auto',border:`1px solid ${C.border}`,borderRadius:8}}>
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                <thead>
+                  <tr style={{background:'#F8FAFC',position:'sticky',top:0}}>
+                    <th style={{padding:'8px',textAlign:'left',borderBottom:`1px solid ${C.border}`}}>Segmento</th>
+                    <th style={{padding:'8px',textAlign:'left',borderBottom:`1px solid ${C.border}`}}>Concepto</th>
+                    <th style={{padding:'8px',textAlign:'right',borderBottom:`1px solid ${C.border}`}}>Monto</th>
+                    <th style={{padding:'8px',textAlign:'left',borderBottom:`1px solid ${C.border}`}}>Notas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {form.rows.map((r, i) => (
+                    <tr key={i} style={{borderBottom:`1px solid ${C.border}`}}>
+                      <td style={{padding:'7px 8px'}}>{r.segmento}</td>
+                      <td style={{padding:'7px 8px',fontWeight:600}}>{r.concepto}</td>
+                      <td style={{padding:'7px 8px',textAlign:'right',fontFamily:'monospace',fontWeight:700,color:'#C62828'}}>${fmt(r.monto)}</td>
+                      <td style={{padding:'7px 8px',color:C.muted}}>{r.notas || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{background:'#FFEBEE',borderTop:`2px solid #C62828`}}>
+                    <td colSpan={2} style={{padding:'10px',fontWeight:700,color:'#C62828'}}>TOTAL</td>
+                    <td style={{padding:'10px',textAlign:'right',fontFamily:'monospace',fontWeight:800,color:'#C62828'}}>
+                      ${fmt(form.rows.reduce((s, r) => s + r.monto, 0))}
+                    </td>
+                    <td/>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',gap:10,marginTop:18}}>
+              <button onClick={() => set('rows', [])} style={{...btnStyle, background:'#F1F5F9', color:C.text}}>← Volver a editar</button>
+              <button onClick={handleGuardarTodos} style={{...btnStyle, background:'#C62828', padding:'9px 24px'}}>
+                💾 Guardar {form.rows.length} egresos
+              </button>
+            </div>
+          </>
+        )}
+      </ModalShell>
+    );
+  };
+
   const SupplierModal = () => {
     const [form,setForm]=useState({...modalSup});
     const set=(k,v)=>setForm(f=>({...f,[k]:v}));
@@ -6479,6 +6863,8 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
       {/* Modals */}
       {modalInv && <InvoiceModal/>}
+      {modalEgreso && <EgresoModal/>}
+      {modalImportarEgresos && <ImportarEgresosModal/>}
       {modalSup && <SupplierModal/>}
 
       {/* Delete confirmation modal */}

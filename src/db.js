@@ -3,7 +3,7 @@ import { supabase } from './supabase.js';
 /* ── Helpers: convert between DB snake_case and App camelCase ─── */
 const toApp = (row) => ({
   id: row.id,
-  tipo: row.tipo || 'Factura',
+  tipo: row.tipo || 'Factura',  // 'Factura' | 'EgresoNF'
   fecha: row.fecha || '',
   serie: row.serie || '',
   folio: row.folio || '',
@@ -28,6 +28,9 @@ const toApp = (row) => ({
   voBo: row.vo_bo || false,
   autorizadoDireccion: row.autorizado_direccion || false,
   empresaId: row.empresa_id || null,
+  // Campos específicos de Egresos No Facturados
+  categoriaEgreso: row.categoria_egreso || '',
+  segmentoEgreso: row.segmento_egreso || '',
 });
 
 const toDB = (inv) => ({
@@ -57,6 +60,8 @@ const toDB = (inv) => ({
   vo_bo: inv.voBo || false,
   autorizado_direccion: inv.autorizadoDireccion || false,
   empresa_id: inv.empresaId || null,
+  categoria_egreso: inv.categoriaEgreso || null,
+  segmento_egreso: inv.segmentoEgreso || null,
 });
 
 const supToApp = (row) => ({
