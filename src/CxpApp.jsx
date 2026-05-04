@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import * as XLSX from "xlsx";
+import EgresosNFModal from "./EgresosNFModal";
 import html2canvas from "html2canvas";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -164,6 +165,7 @@ export default function CxpApp({ user, onLogout }) {
   // Egresos No Facturados
   const [modalEgreso, setModalEgreso] = useState(null);
   const [modalImportarEgresos, setModalImportarEgresos] = useState(null);
+  const [modalListaNF, setModalListaNF] = useState(false);
   const [filtroTipo, setFiltroTipo] = useState('todos'); // 'todos' | 'facturas' | 'egresos'
   const [modalSup, setModalSup] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null); // {id, cur}
@@ -2745,14 +2747,9 @@ export default function CxpApp({ user, onLogout }) {
                 <div style={{flex:1}}/>
                 {!esConsulta && (
                   <>
-                    <button onClick={()=>setModalEgreso({
-                      _esNuevo: true, _yaPagado: true,
-                      fecha: today(), categoriaEgreso: '', segmentoEgreso: '',
-                      concepto: '', total: '', moneda: currency,
-                      fechaProgramacion: today(), metodoPago: 'banco', notas: '',
-                    })}
+                    <button onClick={()=>setModalListaNF(true)}
                       style={{padding:"7px 14px",fontSize:13,whiteSpace:"nowrap",border:`1px solid #C62828`,borderRadius:10,background:"#FFEBEE",color:"#C62828",cursor:"pointer",fontWeight:700,fontFamily:"inherit"}}>
-                      💵 + Egreso NF
+                      💵 Egresos NF
                     </button>
                     <button onClick={()=>setModalInv({tipo:"Factura",fecha:today(),serie:"",folio:"",uuid:"",proveedor:"",clasificacion:clases[0],subtotal:"",iva:"",retIsr:0,retIva:0,total:"",montoPagado:0,concepto:"",diasCredito:30,vencimiento:"",estatus:"Pendiente",fechaProgramacion:"",diasFicticios:0,referencia:"",notas:"",moneda:currency})}
                       style={{...btnStyle,padding:"7px 18px",fontSize:13,whiteSpace:"nowrap"}}>
@@ -2774,14 +2771,9 @@ export default function CxpApp({ user, onLogout }) {
                 <div style={{flex:1}}/>
                 {!esConsulta && (
                   <>
-                    <button onClick={()=>setModalEgreso({
-                      _esNuevo: true, _yaPagado: true,
-                      fecha: today(), categoriaEgreso: '', segmentoEgreso: '',
-                      concepto: '', total: '', moneda: currency,
-                      fechaProgramacion: today(), metodoPago: 'banco', notas: '',
-                    })}
+                    <button onClick={()=>setModalListaNF(true)}
                       style={{padding:"7px 14px",fontSize:13,whiteSpace:"nowrap",border:`1px solid #C62828`,borderRadius:10,background:"#FFEBEE",color:"#C62828",cursor:"pointer",fontWeight:700,fontFamily:"inherit"}}>
-                      💵 + Egreso NF
+                      💵 Egresos NF
                     </button>
                     <button onClick={()=>setModalInv({tipo:"Factura",fecha:today(),serie:"",folio:"",uuid:"",proveedor:"",clasificacion:clases[0],subtotal:"",iva:"",retIsr:0,retIva:0,total:"",montoPagado:0,concepto:"",diasCredito:30,vencimiento:"",estatus:"Pendiente",fechaProgramacion:"",diasFicticios:0,referencia:"",notas:"",moneda:currency})}
                       style={{...btnStyle,padding:"7px 18px",fontSize:13,whiteSpace:"nowrap"}}>
@@ -6935,6 +6927,46 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
       {modalInv && <InvoiceModal/>}
       {modalEgreso && <EgresoModal/>}
       {modalImportarEgresos && <ImportarEgresosModal/>}
+      {modalListaNF && (
+        <EgresosNFModal
+          egresos={['MXN','USD','EUR'].flatMap(c => (invoices[c]||[]).map(i => ({...i, moneda:c}))).filter(i => i.tipo === 'EgresoNF' && i.empresaId === empresaId)}
+          payments={payments}
+          currency={currency}
+          onClose={() => setModalListaNF(false)}
+          onNuevo={() => {
+            setModalListaNF(false);
+            setModalEgreso({
+              _esNuevo: true, _yaPagado: true,
+              fecha: today(), categoriaEgreso: '', segmentoEgreso: '',
+              concepto: '', total: '', moneda: currency,
+              fechaProgramacion: today(), metodoPago: 'banco', notas: '',
+            });
+          }}
+          onImportar={() => {
+            setModalListaNF(false);
+            setModalImportarEgresos({ rows: [], categoriaEgreso: '', metodoPago: 'banco', fechaPago: today(), moneda: currency, _yaPagado: true });
+          }}
+          onEditar={(eg) => {
+            setModalListaNF(false);
+            setModalEgreso({
+              ...eg,
+              _esNuevo: false,
+              _yaPagado: eg.estatus === 'Pagado' || (+eg.montoPagado > 0),
+              fechaProgramacion: eg.fechaProgramacion || eg.fecha,
+              metodoPago: 'banco',
+            });
+          }}
+          onPagos={(eg) => {
+            setModalListaNF(false);
+            setPayModal({ invoiceId: eg.id, proveedor: eg.proveedor, folio: eg.folio, total: eg.total, moneda: eg.moneda || currency });
+          }}
+          onEliminar={(eg) => {
+            if (!confirm(`¿Eliminar el egreso ${eg.folio} (${eg.concepto || eg.proveedor})?\n\nEsta acción no se puede deshacer.`)) return;
+            setInvoices(prev => ({ ...prev, [eg.moneda || currency]: (prev[eg.moneda || currency] || []).filter(i => i.id !== eg.id) }));
+            deleteInvoiceDB(eg.id);
+          }}
+        />
+      )}
       {modalSup && <SupplierModal/>}
 
       {/* Delete confirmation modal */}
