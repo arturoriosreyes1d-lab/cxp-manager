@@ -2747,7 +2747,7 @@ export default function CxpApp({ user, onLogout }) {
                   <>
                     <button onClick={()=>setModalEgreso({
                       _esNuevo: true, _yaPagado: true,
-                      fecha: today(), categoriaEgreso: 'Nómina', segmentoEgreso: '',
+                      fecha: today(), categoriaEgreso: '', segmentoEgreso: '',
                       concepto: '', total: '', moneda: currency,
                       fechaProgramacion: today(), metodoPago: 'banco', notas: '',
                     })}
@@ -2776,7 +2776,7 @@ export default function CxpApp({ user, onLogout }) {
                   <>
                     <button onClick={()=>setModalEgreso({
                       _esNuevo: true, _yaPagado: true,
-                      fecha: today(), categoriaEgreso: 'Nómina', segmentoEgreso: '',
+                      fecha: today(), categoriaEgreso: '', segmentoEgreso: '',
                       concepto: '', total: '', moneda: currency,
                       fechaProgramacion: today(), metodoPago: 'banco', notas: '',
                     })}
@@ -6433,9 +6433,14 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
   /* ── Egreso No Facturado Modal ──────────────────────────────────── */
   const EgresoModal = () => {
-    const [form, setForm] = useState({...modalEgreso});
+    const [form, setForm] = useState({
+      ...modalEgreso,
+      // Si la categoría inicial no existe en clases (caso default 'Nómina'), usar la primera disponible
+      categoriaEgreso: (modalEgreso.categoriaEgreso && clases.includes(modalEgreso.categoriaEgreso))
+        ? modalEgreso.categoriaEgreso
+        : (clases[0] || ''),
+    });
     const set = (k, v) => setForm(f => ({...f, [k]: v}));
-    const CATEGORIAS = ['Nómina', 'Comisión Bancaria', 'Impuesto', 'Renta', 'Servicios', 'Otro'];
     const editando = !form._esNuevo;
     return (
       <ModalShell title={editando ? "Editar Egreso No Facturado" : "💵 Nuevo Egreso No Facturado"} onClose={() => setModalEgreso(null)}>
@@ -6451,9 +6456,10 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             <input value={form.concepto} onChange={e => set('concepto', e.target.value)}
               placeholder="Ej: Sueldos y salarios Operadores" style={inputStyle} autoFocus/>
           </Field>
-          <Field label="Categoría">
+          <Field label="Clasificación">
             <select value={form.categoriaEgreso} onChange={e => set('categoriaEgreso', e.target.value)} style={inputStyle}>
-              {CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
+              {clases.length === 0 && <option value="">— Sin clasificaciones configuradas —</option>}
+              {clases.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </Field>
           <Field label="Segmento / Rubro">
@@ -6497,7 +6503,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         </div>
         <div style={{display:'flex',justifyContent:'space-between',gap:10,marginTop:24,alignItems:'center'}}>
           {!editando ? (
-            <button onClick={() => { setModalEgreso(null); setModalImportarEgresos({ rows: [], categoriaEgreso: 'Nómina', metodoPago: 'banco', fechaPago: today(), moneda: currency, _yaPagado: true }); }}
+            <button onClick={() => { setModalEgreso(null); setModalImportarEgresos({ rows: [], categoriaEgreso: '', metodoPago: 'banco', fechaPago: today(), moneda: currency, _yaPagado: true }); }}
               style={{...btnStyle, background:'#1976D2', padding:'9px 16px', fontSize:13}}>
               📥 Importar varios desde Excel
             </button>
@@ -6516,41 +6522,92 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     const [form, setForm] = useState({...modalImportarEgresos});
     const [textoPegado, setTextoPegado] = useState('');
     const set = (k, v) => setForm(f => ({...f, [k]: v}));
-    const CATEGORIAS = ['Nómina', 'Comisión Bancaria', 'Impuesto', 'Renta', 'Servicios', 'Otro'];
 
-    // Parsear texto pegado del Excel: cada línea = una fila tab/coma separada
-    // Esperamos: Segmento  Concepto  Monto  [Notas]
-    const parsearTexto = (txt) => {
-      const lineas = txt.split('\n').map(l => l.trim()).filter(l => l);
+    // Detecta columnas a partir de un array de cells de la primera fila
+    // Devuelve { idxSegmento, idxEgreso, idxMonto, idxConcepto, hayHeader }
+    const detectarColumnas = (firstRow) => {
+      const norm = (s) => String(s || '').toUpperCase().trim();
+      let idxSegmento = -1, idxEgreso = -1, idxMonto = -1, idxConcepto = -1;
+      firstRow.forEach((cel, i) => {
+        const c = norm(cel);
+        if (c === 'SEGMENTO' || c === 'RUBRO') idxSegmento = i;
+        else if (c === 'EGRESOS' || c === 'EGRESO' || c === 'BENEFICIARIO' || c === 'PROVEEDOR') idxEgreso = i;
+        else if (c === 'MONTO' || c === 'IMPORTE' || c === 'CANTIDAD') idxMonto = i;
+        else if (c === 'CONCEPTO' || c === 'NOTAS' || c === 'DESCRIPCION' || c === 'DESCRIPCIÓN') idxConcepto = i;
+      });
+      const hayHeader = (idxSegmento !== -1 || idxEgreso !== -1 || idxMonto !== -1 || idxConcepto !== -1);
+      // Si no detectamos headers, asumir orden por defecto: 0=SEGMENTO, 1=EGRESO, 2=MONTO, 3=CONCEPTO
+      if (!hayHeader) { idxSegmento = 0; idxEgreso = 1; idxMonto = 2; idxConcepto = 3; }
+      return { idxSegmento, idxEgreso, idxMonto, idxConcepto, hayHeader };
+    };
+
+    // Parsear filas en formato array-of-arrays.
+    // Mapeo: SEGMENTO→segmento, EGRESOS→concepto (principal), MONTO→monto, CONCEPTO→notas
+    const parsearFilas = (filas) => {
+      if (!filas || filas.length === 0) return [];
+      const cols = detectarColumnas(filas[0]);
+      const datos = cols.hayHeader ? filas.slice(1) : filas;
       const rows = [];
-      lineas.forEach(linea => {
-        // Soporta tab, múltiples espacios, o ;  como separador
-        const partes = linea.split(/\t|;/).map(p => p.trim()).filter(p => p);
-        if (partes.length < 3) return;
-        // Detectar columnas: segmento, concepto, monto, [notas]
-        // Asumimos formato estándar: Segmento Concepto Monto [Notas]
-        let segmento = '', concepto = '', monto = '', notas = '';
-        if (partes.length >= 4) {
-          [segmento, concepto, monto, notas] = partes;
-        } else if (partes.length === 3) {
-          [segmento, concepto, monto] = partes;
-        }
-        // Limpiar el monto: quitar $, comas, espacios
-        const montoNum = parseFloat(String(monto).replace(/[\$,\s]/g, '')) || 0;
+      datos.forEach(fila => {
+        if (!fila || fila.length === 0) return;
+        const segmento = String(fila[cols.idxSegmento] ?? '').trim();
+        const concepto = String(fila[cols.idxEgreso] ?? '').trim();        // EGRESOS → concepto principal
+        const montoRaw = String(fila[cols.idxMonto] ?? '').trim();
+        const notas    = String(fila[cols.idxConcepto] ?? '').trim();      // CONCEPTO → notas
+        const montoNum = parseFloat(montoRaw.replace(/[\$,\s]/g, '')) || 0;
         if (montoNum <= 0 || !concepto) return;
         rows.push({ segmento, concepto, monto: montoNum, notas });
       });
       return rows;
     };
 
+    // Parsear texto pegado (TAB-separado, fallback a punto y coma)
+    const parsearTexto = (txt) => {
+      const lineas = txt.split('\n').map(l => l).filter(l => l.trim());
+      const filas = lineas.map(l => l.split(/\t|;/).map(p => p.trim()));
+      return parsearFilas(filas);
+    };
+
     const handleParsear = () => {
       const rows = parsearTexto(textoPegado);
-      if (rows.length === 0) { alert('No se detectaron filas válidas. Asegúrate de que cada línea tenga: Segmento → Concepto → Monto [→ Notas] separados por tabulador.'); return; }
+      if (rows.length === 0) {
+        alert('No se detectaron filas válidas.\n\nFormato esperado (4 columnas TAB-separadas):\nSEGMENTO    EGRESOS    MONTO    CONCEPTO\n\nEjemplo:\nTraslados    Konfio Banco    742130    EDO CTA 14 MZO AL 14 ABR');
+        return;
+      }
       set('rows', rows);
+    };
+
+    // Importar archivo .xlsx
+    const handleArchivo = (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const data = new Uint8Array(ev.target.result);
+          const wb = XLSX.read(data, { type: 'array' });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const filas = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+          // Filtrar filas completamente vacías
+          const filasNoVacias = filas.filter(f => f.some(c => String(c || '').trim()));
+          const rows = parsearFilas(filasNoVacias);
+          if (rows.length === 0) {
+            alert('No se detectaron filas válidas en el archivo.');
+            return;
+          }
+          set('rows', rows);
+        } catch (err) {
+          console.error(err);
+          alert('Error al leer el archivo: ' + err.message);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+      e.target.value = ''; // reset para poder subir el mismo archivo otra vez
     };
 
     const handleGuardarTodos = async () => {
       if (form.rows.length === 0) { alert('No hay filas para importar'); return; }
+      if (!form.categoriaEgreso) { alert('Selecciona una clasificación para todos los egresos'); return; }
       const ya = !!form._yaPagado;
       // Generar todos los egresos uno por uno
       let folioBase = (() => {
@@ -6606,14 +6663,26 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     return (
       <ModalShell title="📥 Importar Egresos No Facturados" onClose={() => setModalImportarEgresos(null)}>
         <div style={{background:'#E3F2FD',border:'1px solid #90CAF9',borderRadius:8,padding:'10px 14px',marginBottom:16,fontSize:12,color:'#0D47A1'}}>
-          <b>📋 Cómo importar:</b> Copia y pega las celdas de tu Excel (las columnas se separan con TAB).<br/>
-          <b>Formato esperado:</b> <code>Segmento [TAB] Concepto [TAB] Monto [TAB] Notas (opcional)</code>
+          <b>📋 Formato esperado (4 columnas):</b><br/>
+          <code style={{display:'inline-block',marginTop:4}}>SEGMENTO &nbsp;|&nbsp; EGRESOS &nbsp;|&nbsp; MONTO &nbsp;|&nbsp; CONCEPTO</code><br/>
+          <span style={{fontSize:11,opacity:0.85}}>
+            <b>EGRESOS</b> = beneficiario o descripción corta (ej: <i>Konfio Banco</i>) · <b>CONCEPTO</b> = notas (ej: <i>EDO CTA 14 MZO AL 14 ABR</i>)<br/>
+            Si la primera fila tiene los encabezados, se detectan automáticamente. Puedes pegar texto o subir un archivo .xlsx.
+          </span>
         </div>
         {form.rows.length === 0 ? (
           <>
-            <Field label="Pegar datos del Excel">
+            {/* Botón para subir archivo .xlsx */}
+            <div style={{display:'flex',gap:10,marginBottom:14,alignItems:'center'}}>
+              <label style={{...btnStyle, background:'#00897B', padding:'9px 18px', cursor:'pointer', display:'inline-block'}}>
+                📁 Subir archivo .xlsx
+                <input type="file" accept=".xlsx,.xls" onChange={handleArchivo} style={{display:'none'}}/>
+              </label>
+              <span style={{color:C.muted,fontSize:12}}>o pega los datos abajo:</span>
+            </div>
+            <Field label="Pegar datos del Excel (TAB-separadas)">
               <textarea value={textoPegado} onChange={e => setTextoPegado(e.target.value)}
-                placeholder={`Transporte\tSueldos y salarios Operadores\t83535.94\tNOM 2DA QNA ABR\nTAS\tSueldos y salarios Representantes\t71023.80\tNOM 2DA QNA ABR\n...`}
+                placeholder={`SEGMENTO\tEGRESOS\tMONTO\tCONCEPTO\nTraslados\tKonfio Banco\t742130\tEDO CTA 14 MZO AL 14 ABR\nNómina\tSueldos Operadores\t83535.94\tNOM 2DA QNA ABR\n...`}
                 style={{...inputStyle, minHeight: 180, fontFamily: 'monospace', fontSize: 12, whiteSpace: 'pre'}}/>
             </Field>
             <div style={{textAlign:'right',marginTop:14}}>
@@ -6625,9 +6694,10 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         ) : (
           <>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:14,marginBottom:14}}>
-              <Field label="Categoría (todos)">
+              <Field label="Clasificación (todos)">
                 <select value={form.categoriaEgreso} onChange={e => set('categoriaEgreso', e.target.value)} style={inputStyle}>
-                  {CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
+                  <option value="">— Seleccionar —</option>
+                  {clases.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </Field>
               <Field label="Fecha de pago">
