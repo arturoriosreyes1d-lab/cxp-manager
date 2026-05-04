@@ -3616,17 +3616,33 @@ export default function CxpApp({ user, onLogout }) {
             const metodoPrincipal = Object.keys(metodosEstefacha).reduce((a, b) => 
               metodosEstefacha[a] > metodosEstefacha[b] ? a : b, 'banco');
             
-            const detalleFactura = {
-              serie: factura.serie || '',
-              folio: factura.folio || '',
-              concepto: factura.concepto || '',
-              pagoHoy: totalPagoHoy,
-              estado,
-              metodoPago: metodoPrincipal,
-              pagoBanco: metodosEstefacha.banco || 0,
-              pagoTDC:   metodosEstefacha.tdc   || 0,
-              pagoOtro:  metodosEstefacha.otro  || 0,
-            };
+            const detalleFactura = esEgresoNF
+              ? {
+                  // Para egresos NF: el "folio" muestra el beneficiario (Konfio Banco)
+                  // y el "concepto" muestra las notas reales (EDO CTA 14 MZO AL 14 ABR)
+                  serie: '',
+                  folio: factura.proveedor || factura.concepto || '',  // beneficiario
+                  concepto: factura.notas || factura.concepto || '',   // descripción real
+                  pagoHoy: totalPagoHoy,
+                  estado,
+                  metodoPago: metodoPrincipal,
+                  pagoBanco: metodosEstefacha.banco || 0,
+                  pagoTDC:   metodosEstefacha.tdc   || 0,
+                  pagoOtro:  metodosEstefacha.otro  || 0,
+                  esEgresoNF: true,
+                }
+              : {
+                  serie: factura.serie || '',
+                  folio: factura.folio || '',
+                  concepto: factura.concepto || '',
+                  pagoHoy: totalPagoHoy,
+                  estado,
+                  metodoPago: metodoPrincipal,
+                  pagoBanco: metodosEstefacha.banco || 0,
+                  pagoTDC:   metodosEstefacha.tdc   || 0,
+                  pagoOtro:  metodosEstefacha.otro  || 0,
+                  esEgresoNF: false,
+                };
             if (pagosHoy.has(proveedorKey)) {
               const ex = pagosHoy.get(proveedorKey);
               ex.pagoHoy += totalPagoHoy;
