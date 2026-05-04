@@ -232,7 +232,7 @@ export default function EgresosNFModal({
         {/* Header */}
         <div style={{ padding: "16px 22px", borderBottom: "1px solid #E5E7EB", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#FFF8F8" }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#C62828" }}>💵 Egresos No Facturados</h2>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#C62828" }}>💵 Otros Pagos</h2>
             <p style={{ margin: "2px 0 0", fontSize: 12, color: "#6B7280" }}>
               Pagos como nómina, comisiones, impuestos, etc. que no tienen factura formal
             </p>
@@ -276,7 +276,7 @@ export default function EgresosNFModal({
               <div style={{ fontSize: 20, fontWeight: 800, color: "#37474F", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
                 {kpis.total}
               </div>
-              <div style={{ fontSize: 10, color: "#9E9E9E", marginTop: 2 }}>Egresos NF totales</div>
+              <div style={{ fontSize: 10, color: "#9E9E9E", marginTop: 2 }}>Otros pagos totales</div>
             </div>
           </div>
 
@@ -313,7 +313,7 @@ export default function EgresosNFModal({
 
           {/* Toolbar: acciones + búsqueda */}
           <div style={{ display: "flex", gap: 10, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
-            <button onClick={onNuevo} style={btnPrimary}>+ Nuevo Egreso NF</button>
+            <button onClick={onNuevo} style={btnPrimary}>+ Nuevo Otro Pago</button>
             <button onClick={onImportar} style={btnSecondary}>📥 Importar Excel</button>
             <div style={{ flex: 1, minWidth: 200, position: "relative" }}>
               <input
@@ -372,7 +372,7 @@ export default function EgresosNFModal({
                     <td colSpan={8} style={{ padding: "32px 16px", textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>
                       {busqueda ? `No se encontraron egresos NF que coincidan con "${busqueda}"` : "No hay egresos no facturados registrados aún"}
                       <div style={{ marginTop: 10 }}>
-                        <button onClick={onNuevo} style={{ ...btnPrimary, fontSize: 12 }}>+ Crear el primer Egreso NF</button>
+                        <button onClick={onNuevo} style={{ ...btnPrimary, fontSize: 12 }}>+ Crear el primer Otro Pago</button>
                       </div>
                     </td>
                   </tr>

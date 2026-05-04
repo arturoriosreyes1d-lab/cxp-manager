@@ -918,7 +918,7 @@ export default function CxpApp({ user, onLogout }) {
         {/* Folio — red if duplicate; badge NF si es Egreso No Facturado */}
         <td style={{padding:"11px 8px",background:isDupe?"#FFEBEE":(inv.tipo==='EgresoNF'?"#FFF8F8":"transparent"),color:isDupe?C.danger:C.text,fontWeight:isDupe?700:600,fontSize:14,borderLeft:isDupe?`3px solid ${C.danger}`:(inv.tipo==='EgresoNF'?"3px solid #C62828":"none")}}>
           {inv.tipo === 'EgresoNF' && (
-            <span title="Egreso No Facturado" style={{display:'inline-block',background:'#C62828',color:'#fff',padding:'1px 6px',borderRadius:4,fontSize:9,fontWeight:800,marginRight:6,verticalAlign:'middle'}}>NF</span>
+            <span title="Otro Pago (sin factura)" style={{display:'inline-block',background:'#C62828',color:'#fff',padding:'1px 6px',borderRadius:4,fontSize:9,fontWeight:800,marginRight:6,verticalAlign:'middle'}}>NF</span>
           )}
           {inv.serie}{inv.folio}
           {isDupe && <span style={{fontSize:11,marginLeft:4}} title="Folio duplicado">⚠️</span>}
@@ -2693,7 +2693,7 @@ export default function CxpApp({ user, onLogout }) {
               style={{...selectStyle,width:160,borderColor:filtroTipo!=='todos'?'#C62828':C.border,color:filtroTipo!=='todos'?'#C62828':C.text,fontWeight:filtroTipo!=='todos'?700:400,flex:"0 0 auto"}}>
               <option value="todos">📋 Todos los tipos</option>
               <option value="facturas">📄 Solo Facturas</option>
-              <option value="egresos">💵 Solo Egresos NF</option>
+              <option value="egresos">💵 Solo Otros Pagos</option>
             </select>
 
             {(()=>{
@@ -2749,7 +2749,7 @@ export default function CxpApp({ user, onLogout }) {
                   <>
                     <button onClick={()=>setModalListaNF(true)}
                       style={{padding:"7px 14px",fontSize:13,whiteSpace:"nowrap",border:`1px solid #C62828`,borderRadius:10,background:"#FFEBEE",color:"#C62828",cursor:"pointer",fontWeight:700,fontFamily:"inherit"}}>
-                      💵 Egresos NF
+                      💵 Otros Pagos
                     </button>
                     <button onClick={()=>setModalInv({tipo:"Factura",fecha:today(),serie:"",folio:"",uuid:"",proveedor:"",clasificacion:clases[0],subtotal:"",iva:"",retIsr:0,retIva:0,total:"",montoPagado:0,concepto:"",diasCredito:30,vencimiento:"",estatus:"Pendiente",fechaProgramacion:"",diasFicticios:0,referencia:"",notas:"",moneda:currency})}
                       style={{...btnStyle,padding:"7px 18px",fontSize:13,whiteSpace:"nowrap"}}>
@@ -2773,7 +2773,7 @@ export default function CxpApp({ user, onLogout }) {
                   <>
                     <button onClick={()=>setModalListaNF(true)}
                       style={{padding:"7px 14px",fontSize:13,whiteSpace:"nowrap",border:`1px solid #C62828`,borderRadius:10,background:"#FFEBEE",color:"#C62828",cursor:"pointer",fontWeight:700,fontFamily:"inherit"}}>
-                      💵 Egresos NF
+                      💵 Otros Pagos
                     </button>
                     <button onClick={()=>setModalInv({tipo:"Factura",fecha:today(),serie:"",folio:"",uuid:"",proveedor:"",clasificacion:clases[0],subtotal:"",iva:"",retIsr:0,retIva:0,total:"",montoPagado:0,concepto:"",diasCredito:30,vencimiento:"",estatus:"Pendiente",fechaProgramacion:"",diasFicticios:0,referencia:"",notas:"",moneda:currency})}
                       style={{...btnStyle,padding:"7px 18px",fontSize:13,whiteSpace:"nowrap"}}>
@@ -3540,7 +3540,7 @@ export default function CxpApp({ user, onLogout }) {
           const proveedorKey = esEgresoNF
             ? `__EGRESOS_NF__-${moneda}`
             : `${factura.proveedor}-${moneda}`;
-          const proveedorDisplay = esEgresoNF ? 'Egresos No Facturados' : factura.proveedor;
+          const proveedorDisplay = esEgresoNF ? 'Otros Pagos' : factura.proveedor;
           
           // Acumular adeudo total del proveedor (solo cuenta el saldo actual real)
           if (saldoFactura > 0) {
@@ -6451,7 +6451,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     const set = (k, v) => setForm(f => ({...f, [k]: v}));
     const editando = !form._esNuevo;
     return (
-      <ModalShell title={editando ? "Editar Egreso No Facturado" : "💵 Nuevo Egreso No Facturado"} onClose={() => setModalEgreso(null)}>
+      <ModalShell title={editando ? "Editar Otro Pago" : "💵 Nuevo Otro Pago"} onClose={() => setModalEgreso(null)}>
         <div style={{background:'#FFEBEE',border:'1px solid #FFCDD2',borderRadius:8,padding:'10px 14px',marginBottom:18,fontSize:12,color:'#B71C1C',display:'flex',alignItems:'center',gap:8}}>
           <span style={{fontSize:18}}>💵</span>
           <div>
@@ -6669,7 +6669,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     };
 
     return (
-      <ModalShell title="📥 Importar Egresos No Facturados" onClose={() => setModalImportarEgresos(null)}>
+      <ModalShell title="📥 Importar Otros Pagos" onClose={() => setModalImportarEgresos(null)}>
         <div style={{background:'#E3F2FD',border:'1px solid #90CAF9',borderRadius:8,padding:'10px 14px',marginBottom:16,fontSize:12,color:'#0D47A1'}}>
           <b>📋 Formato esperado (4 columnas):</b><br/>
           <code style={{display:'inline-block',marginTop:4}}>SEGMENTO &nbsp;|&nbsp; EGRESOS &nbsp;|&nbsp; MONTO &nbsp;|&nbsp; CONCEPTO</code><br/>
