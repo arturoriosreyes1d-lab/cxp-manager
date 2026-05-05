@@ -3222,6 +3222,9 @@ export default function CxpApp({ user, onLogout }) {
     
     // Modal de detalle (drill-down al hacer clic en importes)
     const [detalleModal, setDetalleModal] = useState(null); // { pago, tipo: 'adeudo' | 'pago' }
+    
+    // Modal de importación de Ingresos del Día (estado de cuenta)
+    const [importarIngresosModal, setImportarIngresosModal] = useState(null);
 
     // Edición histórica: solo admin, requiere confirmación
     const [edicionHistoricaHabilitada, setEdicionHistoricaHabilitada] = useState(false);
@@ -4782,7 +4785,10 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
               </div>
             </div>
             {!esConsulta && (
-              <button onClick={agregarIngreso} style={{background:'#1B5E20',color:'#fff',border:'none',padding:'8px 14px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 1px 3px rgba(27,94,32,0.25)'}}>+ Agregar ingreso</button>
+              <div style={{display:'flex',gap:8}}>
+                <button onClick={agregarIngreso} style={{background:'#1B5E20',color:'#fff',border:'none',padding:'8px 14px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 1px 3px rgba(27,94,32,0.25)'}}>+ Agregar ingreso</button>
+                <button onClick={() => setImportarIngresosModal({ open: true, monedaGlobal: 'MXN', archivo: null, textoPegado: '', rows: [] })} style={{background:'#1976D2',color:'#fff',border:'none',padding:'8px 14px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 1px 3px rgba(25,118,210,0.25)'}}>📥 Importar Excel</button>
+              </div>
             )}
           </div>
 
@@ -5458,6 +5464,410 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             </div>
           </div>
         )}
+
+        {/* Modal de importación de Ingresos del Día */}
+        {importarIngresosModal?.open && (() => {
+          const m = importarIngresosModal;
+          const setM = (patch) => setImportarIngresosModal(prev => ({ ...prev, ...patch }));
+          
+          // Helper: detecta columnas en la primera fila del Excel
+          const detectarColsIngreso = (firstRow) => {
+            const norm = (s) => String(s || '').toUpperCase().trim();
+            let idxFecha = -1, idxDescripcion = -1, idxDeposito = -1, idxRetiro = -1, idxConcepto = -1, idxRubro = -1, idxCliente = -1;
+            firstRow.forEach((cel, i) => {
+              const c = norm(cel);
+              if (c === 'FECHA' || c === 'DATE') idxFecha = i;
+              else if (c === 'DESCRIPCION' || c === 'DESCRIPCIÓN' || c === 'DESCRIPTION') idxDescripcion = i;
+              else if (c === 'DEPOSITO' || c === 'DEPOSITOS' || c === 'DEPÓSITO' || c === 'DEPÓSITOS' || c === 'INGRESO' || c === 'INGRESOS' || c === 'ABONO' || c === 'ABONOS') idxDeposito = i;
+              else if (c === 'RETIRO' || c === 'RETIROS' || c === 'CARGO' || c === 'CARGOS') idxRetiro = i;
+              else if (c === 'CONCEPTO' || c === 'CONCEPT') idxConcepto = i;
+              else if (c === 'RUBRO' || c === 'CATEGORIA' || c === 'CATEGORÍA') idxRubro = i;
+              else if (c === 'CLIENTE' || c === 'CLIENTE / PROVEEDOR' || c === 'CLIENTE/PROVEEDOR' || c === 'PROVEEDOR') idxCliente = i;
+            });
+            const hayHeader = idxFecha !== -1 || idxDeposito !== -1 || idxConcepto !== -1 || idxRubro !== -1;
+            if (!hayHeader) {
+              // Fallback: asumir orden A=Fecha, B=Descripcion, C=Depositos, D=Retiros, E=Saldo, F=Concepto, G=Rubro, H=Cliente
+              idxFecha = 0; idxDescripcion = 1; idxDeposito = 2; idxRetiro = 3;
+              idxConcepto = 5; idxRubro = 6; idxCliente = 7;
+            }
+            return { idxFecha, idxDescripcion, idxDeposito, idxRetiro, idxConcepto, idxRubro, idxCliente, hayHeader };
+          };
+          
+          // Helper: parsea fecha (mismo que en Otros Pagos)
+          const parsearFechaIng = (raw) => {
+            if (!raw && raw !== 0) return null;
+            if (raw instanceof Date) {
+              if (isNaN(raw.getTime())) return null;
+              return `${raw.getFullYear()}-${String(raw.getMonth()+1).padStart(2,'0')}-${String(raw.getDate()).padStart(2,'0')}`;
+            }
+            const s = String(raw).trim();
+            if (!s) return null;
+            if (/^\d+(\.\d+)?$/.test(s) && +s > 25569 && +s < 60000) {
+              const dias = Math.floor(+s);
+              const ms = (dias - 25569) * 86400 * 1000;
+              const d = new Date(ms);
+              if (!isNaN(d.getTime())) {
+                return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+              }
+            }
+            const iso = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+            if (iso) return `${iso[1]}-${String(+iso[2]).padStart(2,'0')}-${String(+iso[3]).padStart(2,'0')}`;
+            const dmy = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
+            if (dmy) {
+              const a = +dmy[1], b = +dmy[2];
+              let yyyy = dmy[3];
+              if (yyyy.length === 2) yyyy = (+yyyy > 50 ? '19' : '20') + yyyy;
+              let dd, mm;
+              if (a > 12 && b <= 12)       { dd = a; mm = b; }
+              else if (b > 12 && a <= 12)  { dd = b; mm = a; }
+              else                          { dd = a; mm = b; }
+              if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+              return `${yyyy}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+            }
+            return null;
+          };
+          
+          // Auto-excluir basado en RUBRO o CONCEPTO
+          const debeExcluir = (rubro, concepto) => {
+            const norm = (s) => String(s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            const r = norm(rubro), c = norm(concepto);
+            const palabrasClave = ['INVERSION', 'INVERSIONES', 'TRASPASO', 'TRASPASOS', 'DIVISA', 'DIVISAS', 'CAMBIO DE DIVISA'];
+            for (const p of palabrasClave) {
+              if (r.includes(p) || c.includes(p)) return true;
+            }
+            // Concepto-específico: "RETIRO DE INVERSION", "COMPRA DIVISA", etc.
+            if (c.includes('RETIRO') && (c.includes('INVERSION') || c.includes('FONDO'))) return true;
+            if (c.includes('COMPRA') && c.includes('DIVISA')) return true;
+            if (c.includes('VENTA') && c.includes('DIVISA')) return true;
+            return false;
+          };
+          
+          const cellToStrIng = (v) => {
+            if (v === null || v === undefined) return '';
+            if (v instanceof Date) {
+              if (isNaN(v.getTime())) return '';
+              return `${v.getFullYear()}-${String(v.getMonth()+1).padStart(2,'0')}-${String(v.getDate()).padStart(2,'0')}`;
+            }
+            return String(v).trim();
+          };
+          
+          const parsearFilasIngreso = (filas) => {
+            if (!filas || filas.length === 0) return [];
+            const cols = detectarColsIngreso(filas[0]);
+            const datos = cols.hayHeader ? filas.slice(1) : filas;
+            const result = [];
+            datos.forEach(fila => {
+              if (!fila || fila.length === 0) return;
+              const fechaCelda = cols.idxFecha >= 0 ? fila[cols.idxFecha] : null;
+              let fecha = null;
+              if (fechaCelda instanceof Date) fecha = parsearFechaIng(fechaCelda);
+              else if (fechaCelda !== null && fechaCelda !== undefined && String(fechaCelda).trim()) fecha = parsearFechaIng(String(fechaCelda).trim());
+              const descripcion = cols.idxDescripcion >= 0 ? cellToStrIng(fila[cols.idxDescripcion]) : '';
+              const depositoStr = cols.idxDeposito >= 0 ? cellToStrIng(fila[cols.idxDeposito]) : '';
+              const retiroStr = cols.idxRetiro >= 0 ? cellToStrIng(fila[cols.idxRetiro]) : '';
+              const deposito = parseFloat(depositoStr.replace(/[\$,\s]/g, '')) || 0;
+              const retiro = parseFloat(retiroStr.replace(/[\$,\s]/g, '')) || 0;
+              // Solo nos interesan ingresos (deposito > 0, no retiros)
+              if (deposito <= 0) return;
+              if (retiro > 0) return; // si por error trae retiro, ignorar
+              const concepto = cols.idxConcepto >= 0 ? cellToStrIng(fila[cols.idxConcepto]) : '';
+              const rubro = cols.idxRubro >= 0 ? cellToStrIng(fila[cols.idxRubro]) : '';
+              const cliente = cols.idxCliente >= 0 ? cellToStrIng(fila[cols.idxCliente]) : '';
+              const autoExcluir = debeExcluir(rubro, concepto || descripcion);
+              result.push({
+                fecha: fecha || fechaSeleccionada,
+                descripcion,
+                concepto: concepto || descripcion.slice(0, 60),
+                rubro: rubro || 'Ingreso',
+                cliente,
+                monto: deposito,
+                incluir: !autoExcluir,
+                autoExcluido: autoExcluir,
+              });
+            });
+            return result;
+          };
+          
+          const handleArchivoIngreso = (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+              try {
+                const data = new Uint8Array(ev.target.result);
+                const wb = XLSX.read(data, { type: 'array', cellDates: true });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const filas = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+                const filasNoVacias = filas.filter(f => f.some(c => {
+                  if (c instanceof Date) return true;
+                  return String(c || '').trim();
+                }));
+                const rows = parsearFilasIngreso(filasNoVacias);
+                if (rows.length === 0) {
+                  alert('No se detectaron ingresos válidos en el archivo.\n\nAsegúrate que tenga columnas: Fecha, Depositos (con valor > 0), y opcionalmente CONCEPTO/RUBRO/CLIENTE.');
+                  return;
+                }
+                setM({ rows });
+              } catch (err) {
+                console.error(err);
+                alert('Error al leer el archivo: ' + err.message);
+              }
+            };
+            reader.readAsArrayBuffer(file);
+            e.target.value = '';
+          };
+          
+          const handleParsearTextoIngreso = () => {
+            if (!m.textoPegado.trim()) return;
+            const lineas = m.textoPegado.split('\n').map(l => l).filter(l => l.trim());
+            const filas = lineas.map(l => l.split(/\t|;/).map(p => p.trim()));
+            const rows = parsearFilasIngreso(filas);
+            if (rows.length === 0) {
+              alert('No se detectaron ingresos válidos en el texto pegado.');
+              return;
+            }
+            setM({ rows });
+          };
+          
+          const descargarPlantillaIng = () => {
+            const data = [
+              ['Fecha', 'Descripción', 'Depósitos', 'Retiros', 'Saldo', 'CONCEPTO', 'RUBRO', 'CLIENTE / PROVEEDOR'],
+              ['29/04/2026', 'Ventas netas tarjetas Sucursal: 342', 16310.00, '', 29309.29, 'HOSPEDAJE Y TRASLADO', 'CLIENTE', 'PUBLICO EN GENERAL'],
+              ['29/04/2026', 'Abono Interbancario Sucursal: 859', 9187.53, '', 38496.82, 'BOLETO, VTA DE CUBA', 'CLIENTE', 'OPERADORA PAYPAL'],
+              ['29/04/2026', 'Traspaso Ref Sucursal: 519', 100000.00, '', 138496.82, 'RETIRO DE INVERSION', 'INVERSION', 'INVERSION'],
+              ['', '', '', '', '', '', '', ''],
+            ];
+            const ws = XLSX.utils.aoa_to_sheet(data);
+            ws['!cols'] = [{ wch: 12 }, { wch: 40 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 28 }, { wch: 16 }, { wch: 24 }];
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Ingresos');
+            XLSX.writeFile(wb, 'Plantilla_Ingresos_Estado_Cuenta.xlsx');
+          };
+          
+          const toggleIncluir = (idx) => {
+            setM({ rows: m.rows.map((r, i) => i === idx ? { ...r, incluir: !r.incluir } : r) });
+          };
+          
+          const updateRow = (idx, campo, valor) => {
+            setM({ rows: m.rows.map((r, i) => i === idx ? { ...r, [campo]: valor } : r) });
+          };
+          
+          const handleGuardar = async () => {
+            const aImportar = m.rows.filter(r => r.incluir && r.monto > 0);
+            if (aImportar.length === 0) { alert('No hay ingresos seleccionados para importar.'); return; }
+            let creados = 0;
+            for (const r of aImportar) {
+              const ingreso = {
+                empresaId,
+                fecha: r.fecha || fechaSeleccionada,
+                rubro: r.rubro || '',
+                cliente: r.cliente || '',
+                concepto: r.concepto || '',
+                montoMXN: m.monedaGlobal === 'MXN' ? r.monto : 0,
+                montoUSD: m.monedaGlobal === 'USD' ? r.monto : 0,
+                montoEUR: m.monedaGlobal === 'EUR' ? r.monto : 0,
+                orden: ingresosDia.length + creados,
+                confirmado: true,  // todos los importados son reales (ya entraron al banco)
+              };
+              const id = await upsertIngresoDia(ingreso, user?.nombre || 'desconocido');
+              if (id) {
+                setIngresosDia(prev => [...prev, { ...ingreso, id }]);
+                creados++;
+              }
+            }
+            alert(`✅ Se importaron ${creados} ${creados === 1 ? 'ingreso' : 'ingresos'} correctamente.`);
+            setImportarIngresosModal(null);
+          };
+          
+          const totalAImportar = m.rows.filter(r => r.incluir && r.monto > 0).reduce((s, r) => s + r.monto, 0);
+          const countAImportar = m.rows.filter(r => r.incluir && r.monto > 0).length;
+          const countExcluir = m.rows.length - countAImportar;
+          const sym = m.monedaGlobal === 'EUR' ? '€' : '$';
+          const anchoModal = m.rows.length > 0 ? 1300 : 720;
+          
+          return (
+            <div onClick={(e) => { if (e.target === e.currentTarget) setImportarIngresosModal(null); }}
+              style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:14}}>
+              <div style={{background:'#fff',borderRadius:14,width:'100%',maxWidth:anchoModal,maxHeight:'94vh',display:'flex',flexDirection:'column',boxShadow:'0 20px 60px rgba(0,0,0,0.4)'}}>
+                {/* Header */}
+                <div style={{padding:'16px 22px',borderBottom:`1px solid ${C.border}`,display:'flex',justifyContent:'space-between',alignItems:'center',background:'#E8F5E9'}}>
+                  <div>
+                    <h3 style={{margin:0,fontSize:16,fontWeight:800,color:'#1B5E20'}}>📥 Importar Ingresos del Estado de Cuenta</h3>
+                    <p style={{margin:'2px 0 0',fontSize:12,color:'#6B7280'}}>Sube tu Excel con depósitos · se asignan a la fecha de cada fila</p>
+                  </div>
+                  <button onClick={() => setImportarIngresosModal(null)} style={{background:'transparent',border:'none',fontSize:22,cursor:'pointer',color:'#666'}}>×</button>
+                </div>
+                
+                {/* Body */}
+                <div style={{overflow:'auto',padding:18,flex:1}}>
+                  {m.rows.length === 0 ? (
+                    <>
+                      {/* Instrucciones */}
+                      <div style={{background:'#FFFDE7',border:'1px solid #FFE082',borderRadius:8,padding:'12px 14px',marginBottom:16,fontSize:12,color:'#5D4037'}}>
+                        <div style={{fontWeight:700,marginBottom:6,color:'#E65100'}}>📋 ESTRUCTURA DEL EXCEL</div>
+                        <div style={{display:'grid',gridTemplateColumns:'auto 1fr',gap:'4px 10px',fontSize:11}}>
+                          <span style={{fontWeight:700,color:'#1976D2'}}>① Fecha</span>
+                          <span>Fecha del depósito · ej: <i style={{color:C.muted}}>29/04/2026</i></span>
+                          <span style={{fontWeight:700,color:'#9E9E9E'}}>② Descripción</span>
+                          <span>Texto del banco · se guarda como referencia</span>
+                          <span style={{fontWeight:700,color:'#1976D2'}}>③ Depósitos</span>
+                          <span>Monto del ingreso · solo filas con depósito &gt; 0</span>
+                          <span style={{fontWeight:700,color:'#9E9E9E'}}>④ Retiros / Saldo</span>
+                          <span>Se ignoran (no son ingresos)</span>
+                          <span style={{fontWeight:700,color:'#1B5E20'}}>⑤ CONCEPTO</span>
+                          <span>Tu descripción corta · ej: <i style={{color:C.muted}}>HOSPEDAJE Y TRASLADO</i></span>
+                          <span style={{fontWeight:700,color:'#1B5E20'}}>⑥ RUBRO</span>
+                          <span>Categoría · ej: <i style={{color:C.muted}}>CLIENTE, INVERSION, REPROTECCION</i></span>
+                          <span style={{fontWeight:700,color:'#1B5E20'}}>⑦ CLIENTE / PROVEEDOR</span>
+                          <span>Quién pagó · ej: <i style={{color:C.muted}}>PUBLICO EN GENERAL</i></span>
+                        </div>
+                        <div style={{marginTop:8,padding:'6px 10px',background:'#FFF3E0',border:'1px solid #FFCC80',borderRadius:6,fontSize:11}}>
+                          ⚠️ Filas con RUBRO o CONCEPTO que contenga: <b>INVERSION, TRASPASO, DIVISA</b> se auto-excluyen (puedes incluirlas manualmente).
+                        </div>
+                      </div>
+                      
+                      {/* Configuración */}
+                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:14}}>
+                        <div>
+                          <label style={{fontSize:11,fontWeight:700,color:'#374151',display:'block',marginBottom:4,letterSpacing:0.3,textTransform:'uppercase'}}>Moneda del estado de cuenta</label>
+                          <select value={m.monedaGlobal} onChange={e => setM({ monedaGlobal: e.target.value })}
+                            style={{width:'100%',padding:'8px 12px',border:`1px solid ${C.border}`,borderRadius:8,fontSize:13,fontFamily:'inherit',outline:'none'}}>
+                            <option value="MXN">MXN — Pesos</option>
+                            <option value="USD">USD — Dólares</option>
+                            <option value="EUR">EUR — Euros</option>
+                          </select>
+                        </div>
+                        <div style={{display:'flex',alignItems:'flex-end'}}>
+                          <button onClick={descargarPlantillaIng}
+                            style={{background:'transparent',color:'#1976D2',border:'1px solid #1976D2',padding:'8px 14px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',width:'100%'}}>
+                            ⬇ Descargar plantilla .xlsx
+                          </button>
+                        </div>
+                      </div>
+                      
+                      {/* Métodos de importación */}
+                      <div style={{fontSize:11,fontWeight:700,color:'#1A237E',marginBottom:8,letterSpacing:0.3,textTransform:'uppercase'}}>Elegir método de importación</div>
+                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+                        <label style={{background:'#E8F5E9',border:'2px dashed #2E7D32',borderRadius:10,padding:20,textAlign:'center',cursor:'pointer',display:'block'}}>
+                          <div style={{fontSize:32,marginBottom:6}}>📁</div>
+                          <div style={{fontSize:13,fontWeight:700,color:'#1B5E20',marginBottom:4}}>Subir archivo</div>
+                          <div style={{fontSize:11,color:'#388E3C'}}>.xlsx o .xls</div>
+                          <input type="file" accept=".xlsx,.xls" onChange={handleArchivoIngreso} style={{display:'none'}}/>
+                        </label>
+                        <div style={{background:'#E3F2FD',border:'2px dashed #1565C0',borderRadius:10,padding:14}}>
+                          <div style={{textAlign:'center',marginBottom:8}}>
+                            <div style={{fontSize:28}}>✏️</div>
+                            <div style={{fontSize:13,fontWeight:700,color:'#0D47A1'}}>Pegar datos</div>
+                          </div>
+                          <textarea value={m.textoPegado} onChange={e => setM({ textoPegado: e.target.value })}
+                            placeholder={`Fecha\tDescripción\tDepósitos\tRetiros\tSaldo\tCONCEPTO\tRUBRO\tCLIENTE / PROVEEDOR\n29/04/2026\tVentas netas\t16310\t\t29309\tHOSPEDAJE\tCLIENTE\tPUBLICO EN GENERAL`}
+                            style={{width:'100%',minHeight:80,padding:8,border:`1px solid ${C.border}`,borderRadius:6,fontSize:11,fontFamily:'monospace',outline:'none',resize:'vertical',boxSizing:'border-box'}}/>
+                          <button onClick={handleParsearTextoIngreso} disabled={!m.textoPegado.trim()}
+                            style={{marginTop:8,width:'100%',background:m.textoPegado.trim() ? '#1565C0' : '#B0BEC5',color:'#fff',border:'none',padding:'7px 12px',borderRadius:6,fontSize:11,fontWeight:700,cursor:m.textoPegado.trim() ? 'pointer' : 'not-allowed',fontFamily:'inherit'}}>
+                            Procesar texto
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {/* Vista previa */}
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,flexWrap:'wrap',gap:8}}>
+                        <div style={{fontSize:13,fontWeight:700,color:C.navy}}>
+                          📥 Vista previa · {m.rows.length} {m.rows.length === 1 ? 'fila detectada' : 'filas detectadas'}
+                        </div>
+                        <div style={{fontSize:11,display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+                          <span style={{background:'#E8F5E9',color:'#1B5E20',padding:'2px 8px',borderRadius:6,fontWeight:700}}>✅ {countAImportar} a importar</span>
+                          {countExcluir > 0 && <span style={{background:'#FFEBEE',color:'#C62828',padding:'2px 8px',borderRadius:6,fontWeight:700}}>⚠ {countExcluir} excluidas</span>}
+                          <span style={{background:'#E3F2FD',color:'#1565C0',padding:'2px 8px',borderRadius:6,fontWeight:700}}>{m.monedaGlobal}</span>
+                          <button onClick={() => setM({ rows: [] })} style={{background:'transparent',border:'none',color:'#1976D2',cursor:'pointer',fontSize:11,fontWeight:600}}>← Empezar de nuevo</button>
+                        </div>
+                      </div>
+                      
+                      {/* Toolbar selección masiva */}
+                      <div style={{display:'flex',gap:8,marginBottom:8,fontSize:11}}>
+                        <button onClick={() => setM({ rows: m.rows.map(r => ({ ...r, incluir: true })) })}
+                          style={{background:'#E8F5E9',color:'#1B5E20',border:'1px solid #A5D6A7',padding:'5px 10px',borderRadius:6,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>☑️ Incluir todas</button>
+                        <button onClick={() => setM({ rows: m.rows.map(r => ({ ...r, incluir: false })) })}
+                          style={{background:'#FFEBEE',color:'#C62828',border:'1px solid #FFCDD2',padding:'5px 10px',borderRadius:6,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>☐ Excluir todas</button>
+                        <button onClick={() => setM({ rows: m.rows.map(r => ({ ...r, incluir: !r.autoExcluido })) })}
+                          style={{background:'#FFF3E0',color:'#E65100',border:'1px solid #FFCC80',padding:'5px 10px',borderRadius:6,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>↺ Restaurar auto-exclusión</button>
+                      </div>
+                      
+                      {/* Tabla */}
+                      <div style={{border:`1px solid ${C.border}`,borderRadius:8,overflow:'auto',maxHeight:'50vh'}}>
+                        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                          <thead>
+                            <tr style={{background:'#F8FAFC',borderBottom:`2px solid ${C.border}`,position:'sticky',top:0,zIndex:1}}>
+                              <th style={{padding:'8px',width:50,textAlign:'center',color:C.navy,fontWeight:700,fontSize:10,textTransform:'uppercase'}}>Incluir</th>
+                              <th style={{padding:'8px',width:110,textAlign:'left',color:C.navy,fontWeight:700,fontSize:10,textTransform:'uppercase'}}>Fecha</th>
+                              <th style={{padding:'8px',width:130,textAlign:'left',color:C.navy,fontWeight:700,fontSize:10,textTransform:'uppercase'}}>Rubro</th>
+                              <th style={{padding:'8px',width:200,textAlign:'left',color:C.navy,fontWeight:700,fontSize:10,textTransform:'uppercase'}}>Cliente</th>
+                              <th style={{padding:'8px',textAlign:'left',color:C.navy,fontWeight:700,fontSize:10,textTransform:'uppercase'}}>Concepto</th>
+                              <th style={{padding:'8px',width:120,textAlign:'right',color:C.navy,fontWeight:700,fontSize:10,textTransform:'uppercase'}}>Monto</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {m.rows.map((r, i) => {
+                              const excluida = !r.incluir;
+                              return (
+                                <tr key={i} style={{borderBottom:`1px solid ${C.border}`,background: excluida ? '#FAFAFA' : (i % 2 === 0 ? '#fff' : '#FAFBFC'),opacity: excluida ? 0.5 : 1}}>
+                                  <td style={{padding:'5px',textAlign:'center'}}>
+                                    <input type="checkbox" checked={r.incluir} onChange={() => toggleIncluir(i)}
+                                      title={r.autoExcluido && !r.incluir ? 'Auto-excluida (rubro/concepto contiene INVERSION/TRASPASO/DIVISA)' : ''}
+                                      style={{cursor:'pointer',transform:'scale(1.2)'}}/>
+                                  </td>
+                                  <td style={{padding:'4px 6px'}}>
+                                    <input type="date" value={r.fecha || ''} onChange={e => updateRow(i, 'fecha', e.target.value)}
+                                      style={{width:'100%',fontSize:11,padding:'4px',border:`1px solid ${C.border}`,borderRadius:5,fontFamily:'inherit',outline:'none',boxSizing:'border-box'}}/>
+                                  </td>
+                                  <td style={{padding:'4px 6px'}}>
+                                    <input type="text" value={r.rubro} onChange={e => updateRow(i, 'rubro', e.target.value)}
+                                      style={{width:'100%',fontSize:11,padding:'4px 6px',border:`1px solid ${C.border}`,borderRadius:5,fontFamily:'inherit',outline:'none',boxSizing:'border-box'}}/>
+                                  </td>
+                                  <td style={{padding:'4px 6px'}}>
+                                    <input type="text" value={r.cliente} onChange={e => updateRow(i, 'cliente', e.target.value)}
+                                      style={{width:'100%',fontSize:11,padding:'4px 6px',border:`1px solid ${C.border}`,borderRadius:5,fontFamily:'inherit',outline:'none',boxSizing:'border-box'}}/>
+                                  </td>
+                                  <td style={{padding:'4px 6px'}}>
+                                    <input type="text" value={r.concepto} onChange={e => updateRow(i, 'concepto', e.target.value)}
+                                      title={r.descripcion ? `Descripción del banco: ${r.descripcion}` : ''}
+                                      style={{width:'100%',fontSize:11,padding:'4px 6px',border:`1px solid ${C.border}`,borderRadius:5,fontFamily:'inherit',outline:'none',boxSizing:'border-box'}}/>
+                                  </td>
+                                  <td style={{padding:'4px 6px'}}>
+                                    <input type="number" step="0.01" value={r.monto} onChange={e => updateRow(i, 'monto', parseFloat(e.target.value) || 0)}
+                                      style={{width:'100%',fontSize:11,padding:'4px 6px',border:`1px solid ${C.border}`,borderRadius:5,fontFamily:'monospace',outline:'none',textAlign:'right',fontWeight:700,color:'#1B5E20',boxSizing:'border-box'}}/>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr style={{background:'#E8F5E9',borderTop:'2px solid #2E7D32'}}>
+                              <td colSpan={5} style={{padding:'10px',fontWeight:700,color:'#1B5E20'}}>TOTAL A IMPORTAR ({countAImportar} {countAImportar === 1 ? 'fila' : 'filas'} en {m.monedaGlobal})</td>
+                              <td style={{padding:'10px',textAlign:'right',fontFamily:'monospace',fontWeight:800,color:'#1B5E20',fontSize:14}}>{sym}{fmt(totalAImportar)}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                </div>
+                
+                {/* Footer botones */}
+                {m.rows.length > 0 && (
+                  <div style={{padding:'12px 22px',borderTop:`1px solid ${C.border}`,display:'flex',justifyContent:'flex-end',gap:10}}>
+                    <button onClick={() => setImportarIngresosModal(null)} style={{background:'#F1F5F9',color:'#374151',border:'none',padding:'10px 20px',borderRadius:8,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Cancelar</button>
+                    <button onClick={handleGuardar} disabled={countAImportar === 0}
+                      style={{background:countAImportar > 0 ? '#1B5E20' : '#B0BEC5',color:'#fff',border:'none',padding:'10px 20px',borderRadius:8,fontSize:13,fontWeight:700,cursor:countAImportar > 0 ? 'pointer' : 'not-allowed',fontFamily:'inherit'}}>
+                      💾 Guardar {countAImportar} {countAImportar === 1 ? 'ingreso' : 'ingresos'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Modal de detalle de importe (drill-down) */}
         {detalleModal && (() => {
