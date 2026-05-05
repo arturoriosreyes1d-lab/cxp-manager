@@ -3533,7 +3533,7 @@ export default function CxpApp({ user, onLogout }) {
         facturas.forEach(factura => {
           if (factura.empresaId !== empresaId) return;
           
-          const saldoFactura = (+factura.total || 0) - (+factura.montoPagado || 0);
+          const saldoActual = (+factura.total || 0) - (+factura.montoPagado || 0);
           
           // Buscar pagos programados para fechaRef (puede ser hoy o histórico)
           const pagosProgFecha = payments.filter(p => 
@@ -3551,10 +3551,17 @@ export default function CxpApp({ user, onLogout }) {
             p.fechaPago === fechaRef
           );
           
+          // SALDO INICIAL DEL DÍA: lo que se debía cuando empezó este día.
+          // = saldo actual + pagos realizados hoy (porque esos pagos redujeron el saldo durante el día)
+          // Esto hace que el "Importe Adeudado" sea consistente independientemente
+          // de si ya aplicaste o no los pagos del día.
+          const totalRealizadosFecha = pagosRealizadosFecha.reduce((s, p) => s + (+p.monto || 0), 0);
+          const saldoInicialDia = saldoActual + totalRealizadosFecha;
+          
           // Filtro: solo descartar si NO hay pagos en esta fecha Y la factura está pagada
           // (caso típico: factura pagada hace tiempo, ningún pago hoy → no nos interesa)
           const tienePagoEnFecha = pagosProgFecha.length > 0 || pagosRealizadosFecha.length > 0;
-          if (saldoFactura <= 0 && !tienePagoEnFecha) return;
+          if (saldoActual <= 0 && !tienePagoEnFecha) return;
           
           // Egresos No Facturados se agrupan todos bajo "Otros Pagos" (no por concepto)
           const esEgresoNF = factura.tipo === 'EgresoNF';
@@ -3563,17 +3570,18 @@ export default function CxpApp({ user, onLogout }) {
             : `${factura.proveedor}-${moneda}`;
           const proveedorDisplay = esEgresoNF ? 'Otros Pagos' : factura.proveedor;
           
-          // Acumular adeudo total del proveedor (solo cuenta el saldo actual real)
-          if (saldoFactura > 0) {
+          // Acumular adeudo del DÍA del proveedor (saldo inicial del día)
+          // Cuenta tanto facturas con saldo actual > 0 como las pagadas hoy (que tenían saldo a inicio del día)
+          if (saldoInicialDia > 0) {
             if (adeudoTotal.has(proveedorKey)) {
               const ex = adeudoTotal.get(proveedorKey);
-              ex.adeudado += saldoFactura;
+              ex.adeudado += saldoInicialDia;
               ex.facturasActivas += 1;
             } else {
               adeudoTotal.set(proveedorKey, {
                 proveedor: proveedorDisplay,
                 moneda,
-                adeudado: saldoFactura,
+                adeudado: saldoInicialDia,
                 facturasActivas: 1
               });
             }
@@ -5460,16 +5468,29 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             facturasMostrar = (invoices[pago.moneda] || [])
               .filter(f => f.empresaId === empresaId)
               .filter(f => esGrupoNF ? f.tipo === 'EgresoNF' : (f.proveedor === pago.proveedor && f.tipo !== 'EgresoNF'))
-              .filter(f => ((+f.total || 0) - (+f.montoPagado || 0)) > 0)
-              .map(f => ({
-                folio: esGrupoNF ? (f.proveedor || f.concepto || f.folio) : `${f.serie || ''}${f.folio || ''}`,
-                fecha: f.fecha,
-                total: +f.total || 0,
-                pagado: +f.montoPagado || 0,
-                saldo: (+f.total || 0) - (+f.montoPagado || 0),
-                concepto: esGrupoNF ? (f.notas || '') : (f.concepto || ''),
-                esEgresoNF: f.tipo === 'EgresoNF',
-              }))
+              .map(f => {
+                const saldoActual = (+f.total || 0) - (+f.montoPagado || 0);
+                // Pagos realizados HOY a esta factura
+                const pagadoHoy = payments
+                  .filter(p => p.invoiceId === f.id && p.tipo === 'realizado' && p.fechaPago === fechaSeleccionada)
+                  .reduce((s, p) => s + (+p.monto || 0), 0);
+                // Saldo inicial del día = saldo actual + lo que se pagó hoy
+                const saldoInicial = saldoActual + pagadoHoy;
+                // Pagado antes de hoy = total pagado − pagado hoy
+                const pagadoAntes = (+f.montoPagado || 0) - pagadoHoy;
+                return {
+                  folio: esGrupoNF ? (f.proveedor || f.concepto || f.folio) : `${f.serie || ''}${f.folio || ''}`,
+                  fecha: f.fecha,
+                  total: +f.total || 0,
+                  pagadoAntes: Math.max(0, pagadoAntes),
+                  pagadoHoy,
+                  saldo: saldoInicial,        // saldo inicio del día (antes de pagos de hoy)
+                  saldoActual,                // saldo después de pagos de hoy
+                  concepto: esGrupoNF ? (f.notas || '') : (f.concepto || ''),
+                  esEgresoNF: f.tipo === 'EgresoNF',
+                };
+              })
+              .filter(f => f.saldo > 0)         // mostrar solo las que tenían saldo a inicio del día
               .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
           } else {
             facturasMostrar = (pago.detalleFacturas || []).map(d => ({
@@ -5528,8 +5549,9 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                               <>
                                 <th style={{padding:'8px 12px',textAlign:'left',color:C.navy,fontWeight:700,fontSize:11,textTransform:'uppercase'}}>Fecha</th>
                                 <th style={{padding:'8px 12px',textAlign:'right',color:C.navy,fontWeight:700,fontSize:11,textTransform:'uppercase'}}>Total</th>
-                                <th style={{padding:'8px 12px',textAlign:'right',color:C.navy,fontWeight:700,fontSize:11,textTransform:'uppercase'}}>Pagado</th>
-                                <th style={{padding:'8px 12px',textAlign:'right',color:C.navy,fontWeight:700,fontSize:11,textTransform:'uppercase'}}>Saldo</th>
+                                <th style={{padding:'8px 12px',textAlign:'right',color:C.navy,fontWeight:700,fontSize:11,textTransform:'uppercase'}} title="Pagado antes de este día">Pagado antes</th>
+                                <th style={{padding:'8px 12px',textAlign:'right',color:C.navy,fontWeight:700,fontSize:11,textTransform:'uppercase'}} title="Pagado en este día">Pagado hoy</th>
+                                <th style={{padding:'8px 12px',textAlign:'right',color:C.navy,fontWeight:700,fontSize:11,textTransform:'uppercase'}} title="Saldo al inicio del día (lo que se debía)">Adeudado</th>
                               </>
                             ) : (
                               <>
@@ -5549,7 +5571,8 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                                 <>
                                   <td style={{padding:'8px 12px',color:C.muted,whiteSpace:'nowrap'}}>{f.fecha || '—'}</td>
                                   <td style={{padding:'8px 12px',textAlign:'right',fontFamily:'monospace',color:C.text}}>{sym}{fmt(f.total)}</td>
-                                  <td style={{padding:'8px 12px',textAlign:'right',fontFamily:'monospace',color:'#1B5E20'}}>{sym}{fmt(f.pagado)}</td>
+                                  <td style={{padding:'8px 12px',textAlign:'right',fontFamily:'monospace',color:'#1B5E20'}}>{sym}{fmt(f.pagadoAntes)}</td>
+                                  <td style={{padding:'8px 12px',textAlign:'right',fontFamily:'monospace',color: f.pagadoHoy > 0 ? '#1565C0' : '#9CA3AF',fontWeight: f.pagadoHoy > 0 ? 700 : 400}}>{sym}{fmt(f.pagadoHoy)}</td>
                                   <td style={{padding:'8px 12px',textAlign:'right',fontFamily:'monospace',fontWeight:700,color:'#0D47A1'}}>{sym}{fmt(f.saldo)}</td>
                                 </>
                               ) : (
@@ -5578,7 +5601,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                         </tbody>
                         <tfoot>
                           <tr style={{background: tipo === 'adeudo' ? '#E3F2FD' : '#FFEBEE',borderTop:`2px solid ${tipo === 'adeudo' ? '#1976D2' : '#C62828'}`}}>
-                            <td colSpan={tipo === 'adeudo' ? 5 : 2} style={{padding:'10px 12px',fontWeight:700,color: tipo === 'adeudo' ? '#0D47A1' : '#C62828'}}>TOTAL</td>
+                            <td colSpan={tipo === 'adeudo' ? 6 : 2} style={{padding:'10px 12px',fontWeight:700,color: tipo === 'adeudo' ? '#0D47A1' : '#C62828'}}>TOTAL</td>
                             <td style={{padding:'10px 12px',textAlign:'right',fontFamily:'monospace',fontWeight:800,color: tipo === 'adeudo' ? '#0D47A1' : '#C62828',fontSize:13}}>
                               {sym}{fmt(totalCol)}
                             </td>
