@@ -6692,10 +6692,10 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     };
 
     // Detecta columnas a partir de un array de cells de la primera fila
-    // Devuelve { idxSegmento, idxEgreso, idxMonto, idxConcepto, idxFecha, hayHeader }
+    // Devuelve { idxSegmento, idxEgreso, idxMonto, idxConcepto, idxFecha, idxMoneda, hayHeader }
     const detectarColumnas = (firstRow) => {
       const norm = (s) => String(s || '').toUpperCase().trim();
-      let idxSegmento = -1, idxEgreso = -1, idxMonto = -1, idxConcepto = -1, idxFecha = -1;
+      let idxSegmento = -1, idxEgreso = -1, idxMonto = -1, idxConcepto = -1, idxFecha = -1, idxMoneda = -1;
       firstRow.forEach((cel, i) => {
         const c = norm(cel);
         if (c === 'SEGMENTO' || c === 'RUBRO') idxSegmento = i;
@@ -6703,15 +6703,35 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         else if (c === 'MONTO' || c === 'IMPORTE' || c === 'CANTIDAD') idxMonto = i;
         else if (c === 'CONCEPTO' || c === 'NOTAS' || c === 'DESCRIPCION' || c === 'DESCRIPCIÓN') idxConcepto = i;
         else if (c === 'FECHA' || c === 'DATE' || c === 'FECHA_PAGO' || c === 'FECHA PAGO' || c === 'DIA' || c === 'DÍA') idxFecha = i;
+        else if (c === 'MONEDA' || c === 'MONEDAS' || c === 'CURRENCY' || c === 'DIVISA' || c === 'DIVISAS') idxMoneda = i;
       });
-      const hayHeader = (idxSegmento !== -1 || idxEgreso !== -1 || idxMonto !== -1 || idxConcepto !== -1 || idxFecha !== -1);
-      // Si no detectamos headers, asumir orden por defecto: 0=SEGMENTO, 1=EGRESO, 2=MONTO, 3=CONCEPTO, 4=FECHA (opcional)
-      if (!hayHeader) { idxSegmento = 0; idxEgreso = 1; idxMonto = 2; idxConcepto = 3; idxFecha = 4; }
-      return { idxSegmento, idxEgreso, idxMonto, idxConcepto, idxFecha, hayHeader };
+      const hayHeader = (idxSegmento !== -1 || idxEgreso !== -1 || idxMonto !== -1 || idxConcepto !== -1 || idxFecha !== -1 || idxMoneda !== -1);
+      // Si no detectamos headers, asumir orden por defecto: 0=SEGMENTO, 1=EGRESO, 2=MONTO, 3=MONEDA, 4=CONCEPTO, 5=FECHA (opcionales: MONEDA y FECHA)
+      if (!hayHeader) { idxSegmento = 0; idxEgreso = 1; idxMonto = 2; idxMoneda = 3; idxConcepto = 4; idxFecha = 5; }
+      return { idxSegmento, idxEgreso, idxMonto, idxConcepto, idxFecha, idxMoneda, hayHeader };
     };
 
     // Parsear filas en formato array-of-arrays.
     // Mapeo: SEGMENTO→segmento, EGRESOS→concepto (principal), MONTO→monto, CONCEPTO→notas, FECHA→fecha
+    // Helper: convierte el texto de la columna MONEDA a un código válido (MXN/USD/EUR)
+    // Acepta: "MXN", "USD", "EUR", "$", "USD$", "Dolar", "Dolares", "Peso", "Pesos", "Euro", "Euros", etc.
+    // Devuelve el código oficial o null si no se reconoce.
+    const matchMoneda = (rawText) => {
+      if (!rawText && rawText !== 0) return null;
+      const norm = (s) => String(s).trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const t = norm(rawText);
+      if (!t) return null;
+      // USD: dolar/dollar/usd/us/$/usd$
+      if (/^(usd|us|dolar|dolares|dollar|dollars|us\$|usd\$|u\.s\.d\.?)$/.test(t)) return 'USD';
+      // EUR: euro/euros/eur/€
+      if (/^(eur|euro|euros|€)$/.test(t)) return 'EUR';
+      // MXN: peso/pesos/mxn/mn/mexicano/$ (default cuando hay $ ambiguo)
+      if (/^(mxn|mn|peso|pesos|mexicano|mexicanos|pesos? mexicanos?)$/.test(t)) return 'MXN';
+      // Solo "$" sin más contexto → asumimos MXN (es lo más común para usuarios mexicanos)
+      if (t === '$') return 'MXN';
+      return null;
+    };
+
     // Helper: encuentra la clasificación oficial que mejor matchea el texto raw
     // Ignora mayúsculas, acentos y espacios extras. Devuelve la clasificación oficial o null.
     const matchClasificacion = (rawText) => {
@@ -6752,6 +6772,9 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         const concepto  = cellToStr(fila[cols.idxEgreso]);                  // EGRESOS → concepto principal
         const montoRaw  = cellToStr(fila[cols.idxMonto]);
         const notas     = cellToStr(fila[cols.idxConcepto]);                // CONCEPTO → notas
+        // Moneda (opcional): si no viene → fallback global. Si viene texto irreconocible → fallback global + advertencia
+        const monedaRaw = cols.idxMoneda >= 0 ? cellToStr(fila[cols.idxMoneda]) : '';
+        const monedaParsed = monedaRaw ? matchMoneda(monedaRaw) : null;
         // La fecha puede venir como Date (xlsx con cellDates), número (serial), o string (texto pegado)
         const fechaCelda = cols.idxFecha >= 0 ? fila[cols.idxFecha] : null;
         let fechaParsed = null;
@@ -6775,6 +6798,8 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           notas,
           fecha: fechaParsed,                 // null si no había o no se pudo parsear
           fechaRaw,                           // para mostrar advertencia si no se pudo parsear
+          moneda: monedaParsed,               // null si no había o no se pudo parsear → usa global
+          monedaRaw,                          // texto original (para advertencia)
         });
       });
       return rows;
@@ -6832,14 +6857,15 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     // Descargar plantilla .xlsx con headers y 1 fila de ejemplo
     const descargarPlantilla = () => {
       const data = [
-        ['SEGMENTO', 'EGRESOS', 'MONTO', 'CONCEPTO', 'FECHA'],
-        ['Traslados', 'Konfio Banco', 742130, 'EDO CTA 14 MZO AL 14 ABR', '30/04/2026'],
-        ['Reprotección', 'Seguros Ve por Más', 53811.03, 'POLIZA DE SEGURO GMM DIRECCIÓN', '28/04/2026'],
-        ['', '', '', '', ''],
+        ['SEGMENTO', 'EGRESOS', 'MONTO', 'MONEDA', 'CONCEPTO', 'FECHA'],
+        ['Traslados', 'Konfio Banco', 742130, 'MXN', 'EDO CTA 14 MZO AL 14 ABR', '30/04/2026'],
+        ['Reprotección', 'Seguros Ve por Más', 53811.03, 'MXN', 'POLIZA DE SEGURO GMM DIRECCIÓN', '28/04/2026'],
+        ['Servicios', 'Hotel Marriott NYC', 1500, 'USD', 'Reserva grupo abril', '25/04/2026'],
+        ['', '', '', '', '', ''],
       ];
       const ws = XLSX.utils.aoa_to_sheet(data);
       // Anchos de columna
-      ws['!cols'] = [{ wch: 16 }, { wch: 28 }, { wch: 14 }, { wch: 36 }, { wch: 14 }];
+      ws['!cols'] = [{ wch: 16 }, { wch: 28 }, { wch: 14 }, { wch: 10 }, { wch: 36 }, { wch: 14 }];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Otros Pagos');
       XLSX.writeFile(wb, 'Plantilla_Otros_Pagos.xlsx');
@@ -6883,7 +6909,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           estatus: ya ? 'Pagado' : 'Pendiente',
           fechaProgramacion: fechaFinal,
           diasFicticios: 0, referencia: '', notas: r.notas || '',
-          moneda: form.moneda || 'MXN',
+          moneda: r.moneda || form.moneda || 'MXN',
           voBo: true, autorizadoDireccion: true, empresaId,
           categoriaEgreso: r.clasificacion,
           segmentoEgreso: '',
@@ -6928,10 +6954,13 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                 <div style={{fontWeight:700,color:'#1976D2',whiteSpace:'nowrap'}}>③ MONTO</div>
                 <div style={{color:'#374151'}}>Cantidad numérica (sin <code>$</code>) — ej: <i style={{color:C.muted}}>742130</i> o <i style={{color:C.muted}}>742,130.00</i></div>
 
-                <div style={{fontWeight:700,color:'#1976D2',whiteSpace:'nowrap'}}>④ CONCEPTO</div>
+                <div style={{fontWeight:700,color:'#9E9E9E',whiteSpace:'nowrap'}}>④ MONEDA <span style={{fontSize:10,fontWeight:600}}>(opcional)</span></div>
+                <div style={{color:'#374151'}}>Código de moneda — ej: <i style={{color:C.muted}}>MXN, USD, EUR</i> · acepta también: <i style={{color:C.muted}}>Dólar, Pesos, €</i> · si falta, usa la moneda global</div>
+
+                <div style={{fontWeight:700,color:'#1976D2',whiteSpace:'nowrap'}}>⑤ CONCEPTO</div>
                 <div style={{color:'#374151'}}>Descripción detallada (notas) — ej: <i style={{color:C.muted}}>EDO CTA 14 MZO AL 14 ABR</i></div>
 
-                <div style={{fontWeight:700,color:'#9E9E9E',whiteSpace:'nowrap'}}>⑤ FECHA <span style={{fontSize:10,fontWeight:600}}>(opcional)</span></div>
+                <div style={{fontWeight:700,color:'#9E9E9E',whiteSpace:'nowrap'}}>⑥ FECHA <span style={{fontSize:10,fontWeight:600}}>(opcional)</span></div>
                 <div style={{color:'#374151'}}>Fecha de pago — ej: <i style={{color:C.muted}}>30/04/2026</i> · si falta, usa la fecha global</div>
               </div>
             </div>
@@ -6948,6 +6977,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                       <th style={{padding:'7px 10px',textAlign:'left',fontWeight:700,color:'#0D47A1',fontSize:10,textTransform:'uppercase'}}>Segmento</th>
                       <th style={{padding:'7px 10px',textAlign:'left',fontWeight:700,color:'#0D47A1',fontSize:10,textTransform:'uppercase'}}>Egresos</th>
                       <th style={{padding:'7px 10px',textAlign:'right',fontWeight:700,color:'#0D47A1',fontSize:10,textTransform:'uppercase'}}>Monto</th>
+                      <th style={{padding:'7px 10px',textAlign:'center',fontWeight:700,color:'#0D47A1',fontSize:10,textTransform:'uppercase'}}>Moneda</th>
                       <th style={{padding:'7px 10px',textAlign:'left',fontWeight:700,color:'#0D47A1',fontSize:10,textTransform:'uppercase'}}>Concepto</th>
                       <th style={{padding:'7px 10px',textAlign:'center',fontWeight:700,color:'#0D47A1',fontSize:10,textTransform:'uppercase'}}>Fecha</th>
                     </tr>
@@ -6957,21 +6987,31 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                       <td style={{padding:'7px 10px',fontWeight:600,color:'#1B5E20'}}>Traslados</td>
                       <td style={{padding:'7px 10px',fontWeight:600}}>Konfio Banco</td>
                       <td style={{padding:'7px 10px',textAlign:'right',fontFamily:'monospace'}}>742,130.00</td>
+                      <td style={{padding:'7px 10px',textAlign:'center',fontFamily:'monospace',fontWeight:700}}>MXN</td>
                       <td style={{padding:'7px 10px',color:C.muted}}>EDO CTA 14 MZO AL 14 ABR</td>
                       <td style={{padding:'7px 10px',textAlign:'center',fontFamily:'monospace'}}>30/04/2026</td>
                     </tr>
-                    <tr style={{background:'#FAFBFC'}}>
+                    <tr style={{borderBottom:`1px solid ${C.border}`,background:'#FAFBFC'}}>
                       <td style={{padding:'7px 10px',fontWeight:600,color:'#1B5E20'}}>Reprotección</td>
                       <td style={{padding:'7px 10px',fontWeight:600}}>Seguros Ve por Más</td>
                       <td style={{padding:'7px 10px',textAlign:'right',fontFamily:'monospace'}}>53,811.03</td>
+                      <td style={{padding:'7px 10px',textAlign:'center',fontFamily:'monospace',fontWeight:700}}>MXN</td>
                       <td style={{padding:'7px 10px',color:C.muted}}>POLIZA DE SEGURO GMM DIRECCIÓN</td>
                       <td style={{padding:'7px 10px',textAlign:'center',fontFamily:'monospace'}}>28/04/2026</td>
+                    </tr>
+                    <tr style={{background:'#fff'}}>
+                      <td style={{padding:'7px 10px',fontWeight:600,color:'#1B5E20'}}>Servicios</td>
+                      <td style={{padding:'7px 10px',fontWeight:600}}>Hotel Marriott NYC</td>
+                      <td style={{padding:'7px 10px',textAlign:'right',fontFamily:'monospace'}}>1,500.00</td>
+                      <td style={{padding:'7px 10px',textAlign:'center',fontFamily:'monospace',fontWeight:700,color:'#2E7D32'}}>USD</td>
+                      <td style={{padding:'7px 10px',color:C.muted}}>Reserva grupo abril</td>
+                      <td style={{padding:'7px 10px',textAlign:'center',fontFamily:'monospace'}}>25/04/2026</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
               <div style={{fontSize:11,color:C.muted,marginTop:6}}>
-                Formatos de fecha aceptados: <code>30/04/2026</code> · <code>2026-04-30</code> · <code>30-Abr-2026</code>
+                Formatos de fecha aceptados: <code>30/04/2026</code> · <code>2026-04-30</code> · <code>30-Abr-2026</code> · Monedas: <code>MXN, USD, EUR</code> (también acepta <i>Dólar, Pesos, €</i>)
               </div>
             </div>
 
@@ -7006,7 +7046,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                   Copia las celdas desde Excel y pégalas aquí (separadas por TAB).
                 </div>
                 <textarea value={textoPegado} onChange={e => setTextoPegado(e.target.value)}
-                  placeholder={`SEGMENTO\tEGRESOS\tMONTO\tCONCEPTO\tFECHA\nTraslados\tKonfio Banco\t742130\tEDO CTA 14 MZO AL 14 ABR\t30/04/2026`}
+                  placeholder={`SEGMENTO\tEGRESOS\tMONTO\tMONEDA\tCONCEPTO\tFECHA\nTraslados\tKonfio Banco\t742130\tMXN\tEDO CTA 14 MZO AL 14 ABR\t30/04/2026\nServicios\tHotel Marriott NYC\t1500\tUSD\tReserva grupo abril\t25/04/2026`}
                   style={{...inputStyle, minHeight: 90, fontFamily: 'monospace', fontSize: 11, whiteSpace: 'pre', background:'#fff'}}/>
                 <button onClick={handleParsear}
                   style={{background:'#1976D2',color:'#fff',border:'none',padding:'9px 14px',borderRadius:8,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}
@@ -7023,8 +7063,9 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                 <input type="date" value={form.fechaPago} onChange={e => set('fechaPago', e.target.value)} style={inputStyle}
                   title="Esta fecha se usa para las filas que NO tengan fecha individual en el Excel"/>
               </Field>
-              <Field label="Moneda">
-                <select value={form.moneda} onChange={e => set('moneda', e.target.value)} style={inputStyle}>
+              <Field label="Moneda global (fallback)">
+                <select value={form.moneda} onChange={e => set('moneda', e.target.value)} style={inputStyle}
+                  title="Esta moneda se usa para las filas que NO tengan moneda individual en el Excel">
                   <option value="MXN">MXN</option><option value="USD">USD</option><option value="EUR">EUR</option>
                 </select>
               </Field>
@@ -7052,6 +7093,9 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                 const sinFecha = form.rows.length - conFecha;
                 const conClasif = form.rows.filter(r => r.clasificacion).length;
                 const sinClasif = form.rows.length - conClasif;
+                const conMoneda = form.rows.filter(r => r.moneda).length;
+                const sinMoneda = form.rows.length - conMoneda;
+                const monedasInvalidas = form.rows.filter(r => r.monedaRaw && !r.moneda).length;
                 if (form.rows.length === 0) return null;
                 return (
                   <div style={{fontSize:11,color:C.muted,display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
@@ -7069,6 +7113,16 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                     {conFecha > 0 && <span style={{color:'#1B5E20',fontWeight:600}}>📅 {conFecha} con fecha</span>}
                     {conFecha > 0 && sinFecha > 0 && <span>·</span>}
                     {sinFecha > 0 && <span style={{color:'#E65100',fontWeight:600}}>{sinFecha} usarán fecha global</span>}
+                    <span>·</span>
+                    {conMoneda > 0 && <span style={{color:'#1B5E20',fontWeight:600}}>💱 {conMoneda} con moneda</span>}
+                    {(conMoneda > 0 && sinMoneda > 0) && <span>·</span>}
+                    {sinMoneda > 0 && <span style={{color:'#E65100',fontWeight:600}}>{sinMoneda} usarán moneda global</span>}
+                    {monedasInvalidas > 0 && (
+                      <>
+                        <span>·</span>
+                        <span style={{color:'#C62828',fontWeight:700,background:'#FFEBEE',padding:'2px 6px',borderRadius:4}}>⚠ {monedasInvalidas} moneda no reconocida</span>
+                      </>
+                    )}
                     <span style={{color:C.muted,fontStyle:'italic'}}>· clic en una celda para editar</span>
                   </div>
                 );
@@ -7117,6 +7171,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                     <th style={{padding:'8px',textAlign:'left',borderBottom:`1px solid ${C.border}`,width:170}}>Clasificación</th>
                     <th style={{padding:'8px',textAlign:'left',borderBottom:`1px solid ${C.border}`}}>Concepto</th>
                     <th style={{padding:'8px',textAlign:'right',borderBottom:`1px solid ${C.border}`,width:120}}>Monto</th>
+                    <th style={{padding:'8px',textAlign:'center',borderBottom:`1px solid ${C.border}`,width:90}}>Moneda</th>
                     <th style={{padding:'8px',textAlign:'left',borderBottom:`1px solid ${C.border}`}}>Notas</th>
                     <th style={{padding:'8px',textAlign:'center',borderBottom:`1px solid ${C.border}`,width:150}}>Fecha</th>
                   </tr>
@@ -7216,6 +7271,46 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                             <span>${fmt(r.monto)}</span>
                           )}
                         </td>
+                        {/* Moneda — siempre editable como dropdown */}
+                        <td style={{padding:'4px 6px',textAlign:'center'}}>
+                          {(() => {
+                            const monedaUsada = r.moneda || form.moneda || 'MXN';
+                            const usaMonedaIndividual = !!r.moneda;
+                            const errorParseo = r.monedaRaw && !r.moneda;
+                            return (
+                              <>
+                                <select
+                                  value={monedaUsada}
+                                  onChange={(e) => {
+                                    const nueva = e.target.value;
+                                    set('rows', form.rows.map((rr, j) => j === i ? { ...rr, moneda: nueva, monedaRaw: nueva } : rr));
+                                  }}
+                                  title={errorParseo ? `No se reconoció "${r.monedaRaw}". Edita aquí.` : (usaMonedaIndividual ? 'Moneda del Excel' : 'Moneda global (no había en Excel)')}
+                                  style={{
+                                    fontSize:11,
+                                    padding:'4px 6px',
+                                    border:`1px solid ${errorParseo ? '#C62828' : (usaMonedaIndividual ? '#1B5E20' : '#E5E7EB')}`,
+                                    borderRadius:5,
+                                    background: errorParseo ? '#FFEBEE' : (usaMonedaIndividual ? '#E8F5E9' : '#F8FAFC'),
+                                    fontFamily:'inherit',
+                                    outline:'none',
+                                    width:'100%',
+                                    boxSizing:'border-box',
+                                    fontWeight: usaMonedaIndividual ? 700 : 400,
+                                    cursor:'pointer',
+                                  }}
+                                >
+                                  <option value="MXN">MXN</option>
+                                  <option value="USD">USD</option>
+                                  <option value="EUR">EUR</option>
+                                </select>
+                                {errorParseo && (
+                                  <div title={`Texto original: ${r.monedaRaw}`} style={{fontSize:9,color:'#C62828',marginTop:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>⚠ "{r.monedaRaw}"</div>
+                                )}
+                              </>
+                            );
+                          })()}
+                        </td>
                         {/* Notas */}
                         <td style={cellStyle({color:C.muted})} onClick={() => !isEditing('notas') && startEdit(i, 'notas')}>
                           {isEditing('notas') ? (
@@ -7263,7 +7358,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                     <td style={{padding:'10px',textAlign:'right',fontFamily:'monospace',fontWeight:800,color:'#C62828'}}>
                       ${fmt(form.rows.reduce((s, r) => s + r.monto, 0))}
                     </td>
-                    <td colSpan={2}/>
+                    <td colSpan={3}/>
                   </tr>
                 </tfoot>
               </table>
