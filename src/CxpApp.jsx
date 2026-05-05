@@ -3465,17 +3465,30 @@ export default function CxpApp({ user, onLogout }) {
 
     // Guardar cambio de una celda
     const guardarCeldaIngreso = async () => {
-      if (bloqueoEdicion) { setEditandoIngreso(null); setValorIngreso(""); return; }
       if (!editandoIngreso) return;
-      const [id, campo] = editandoIngreso.split('_');
+      // Si el bloqueo está activo Y es vista histórica, no guardamos
+      // (se permite edición solo si edicionHistoricaHabilitada === true)
+      if (esVistaHistorica && !edicionHistoricaHabilitada) {
+        console.warn('[ingreso] edición bloqueada (vista histórica sin habilitar)');
+        setEditandoIngreso(null); setValorIngreso(""); return;
+      }
+      // Buscar el ingreso usando rfind con startsWith para soportar UUIDs con guiones
+      // (la key tiene formato `${id}_${campo}` donde id es un UUID y campo es: rubro/cliente/concepto/MXN/USD/EUR)
+      const ultimoSubrayado = editandoIngreso.lastIndexOf('_');
+      if (ultimoSubrayado === -1) { setEditandoIngreso(null); return; }
+      const id = editandoIngreso.substring(0, ultimoSubrayado);
+      const campo = editandoIngreso.substring(ultimoSubrayado + 1);
       const ing = ingresosDia.find(x => x.id === id);
-      if (!ing) { setEditandoIngreso(null); return; }
+      if (!ing) {
+        console.warn('[ingreso] no se encontró el id:', id, 'campo:', campo, 'ingresosDia:', ingresosDia.length);
+        setEditandoIngreso(null); setValorIngreso(""); return;
+      }
       const esTexto = ['rubro', 'cliente', 'concepto'].includes(campo);
       let valor;
       if (esTexto) {
         valor = valorIngreso.trim();
       } else {
-        valor = parseFloat(valorIngreso.replace(/[,$€]/g, '')) || 0;
+        valor = parseFloat(valorIngreso.replace(/[,$€\s]/g, '')) || 0;
       }
       const nuevo = { ...ing };
       if (campo === 'rubro') nuevo.rubro = valor;
@@ -3484,7 +3497,10 @@ export default function CxpApp({ user, onLogout }) {
       if (campo === 'MXN') nuevo.montoMXN = valor;
       if (campo === 'USD') nuevo.montoUSD = valor;
       if (campo === 'EUR') nuevo.montoEUR = valor;
-      await upsertIngresoDia(nuevo, user?.nombre || 'desconocido');
+      const result = await upsertIngresoDia(nuevo, user?.nombre || 'desconocido');
+      if (result === null) {
+        console.error('[ingreso] upsertIngresoDia retornó null - guardado falló');
+      }
       setIngresosDia(prev => prev.map(x => x.id === id ? nuevo : x));
       setEditandoIngreso(null);
       setValorIngreso("");
