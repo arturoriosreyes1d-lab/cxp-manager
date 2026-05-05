@@ -3531,11 +3531,29 @@ export default function CxpApp({ user, onLogout }) {
           if (factura.empresaId !== empresaId) return;
           
           const saldoFactura = (+factura.total || 0) - (+factura.montoPagado || 0);
-          // En vista de hoy: solo facturas con saldo pendiente
-          // En vista histórica: incluir también las que ya están pagadas (saldo 0) si tenían pago programado para esa fecha
-          if (saldoFactura <= 0 && esHoy) return;
           
-          // Egresos No Facturados se agrupan todos bajo "Egresos No Facturados" (no por concepto)
+          // Buscar pagos programados para fechaRef (puede ser hoy o histórico)
+          const pagosProgFecha = payments.filter(p => 
+            p.invoiceId === factura.id && 
+            p.tipo === 'programado' && 
+            p.fechaPago === fechaRef
+          );
+          
+          // Buscar pagos realizados en esa fecha (tanto hoy como histórico)
+          // Esto es importante para Otros Pagos pagados hoy: aunque saldo=0, el pago ocurrió hoy
+          // y debe aparecer en el reporte para reflejar correctamente los saldos del día.
+          const pagosRealizadosFecha = payments.filter(p =>
+            p.invoiceId === factura.id &&
+            p.tipo === 'realizado' &&
+            p.fechaPago === fechaRef
+          );
+          
+          // Filtro: solo descartar si NO hay pagos en esta fecha Y la factura está pagada
+          // (caso típico: factura pagada hace tiempo, ningún pago hoy → no nos interesa)
+          const tienePagoEnFecha = pagosProgFecha.length > 0 || pagosRealizadosFecha.length > 0;
+          if (saldoFactura <= 0 && !tienePagoEnFecha) return;
+          
+          // Egresos No Facturados se agrupan todos bajo "Otros Pagos" (no por concepto)
           const esEgresoNF = factura.tipo === 'EgresoNF';
           const proveedorKey = esEgresoNF
             ? `__EGRESOS_NF__-${moneda}`
@@ -3558,19 +3576,8 @@ export default function CxpApp({ user, onLogout }) {
             }
           }
           
-          // Buscar pagos programados para fechaRef (puede ser hoy o histórico)
-          const pagosProgFecha = payments.filter(p => 
-            p.invoiceId === factura.id && 
-            p.tipo === 'programado' && 
-            p.fechaPago === fechaRef
-          );
-          
-          // En vista histórica también buscamos pagos realizados que se hicieron en esa fecha
-          const pagosRealizadosFecha = !esHoy ? payments.filter(p =>
-            p.invoiceId === factura.id &&
-            p.tipo === 'realizado' &&
-            p.fechaPago === fechaRef
-          ) : [];
+          // (Las variables pagosProgFecha y pagosRealizadosFecha ya se calcularon arriba
+          //  con la lógica correcta — no las recalculamos)
           
           // Combinar: si hay pagos realizados, esos son la fuente de verdad (el programado ya se ejecutó).
           // Si no hay realizados, usar los programados.
