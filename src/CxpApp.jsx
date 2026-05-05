@@ -3219,6 +3219,9 @@ export default function CxpApp({ user, onLogout }) {
     const [fechaSeleccionada, setFechaSeleccionada] = useState(today());
     const esHoy = fechaSeleccionada === today();
     const esVistaHistorica = !esHoy;
+    
+    // Modal de detalle (drill-down al hacer clic en importes)
+    const [detalleModal, setDetalleModal] = useState(null); // { pago, tipo: 'adeudo' | 'pago' }
 
     // Edición histórica: solo admin, requiere confirmación
     const [edicionHistoricaHabilitada, setEdicionHistoricaHabilitada] = useState(false);
@@ -3678,9 +3681,11 @@ export default function CxpApp({ user, onLogout }) {
       // PASO 3: Combinar — proveedores con pago en la fecha
       const resultado = [];
       pagosHoy.forEach((pagoInfo, key) => {
+        // Detectar si es el grupo especial de Egresos NF (Otros Pagos)
+        const esGrupoNF = key.startsWith('__EGRESOS_NF__-');
         const adeudoInfo = adeudoTotal.get(key) || { 
-          proveedor: key.split('-')[0],
-          moneda: key.split('-')[1] || 'MXN',
+          proveedor: esGrupoNF ? 'Otros Pagos' : key.split('-')[0],
+          moneda: esGrupoNF ? key.replace('__EGRESOS_NF__-', '') : (key.split('-')[1] || 'MXN'),
           adeudado: 0,
           facturasActivas: 0
         };
@@ -5203,8 +5208,14 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                         <td style={{padding:"12px 16px",textAlign:"center"}}>
                           <span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[pago.moneda],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[pago.moneda],padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{pago.moneda}</span>
                         </td>
-                        <td style={{padding:"12px 16px",textAlign:"right",fontWeight:700,fontSize:13}}>{monedaSym(pago.moneda)}{fmt(pago.importeAdeudado)}</td>
-                        <td style={{padding:"12px 16px",textAlign:"right",fontWeight:800,fontSize:14,color:"#D32F2F"}}>
+                        <td onClick={() => setDetalleModal({ pago, tipo: 'adeudo' })}
+                          title="Clic para ver desglose del importe adeudado"
+                          style={{padding:"12px 16px",textAlign:"right",fontWeight:700,fontSize:13,cursor:'pointer',color:'#1976D2',textDecoration:'underline',textDecorationStyle:'dotted',textDecorationColor:'#1976D2'}}>
+                          {monedaSym(pago.moneda)}{fmt(pago.importeAdeudado)}
+                        </td>
+                        <td onClick={() => setDetalleModal({ pago, tipo: 'pago' })}
+                          title="Clic para ver desglose del pago del día"
+                          style={{padding:"12px 16px",textAlign:"right",fontWeight:800,fontSize:14,color:"#D32F2F",cursor:'pointer',textDecoration:'underline',textDecorationStyle:'dotted',textDecorationColor:'#D32F2F'}}>
                           {monedaSym(pago.moneda)}{fmt(pago.pagoHoy)}
                           {pago.pagoTDC > 0 && (
                             <span title={`Pagado con TDC: ${monedaSym(pago.moneda)}${fmt(pago.pagoTDC)}`} style={{display:'inline-block',marginLeft:6,background:'#F3E5F5',color:'#6A1B9A',padding:'2px 7px',borderRadius:8,fontSize:10,fontWeight:700,verticalAlign:'middle'}}>💳 TDC</span>
@@ -5439,6 +5450,164 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             </div>
           </div>
         )}
+
+        {/* Modal de detalle de importe (drill-down) */}
+        {detalleModal && (() => {
+          const { pago, tipo } = detalleModal;
+          const esGrupoNF = pago.proveedor === 'Otros Pagos';
+          let facturasMostrar = [];
+          if (tipo === 'adeudo') {
+            facturasMostrar = (invoices[pago.moneda] || [])
+              .filter(f => f.empresaId === empresaId)
+              .filter(f => esGrupoNF ? f.tipo === 'EgresoNF' : (f.proveedor === pago.proveedor && f.tipo !== 'EgresoNF'))
+              .filter(f => ((+f.total || 0) - (+f.montoPagado || 0)) > 0)
+              .map(f => ({
+                folio: esGrupoNF ? (f.proveedor || f.concepto || f.folio) : `${f.serie || ''}${f.folio || ''}`,
+                fecha: f.fecha,
+                total: +f.total || 0,
+                pagado: +f.montoPagado || 0,
+                saldo: (+f.total || 0) - (+f.montoPagado || 0),
+                concepto: esGrupoNF ? (f.notas || '') : (f.concepto || ''),
+                esEgresoNF: f.tipo === 'EgresoNF',
+              }))
+              .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+          } else {
+            facturasMostrar = (pago.detalleFacturas || []).map(d => ({
+              folio: d.esEgresoNF ? d.folio : `${d.serie || ''}${d.folio || ''}`,
+              concepto: d.concepto || '',
+              pagoHoy: d.pagoHoy,
+              estado: d.estado,
+              metodoPago: d.metodoPago,
+              esEgresoNF: !!d.esEgresoNF,
+            }));
+          }
+          const totalCol = tipo === 'adeudo'
+            ? facturasMostrar.reduce((s, f) => s + f.saldo, 0)
+            : facturasMostrar.reduce((s, f) => s + f.pagoHoy, 0);
+          const sym = monedaSym(pago.moneda);
+          return (
+            <div onClick={(e) => { if (e.target === e.currentTarget) setDetalleModal(null); }}
+              style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:14}}>
+              <div style={{background:'#fff',borderRadius:14,width:'100%',maxWidth:900,maxHeight:'90vh',display:'flex',flexDirection:'column',boxShadow:'0 20px 60px rgba(0,0,0,0.4)'}}>
+                <div style={{padding:'16px 22px',borderBottom:`1px solid ${C.border}`,display:'flex',justifyContent:'space-between',alignItems:'center',background: tipo === 'adeudo' ? '#E3F2FD' : '#FFEBEE'}}>
+                  <div>
+                    <h3 style={{margin:0,fontSize:16,fontWeight:800,color: tipo === 'adeudo' ? '#0D47A1' : '#C62828'}}>
+                      {tipo === 'adeudo' ? '📋 Detalle del Importe Adeudado' : '💰 Detalle del Pago del Día'}
+                    </h3>
+                    <p style={{margin:'2px 0 0',fontSize:12,color:'#6B7280'}}>
+                      <b>{pago.proveedor}</b> · {pago.moneda} · {fechaSeleccionada}
+                    </p>
+                  </div>
+                  <button onClick={() => setDetalleModal(null)} style={{background:'transparent',border:'none',fontSize:22,cursor:'pointer',color:'#6B7280'}}>×</button>
+                </div>
+
+                <div style={{overflow:'auto',padding:18,flex:1}}>
+                  <div style={{background:'#F8FAFC',border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 14px',marginBottom:14,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:13,flexWrap:'wrap',gap:8}}>
+                    <div style={{color:C.muted}}>
+                      {tipo === 'adeudo' 
+                        ? `${facturasMostrar.length} ${facturasMostrar.length === 1 ? 'factura activa' : 'facturas activas'} · saldo pendiente`
+                        : `${facturasMostrar.length} ${facturasMostrar.length === 1 ? 'factura' : 'facturas'} con pago en esta fecha`}
+                    </div>
+                    <div style={{fontWeight:800,fontSize:16,color: tipo === 'adeudo' ? '#0D47A1' : '#C62828',fontVariantNumeric:'tabular-nums'}}>
+                      Total: {sym}{fmt(totalCol)}
+                    </div>
+                  </div>
+
+                  {facturasMostrar.length === 0 ? (
+                    <div style={{textAlign:'center',padding:'30px 16px',color:'#9CA3AF',fontSize:13}}>
+                      No hay {tipo === 'adeudo' ? 'facturas activas' : 'pagos en esta fecha'}.
+                    </div>
+                  ) : (
+                    <div style={{border:`1px solid ${C.border}`,borderRadius:8,overflow:'hidden'}}>
+                      <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                        <thead>
+                          <tr style={{background:'#F8FAFC',borderBottom:`2px solid ${C.border}`}}>
+                            <th style={{padding:'8px 12px',textAlign:'left',color:C.navy,fontWeight:700,fontSize:11,textTransform:'uppercase'}}>Folio</th>
+                            <th style={{padding:'8px 12px',textAlign:'left',color:C.navy,fontWeight:700,fontSize:11,textTransform:'uppercase'}}>Concepto</th>
+                            {tipo === 'adeudo' ? (
+                              <>
+                                <th style={{padding:'8px 12px',textAlign:'left',color:C.navy,fontWeight:700,fontSize:11,textTransform:'uppercase'}}>Fecha</th>
+                                <th style={{padding:'8px 12px',textAlign:'right',color:C.navy,fontWeight:700,fontSize:11,textTransform:'uppercase'}}>Total</th>
+                                <th style={{padding:'8px 12px',textAlign:'right',color:C.navy,fontWeight:700,fontSize:11,textTransform:'uppercase'}}>Pagado</th>
+                                <th style={{padding:'8px 12px',textAlign:'right',color:C.navy,fontWeight:700,fontSize:11,textTransform:'uppercase'}}>Saldo</th>
+                              </>
+                            ) : (
+                              <>
+                                <th style={{padding:'8px 12px',textAlign:'right',color:C.navy,fontWeight:700,fontSize:11,textTransform:'uppercase'}}>Monto</th>
+                                <th style={{padding:'8px 12px',textAlign:'center',color:C.navy,fontWeight:700,fontSize:11,textTransform:'uppercase'}}>Método</th>
+                                <th style={{padding:'8px 12px',textAlign:'center',color:C.navy,fontWeight:700,fontSize:11,textTransform:'uppercase'}}>Estado</th>
+                              </>
+                            )}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {facturasMostrar.map((f, idx) => (
+                            <tr key={idx} style={{borderBottom:`1px solid ${C.border}`,background:idx % 2 === 0 ? '#fff' : '#FAFBFC'}}>
+                              <td style={{padding:'8px 12px',fontFamily:'monospace',fontWeight:700,color: f.esEgresoNF ? '#C62828' : C.text}}>{f.folio}</td>
+                              <td style={{padding:'8px 12px',color:'#374151'}}>{f.concepto || <span style={{color:'#D1D5DB'}}>—</span>}</td>
+                              {tipo === 'adeudo' ? (
+                                <>
+                                  <td style={{padding:'8px 12px',color:C.muted,whiteSpace:'nowrap'}}>{f.fecha || '—'}</td>
+                                  <td style={{padding:'8px 12px',textAlign:'right',fontFamily:'monospace',color:C.text}}>{sym}{fmt(f.total)}</td>
+                                  <td style={{padding:'8px 12px',textAlign:'right',fontFamily:'monospace',color:'#1B5E20'}}>{sym}{fmt(f.pagado)}</td>
+                                  <td style={{padding:'8px 12px',textAlign:'right',fontFamily:'monospace',fontWeight:700,color:'#0D47A1'}}>{sym}{fmt(f.saldo)}</td>
+                                </>
+                              ) : (
+                                <>
+                                  <td style={{padding:'8px 12px',textAlign:'right',fontFamily:'monospace',fontWeight:700,color:'#C62828'}}>{sym}{fmt(f.pagoHoy)}</td>
+                                  <td style={{padding:'8px 12px',textAlign:'center'}}>
+                                    {f.metodoPago === 'tdc' ? <span style={{background:'#F3E5F5',color:'#6A1B9A',padding:'2px 8px',borderRadius:8,fontSize:10,fontWeight:700}}>💳 TDC</span> :
+                                     f.metodoPago === 'otro' ? <span style={{background:'#F5F5F5',color:'#616161',padding:'2px 8px',borderRadius:8,fontSize:10,fontWeight:700}}>➕ Otro</span> :
+                                     <span style={{background:'#E3F2FD',color:'#1565C0',padding:'2px 8px',borderRadius:8,fontSize:10,fontWeight:700}}>🏦 Banco</span>}
+                                  </td>
+                                  <td style={{padding:'8px 12px',textAlign:'center'}}>
+                                    {(() => {
+                                      const meta = {
+                                        atrasado: { label: '⚠️ Atrasado', bg: '#FFEBEE', color: '#C62828' },
+                                        pagado: { label: '✅ Pagado', bg: '#E8F5E9', color: '#1B5E20' },
+                                        pagado_atraso: { label: '🟡 Pagado tarde', bg: '#FFF3E0', color: '#E65100' },
+                                        programado: { label: '📅 Programado', bg: '#E3F2FD', color: '#1565C0' },
+                                      }[f.estado] || { label: f.estado, bg: '#F5F5F5', color: '#666' };
+                                      return <span style={{background:meta.bg,color:meta.color,padding:'2px 8px',borderRadius:8,fontSize:10,fontWeight:700}}>{meta.label}</span>;
+                                    })()}
+                                  </td>
+                                </>
+                              )}
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr style={{background: tipo === 'adeudo' ? '#E3F2FD' : '#FFEBEE',borderTop:`2px solid ${tipo === 'adeudo' ? '#1976D2' : '#C62828'}`}}>
+                            <td colSpan={tipo === 'adeudo' ? 5 : 2} style={{padding:'10px 12px',fontWeight:700,color: tipo === 'adeudo' ? '#0D47A1' : '#C62828'}}>TOTAL</td>
+                            <td style={{padding:'10px 12px',textAlign:'right',fontFamily:'monospace',fontWeight:800,color: tipo === 'adeudo' ? '#0D47A1' : '#C62828',fontSize:13}}>
+                              {sym}{fmt(totalCol)}
+                            </td>
+                            {tipo === 'pago' && <td colSpan={2}/>}
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+
+                  {tipo === 'adeudo' && pago.pagoHoy > 0 && (
+                    <div style={{marginTop:14,padding:'10px 14px',background:'#FFFDE7',border:'1px solid #FFE082',borderRadius:8,fontSize:12,color:'#E65100'}}>
+                      💡 Pago programado para el {fechaSeleccionada}: <b>{sym}{fmt(pago.pagoHoy)}</b>
+                      {pago.pagoHoy > totalCol && (
+                        <span style={{marginLeft:8,color:'#C62828',fontWeight:700}}>
+                          ⚠️ El pago programado es MAYOR al saldo adeudado (diferencia: {sym}{fmt(pago.pagoHoy - totalCol)})
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{padding:'12px 22px',borderTop:`1px solid ${C.border}`,display:'flex',justifyContent:'flex-end'}}>
+                  <button onClick={() => setDetalleModal(null)} style={{background:'#1976D2',color:'#fff',border:'none',padding:'8px 20px',borderRadius:8,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Cerrar</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     );
   };
