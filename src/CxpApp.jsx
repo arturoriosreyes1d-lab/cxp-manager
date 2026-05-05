@@ -3344,6 +3344,10 @@ export default function CxpApp({ user, onLogout }) {
           });
           const pagosPorMon = { MXN:0, USD:0, EUR:0 };
           pagosFecha.forEach(p => {
+            // SOLO los pagos por BANCO afectan el saldo bancario.
+            // Los pagos con TDC u Otro NO salen del banco (se cargan a TDC y se pagan después).
+            const metodo = (p.metodo_pago || p.metodoPago || 'banco').toLowerCase();
+            if (metodo !== 'banco') return;
             let monedaFactura = 'MXN';
             for (const mon of ['MXN','USD','EUR']) {
               if ((invoices[mon] || []).find(f2 => f2.id === p.invoiceId && f2.empresaId === empresaId)) {
@@ -3521,6 +3525,53 @@ export default function CxpApp({ user, onLogout }) {
       });
       return t;
     }, [ingresosDia]);
+
+    // Helper: ordena un array de ingresos por bloques de moneda y monto
+    // Bloques: USD → EUR → MXN. Dentro de cada bloque: mayor a menor.
+    // Filas vacías (sin montos) van al final.
+    const ordenarIngresosBloques = (arr) => {
+      const conMonto = arr.filter(x => (+x.montoUSD || 0) > 0 || (+x.montoEUR || 0) > 0 || (+x.montoMXN || 0) > 0);
+      const sinMonto = arr.filter(x => (+x.montoUSD || 0) === 0 && (+x.montoEUR || 0) === 0 && (+x.montoMXN || 0) === 0);
+      // Asignar bloque y monto del bloque a cada ingreso con monto
+      const conBloque = conMonto.map(x => {
+        const usd = +x.montoUSD || 0, eur = +x.montoEUR || 0, mxn = +x.montoMXN || 0;
+        // Si tiene varios, va al bloque del que tenga monto más alto (con prioridad USD > EUR > MXN)
+        if (usd > 0) return { ing: x, bloque: 0, monto: usd };
+        if (eur > 0) return { ing: x, bloque: 1, monto: eur };
+        return { ing: x, bloque: 2, monto: mxn };
+      });
+      // Ordenar por bloque ascendente (0=USD, 1=EUR, 2=MXN), monto descendente
+      conBloque.sort((a, b) => {
+        if (a.bloque !== b.bloque) return a.bloque - b.bloque;
+        return b.monto - a.monto;
+      });
+      return [...conBloque.map(x => x.ing), ...sinMonto];
+    };
+
+    // Lista de ingresos ordenada — el orden solo se recalcula al cargar/agregar/eliminar/cambiar moneda dominante,
+    // NO durante edición de montos. Esto se logra usando una "signatura" estable.
+    // Usamos el conjunto de IDs + el bloque dominante de cada uno como dependencia.
+    const ordenSignatura = useMemo(() => {
+      // signatura: lista de "id|bloque|tieneMonto" — solo cambia si se agrega/elimina o cambia el bloque dominante
+      return ingresosDia.map(x => {
+        const usd = +x.montoUSD || 0, eur = +x.montoEUR || 0, mxn = +x.montoMXN || 0;
+        const tieneMonto = (usd > 0 || eur > 0 || mxn > 0) ? 1 : 0;
+        const bloque = usd > 0 ? 0 : (eur > 0 ? 1 : (mxn > 0 ? 2 : 3));
+        return `${x.id}|${bloque}|${tieneMonto}|${x.confirmado === false ? 'P' : 'R'}`;
+      }).join(',');
+    }, [ingresosDia]);
+
+    const ingresosRealesOrdenados = useMemo(() => {
+      const reales = ingresosDia.filter(x => x.confirmado !== false);
+      return ordenarIngresosBloques(reales);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [ordenSignatura]);
+
+    const ingresosProyectadosOrdenados = useMemo(() => {
+      const proyectados = ingresosDia.filter(x => x.confirmado === false);
+      return ordenarIngresosBloques(proyectados);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [ordenSignatura]);
 
     // En vista histórica: la fecha de referencia para "qué se programó pagar"
     // En vista actual: hoy
@@ -4827,9 +4878,9 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                   </thead>
                   <tbody>
                     {(() => {
-                      // Separar ingresos en reales (confirmado!==false) y proyectados
-                      const reales = ingresosDia.filter(x => x.confirmado !== false);
-                      const proyectados = ingresosDia.filter(x => x.confirmado === false);
+                      // Usar las listas memoizadas ordenadas (USD → EUR → MXN, mayor a menor)
+                      const reales = ingresosRealesOrdenados;
+                      const proyectados = ingresosProyectadosOrdenados;
 
                       const renderFila = (ing, esProyectado) => {
                       const keyRubro = `${ing.id}_rubro`;
