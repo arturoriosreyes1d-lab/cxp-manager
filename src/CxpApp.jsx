@@ -6565,10 +6565,17 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             {!esConsulta && <button onClick={() => setShowCuentas(true)} style={btnStyle}>⚙️ Configurar cuentas</button>}
           </div>
         ) : verHistorico ? (
-          /* MODO HISTÓRICO: solo el cuadro del momento seleccionado */
-          <div ref={refAmbos}>
-            <CuadroSaldos momento={momentoConsulta} innerRef={momentoConsulta==='cierre'?refCierre:refInicio}/>
-          </div>
+          /* MODO HISTÓRICO: si momento === null muestra ambos cuadros, si no solo el seleccionado */
+          momentoConsulta === null ? (
+            <div ref={refAmbos} style={{display:'flex',flexDirection:'column',gap:24,alignItems:'center'}}>
+              <CuadroSaldos momento="inicio" innerRef={refInicio}/>
+              <CuadroSaldos momento="cierre" innerRef={refCierre}/>
+            </div>
+          ) : (
+            <div ref={refAmbos}>
+              <CuadroSaldos momento={momentoConsulta} innerRef={momentoConsulta==='cierre'?refCierre:refInicio}/>
+            </div>
+          )
         ) : (
           /* MODO HOY: ambos cuadros apilados */
           <div ref={refAmbos} style={{display:'flex',flexDirection:'column',gap:24,alignItems:'center'}}>
@@ -6603,7 +6610,21 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                     <div><div>Ambos (Inicio + Cierre)</div><div style={{fontSize:10,fontWeight:500,color:C.muted,marginTop:2}}>Comparativa del día completo · 1 imagen larga</div></div>
                   </button>
                 </>)}
-                {verHistorico && (
+                {verHistorico && momentoConsulta === null && (<>
+                  <button onClick={copiarSoloInicio} style={{background:'#fff',border:`2px solid ${C.navy}`,padding:'14px 16px',borderRadius:10,fontSize:13,color:C.navy,fontWeight:700,cursor:'pointer',textAlign:'left',display:'flex',alignItems:'center',gap:12,fontFamily:'inherit'}}>
+                    <div style={{width:36,height:36,background:C.navy,borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:18,flexShrink:0}}>🌅</div>
+                    <div><div>Solo INICIO de día</div><div style={{fontSize:10,fontWeight:500,color:C.muted,marginTop:2}}>Cuadro azul · 1 imagen</div></div>
+                  </button>
+                  <button onClick={copiarSoloCierre} style={{background:'#fff',border:'2px solid #1B5E20',padding:'14px 16px',borderRadius:10,fontSize:13,color:'#1B5E20',fontWeight:700,cursor:'pointer',textAlign:'left',display:'flex',alignItems:'center',gap:12,fontFamily:'inherit'}}>
+                    <div style={{width:36,height:36,background:'#1B5E20',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:18,flexShrink:0}}>🌙</div>
+                    <div><div>Solo CIERRE de día</div><div style={{fontSize:10,fontWeight:500,color:C.muted,marginTop:2}}>Cuadro verde · 1 imagen</div></div>
+                  </button>
+                  <button onClick={copiarAmbos} style={{background:'#F3F4F6',border:'2px solid #6B7280',padding:'14px 16px',borderRadius:10,fontSize:13,color:'#1F2937',fontWeight:700,cursor:'pointer',textAlign:'left',display:'flex',alignItems:'center',gap:12,fontFamily:'inherit'}}>
+                    <div style={{width:36,height:36,background:'#1F2937',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:18,flexShrink:0}}>📊</div>
+                    <div><div>Ambos (Inicio + Cierre)</div><div style={{fontSize:10,fontWeight:500,color:C.muted,marginTop:2}}>Comparativa del día completo · 1 imagen larga</div></div>
+                  </button>
+                </>)}
+                {verHistorico && momentoConsulta !== null && (
                   <button onClick={momentoConsulta==='cierre'?copiarSoloCierre:copiarSoloInicio} style={{background:'#fff',border:`2px solid ${tema(momentoConsulta).primario}`,padding:'14px 16px',borderRadius:10,fontSize:13,color:tema(momentoConsulta).primario,fontWeight:700,cursor:'pointer',textAlign:'left',display:'flex',alignItems:'center',gap:12,fontFamily:'inherit'}}>
                     <div style={{width:36,height:36,background:tema(momentoConsulta).primario,borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:18,flexShrink:0}}>{momentoConsulta==='cierre'?'🌙':'🌅'}</div>
                     <div><div>Copiar este cuadro</div><div style={{fontSize:10,fontWeight:500,color:C.muted,marginTop:2}}>{momentoConsulta==='cierre'?'CIERRE':'INICIO'} de día · 1 imagen</div></div>
@@ -6619,7 +6640,16 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
         {showCuentas && <ModalCuentas onClose={() => { setShowCuentas(false); recargar(); }} />}
         {showPendientes && <ModalPendientes onClose={() => { setShowPendientes(false); recargar(); }} cuentas={cuentas} saldosHoy={getSaldosByMomento(pendientesMomento)} fechaHoy={fechaConsulta} momento={pendientesMomento} temaPrimario={tema(pendientesMomento).primario} />}
-        {showHistorico && <ModalHistorico onClose={() => setShowHistorico(false)} onSelectFecha={(f, m) => { setVerHistorico({fecha: f, momento: m}); setShowHistorico(false); }} />}
+        {showHistorico && <ModalHistorico onClose={() => setShowHistorico(false)} onSelectFecha={(f, m) => {
+          if (f === null) {
+            // Volver a hoy
+            setVerHistorico(null);
+          } else {
+            // Mostrar la fecha seleccionada (con momento si vino, o ambos cuadros si momento=null)
+            setVerHistorico({fecha: f, momento: m});
+          }
+          setShowHistorico(false);
+        }} />}
       </div>
     );
   };
@@ -6856,6 +6886,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     const [fechas, setFechas] = useState([]);
     const [loading, setLoading] = useState(true);
     const [periodo, setPeriodo] = useState(30);
+    const [fechaLibre, setFechaLibre] = useState('');
 
     useEffect(() => {
       const cargar = async () => {
@@ -6876,9 +6907,35 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     };
     const hoy = today();
 
+    // Agrupar por fecha: {fecha: {momentos: ['inicio','cierre'], updatedByInicio, updatedByCierre}}
+    const fechasAgrupadas = (() => {
+      const map = new Map();
+      fechas.forEach(f => {
+        if (!map.has(f.fecha)) {
+          map.set(f.fecha, { fecha: f.fecha, tieneInicio: false, tieneCierre: false, byInicio: null, byCierre: null });
+        }
+        const g = map.get(f.fecha);
+        if (f.momento === 'inicio') { g.tieneInicio = true; g.byInicio = f.updatedBy; }
+        if (f.momento === 'cierre') { g.tieneCierre = true; g.byCierre = f.updatedBy; }
+      });
+      // Orden descendente por fecha (más reciente primero)
+      return Array.from(map.values()).sort((a, b) => b.fecha.localeCompare(a.fecha));
+    })();
+
+    const irAFechaLibre = () => {
+      if (!fechaLibre) { alert('Selecciona una fecha primero.'); return; }
+      // Si es hoy, cerrar modal (se vuelve al modo "hoy" normal)
+      if (fechaLibre === hoy) {
+        onSelectFecha(null, null); // null fecha = volver a hoy
+        return;
+      }
+      // Pasar la fecha sin momento → se mostrarán ambos cuadros (inicio y cierre)
+      onSelectFecha(fechaLibre, null);
+    };
+
     return (
       <div onClick={onClose} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(31,41,55,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:20}}>
-        <div onClick={(e) => e.stopPropagation()} style={{background:'#fff',borderRadius:14,padding:24,maxWidth:560,width:'100%',maxHeight:'90vh',overflow:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
+        <div onClick={(e) => e.stopPropagation()} style={{background:'#fff',borderRadius:14,padding:24,maxWidth:600,width:'100%',maxHeight:'90vh',overflow:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:18,paddingBottom:14,borderBottom:`1px solid ${C.border}`}}>
             <div>
               <h3 style={{fontSize:17,fontWeight:800,color:C.navy,margin:0}}>📜 Histórico de Saldos</h3>
@@ -6887,31 +6944,64 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             <button onClick={onClose} style={{background:'transparent',border:'none',fontSize:24,cursor:'pointer',color:C.muted,padding:0,lineHeight:1}}>×</button>
           </div>
 
+          {/* Selector de fecha libre — para ir a cualquier fecha (incluso sin captura) */}
+          <div style={{background:'#E3F2FD',border:'1px solid #BBDEFB',borderRadius:10,padding:'12px 14px',marginBottom:14}}>
+            <div style={{fontSize:12,fontWeight:700,color:'#0D47A1',marginBottom:8,letterSpacing:0.3,textTransform:'uppercase'}}>🔍 Ir a fecha específica</div>
+            <div style={{display:'flex',gap:8,alignItems:'center'}}>
+              <input type="date" value={fechaLibre} onChange={(e) => setFechaLibre(e.target.value)} max={hoy}
+                style={{flex:1,padding:'7px 10px',border:`1px solid ${C.border}`,borderRadius:7,fontSize:13,fontFamily:'inherit',outline:'none'}}/>
+              <button onClick={irAFechaLibre} disabled={!fechaLibre}
+                style={{background:fechaLibre ? '#1976D2' : '#B0BEC5',color:'#fff',border:'none',padding:'7px 18px',borderRadius:7,fontSize:12,fontWeight:700,cursor:fechaLibre?'pointer':'not-allowed',fontFamily:'inherit',whiteSpace:'nowrap'}}>
+                Ir →
+              </button>
+            </div>
+            <div style={{fontSize:10,color:'#1565C0',marginTop:6,fontStyle:'italic'}}>
+              💡 Útil para capturar saldos de días que no tienen registro previo (ej: 30/04, 02/05, etc.)
+            </div>
+          </div>
+
           <div style={{display:'flex',gap:6,marginBottom:14,alignItems:'center'}}>
-            <span style={{fontSize:12,color:C.muted}}>Periodo:</span>
+            <span style={{fontSize:12,color:C.muted}}>O elige de los días ya capturados:</span>
             {[7, 30, 90].map(p => (
               <button key={p} onClick={() => setPeriodo(p)} style={{background:periodo===p?C.navy:'#fff',color:periodo===p?'#fff':C.text,border:`1px solid ${periodo===p?C.navy:C.border}`,padding:'4px 10px',borderRadius:6,fontSize:11,cursor:'pointer',fontWeight:600,fontFamily:'inherit'}}>{p} días</button>
             ))}
           </div>
 
-          {loading ? <div style={{textAlign:'center',padding:30,color:C.muted}}>Cargando...</div> : fechas.length === 0 ? (
+          {loading ? <div style={{textAlign:'center',padding:30,color:C.muted}}>Cargando...</div> : fechasAgrupadas.length === 0 ? (
             <div style={{textAlign:'center',padding:30,color:C.muted,fontSize:13}}>No hay registros en este periodo.</div>
           ) : (
-            <div style={{maxHeight:400,overflow:'auto'}}>
-              {fechas.map(f => {
-                const esCierre = f.momento === 'cierre';
-                const colorMomento = esCierre ? '#1B5E20' : C.navy;
-                const fondoMomento = esCierre ? '#E8F5E9' : '#E8EAF6';
+            <div style={{maxHeight:380,overflow:'auto'}}>
+              {fechasAgrupadas.map(g => {
+                const ambosCapturados = g.tieneInicio && g.tieneCierre;
+                const colorTitulo = ambosCapturados ? '#1B5E20' : C.navy;
                 return (
-                  <button key={`${f.fecha}__${f.momento}`} onClick={() => onSelectFecha(f.fecha, f.momento)} style={{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 12px',marginBottom:6,background:f.fecha===hoy?'#FAFAFA':'#FAFAFA',border:`1px solid ${C.border}`,borderRadius:8,cursor:'pointer',textAlign:'left',fontFamily:'inherit'}}>
-                    <div style={{display:'flex',alignItems:'center',gap:10}}>
-                      <span style={{background:fondoMomento,color:colorMomento,padding:'4px 10px',borderRadius:6,fontSize:10,fontWeight:800,whiteSpace:'nowrap'}}>{esCierre ? '🌙 CIERRE' : '🌅 INICIO'}</span>
-                      <div>
-                        <div style={{fontSize:13,fontWeight:700,color:colorMomento,textTransform:'capitalize'}}>{fmtFecha(f.fecha)}{f.fecha === hoy && <span style={{marginLeft:8,background:colorMomento,color:'#fff',padding:'2px 6px',borderRadius:4,fontSize:9,fontWeight:700}}>HOY</span>}</div>
-                        <div style={{fontSize:10,color:C.muted,marginTop:2}}>Capturó: {f.updatedBy || '—'}</div>
+                  <button key={g.fecha} onClick={() => onSelectFecha(g.fecha, null)}
+                    style={{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 12px',marginBottom:6,background:g.fecha===hoy?'#FAFAFA':'#FAFAFA',border:`1px solid ${C.border}`,borderRadius:8,cursor:'pointer',textAlign:'left',fontFamily:'inherit'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:10,flex:1}}>
+                      {/* Chips de momentos capturados */}
+                      <div style={{display:'flex',gap:4,flexShrink:0}}>
+                        {g.tieneInicio && (
+                          <span style={{background:'#E8EAF6',color:C.navy,padding:'4px 8px',borderRadius:6,fontSize:9,fontWeight:800,whiteSpace:'nowrap'}}>🌅 INI</span>
+                        )}
+                        {g.tieneCierre && (
+                          <span style={{background:'#E8F5E9',color:'#1B5E20',padding:'4px 8px',borderRadius:6,fontSize:9,fontWeight:800,whiteSpace:'nowrap'}}>🌙 CIE</span>
+                        )}
+                      </div>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:13,fontWeight:700,color:colorTitulo,textTransform:'capitalize'}}>
+                          {fmtFecha(g.fecha)}
+                          {g.fecha === hoy && <span style={{marginLeft:8,background:colorTitulo,color:'#fff',padding:'2px 6px',borderRadius:4,fontSize:9,fontWeight:700}}>HOY</span>}
+                        </div>
+                        <div style={{fontSize:10,color:C.muted,marginTop:2}}>
+                          {g.tieneInicio && g.tieneCierre
+                            ? `Inicio: ${g.byInicio || '—'} · Cierre: ${g.byCierre || '—'}`
+                            : g.tieneInicio
+                              ? `Inicio: ${g.byInicio || '—'} · Cierre: pendiente`
+                              : `Inicio: pendiente · Cierre: ${g.byCierre || '—'}`}
+                        </div>
                       </div>
                     </div>
-                    <div style={{fontSize:14,color:colorMomento}}>👁</div>
+                    <div style={{fontSize:14,color:colorTitulo}}>👁</div>
                   </button>
                 );
               })}
