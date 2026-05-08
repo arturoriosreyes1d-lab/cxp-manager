@@ -126,7 +126,7 @@ const toNumero = (v) => {
 //   hojasNoMapeadas:  [string],
 //   errores:          [string]
 // }
-export function parsearEstadoCuenta(XLSX, workbook, empresaId) {
+export function parsearEstadoCuenta(XLSX, workbook, empresaId, fechaFallback = null) {
   const config = EMPRESA_CONFIG[empresaId] || [];
   if (config.length === 0) {
     return { saldos: [], hojasNoMapeadas: [], errores: [`No hay configuración para esta empresa todavía.`] };
@@ -171,15 +171,59 @@ export function parsearEstadoCuenta(XLSX, workbook, empresaId) {
       saldoPorFecha.set(fechaStr, saldoNum);
     }
 
+    // FALLBACK: si la hoja NO tiene movimientos detectados, buscar celda "INICIAL"
+    // (típico de hojas de meses sin movimientos todavía → traen saldo arrastrado del mes anterior)
+    if (saldoPorFecha.size === 0 && fechaFallback) {
+      const saldoInicial = buscarSaldoInicial(rows);
+      if (saldoInicial !== null) {
+        saldos.push({
+          cuentaConfig: cfg,
+          fecha: fechaFallback,
+          saldo: saldoInicial,
+          hojaOrigen: nombreHoja,
+          esInicial: true, // marca: vino de la celda INICIAL, no de movimientos
+        });
+        continue; // ya guardamos el fallback, no hace falta el for de abajo
+      }
+    }
+
     for (const [fecha, saldo] of saldoPorFecha) {
       saldos.push({
         cuentaConfig: cfg, // contiene match, label, formato
         fecha,
         saldo,
         hojaOrigen: nombreHoja,
+        esInicial: false,
       });
     }
   }
 
   return { saldos, hojasNoMapeadas, errores };
+}
+
+// =====================================================================
+// FALLBACK: buscar celda "INICIAL" y devolver el valor numérico vecino
+// =====================================================================
+// Recorre las primeras filas buscando una celda cuyo texto sea "INICIAL"
+// (con o sin ":" alrededor). Devuelve el primer número que encuentre en la
+// misma fila a la derecha de esa celda.
+function buscarSaldoInicial(rows) {
+  const limit = Math.min(20, rows.length);
+  for (let r = 0; r < limit; r++) {
+    const row = rows[r] || [];
+    for (let c = 0; c < row.length; c++) {
+      const cell = row[c];
+      if (!cell) continue;
+      const cellNorm = norm(cell).replace(/[:.\s]/g, '');
+      if (cellNorm === 'inicial' || cellNorm === 'saldoinicial') {
+        // Buscar el primer número a la derecha en la misma fila
+        for (let cc = c + 1; cc < row.length && cc <= c + 5; cc++) {
+          const v = row[cc];
+          const num = toNumero(v);
+          if (num !== null && num !== 0) return num;
+        }
+      }
+    }
+  }
+  return null;
 }

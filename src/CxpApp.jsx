@@ -6666,7 +6666,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             try {
               const buf = await file.arrayBuffer();
               const wb = XLSX.read(new Uint8Array(buf), { type: 'array', cellDates: true });
-              const res = parsearEstadoCuenta(XLSX, wb, empresaId);
+              const res = parsearEstadoCuenta(XLSX, wb, empresaId, fechaConsulta);
               if (res.errores.length > 0 && res.saldos.length === 0) {
                 alert(`Error al procesar el archivo:\n\n${res.errores.join('\n')}`);
                 setM({ parseando: false, archivo: null });
@@ -6694,8 +6694,33 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           // Aplicar todos los saldos seleccionados
           const aplicar = async () => {
             if (!m.resultado) return;
-            const aGuardar = m.resultado.saldosConCuenta.filter(s => s.cuentaId !== null);
-            if (aGuardar.length === 0) { alert('No hay saldos para guardar.'); return; }
+            const aGuardarRaw = m.resultado.saldosConCuenta.filter(s => s.cuentaId !== null);
+            if (aGuardarRaw.length === 0) { alert('No hay saldos para guardar.'); return; }
+            
+            // DEDUP: si para la misma (cuentaId, fecha) hay varios saldos
+            // (ejemplo: hojas ENE/FEB/MAR USD BNMX todas dan fallback INICIAL al mismo día),
+            // preferimos: (1) los que NO son INICIAL, (2) el de la hoja más reciente.
+            const dedupMap = new Map(); // key = `${cuentaId}_${fecha}` → saldo
+            const ordenMes = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC','INVERSION'];
+            const scoreHoja = (hoja) => {
+              const hojaUp = hoja.toUpperCase();
+              for (let i = ordenMes.length - 1; i >= 0; i--) {
+                if (hojaUp.includes(ordenMes[i])) return i;
+              }
+              return -1;
+            };
+            for (const s of aGuardarRaw) {
+              const key = `${s.cuentaId}_${s.fecha}`;
+              const prev = dedupMap.get(key);
+              if (!prev) { dedupMap.set(key, s); continue; }
+              // Preferir el que NO es INICIAL
+              if (prev.esInicial && !s.esInicial) { dedupMap.set(key, s); continue; }
+              if (!prev.esInicial && s.esInicial) continue;
+              // Ambos del mismo tipo → preferir hoja del mes más reciente
+              if (scoreHoja(s.hojaOrigen) > scoreHoja(prev.hojaOrigen)) dedupMap.set(key, s);
+            }
+            const aGuardar = Array.from(dedupMap.values());
+            
             setM({ guardando: true });
             let guardados = 0, errores = 0;
             for (const s of aGuardar) {
@@ -6818,7 +6843,10 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                                 <tbody>
                                   {g.items.map((it, idx) => (
                                     <tr key={`${it.fecha}_${idx}`} style={{borderBottom:`1px solid ${C.border}`}}>
-                                      <td style={{padding:'6px 14px',whiteSpace:'nowrap',color:C.text}}>{it.fecha}</td>
+                                      <td style={{padding:'6px 14px',whiteSpace:'nowrap',color:C.text}}>
+                                        {it.fecha}
+                                        {it.esInicial && <span style={{marginLeft:6,background:'#FFF3E0',color:'#E65100',padding:'1px 6px',borderRadius:4,fontSize:9,fontWeight:700}} title="Saldo inicial (sin movimientos en esta hoja)">INICIAL</span>}
+                                      </td>
                                       <td style={{padding:'6px 14px',textAlign:'right',fontFamily:'monospace',fontWeight:700,color:C.navy}}>
                                         ${(+it.saldo).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
                                       </td>
