@@ -3962,8 +3962,12 @@ export default function CxpApp({ user, onLogout }) {
 
     const construirHtmlReporte = (modo = 'resumen', orientacion = 'portrait') => {
       const detallado = modo === 'detallado';
-      const fechaTexto = new Date().toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+      // fechaTexto = fecha del REPORTE (la seleccionada), no la de hoy
+      const fechaTexto = new Date(fechaSeleccionada + 'T12:00:00').toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+      // horaTexto = hora actual (cuando se generó la imagen)
       const horaTexto = new Date().toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' });
+      // Si es histórico, también lo señalamos en el subtítulo
+      const tituloPDF = esVistaHistorica ? 'Reporte de Tesorería Histórico' : 'Reporte de Tesorería del Día';
       const sym = (m) => m === 'EUR' ? '€' : '$';
       const saldosCap = saldosEmpresas[empresaId] || { mxn:0, usd:0, eur:0 };
       const saldoNum = (k) => parseFloat(String(saldosCap[k] || '0').replace(/[,$]/g, '')) || 0;
@@ -4173,7 +4177,7 @@ export default function CxpApp({ user, onLogout }) {
 <div class="header">
   <div>
     <div class="brand">CxP Manager</div>
-    <h1>Reporte de Tesorería del Día</h1>
+    <h1>${tituloPDF}</h1>
     <div class="empresa">${empresa.nombre}</div>
   </div>
   <div class="meta-right">
@@ -4409,6 +4413,13 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
       // Header elegante
       const header = document.createElement('div');
       header.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:14px;border-bottom:3px solid #1A237E;margin-bottom:20px;';
+      // fechaReporte = fecha del reporte (la seleccionada)
+      const fechaReporte = new Date(fechaSeleccionada + 'T12:00:00').toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+      // fechaGen = fecha actual de generación (puede ser distinta si el reporte es histórico)
+      const fechaGen = new Date().toLocaleDateString('es-MX', { day:'numeric', month:'short', year:'numeric' });
+      const horaGen = new Date().toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' });
+      // Si la fecha de generación coincide con la del reporte, no la repetimos para no saturar
+      const mostrarFechaGen = fechaSeleccionada !== today();
       header.innerHTML = `
         <div>
           <div style="font-size:10px;font-weight:700;color:#6366F1;letter-spacing:3px;text-transform:uppercase;margin-bottom:4px;">CxP Manager</div>
@@ -4416,8 +4427,8 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           <div style="font-size:13px;color:#1F2937;margin-top:4px;font-weight:500;">${subtitulo}</div>
         </div>
         <div style="text-align:right;">
-          <div style="font-size:12px;color:#4B5563;font-weight:600;">${new Date().toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long', year:'numeric' })}</div>
-          <div style="font-size:11px;color:#6B7280;margin-top:2px;">Generado ${new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})} hrs · ${user?.nombre || 'usuario'}</div>
+          <div style="font-size:12px;color:#4B5563;font-weight:600;">${fechaReporte}</div>
+          <div style="font-size:11px;color:#6B7280;margin-top:2px;">Generado${mostrarFechaGen ? ' el ' + fechaGen + ' a las ' : ' '}${horaGen} hrs · ${user?.nombre || 'usuario'}</div>
         </div>
       `;
       wrapper.appendChild(header);
@@ -4565,18 +4576,27 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     const generarPNG = async (modo) => {
       setExportModalOpen(false);
       setGenerandoPng(true);
-      const fechaStr = today();
+      // Usar la fecha del REPORTE (la seleccionada), no la de hoy
+      const fechaStr = fechaSeleccionada;
       const empresaSlug = empresa.nombre.replace(/\s+/g, '_');
-      const fechaBonita = new Date().toLocaleDateString('es-MX', { day:'numeric', month:'long', year:'numeric' });
+      // fechaBonita refleja el día del REPORTE, no el día de generación
+      const fechaBonita = new Date(fechaSeleccionada + 'T12:00:00').toLocaleDateString('es-MX', { day:'numeric', month:'long', year:'numeric' });
+      // Título e identificación de histórico
+      const tituloReporte = esVistaHistorica ? 'Reporte de Tesorería Histórico' : 'Reporte de Tesorería del Día';
+      const prefijoSubtitulo = esVistaHistorica ? `📅 Datos del ${fechaBonita}` : `Resumen financiero · ${fechaBonita}`;
+      const subtituloDetalle = esVistaHistorica ? `📅 Detalle del ${fechaBonita}` : `Proveedores y saldos después de pagos · ${fechaBonita}`;
+      const subtituloCompleto = esVistaHistorica ? `📅 Reporte completo del ${fechaBonita}` : `Reporte completo · ${fechaBonita}`;
+      // Sufijo de archivo: si es histórico agrega -historico
+      const sufijoHist = esVistaHistorica ? '_historico' : '';
       try {
         if (modo === 'resumen') {
           // Solo la parte superior (saldos, ingresos, cambios, saldo disponible)
           const w = construirNodoCapturable(
-            'Reporte de Tesorería del Día',
-            `Resumen financiero · ${fechaBonita}`,
+            tituloReporte,
+            prefijoSubtitulo,
             [refResumen.current]
           );
-          await capturarWrapper(w, `Tesoreria_Resumen_${empresaSlug}_${fechaStr}.png`);
+          await capturarWrapper(w, `Tesoreria_Resumen_${empresaSlug}_${fechaStr}${sufijoHist}.png`);
         } else if (modo === 'detalle') {
           // Particionar el detalle en múltiples imágenes (~20 filas por imagen)
           const partesDetalle = particionarDetalle(20);
@@ -4584,11 +4604,11 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
           // Imagen 1: resumen (arriba)
           const w1 = construirNodoCapturable(
-            'Reporte de Tesorería del Día',
-            `Resumen financiero · ${fechaBonita} · Parte 1/${totalImagenes}`,
+            tituloReporte,
+            `${prefijoSubtitulo} · Parte 1/${totalImagenes}`,
             [refResumen.current]
           );
-          await capturarWrapper(w1, `1_Tesoreria_Resumen_${empresaSlug}_${fechaStr}.png`);
+          await capturarWrapper(w1, `1_Tesoreria_Resumen_${empresaSlug}_${fechaStr}${sufijoHist}.png`);
           await new Promise(r => setTimeout(r, 300));
 
           // Imágenes 2..N: partes del detalle
@@ -4602,20 +4622,20 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
               : `Detalle_${i + 1}de${partesDetalle.length}`;
             const wParte = construirNodoCapturable(
               `Detalle de Pagos Programados${parteLabel}`,
-              `Proveedores y saldos después de pagos · ${fechaBonita} · Parte ${numParte}/${totalImagenes}`,
+              `${subtituloDetalle} · Parte ${numParte}/${totalImagenes}`,
               [partesDetalle[i]]
             );
-            await capturarWrapper(wParte, `${numParte}_Tesoreria_${sufijoArchivo}_${empresaSlug}_${fechaStr}.png`);
+            await capturarWrapper(wParte, `${numParte}_Tesoreria_${sufijoArchivo}_${empresaSlug}_${fechaStr}${sufijoHist}.png`);
             await new Promise(r => setTimeout(r, 300));
           }
         } else if (modo === 'completo') {
           // Todo en una imagen larga: resumen + detalle sin duplicación
           const w = construirNodoCapturable(
-            'Reporte de Tesorería del Día',
-            `Reporte completo · ${fechaBonita}`,
+            tituloReporte,
+            subtituloCompleto,
             [refResumen.current, refDetalle.current]
           );
-          await capturarWrapper(w, `Tesoreria_Completo_${empresaSlug}_${fechaStr}.png`);
+          await capturarWrapper(w, `Tesoreria_Completo_${empresaSlug}_${fechaStr}${sufijoHist}.png`);
         }
       } catch (err) {
         console.error('generarPNG error:', err);
@@ -6128,6 +6148,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     const [pendientesMomento, setPendientesMomento] = useState('inicio');
     const [showHistorico, setShowHistorico] = useState(false);
     const [verHistorico, setVerHistorico] = useState(null); // {fecha, momento}
+    const [edicionHistoricaSaldos, setEdicionHistoricaSaldos] = useState(false);
     const [showCopiarMenu, setShowCopiarMenu] = useState(false);
     const refInicio = useRef(null);
     const refCierre = useRef(null);
@@ -6137,6 +6158,16 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     const fechaConsulta = verHistorico?.fecha || fechaHoy;
     const esHoy = !verHistorico;
     const momentoConsulta = verHistorico?.momento || null; // null = mostrar ambos cuadros
+    
+    // Resetear el flag de edición histórica cuando cambia la fecha o se vuelve a hoy
+    useEffect(() => { setEdicionHistoricaSaldos(false); }, [fechaConsulta, verHistorico]);
+    
+    // Determinar si el usuario puede habilitar edición histórica
+    // Solo Admin y Usuario (no Consulta)
+    const puedeEditarHistorico = !esConsulta;
+    
+    // Bloqueo de edición: solo bloqueamos en histórico SIN edición habilitada
+    const bloqueoSaldos = !esHoy && !edicionHistoricaSaldos;
 
     // Cargar cuentas + saldos del día (ambos momentos en paralelo)
     const recargar = async () => {
@@ -6227,7 +6258,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
     // Editar saldo real
     const iniciarEdicion = (cuenta, m) => {
-      if (esConsulta || !esHoy) return;
+      if (esConsulta || bloqueoSaldos) return;
       const key = `${cuenta.id}_${m}`;
       setEditandoSaldo(key);
       setValorEdicion(String(saldoReal(cuenta.id, m) || ''));
@@ -6243,7 +6274,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
       const ok = await upsertSaldoDiario({
         cuentaId: cuenta.id,
         empresaId,
-        fecha: fechaHoy,
+        fecha: fechaConsulta,  // usa fecha del día consultado, no necesariamente hoy
         momento: m,
         saldoReal: nuevoReal,
         movsPendientes: pendiente,
@@ -6255,6 +6286,12 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         } else {
           setSaldosInicio(prev => ({ ...prev, [cuenta.id]: { saldoReal: nuevoReal, movsPendientes: pendiente } }));
           setMetaInicio({ updatedAt: new Date().toISOString(), updatedBy: user?.nombre || 'desconocido' });
+        }
+        // Si editaste un día histórico, avisar sobre el efecto cascada
+        if (!esHoy) {
+          setTimeout(() => {
+            alert('💡 Los saldos heredados de los días siguientes se actualizarán automáticamente al consultarlos.');
+          }, 100);
         }
       }
       setSavingCuenta(null);
@@ -6326,7 +6363,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
       const meta = getMetaByMomento(momento);
       const totales = calcTotales(momento);
       const titulo = momento === 'cierre' ? 'CIERRE DE DÍA' : 'INICIO DE DÍA';
-      const editable = esHoy && !esConsulta;
+      const editable = !esConsulta && (esHoy || edicionHistoricaSaldos);
 
       return (
         <div ref={innerRef} style={{width:820,maxWidth:'100%',background:'#fff',margin:'0 auto'}}>
@@ -6352,7 +6389,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
               {meta.updatedAt
                 ? <span><span style={{color:'#1B5E20'}}>✓</span> Actualizado: {new Date(meta.updatedAt).toLocaleString('es-MX',{dateStyle:'short',timeStyle:'short'})}{meta.updatedBy ? ` · ${meta.updatedBy}` : ''}</span>
                 : <span style={{color:'#999'}}>Sin captura</span>}
-              {esHoy && !esConsulta && (
+              {(esHoy || edicionHistoricaSaldos) && !esConsulta && (
                 <button onClick={() => abrirPendientes(momento)} style={{background:'transparent',border:`1px solid ${t.primario}`,color:t.primario,padding:'3px 10px',borderRadius:4,fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>⚡ Pendientes</button>
               )}
             </div>
@@ -6473,7 +6510,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14,paddingBottom:12,borderBottom:`1px solid ${C.border}`,flexWrap:'wrap',gap:12}}>
           <div>
             <h1 style={{fontSize:20,fontWeight:800,color:C.navy,margin:0}}>🏦 Saldos Bancarios · {empresa.nombre}</h1>
-            <p style={{fontSize:13,color:C.muted,margin:'4px 0 0',textTransform:'capitalize'}}>{fmtFechaLarga(fechaConsulta)}{!esHoy && <span style={{marginLeft:8,background:'#FFF3E0',color:'#E65100',padding:'2px 8px',borderRadius:8,fontSize:11,fontWeight:700,textTransform:'uppercase'}}>Histórico · solo lectura</span>}</p>
+            <p style={{fontSize:13,color:C.muted,margin:'4px 0 0',textTransform:'capitalize'}}>{fmtFechaLarga(fechaConsulta)}{!esHoy && !edicionHistoricaSaldos && <span style={{marginLeft:8,background:'#FFF3E0',color:'#E65100',padding:'2px 8px',borderRadius:8,fontSize:11,fontWeight:700,textTransform:'uppercase'}}>Histórico · solo lectura</span>}{!esHoy && edicionHistoricaSaldos && <span style={{marginLeft:8,background:'#FFEBEE',color:'#C62828',padding:'2px 8px',borderRadius:8,fontSize:11,fontWeight:700,textTransform:'uppercase'}}>✏️ EDITANDO histórico</span>}</p>
           </div>
           <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
             {!esHoy && (
@@ -6484,6 +6521,41 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             <button onClick={() => setShowCopiarMenu(true)} disabled={cuentas.length===0} style={{background:cuentas.length===0?'#999':C.navy,color:'#fff',border:'none',padding:'7px 12px',borderRadius:7,fontSize:11,fontWeight:700,cursor:cuentas.length===0?'not-allowed':'pointer',fontFamily:'inherit'}}>📸 Copiar Imagen</button>
           </div>
         </div>
+
+        {/* Banner: Vista histórica - solo lectura → habilitar edición */}
+        {!esHoy && !edicionHistoricaSaldos && puedeEditarHistorico && (
+          <div style={{background:'#FFF8E1',border:'1px solid #FFE082',borderRadius:10,padding:'12px 16px',marginBottom:14,display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:700,color:'#E65100'}}>📅 Vista histórica · solo lectura</div>
+              <div style={{fontSize:11,color:'#5D4037',marginTop:2}}>Estás viendo los saldos de una fecha pasada. Si necesitas modificarlos, habilita la edición.</div>
+            </div>
+            <button onClick={() => {
+              if (window.confirm('Vas a editar los saldos del histórico. Los cambios afectarán permanentemente y los saldos heredados de los días siguientes se actualizarán automáticamente.\n\n¿Continuar?')) {
+                setEdicionHistoricaSaldos(true);
+              }
+            }} style={{background:'#fff',border:'1px solid #FFB74D',color:'#E65100',padding:'8px 16px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>
+              🔓 Habilitar edición
+            </button>
+          </div>
+        )}
+
+        {/* Banner: EDITANDO histórico → terminar edición */}
+        {!esHoy && edicionHistoricaSaldos && (
+          <div style={{background:'#FFEBEE',border:'1px solid #EF9A9A',borderRadius:10,padding:'12px 16px',marginBottom:14,display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:700,color:'#C62828'}}>✏️ EDITANDO saldos históricos · {fmtFechaLarga(fechaConsulta)}</div>
+              <div style={{fontSize:11,color:'#7F1D1D',marginTop:2}}>Los cambios afectan el histórico permanentemente. Termina la edición cuando hayas terminado.</div>
+            </div>
+            <div style={{display:'flex',gap:8}}>
+              <button onClick={() => setEdicionHistoricaSaldos(false)} style={{background:'#fff',border:`1px solid ${C.border}`,color:C.text,padding:'8px 14px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>
+                🔒 Terminar edición
+              </button>
+              <button onClick={() => { setEdicionHistoricaSaldos(false); setVerHistorico(null); }} style={{background:'#FF9800',color:'#fff',border:'none',padding:'8px 14px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>
+                ↶ Volver a Hoy
+              </button>
+            </div>
+          </div>
+        )}
 
         {cuentas.length === 0 ? (
           <div style={{textAlign:'center',padding:60,background:C.surface,border:`1px dashed ${C.border}`,borderRadius:14,color:C.muted}}>
@@ -6546,7 +6618,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         )}
 
         {showCuentas && <ModalCuentas onClose={() => { setShowCuentas(false); recargar(); }} />}
-        {showPendientes && <ModalPendientes onClose={() => { setShowPendientes(false); recargar(); }} cuentas={cuentas} saldosHoy={getSaldosByMomento(pendientesMomento)} fechaHoy={fechaHoy} momento={pendientesMomento} temaPrimario={tema(pendientesMomento).primario} />}
+        {showPendientes && <ModalPendientes onClose={() => { setShowPendientes(false); recargar(); }} cuentas={cuentas} saldosHoy={getSaldosByMomento(pendientesMomento)} fechaHoy={fechaConsulta} momento={pendientesMomento} temaPrimario={tema(pendientesMomento).primario} />}
         {showHistorico && <ModalHistorico onClose={() => setShowHistorico(false)} onSelectFecha={(f, m) => { setVerHistorico({fecha: f, momento: m}); setShowHistorico(false); }} />}
       </div>
     );
