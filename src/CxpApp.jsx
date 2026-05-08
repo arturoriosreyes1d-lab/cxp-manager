@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import * as XLSX from "xlsx";
+import { parsearEstadoCuenta } from "./EstadoCuentaImporter";
 import EgresosNFModal from "./EgresosNFModal";
 import html2canvas from "html2canvas";
 import {
@@ -6150,6 +6151,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     const [verHistorico, setVerHistorico] = useState(null); // {fecha, momento}
     const [edicionHistoricaSaldos, setEdicionHistoricaSaldos] = useState(false);
     const [showCopiarMenu, setShowCopiarMenu] = useState(false);
+    const [importarECModal, setImportarECModal] = useState(null);
     const refInicio = useRef(null);
     const refCierre = useRef(null);
     const refAmbos = useRef(null);
@@ -6518,6 +6520,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             )}
             <button onClick={() => setShowCuentas(true)} disabled={esConsulta} style={{background:'#fff',border:`1px solid ${C.border}`,padding:'7px 12px',borderRadius:7,fontSize:11,color:C.text,fontWeight:600,cursor:esConsulta?'not-allowed':'pointer',opacity:esConsulta?0.5:1,fontFamily:'inherit'}}>⚙️ Cuentas</button>
             <button onClick={() => setShowHistorico(true)} style={{background:'#fff',border:`1px solid ${C.border}`,padding:'7px 12px',borderRadius:7,fontSize:11,color:C.text,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>📜 Histórico</button>
+            <button onClick={() => setImportarECModal({ open: true, archivo: null, parseando: false, resultado: null, sobreescribir: new Set() })} disabled={esConsulta} style={{background:esConsulta?'#999':'#1976D2',color:'#fff',border:'none',padding:'7px 12px',borderRadius:7,fontSize:11,fontWeight:700,cursor:esConsulta?'not-allowed':'pointer',fontFamily:'inherit'}}>📥 Importar Excel</button>
             <button onClick={() => setShowCopiarMenu(true)} disabled={cuentas.length===0} style={{background:cuentas.length===0?'#999':C.navy,color:'#fff',border:'none',padding:'7px 12px',borderRadius:7,fontSize:11,fontWeight:700,cursor:cuentas.length===0?'not-allowed':'pointer',fontFamily:'inherit'}}>📸 Copiar Imagen</button>
           </div>
         </div>
@@ -6650,6 +6653,205 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           }
           setShowHistorico(false);
         }} />}
+        
+        {importarECModal?.open && (() => {
+          const m = importarECModal;
+          const setM = (patch) => setImportarECModal(prev => ({ ...prev, ...patch }));
+          
+          // Procesar archivo subido
+          const handleArchivo = async (ev) => {
+            const file = ev.target.files?.[0];
+            if (!file) return;
+            setM({ archivo: file, parseando: true, resultado: null });
+            try {
+              const buf = await file.arrayBuffer();
+              const wb = XLSX.read(new Uint8Array(buf), { type: 'array', cellDates: true });
+              const res = parsearEstadoCuenta(XLSX, wb, empresaId);
+              if (res.errores.length > 0 && res.saldos.length === 0) {
+                alert(`Error al procesar el archivo:\n\n${res.errores.join('\n')}`);
+                setM({ parseando: false, archivo: null });
+                return;
+              }
+              // Para cada saldo, encontrar la cuenta de la BD que matchea
+              const saldosConCuenta = res.saldos.map(s => {
+                const cuentaBD = cuentas.find(c => s.cuentaConfig.match(c));
+                return {
+                  ...s,
+                  cuentaId: cuentaBD?.id || null,
+                  cuentaInfo: cuentaBD ? `${cuentaBD.banco} (${cuentaBD.numeroCuenta || 's/n'})` : `${s.cuentaConfig.label} - NO ENCONTRADA EN BD`,
+                  saldoActualBD: cuentaBD ? null : null, // se llena después
+                };
+              });
+              setM({ parseando: false, resultado: { ...res, saldosConCuenta }, sobreescribir: new Set() });
+            } catch (err) {
+              console.error('Error procesando Excel:', err);
+              alert('Error al procesar el archivo: ' + err.message);
+              setM({ parseando: false, archivo: null });
+            }
+            ev.target.value = '';
+          };
+          
+          // Aplicar todos los saldos seleccionados
+          const aplicar = async () => {
+            if (!m.resultado) return;
+            const aGuardar = m.resultado.saldosConCuenta.filter(s => s.cuentaId !== null);
+            if (aGuardar.length === 0) { alert('No hay saldos para guardar.'); return; }
+            setM({ guardando: true });
+            let guardados = 0, errores = 0;
+            for (const s of aGuardar) {
+              const cuenta = cuentas.find(c => c.id === s.cuentaId);
+              if (!cuenta) { errores++; continue; }
+              const pendActual = (s.fecha === fechaConsulta ? movsPend(cuenta.id, 'cierre') : 0); // mantener pendientes existentes para hoy
+              const ok = await upsertSaldoDiario({
+                cuentaId: cuenta.id, empresaId, fecha: s.fecha, momento: 'cierre',
+                saldoReal: s.saldo, movsPendientes: pendActual,
+              }, user?.nombre || 'desconocido');
+              if (ok) guardados++; else errores++;
+            }
+            // Recargar saldos del día actual
+            await recargar();
+            setM({ guardando: false });
+            alert(`✅ Se importaron ${guardados} saldo${guardados === 1 ? '' : 's'} de cierre.${errores > 0 ? `\n⚠️ ${errores} con error.` : ''}`);
+            setImportarECModal(null);
+          };
+          
+          // Agrupar saldos por cuenta para vista previa
+          const saldosPorCuenta = (m.resultado?.saldosConCuenta || []).reduce((acc, s) => {
+            const k = s.cuentaConfig.label;
+            if (!acc[k]) acc[k] = { config: s.cuentaConfig, cuentaInfo: s.cuentaInfo, cuentaId: s.cuentaId, items: [] };
+            acc[k].items.push(s);
+            return acc;
+          }, {});
+          // Ordenar items de cada cuenta por fecha desc
+          Object.values(saldosPorCuenta).forEach(g => g.items.sort((a, b) => b.fecha.localeCompare(a.fecha)));
+          
+          const totalSaldos = m.resultado?.saldos.length || 0;
+          const totalSinCuenta = (m.resultado?.saldosConCuenta || []).filter(s => !s.cuentaId).length;
+          
+          return (
+            <div onClick={(e) => { if (e.target === e.currentTarget) setImportarECModal(null); }}
+              style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:14}}>
+              <div style={{background:'#fff',borderRadius:14,width:'100%',maxWidth:m.resultado ? 900 : 600,maxHeight:'92vh',display:'flex',flexDirection:'column',boxShadow:'0 20px 60px rgba(0,0,0,0.4)'}}>
+                <div style={{padding:'16px 22px',borderBottom:`1px solid ${C.border}`,display:'flex',justifyContent:'space-between',alignItems:'center',background:'#E3F2FD'}}>
+                  <div>
+                    <h3 style={{margin:0,fontSize:16,fontWeight:800,color:'#0D47A1'}}>📥 Importar Saldos del Estado de Cuenta</h3>
+                    <p style={{margin:'2px 0 0',fontSize:12,color:'#1565C0'}}>{empresa.nombre} · Solo se importan saldos de CIERRE</p>
+                  </div>
+                  <button onClick={() => setImportarECModal(null)} style={{background:'transparent',border:'none',fontSize:22,cursor:'pointer',color:'#666'}}>×</button>
+                </div>
+                
+                <div style={{overflow:'auto',padding:18,flex:1}}>
+                  {!m.resultado ? (
+                    <>
+                      <div style={{background:'#FFFDE7',border:'1px solid #FFE082',borderRadius:8,padding:'12px 14px',marginBottom:16,fontSize:12,color:'#5D4037'}}>
+                        <div style={{fontWeight:700,marginBottom:6,color:'#E65100'}}>📋 ¿Cómo funciona?</div>
+                        <div style={{lineHeight:1.6}}>
+                          1. Sube el Excel del estado de cuenta del banco<br/>
+                          2. La app detecta automáticamente cada hoja → cuenta correspondiente<br/>
+                          3. Por cada hoja, extrae el <b>saldo final de cada día</b> (última fila)<br/>
+                          4. Vista previa para que confirmes antes de guardar<br/>
+                          5. Solo se actualiza el saldo de <b>CIERRE</b>; el inicio se hereda automáticamente
+                        </div>
+                      </div>
+                      
+                      {m.parseando ? (
+                        <div style={{textAlign:'center',padding:40,color:'#1976D2',fontSize:14}}>
+                          ⏳ Procesando archivo...
+                        </div>
+                      ) : (
+                        <label style={{background:'#E3F2FD',border:'2px dashed #1976D2',borderRadius:10,padding:'30px 20px',textAlign:'center',cursor:'pointer',display:'block'}}>
+                          <div style={{fontSize:42,marginBottom:8}}>📁</div>
+                          <div style={{fontSize:14,fontWeight:700,color:'#0D47A1',marginBottom:4}}>Subir archivo Excel</div>
+                          <div style={{fontSize:11,color:'#1565C0'}}>.xlsx · clic aquí para seleccionar</div>
+                          <input type="file" accept=".xlsx,.xls" onChange={handleArchivo} style={{display:'none'}}/>
+                        </label>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14,flexWrap:'wrap',gap:8}}>
+                        <div style={{fontSize:13,fontWeight:700,color:C.navy}}>
+                          📊 Vista previa · {totalSaldos} saldo{totalSaldos === 1 ? '' : 's'} detectado{totalSaldos === 1 ? '' : 's'}
+                        </div>
+                        <div style={{fontSize:11,display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+                          <span style={{background:'#E8F5E9',color:'#1B5E20',padding:'2px 8px',borderRadius:6,fontWeight:700}}>✅ {totalSaldos - totalSinCuenta} listos</span>
+                          {totalSinCuenta > 0 && <span style={{background:'#FFEBEE',color:'#C62828',padding:'2px 8px',borderRadius:6,fontWeight:700}}>⚠ {totalSinCuenta} sin cuenta</span>}
+                          <button onClick={() => setM({ resultado: null, archivo: null })} style={{background:'transparent',border:'none',color:'#1976D2',cursor:'pointer',fontSize:11,fontWeight:600}}>← Subir otro archivo</button>
+                        </div>
+                      </div>
+                      
+                      {m.resultado.errores.length > 0 && (
+                        <div style={{background:'#FFEBEE',border:'1px solid #EF9A9A',borderRadius:8,padding:'10px 14px',marginBottom:12,fontSize:12,color:'#C62828'}}>
+                          ⚠️ {m.resultado.errores.join(' · ')}
+                        </div>
+                      )}
+                      
+                      {m.resultado.hojasNoMapeadas.length > 0 && (
+                        <div style={{background:'#FFF3E0',border:'1px solid #FFB74D',borderRadius:8,padding:'10px 14px',marginBottom:12,fontSize:11,color:'#E65100'}}>
+                          ℹ️ Hojas ignoradas: {m.resultado.hojasNoMapeadas.join(', ')}
+                        </div>
+                      )}
+                      
+                      {/* Tabla agrupada por cuenta */}
+                      {Object.entries(saldosPorCuenta).map(([label, g]) => {
+                        const sinCuenta = !g.cuentaId;
+                        const sym = g.config.match.toString().includes('USD') || (cuentas.find(c => c.id === g.cuentaId)?.moneda === 'USD') ? '$' : '$';
+                        return (
+                          <div key={label} style={{border:`1px solid ${sinCuenta ? '#EF9A9A' : C.border}`,borderRadius:8,marginBottom:12,overflow:'hidden'}}>
+                            <div style={{background: sinCuenta ? '#FFEBEE' : '#F8FAFC', padding:'10px 14px', borderBottom:`1px solid ${C.border}`,display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+                              <div>
+                                <div style={{fontSize:13,fontWeight:800,color: sinCuenta ? '#C62828' : C.navy}}>
+                                  {sinCuenta ? '⚠️' : '✅'} {g.config.label}
+                                </div>
+                                <div style={{fontSize:11,color:C.muted,marginTop:2}}>{g.cuentaInfo}</div>
+                              </div>
+                              <div style={{fontSize:11,color:C.muted}}>{g.items.length} día{g.items.length === 1 ? '' : 's'}</div>
+                            </div>
+                            {!sinCuenta && (
+                              <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                                <thead>
+                                  <tr style={{background:'#FAFBFC',borderBottom:`1px solid ${C.border}`}}>
+                                    <th style={{padding:'6px 14px',textAlign:'left',color:C.muted,fontWeight:700,fontSize:10,textTransform:'uppercase'}}>Fecha</th>
+                                    <th style={{padding:'6px 14px',textAlign:'right',color:C.muted,fontWeight:700,fontSize:10,textTransform:'uppercase'}}>Saldo final</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {g.items.map((it, idx) => (
+                                    <tr key={`${it.fecha}_${idx}`} style={{borderBottom:`1px solid ${C.border}`}}>
+                                      <td style={{padding:'6px 14px',whiteSpace:'nowrap',color:C.text}}>{it.fecha}</td>
+                                      <td style={{padding:'6px 14px',textAlign:'right',fontFamily:'monospace',fontWeight:700,color:C.navy}}>
+                                        ${(+it.saldo).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        );
+                      })}
+                      
+                      {totalSinCuenta > 0 && (
+                        <div style={{background:'#FFFDE7',border:'1px solid #FFE082',borderRadius:8,padding:'10px 14px',marginTop:8,fontSize:11,color:'#5D4037'}}>
+                          💡 Los saldos sin cuenta se omitirán. Verifica que las cuentas existan en ⚙️ Cuentas.
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+                
+                {m.resultado && (
+                  <div style={{padding:'12px 22px',borderTop:`1px solid ${C.border}`,display:'flex',justifyContent:'flex-end',gap:10}}>
+                    <button onClick={() => setImportarECModal(null)} disabled={m.guardando} style={{background:'#F1F5F9',color:'#374151',border:'none',padding:'10px 20px',borderRadius:8,fontSize:13,fontWeight:700,cursor:m.guardando?'not-allowed':'pointer',fontFamily:'inherit'}}>Cancelar</button>
+                    <button onClick={aplicar} disabled={m.guardando || (totalSaldos - totalSinCuenta) === 0} style={{background:m.guardando||(totalSaldos-totalSinCuenta)===0?'#B0BEC5':'#1B5E20',color:'#fff',border:'none',padding:'10px 20px',borderRadius:8,fontSize:13,fontWeight:700,cursor:m.guardando||(totalSaldos-totalSinCuenta)===0?'not-allowed':'pointer',fontFamily:'inherit'}}>
+                      {m.guardando ? '⏳ Guardando...' : `💾 Aplicar ${totalSaldos - totalSinCuenta} saldo${(totalSaldos-totalSinCuenta)===1?'':'s'}`}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </div>
     );
   };
