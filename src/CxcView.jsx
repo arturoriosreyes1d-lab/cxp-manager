@@ -4938,6 +4938,50 @@ function PorFacturarModal({ empresaId, porFacturar, setPorFacturar, ingresos, in
   const [filtroDestinoPF, setFiltroDestinoPF] = React.useState("");
   const [busquedaPF, setBusquedaPF] = React.useState("");
   const [gruposColapsados, setGruposColapsados] = React.useState(()=>new Set());
+  // Selección masiva: Set de ids para borrado en lote
+  const [seleccionados, setSeleccionados] = React.useState(()=>new Set());
+  const [confirmMasivo, setConfirmMasivo] = React.useState(false);
+  const [borrandoMasivo, setBorrandoMasivo] = React.useState(false);
+
+  const toggleId = (id) => setSeleccionados(prev=>{
+    const n=new Set(prev); if(n.has(id))n.delete(id); else n.add(id); return n;
+  });
+  const toggleIdsGrupo = (ids, todos) => setSeleccionados(prev=>{
+    const n=new Set(prev);
+    if (todos) ids.forEach(id=>n.delete(id));
+    else ids.forEach(id=>n.add(id));
+    return n;
+  });
+  const limpiarSeleccion = () => setSeleccionados(new Set());
+
+  // Master checkbox controlado para mostrar estado indeterminate
+  const MasterCheckbox = React.useMemo(()=>(
+    ({checked, indeterminate, onChange, title}) => {
+      const ref = React.useRef();
+      React.useEffect(()=>{ if(ref.current) ref.current.indeterminate = !!indeterminate; }, [indeterminate]);
+      return <input ref={ref} type="checkbox" checked={!!checked} onChange={onChange} title={title} style={{cursor:"pointer"}}/>;
+    }
+  ),[]);
+
+  // Limpiar selección al cambiar vista, búsqueda o filtro: evita que queden
+  // IDs seleccionados que ya no son visibles y que un masivo borre algo no esperado.
+  React.useEffect(()=>{ setSeleccionados(new Set()); }, [vistaPF, busquedaPF, filtroDestinoPF]);
+
+  const borrarMasivo = async () => {
+    if (esConsulta) return;
+    setBorrandoMasivo(true);
+    const ids = Array.from(seleccionados);
+    const errores = [];
+    for (const id of ids) {
+      try { await deletePorFacturar(id); }
+      catch (e) { errores.push(id); }
+    }
+    setPorFacturar(prev => prev.filter(r => !seleccionados.has(r.id) || errores.includes(r.id)));
+    setSeleccionados(new Set());
+    setConfirmMasivo(false);
+    setBorrandoMasivo(false);
+    if (errores.length) alert(`Se eliminaron ${ids.length-errores.length} de ${ids.length}. ${errores.length} fallaron.`);
+  };
 
   const DESTINOS = ["Cancún","Tulum","Los Cabos","Cozumel","Mérida","Huatulco","Puerto Vallarta","Mazatlán"];
 
@@ -5189,6 +5233,14 @@ function PorFacturarModal({ empresaId, porFacturar, setPorFacturar, ingresos, in
             </button>
           )}
 
+          {/* Eliminar seleccionados — visible solo si hay selección y permiso */}
+          {!esConsulta && seleccionados.size>0 && (
+            <button onClick={()=>setConfirmMasivo(true)} disabled={borrandoMasivo}
+              style={{...btnStyle,background:C.danger,color:"#fff",padding:"5px 12px",fontSize:12,opacity:borrandoMasivo?0.5:1}}>
+              🗑️ Eliminar {seleccionados.size} seleccionado{seleccionados.size===1?"":"s"}
+            </button>
+          )}
+
           <span style={{fontSize:12,color:C.muted,marginLeft:"auto"}}>
             {pfFiltrado.length} {pfFiltrado.length===1?"registro":"registros"}
             {hayBusqueda && porFacturar.length!==pfFiltrado.length && (
@@ -5196,6 +5248,19 @@ function PorFacturarModal({ empresaId, porFacturar, setPorFacturar, ingresos, in
             )}
           </span>
         </div>
+
+        {/* Banner de confirmación de borrado masivo */}
+        {confirmMasivo && (
+          <div style={{padding:"12px 24px",background:"#FFEBEE",borderBottom:`1px solid #FFCDD2`,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+            <span style={{fontSize:13,color:C.danger,fontWeight:600}}>⚠️ ¿Eliminar {seleccionados.size} registro{seleccionados.size===1?"":"s"} seleccionado{seleccionados.size===1?"":"s"}? Esta acción no se puede deshacer.</span>
+            <button onClick={borrarMasivo} disabled={borrandoMasivo}
+              style={{...btnStyle,background:C.danger,padding:"6px 16px",fontSize:13,opacity:borrandoMasivo?0.5:1}}>
+              {borrandoMasivo?"Eliminando...":`Sí, eliminar ${seleccionados.size}`}
+            </button>
+            <button onClick={()=>setConfirmMasivo(false)} disabled={borrandoMasivo}
+              style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"6px 12px",fontSize:13}}>Cancelar</button>
+          </div>
+        )}
         {/* Table */}
         <div style={{overflowY:"auto",flex:1}}>
           {porFacturar.length===0 ? (
@@ -5228,18 +5293,36 @@ function PorFacturarModal({ empresaId, porFacturar, setPorFacturar, ingresos, in
             ];
             const renderTabla = (regs, ocultarCol=null) => {
               const COLS = ALL_COLS.filter(c => c.id !== ocultarCol);
+              const idsRegs = regs.map(r=>r.id);
+              const selEnGrupo = idsRegs.filter(id=>seleccionados.has(id));
+              const allSel  = idsRegs.length>0 && selEnGrupo.length === idsRegs.length;
+              const someSel = !allSel && selEnGrupo.length > 0;
               return (
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
                   <thead style={{position:"sticky",top:0}}>
                     <tr style={{background:C.navy}}>
+                      {!esConsulta && (
+                        <th style={{padding:"10px 12px",width:30,textAlign:"center"}}>
+                          <MasterCheckbox checked={allSel} indeterminate={someSel}
+                            onChange={()=>toggleIdsGrupo(idsRegs, allSel)}
+                            title={allSel?"Deseleccionar grupo":"Seleccionar grupo"}/>
+                        </th>
+                      )}
                       {COLS.map(h=>(
                         <th key={h.id} style={{padding:"10px 12px",textAlign:h.align,color:"#fff",fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h.l}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {regs.map((r,i)=>(
-                      <tr key={r.id} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFF"}}>
+                    {regs.map((r,i)=>{
+                      const checked = seleccionados.has(r.id);
+                      return (
+                      <tr key={r.id} style={{borderTop:`1px solid ${C.border}`,background:checked?"#F3E5F5":(i%2===0?"#fff":"#FAFBFF")}}>
+                        {!esConsulta && (
+                          <td style={{padding:"10px 12px",textAlign:"center"}}>
+                            <input type="checkbox" checked={checked} onChange={()=>toggleId(r.id)} style={{cursor:"pointer"}}/>
+                          </td>
+                        )}
                         {ocultarCol!=="cliente" && (
                           <td style={{padding:"10px 12px",fontWeight:700,color:"#6A1B9A",fontSize:13}}>{r.cliente}</td>
                         )}
@@ -5266,7 +5349,8 @@ function PorFacturarModal({ empresaId, porFacturar, setPorFacturar, ingresos, in
                           )}
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               );
@@ -5383,6 +5467,40 @@ function ConciliacionModal({
   const [selMods,   setSelMods]   = React.useState(()=>new Set(buckets.modificados.map((_,i)=>i)));
   const [selDel,    setSelDel]    = React.useState(()=>new Set());
 
+  // Sort por columna en cada tab tabular (Nuevos / Iguales / Solo en sistema).
+  // Modificados es card-based: usa un selector tipo "ordenar por".
+  const [sortNuevos,  setSortNuevos]  = React.useState({col:null, dir:"asc"});
+  const [sortIguales, setSortIguales] = React.useState({col:null, dir:"asc"});
+  const [sortSolo,    setSortSolo]    = React.useState({col:null, dir:"asc"});
+  const [sortMods,    setSortMods]    = React.useState("default"); // "default"|"cliente"|"numOs"|"cambios"
+
+  const onSortClick = (setFn) => (col) => setFn(prev =>
+    prev.col === col
+      ? { col, dir: prev.dir === "asc" ? "desc" : "asc" }
+      : { col, dir: "asc" }
+  );
+
+  const aplicarSort = (arr, sort, accessor) => {
+    if (!sort.col) return arr;
+    const sorted = [...arr].sort((a,b)=>{
+      const va = accessor(a, sort.col);
+      const vb = accessor(b, sort.col);
+      if (typeof va === "number" && typeof vb === "number") return va - vb;
+      return String(va||"").localeCompare(String(vb||""), "es", {numeric:true});
+    });
+    return sort.dir === "desc" ? sorted.reverse() : sorted;
+  };
+
+  const SortableTh = ({col, label, align, sortState, onClick:onClk, style:extraStyle}) => {
+    const active = sortState.col === col;
+    return (
+      <th onClick={()=>onClk(col)}
+        style={{padding:"8px 10px",textAlign:align||"left",color:"#fff",fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap",cursor:"pointer",userSelect:"none",background:active?"rgba(255,255,255,.10)":"transparent",...(extraStyle||{})}}>
+        {label}{active && <span style={{marginLeft:4,fontSize:9}}>{sortState.dir==="asc"?"▲":"▼"}</span>}
+      </th>
+    );
+  };
+
   const toggleSel = (setFn, idx) => setFn(prev => {
     const n = new Set(prev);
     if (n.has(idx)) n.delete(idx); else n.add(idx);
@@ -5467,10 +5585,10 @@ function ConciliacionModal({
       <div style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:1400,maxHeight:"95vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.4)"}}
         onClick={e=>e.stopPropagation()}>
 
-        <div style={{padding:"18px 24px",background:"#E65100",borderRadius:"16px 16px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{padding:"18px 24px",background:"#6A1B9A",borderRadius:"16px 16px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div>
             <div style={{fontWeight:800,color:"#fff",fontSize:17}}>🔄 Conciliar Excel — Pendiente por Facturar</div>
-            <div style={{fontSize:12,color:"#FFE0B2",marginTop:3}}>
+            <div style={{fontSize:12,color:"#E1BEE7",marginTop:3}}>
               Archivo: <b>{fileName}</b> · {excelRows.length} {excelRows.length===1?"registro leído":"registros leídos"} · Llave de match: <b>(# OS, cliente)</b>
             </div>
           </div>
@@ -5510,7 +5628,7 @@ function ConciliacionModal({
         {!resultado && (
           <div style={{display:"flex",borderBottom:`1px solid ${C.border}`,background:"#FAFAFA"}}>
             <TabBtn id="nuevos"       l="🆕 Nuevos"          count={buckets.nuevos.length}      color="#2E7D32"/>
-            <TabBtn id="modificados"  l="✏️ Modificados"     count={buckets.modificados.length} color="#E65100"/>
+            <TabBtn id="modificados"  l="✏️ Modificados"     count={buckets.modificados.length} color="#8E24AA"/>
             <TabBtn id="iguales"      l="✅ Iguales"         count={buckets.iguales.length}     color="#1565C0"/>
             <TabBtn id="solo_sistema" l="❌ Solo en sistema" count={buckets.soloSistema.length} color="#C62828"/>
           </div>
@@ -5531,23 +5649,31 @@ function ConciliacionModal({
                       {selNuevos.size===buckets.nuevos.length?"Deseleccionar todos":"Seleccionar todos"}
                     </button>
                   </div>
+                  {(()=>{
+                    const items = buckets.nuevos.map((n,idx)=>({n,idx}));
+                    const ordenados = aplicarSort(items, sortNuevos, (x,col)=>{
+                      if (col==="importe") return +x.n.row.importe||0;
+                      return String(x.n.row[col]||"");
+                    });
+                    const onClk = onSortClick(setSortNuevos);
+                    return (
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
                     <thead><tr style={{background:C.navy,color:"#fff"}}>
                       <th style={{padding:"8px",width:30}}></th>
-                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>Cliente</th>
-                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>Concepto</th>
-                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}># OS</th>
-                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>Destino</th>
-                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>Fecha</th>
-                      <th style={{padding:"8px 10px",textAlign:"right",fontSize:11,textTransform:"uppercase"}}>Importe</th>
+                      <SortableTh col="cliente"    label="Cliente"  sortState={sortNuevos} onClick={onClk}/>
+                      <SortableTh col="concepto"   label="Concepto" sortState={sortNuevos} onClick={onClk}/>
+                      <SortableTh col="numOs"      label="# OS"     sortState={sortNuevos} onClick={onClk}/>
+                      <SortableTh col="destino"    label="Destino"  sortState={sortNuevos} onClick={onClk}/>
+                      <SortableTh col="fechaVenta" label="Fecha"    sortState={sortNuevos} onClick={onClk}/>
+                      <SortableTh col="importe"    label="Importe"  align="right" sortState={sortNuevos} onClick={onClk}/>
                     </tr></thead>
                     <tbody>
-                      {buckets.nuevos.map((n,i)=>{
+                      {ordenados.map(({n,idx},i)=>{
                         const r = n.row;
                         return (
-                          <tr key={i} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFF"}}>
+                          <tr key={idx} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFF"}}>
                             <td style={{padding:"8px",textAlign:"center"}}>
-                              <input type="checkbox" checked={selNuevos.has(i)} onChange={()=>toggleSel(setSelNuevos,i)}/>
+                              <input type="checkbox" checked={selNuevos.has(idx)} onChange={()=>toggleSel(setSelNuevos,idx)}/>
                             </td>
                             <td style={{padding:"8px 10px",fontWeight:700,color:"#2E7D32",fontSize:12}}>
                               {r.cliente}
@@ -5563,6 +5689,7 @@ function ConciliacionModal({
                       })}
                     </tbody>
                   </table>
+                    );})()}
                 </div>
               )
             )}
@@ -5572,20 +5699,39 @@ function ConciliacionModal({
                 <div style={{textAlign:"center",padding:40,color:C.muted}}>No hay registros modificados. Todo lo que matchea coincide en todos los campos.</div>
               ) : (
                 <div>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:10,flexWrap:"wrap"}}>
                     <div style={{fontSize:13,color:C.muted}}>
-                      Aplicar cambios del Excel a: <b style={{color:"#E65100"}}>{selMods.size}</b> de {buckets.modificados.length}
+                      Aplicar cambios del Excel a: <b style={{color:"#8E24AA"}}>{selMods.size}</b> de {buckets.modificados.length}
                     </div>
-                    <button onClick={()=>toggleAll(setSelMods, buckets.modificados.length, selMods)}
-                      style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"5px 12px",fontSize:12}}>
-                      {selMods.size===buckets.modificados.length?"Deseleccionar todos":"Seleccionar todos"}
-                    </button>
+                    <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                      <span style={{fontSize:11,color:C.muted}}>Ordenar por:</span>
+                      <select value={sortMods} onChange={e=>setSortMods(e.target.value)}
+                        style={{...inputStyle,fontSize:12,padding:"5px 8px"}}>
+                        <option value="default">Original</option>
+                        <option value="cliente">Cliente A→Z</option>
+                        <option value="numOs">Número de OS</option>
+                        <option value="cambios"># de cambios</option>
+                      </select>
+                      <button onClick={()=>toggleAll(setSelMods, buckets.modificados.length, selMods)}
+                        style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"5px 12px",fontSize:12}}>
+                        {selMods.size===buckets.modificados.length?"Deseleccionar todos":"Seleccionar todos"}
+                      </button>
+                    </div>
                   </div>
-                  {buckets.modificados.map((m,i)=>(
-                    <div key={i} style={{border:`1px solid ${selMods.has(i)?"#FFB74D":C.border}`,borderRadius:8,padding:12,marginBottom:10,background:selMods.has(i)?"#FFF8E1":"#FAFBFF"}}>
+                  {(()=>{
+                    const items = buckets.modificados.map((m,idx)=>({m,idx}));
+                    if (sortMods==="default") return items;
+                    return [...items].sort((a,b)=>{
+                      if (sortMods==="cliente") return String(a.m.sistema.cliente||"").localeCompare(String(b.m.sistema.cliente||""),"es");
+                      if (sortMods==="numOs")   return String(a.m.sistema.numOs||"").localeCompare(String(b.m.sistema.numOs||""),"es",{numeric:true});
+                      if (sortMods==="cambios") return b.m.diffs.length - a.m.diffs.length;
+                      return 0;
+                    });
+                  })().map(({m,idx},i)=>(
+                    <div key={idx} style={{border:`1px solid ${selMods.has(idx)?"#CE93D8":C.border}`,borderRadius:8,padding:12,marginBottom:10,background:selMods.has(idx)?"#F3E5F5":"#FAFBFF"}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                        <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13,fontWeight:700,color:"#E65100"}}>
-                          <input type="checkbox" checked={selMods.has(i)} onChange={()=>toggleSel(setSelMods,i)}/>
+                        <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13,fontWeight:700,color:"#8E24AA"}}>
+                          <input type="checkbox" checked={selMods.has(idx)} onChange={()=>toggleSel(setSelMods,idx)}/>
                           ✏️ {m.sistema.cliente} · OS {m.sistema.numOs}
                         </label>
                         <span style={{fontSize:11,color:C.muted}}>{m.diffs.length} {m.diffs.length===1?"campo cambió":"campos cambiaron"}</span>
@@ -5618,18 +5764,25 @@ function ConciliacionModal({
               ) : (
                 <div>
                   <div style={{fontSize:13,color:C.muted,marginBottom:8}}>Estos {buckets.iguales.length} registros ya están en sistema con los mismos datos. No se hará nada con ellos.</div>
+                  {(()=>{
+                    const ordenados = aplicarSort(buckets.iguales, sortIguales, (it,col)=>{
+                      if (col==="importe") return +it.sistema.importe||0;
+                      return String(it.sistema[col]||"");
+                    });
+                    const onClk = onSortClick(setSortIguales);
+                    return (
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
                     <thead><tr style={{background:C.navy,color:"#fff"}}>
-                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>Cliente</th>
-                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>Concepto</th>
-                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}># OS</th>
-                      <th style={{padding:"8px 10px",textAlign:"right",fontSize:11,textTransform:"uppercase"}}>Importe</th>
+                      <SortableTh col="cliente"  label="Cliente"  sortState={sortIguales} onClick={onClk}/>
+                      <SortableTh col="concepto" label="Concepto" sortState={sortIguales} onClick={onClk}/>
+                      <SortableTh col="numOs"    label="# OS"     sortState={sortIguales} onClick={onClk}/>
+                      <SortableTh col="importe"  label="Importe"  align="right" sortState={sortIguales} onClick={onClk}/>
                     </tr></thead>
                     <tbody>
-                      {buckets.iguales.map((it,i)=>{
+                      {ordenados.map((it,i)=>{
                         const r = it.sistema;
                         return (
-                          <tr key={i} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFF"}}>
+                          <tr key={r.id||i} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFF"}}>
                             <td style={{padding:"8px 10px",fontWeight:600,color:"#1565C0",fontSize:12}}>{r.cliente}</td>
                             <td style={{padding:"8px 10px",color:C.muted,fontSize:12}}>{r.concepto||"—"}</td>
                             <td style={{padding:"8px 10px",color:C.blue,fontWeight:600,fontSize:12}}>{r.numOs||"—"}</td>
@@ -5639,6 +5792,7 @@ function ConciliacionModal({
                       })}
                     </tbody>
                   </table>
+                    );})()}
                 </div>
               )
             )}
@@ -5658,32 +5812,41 @@ function ConciliacionModal({
                       {selDel.size===buckets.soloSistema.length?"Deseleccionar todos":"Seleccionar todos"}
                     </button>
                   </div>
+                  {(()=>{
+                    const items = buckets.soloSistema.map((r,idx)=>({r,idx}));
+                    const ordenados = aplicarSort(items, sortSolo, (x,col)=>{
+                      if (col==="importe") return +x.r.importe||0;
+                      return String(x.r[col]||"");
+                    });
+                    const onClk = onSortClick(setSortSolo);
+                    return (
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
                     <thead><tr style={{background:C.navy,color:"#fff"}}>
                       <th style={{padding:"8px",width:30}}></th>
-                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>Cliente</th>
-                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>Concepto</th>
-                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}># OS</th>
-                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>Destino</th>
-                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>Fecha</th>
-                      <th style={{padding:"8px 10px",textAlign:"right",fontSize:11,textTransform:"uppercase"}}>Importe</th>
+                      <SortableTh col="cliente"    label="Cliente"  sortState={sortSolo} onClick={onClk}/>
+                      <SortableTh col="concepto"   label="Concepto" sortState={sortSolo} onClick={onClk}/>
+                      <SortableTh col="numOs"      label="# OS"     sortState={sortSolo} onClick={onClk}/>
+                      <SortableTh col="destino"    label="Destino"  sortState={sortSolo} onClick={onClk}/>
+                      <SortableTh col="fechaVenta" label="Fecha"    sortState={sortSolo} onClick={onClk}/>
+                      <SortableTh col="importe"    label="Importe"  align="right" sortState={sortSolo} onClick={onClk}/>
                     </tr></thead>
                     <tbody>
-                      {buckets.soloSistema.map((r,i)=>(
-                        <tr key={r.id} style={{borderTop:`1px solid ${C.border}`,background:selDel.has(i)?"#FFEBEE":(i%2===0?"#fff":"#FAFBFF")}}>
+                      {ordenados.map(({r,idx},i)=>(
+                        <tr key={r.id} style={{borderTop:`1px solid ${C.border}`,background:selDel.has(idx)?"#FFEBEE":(i%2===0?"#fff":"#FAFBFF")}}>
                           <td style={{padding:"8px",textAlign:"center"}}>
-                            <input type="checkbox" checked={selDel.has(i)} onChange={()=>toggleSel(setSelDel,i)}/>
+                            <input type="checkbox" checked={selDel.has(idx)} onChange={()=>toggleSel(setSelDel,idx)}/>
                           </td>
-                          <td style={{padding:"8px 10px",fontWeight:600,fontSize:12,color:selDel.has(i)?C.danger:C.text}}>{r.cliente}</td>
+                          <td style={{padding:"8px 10px",fontWeight:600,fontSize:12,color:selDel.has(idx)?C.danger:C.text}}>{r.cliente}</td>
                           <td style={{padding:"8px 10px",color:C.muted,fontSize:12}}>{r.concepto||"—"}</td>
                           <td style={{padding:"8px 10px",color:C.blue,fontWeight:600,fontSize:12}}>{r.numOs||"—"}</td>
                           <td style={{padding:"8px 10px",fontSize:12}}>{r.destino||"—"}</td>
                           <td style={{padding:"8px 10px",fontSize:12,color:C.muted}}>{r.fechaVenta||"—"}</td>
-                          <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,fontSize:13,color:selDel.has(i)?C.danger:C.text}}>{r.moneda==="EUR"?"€":"$"}{fmt(+r.importe||0)}</td>
+                          <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,fontSize:13,color:selDel.has(idx)?C.danger:C.text}}>{r.moneda==="EUR"?"€":"$"}{fmt(+r.importe||0)}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                    );})()}
                 </div>
               )
             )}
@@ -5696,7 +5859,7 @@ function ConciliacionModal({
             <div style={{fontSize:13,color:C.text}}>
               <b>Plan:</b>
               <span style={{marginLeft:10,color:"#2E7D32",fontWeight:700}}>🆕 Insertar {plan.insertar}</span>
-              <span style={{marginLeft:10,color:"#E65100",fontWeight:700}}>✏️ Actualizar {plan.actualizar}</span>
+              <span style={{marginLeft:10,color:"#8E24AA",fontWeight:700}}>✏️ Actualizar {plan.actualizar}</span>
               <span style={{marginLeft:10,color:C.danger,fontWeight:700}}>❌ Eliminar {plan.eliminar}</span>
             </div>
             <div style={{display:"flex",gap:8}}>
@@ -5706,7 +5869,7 @@ function ConciliacionModal({
               </button>
               <button onClick={ejecutar}
                 disabled={ejecutando || esConsulta || (plan.insertar+plan.actualizar+plan.eliminar===0)}
-                style={{...btnStyle,background:"#E65100",color:"#fff",padding:"8px 18px",fontSize:13,opacity:(ejecutando||esConsulta||(plan.insertar+plan.actualizar+plan.eliminar===0))?0.5:1}}>
+                style={{...btnStyle,background:"#6A1B9A",color:"#fff",padding:"8px 18px",fontSize:13,opacity:(ejecutando||esConsulta||(plan.insertar+plan.actualizar+plan.eliminar===0))?0.5:1}}>
                 {ejecutando?"Aplicando...":"✓ Ejecutar conciliación"}
               </button>
             </div>
