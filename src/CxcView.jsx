@@ -4922,15 +4922,61 @@ function PorFacturarModal({ empresaId, porFacturar, setPorFacturar, ingresos, in
   const [guardando, setGuardando] = React.useState(false);
   const [vistaPF, setVistaPF] = React.useState("cliente"); // "cliente" | "destino" | "lista"
   const [filtroDestinoPF, setFiltroDestinoPF] = React.useState("");
+  const [busquedaPF, setBusquedaPF] = React.useState("");
+  const [gruposColapsados, setGruposColapsados] = React.useState(()=>new Set());
 
   const DESTINOS = ["Cancún","Tulum","Los Cabos","Cozumel","Mérida","Huatulco","Puerto Vallarta","Mazatlán"];
 
   const clientesExistentes = React.useMemo(()=>[...new Set(ingresos.map(i=>i.cliente).filter(Boolean))].sort(),[ingresos]);
   const monedaSym = m => m==="EUR"?"€":"$";
 
-  const pfFiltrado = React.useMemo(()=>
-    filtroDestinoPF ? porFacturar.filter(r=>r.destino===filtroDestinoPF) : porFacturar
-  ,[porFacturar, filtroDestinoPF]);
+  // Normaliza para búsqueda: minúsculas + sin acentos
+  const normaliza = (s) => String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+
+  const pfFiltrado = React.useMemo(()=>{
+    let arr = filtroDestinoPF ? porFacturar.filter(r=>r.destino===filtroDestinoPF) : porFacturar;
+    const q = normaliza(busquedaPF.trim());
+    if (q) {
+      arr = arr.filter(r =>
+        normaliza(r.cliente).includes(q) ||
+        normaliza(r.concepto).includes(q) ||
+        normaliza(r.numOs).includes(q) ||
+        normaliza(r.fechaVenta).includes(q) ||
+        normaliza(r.notas).includes(q) ||
+        normaliza(r.destino).includes(q) ||
+        normaliza(r.moneda).includes(q) ||
+        String(r.importe).includes(q)
+      );
+    }
+    return arr;
+  },[porFacturar, filtroDestinoPF, busquedaPF]);
+
+  // Grupos calculados una sola vez para que también los usen los botones expandir/colapsar
+  const grupos = React.useMemo(()=>{
+    if (vistaPF === "lista") return null;
+    const groupBy=(arr,fn)=>arr.reduce((acc,r)=>{const k=fn(r)||"—";if(!acc[k])acc[k]=[];acc[k].push(r);return acc;},{});
+    const groupTotal=(arr)=>arr.reduce((s,r)=>s+r.importe,0);
+    return vistaPF==="cliente"
+      ? Object.entries(groupBy(pfFiltrado,r=>r.cliente)).sort((a,b)=>groupTotal(b[1])-groupTotal(a[1]))
+      : Object.entries(groupBy(pfFiltrado,r=>r.destino||"Sin destino")).sort((a,b)=>groupTotal(b[1])-groupTotal(a[1]));
+  },[pfFiltrado, vistaPF]);
+
+  // Si hay búsqueda activa, forzamos todos los grupos abiertos (sin mutar estado).
+  // Si vista cambia, no perdemos el estado de colapsado anterior; solo aplica al volver.
+  const hayBusqueda = busquedaPF.trim().length > 0;
+  const colapsados = hayBusqueda ? new Set() : gruposColapsados;
+  const todasLasKeys = grupos ? grupos.map(g=>g[0]) : [];
+  const todasColapsadas = !hayBusqueda && todasLasKeys.length > 0 && todasLasKeys.every(k=>gruposColapsados.has(k));
+
+  const toggleGrupo = (key) => {
+    setGruposColapsados(prev=>{
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+  const expandirTodos = () => setGruposColapsados(new Set());
+  const colapsarTodos = () => setGruposColapsados(new Set(todasLasKeys));
 
   const totales = React.useMemo(()=>{
     const map={};
@@ -5103,7 +5149,38 @@ function PorFacturarModal({ empresaId, porFacturar, setPorFacturar, ingresos, in
             {DESTINOS.map(d=><option key={d} value={d}>{d}</option>)}
           </select>
           {filtroDestinoPF && <button onClick={()=>setFiltroDestinoPF("")} style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"5px 10px",fontSize:12}}>✕</button>}
-          <span style={{fontSize:12,color:C.muted,marginLeft:"auto"}}>{pfFiltrado.length} registros</span>
+
+          {/* Búsqueda en tiempo real */}
+          <div style={{position:"relative",display:"flex",alignItems:"center",flex:"1 1 220px",minWidth:200,maxWidth:360}}>
+            <span style={{position:"absolute",left:10,fontSize:13,color:C.muted,pointerEvents:"none"}}>🔍</span>
+            <input
+              value={busquedaPF}
+              onChange={e=>setBusquedaPF(e.target.value)}
+              placeholder="Buscar cliente, OS, concepto, fecha…"
+              style={{...inputStyle,paddingLeft:30,paddingRight:busquedaPF?28:10,fontSize:12,width:"100%",borderColor:busquedaPF?"#6A1B9A":C.border}}
+            />
+            {busquedaPF && (
+              <button onClick={()=>setBusquedaPF("")}
+                title="Limpiar búsqueda"
+                style={{position:"absolute",right:6,background:"transparent",border:"none",color:C.muted,cursor:"pointer",fontSize:14,padding:"2px 6px",fontFamily:"inherit"}}>✕</button>
+            )}
+          </div>
+
+          {/* Expandir/Colapsar todos — solo cuando hay grupos */}
+          {grupos && grupos.length>0 && !hayBusqueda && (
+            <button
+              onClick={todasColapsadas ? expandirTodos : colapsarTodos}
+              style={{...btnStyle,background:"#fff",color:"#6A1B9A",border:`1px solid #CE93D8`,padding:"5px 10px",fontSize:12}}>
+              {todasColapsadas ? "⊕ Expandir todos" : "⊖ Colapsar todos"}
+            </button>
+          )}
+
+          <span style={{fontSize:12,color:C.muted,marginLeft:"auto"}}>
+            {pfFiltrado.length} {pfFiltrado.length===1?"registro":"registros"}
+            {hayBusqueda && porFacturar.length!==pfFiltrado.length && (
+              <span style={{color:"#6A1B9A",fontWeight:600}}> de {porFacturar.length}</span>
+            )}
+          </span>
         </div>
         {/* Table */}
         <div style={{overflowY:"auto",flex:1}}>
@@ -5113,72 +5190,104 @@ function PorFacturarModal({ empresaId, porFacturar, setPorFacturar, ingresos, in
               <div style={{fontSize:16}}>Sin registros pendientes por facturar</div>
               <div style={{fontSize:13,marginTop:6}}>Agrega manualmente o importa desde Excel</div>
             </div>
+          ) : pfFiltrado.length===0 ? (
+            <div style={{textAlign:"center",padding:60,color:C.muted}}>
+              <div style={{fontSize:48,marginBottom:12}}>🔍</div>
+              <div style={{fontSize:16}}>Sin resultados para "{busquedaPF || filtroDestinoPF}"</div>
+              <div style={{fontSize:13,marginTop:6}}>Prueba con otro término o limpia los filtros</div>
+              <button onClick={()=>{setBusquedaPF("");setFiltroDestinoPF("");}}
+                style={{...btnStyle,background:"#6A1B9A",padding:"6px 14px",fontSize:12,marginTop:12}}>
+                Limpiar filtros
+              </button>
+            </div>
           ) : (()=>{
-            const PFRow=({r,i})=>(
-              <tr key={r.id} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFF"}}>
-                <td style={{padding:"10px 12px",fontWeight:700,color:"#6A1B9A",fontSize:13}}>{r.cliente}</td>
-                <td style={{padding:"10px 12px",color:C.muted,fontSize:12}}>{r.concepto||"—"}</td>
-                <td style={{padding:"10px 12px",fontSize:12}}>
-                  {r.destino?<span style={{background:"#E8EAF6",color:"#3949AB",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{r.destino}</span>:<span style={{color:C.muted}}>—</span>}
-                </td>
-                <td style={{padding:"10px 12px",color:C.blue,fontWeight:600,fontSize:12}}>{r.numOs||"—"}</td>
-                <td style={{padding:"10px 12px",color:C.muted,fontSize:12,whiteSpace:"nowrap"}}>{r.fechaVenta||"—"}</td>
-                <td style={{padding:"10px 12px"}}>
-                  <span style={{background:r.moneda==="MXN"?"#E3F2FD":"#E8F5E9",color:r.moneda==="MXN"?"#1565C0":"#2E7D32",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{r.moneda}</span>
-                </td>
-                <td style={{padding:"10px 12px",textAlign:"right",fontWeight:800,fontSize:15,color:"#6A1B9A"}}>{r.moneda==="EUR"?"€":"$"}{fmt(r.importe)}</td>
-                <td style={{padding:"10px 12px",textAlign:"right"}}>
-                  {!esConsulta && (
-                    <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
-                      <button onClick={()=>{setForm({...r,importe:String(r.importe)});setEditId(r.id);}}
-                        style={{padding:"4px 10px",borderRadius:6,border:`1px solid ${C.blue}`,background:"#E8F0FE",color:C.blue,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>✏️</button>
-                      <button onClick={()=>setDeleteId(r.id)}
-                        style={{padding:"4px 10px",borderRadius:6,border:`1px solid ${C.danger}`,background:"#FFEBEE",color:C.danger,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>🗑️</button>
-                    </div>
-                  )}
-                </td>
-              </tr>
-            );
-            const COLS=["Cliente","Concepto","Destino","# OS","Fecha Venta","Moneda","Importe","Acciones"];
-            const thead=(
-              <thead style={{position:"sticky",top:0}}>
-                <tr style={{background:C.navy}}>
-                  {COLS.map(h=>(
-                    <th key={h} style={{padding:"10px 12px",textAlign:h==="Importe"?"right":"left",color:"#fff",fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-            );
-            const groupBy=(arr,fn)=>arr.reduce((acc,r)=>{const k=fn(r)||"—";if(!acc[k])acc[k]=[];acc[k].push(r);return acc;},{});
-            const groupTotal=(arr)=>arr.reduce((s,r)=>s+r.importe,0);
-            if(vistaPF==="lista") return(
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                {thead}<tbody>{pfFiltrado.map((r,i)=><PFRow key={r.id} r={r} i={i}/>)}</tbody>
-              </table>
-            );
-            const grupos=vistaPF==="cliente"
-              ? Object.entries(groupBy(pfFiltrado,r=>r.cliente)).sort((a,b)=>groupTotal(b[1])-groupTotal(a[1]))
-              : Object.entries(groupBy(pfFiltrado,r=>r.destino||"Sin destino")).sort((a,b)=>groupTotal(b[1])-groupTotal(a[1]));
+            // Columnas base; ocultarCol={"cliente"|"destino"|null} suprime la columna correspondiente
+            const ALL_COLS=[
+              {id:"cliente",   l:"Cliente",     align:"left"},
+              {id:"concepto",  l:"Concepto",    align:"left"},
+              {id:"destino",   l:"Destino",     align:"left"},
+              {id:"numOs",     l:"# OS",        align:"left"},
+              {id:"fechaVenta",l:"Fecha Venta", align:"left"},
+              {id:"moneda",    l:"Moneda",      align:"left"},
+              {id:"importe",   l:"Importe",     align:"right"},
+              {id:"acciones",  l:"Acciones",    align:"right"},
+            ];
+            const renderTabla = (regs, ocultarCol=null) => {
+              const COLS = ALL_COLS.filter(c => c.id !== ocultarCol);
+              return (
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                  <thead style={{position:"sticky",top:0}}>
+                    <tr style={{background:C.navy}}>
+                      {COLS.map(h=>(
+                        <th key={h.id} style={{padding:"10px 12px",textAlign:h.align,color:"#fff",fontWeight:700,fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h.l}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {regs.map((r,i)=>(
+                      <tr key={r.id} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFF"}}>
+                        {ocultarCol!=="cliente" && (
+                          <td style={{padding:"10px 12px",fontWeight:700,color:"#6A1B9A",fontSize:13}}>{r.cliente}</td>
+                        )}
+                        <td style={{padding:"10px 12px",color:C.muted,fontSize:12}}>{r.concepto||"—"}</td>
+                        {ocultarCol!=="destino" && (
+                          <td style={{padding:"10px 12px",fontSize:12}}>
+                            {r.destino?<span style={{background:"#E8EAF6",color:"#3949AB",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{r.destino}</span>:<span style={{color:C.muted}}>—</span>}
+                          </td>
+                        )}
+                        <td style={{padding:"10px 12px",color:C.blue,fontWeight:600,fontSize:12}}>{r.numOs||"—"}</td>
+                        <td style={{padding:"10px 12px",color:C.muted,fontSize:12,whiteSpace:"nowrap"}}>{r.fechaVenta||"—"}</td>
+                        <td style={{padding:"10px 12px"}}>
+                          <span style={{background:r.moneda==="MXN"?"#E3F2FD":"#E8F5E9",color:r.moneda==="MXN"?"#1565C0":"#2E7D32",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{r.moneda}</span>
+                        </td>
+                        <td style={{padding:"10px 12px",textAlign:"right",fontWeight:800,fontSize:15,color:"#6A1B9A"}}>{r.moneda==="EUR"?"€":"$"}{fmt(r.importe)}</td>
+                        <td style={{padding:"10px 12px",textAlign:"right"}}>
+                          {!esConsulta && (
+                            <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                              <button onClick={()=>{setForm({...r,importe:String(r.importe)});setEditId(r.id);}}
+                                style={{padding:"4px 10px",borderRadius:6,border:`1px solid ${C.blue}`,background:"#E8F0FE",color:C.blue,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>✏️</button>
+                              <button onClick={()=>setDeleteId(r.id)}
+                                style={{padding:"4px 10px",borderRadius:6,border:`1px solid ${C.danger}`,background:"#FFEBEE",color:C.danger,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>🗑️</button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              );
+            };
+
+            if(vistaPF==="lista") return renderTabla(pfFiltrado, null);
+
+            // Dentro del grupo, ocultamos la columna que ya está en el header del grupo
+            const ocultarCol = vistaPF==="cliente" ? "cliente" : "destino";
+
             return(
               <div>
                 {grupos.map(([grupo,regs])=>{
                   const porMon=regs.reduce((acc,r)=>{if(!acc[r.moneda])acc[r.moneda]=0;acc[r.moneda]+=r.importe;return acc;},{});
+                  const estaColapsado = colapsados.has(grupo);
                   return(
                     <div key={grupo}>
-                      <div style={{background:"#EDE7F6",padding:"10px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:"2px solid #9575CD",position:"sticky",top:0,zIndex:2}}>
-                        <span style={{fontWeight:800,fontSize:14,color:"#4527A0"}}>{vistaPF==="cliente"?"👤":"🗺️"} {grupo}</span>
+                      <div
+                        onClick={()=>toggleGrupo(grupo)}
+                        title={estaColapsado?"Expandir":"Colapsar"}
+                        style={{background:"#EDE7F6",padding:"10px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:"2px solid #9575CD",position:"sticky",top:0,zIndex:2,cursor:"pointer",userSelect:"none"}}>
+                        <span style={{fontWeight:800,fontSize:14,color:"#4527A0",display:"flex",alignItems:"center",gap:8}}>
+                          <span style={{display:"inline-block",width:14,fontSize:11,color:"#7E57C2",transition:"transform .15s",transform:estaColapsado?"rotate(-90deg)":"rotate(0deg)"}}>▼</span>
+                          {vistaPF==="cliente"?"👤":"🗺️"} {grupo}
+                        </span>
                         <div style={{display:"flex",gap:16,alignItems:"center"}}>
                           {Object.entries(porMon).map(([mon,t])=>(
                             <span key={mon} style={{fontSize:13,color:"#4527A0",fontWeight:700}}>
                               {mon==="MXN"?"🇲🇽":"🇺🇸"} {mon==="EUR"?"€":"$"}{fmt(t)}
                             </span>
                           ))}
-                          <span style={{fontSize:12,color:"#7E57C2"}}>{regs.length} registros</span>
+                          <span style={{fontSize:12,color:"#7E57C2"}}>{regs.length} {regs.length===1?"registro":"registros"}</span>
                         </div>
                       </div>
-                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                        {thead}<tbody>{regs.map((r,i)=><PFRow key={r.id} r={r} i={i}/>)}</tbody>
-                      </table>
+                      {!estaColapsado && renderTabla(regs, ocultarCol)}
                     </div>
                   );
                 })}
