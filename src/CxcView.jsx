@@ -92,7 +92,7 @@ export default function CxcView({
   clientes = [],
   esConsulta = false,
   porFacturar = [], setPorFacturar,
-  insertPorFacturar, updatePorFacturar, deletePorFacturar, bulkInsertPorFacturar,
+  insertPorFacturar, updatePorFacturar, deletePorFacturar, bulkInsertPorFacturar, bulkInsertPorFacturarPlain,
 }) {
   /* ── Filters ───────────────────────────────────────────────── */
   const [filtroCliente, setFiltroCliente] = useState("");
@@ -151,6 +151,8 @@ export default function CxcView({
   const [reporteDims, setReporteDims] = useState(["mesVenta","destino","segmento"]);
   const [porFacturarModal, setPorFacturarModal] = useState(false);
   const porFacturarRef = useRef();
+  // Conciliación: { excelRows: [...], fileName: 'x.xlsx' } o null cuando está cerrado
+  const [conciliacionData, setConciliacionData] = useState(null);
 
   /* ── Derived data ──────────────────────────────────────────── */
   const allInvoices = useMemo(() => [
@@ -3651,6 +3653,26 @@ export default function CxcView({
           porFacturarRef={porFacturarRef}
         />
       )}
+      {/* Conciliacion Modal (preview Excel + 4 buckets) */}
+      {conciliacionData && (
+        <ConciliacionModal
+          excelRows={conciliacionData.excelRows}
+          fileName={conciliacionData.fileName}
+          porFacturar={porFacturar}
+          empresaId={empresaId}
+          esConsulta={esConsulta}
+          insertPorFacturar={insertPorFacturar}
+          updatePorFacturar={updatePorFacturar}
+          deletePorFacturar={deletePorFacturar}
+          bulkInsertPorFacturarPlain={bulkInsertPorFacturarPlain}
+          setPorFacturar={setPorFacturar}
+          fmt={fmt}
+          C={C}
+          btnStyle={btnStyle}
+          inputStyle={inputStyle}
+          onClose={()=>setConciliacionData(null)}
+        />
+      )}
       <input ref={porFacturarRef} type="file" accept=".xlsx,.xls" style={{display:"none"}}
         onChange={async(e)=>{
           const file=e.target.files[0]; if(!file) return;
@@ -3712,17 +3734,9 @@ export default function CxcView({
               });
             }
             if(!sinFolio.length){ alert("No se encontraron registros sin folio en el archivo."); return; }
-            // Show preview via window confirm
-            const preview=sinFolio.slice(0,5).map(r=>`${r.cliente} OS:${r.numOs} $${r.importe.toLocaleString()}`).join("\n");
-            if(!window.confirm(`Se encontraron ${sinFolio.length} registros sin folio:\n\n${preview}\n${sinFolio.length>5?"...y más":""}.\n\n¿Importar?`)) return;
-            const result=await bulkInsertPorFacturar(sinFolio);
-            // Reload
-            const fresh=await (async()=>{
-              const {data}=await import("./supabase.js").then(m=>m.supabase.from("por_facturar").select("*").eq("empresa_id",empresaId).order("created_at",{ascending:false}));
-              return (data||[]).map(r=>({id:r.id,empresaId:r.empresa_id,cliente:r.cliente||"",concepto:r.concepto||"",importe:+r.importe||0,moneda:r.moneda||"MXN",notas:r.notas||"",numOs:r.num_os||"",fechaVenta:r.fecha_venta||"",destino:r.destino||"",createdAt:r.created_at||""}));
-            })();
-            setPorFacturar(fresh);
-            alert(`✅ ${result.inserted} registros nuevos importados. ${sinFolio.length-result.inserted} ya existían.`);
+            // En lugar del window.confirm, abrimos el modal de Conciliación que compara
+            // el Excel contra lo que ya hay en sistema y deja al usuario decidir qué aplicar.
+            setConciliacionData({ excelRows: sinFolio, fileName: file.name });
             e.target.value="";
           };
           reader.readAsArrayBuffer(file);
@@ -5295,6 +5309,410 @@ function PorFacturarModal({ empresaId, porFacturar, setPorFacturar, ingresos, in
             );
           })()}
         </div>
+      </div>
+    </div>
+  );
+}
+
+
+/* ── ConciliacionModal ───────────────────────────────────────────────
+   Compara filas del Excel vs lo que ya hay en sistema (porFacturar)
+   usando la llave (num_os, cliente). Clasifica en 4 buckets y deja al
+   usuario decidir qué aplicar antes de tocar la BD. */
+function ConciliacionModal({
+  excelRows, fileName, porFacturar, empresaId, esConsulta,
+  insertPorFacturar, updatePorFacturar, deletePorFacturar, bulkInsertPorFacturarPlain,
+  setPorFacturar, fmt, C, btnStyle, inputStyle, onClose
+}) {
+  const [tab, setTab] = React.useState("nuevos");
+  const [ejecutando, setEjecutando] = React.useState(false);
+  const [resultado, setResultado] = React.useState(null);
+
+  const normCli = (s) => String(s||"").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  const llave = (r) => {
+    const os = String(r.numOs||"").trim();
+    if (!os) return null;
+    return `${os}|${normCli(r.cliente)}`;
+  };
+
+  const CAMPOS_CMP = React.useMemo(()=>[
+    {id:"importe",    l:"Importe",     cmp:(a,b)=>Math.abs((+a||0)-(+b||0))<0.01, render:(v,m)=>`${m==="EUR"?"€":"$"}${fmt(+v||0)}`},
+    {id:"concepto",   l:"Concepto",    cmp:null, render:(v)=>v||"—"},
+    {id:"fechaVenta", l:"Fecha Venta", cmp:null, render:(v)=>v||"—"},
+    {id:"destino",    l:"Destino",     cmp:null, render:(v)=>v||"—"},
+    {id:"moneda",     l:"Moneda",      cmp:null, render:(v)=>v||"—"},
+    {id:"notas",      l:"Notas",       cmp:null, render:(v)=>v||"—"},
+  ],[fmt]);
+
+  const buckets = React.useMemo(()=>{
+    const mapaSistema = new Map();
+    porFacturar.forEach(s => {
+      const k = llave(s);
+      if (k !== null && !mapaSistema.has(k)) mapaSistema.set(k, s);
+    });
+
+    const nuevos = [], modificados = [], iguales = [], dupsInternos = [];
+    const llavesMatched = new Set();
+
+    excelRows.forEach(r => {
+      const k = llave(r);
+      if (k === null) { nuevos.push({row:r, sinOs:true}); return; }
+      if (llavesMatched.has(k)) { dupsInternos.push({k, row:r}); return; }
+      llavesMatched.add(k);
+
+      const sys = mapaSistema.get(k);
+      if (!sys) { nuevos.push({row:r, sinOs:false}); return; }
+
+      const diffs = [];
+      CAMPOS_CMP.forEach(c => {
+        const vE = r[c.id], vS = sys[c.id];
+        const ig = c.cmp ? c.cmp(vE, vS) : (String(vE||"").trim() === String(vS||"").trim());
+        if (!ig) diffs.push({campo:c.id, label:c.l, sistema:vS, excel:vE, render:c.render});
+      });
+      if (diffs.length) modificados.push({excel:r, sistema:sys, diffs});
+      else iguales.push({excel:r, sistema:sys});
+    });
+
+    const soloSistema = [];
+    mapaSistema.forEach((s, k) => { if (!llavesMatched.has(k)) soloSistema.push(s); });
+
+    return { nuevos, modificados, iguales, soloSistema, dupsInternos };
+  },[excelRows, porFacturar, CAMPOS_CMP]);
+
+  const [selNuevos, setSelNuevos] = React.useState(()=>new Set(buckets.nuevos.map((_,i)=>i)));
+  const [selMods,   setSelMods]   = React.useState(()=>new Set(buckets.modificados.map((_,i)=>i)));
+  const [selDel,    setSelDel]    = React.useState(()=>new Set());
+
+  const toggleSel = (setFn, idx) => setFn(prev => {
+    const n = new Set(prev);
+    if (n.has(idx)) n.delete(idx); else n.add(idx);
+    return n;
+  });
+  const toggleAll = (setFn, len, currentSel) => {
+    if (currentSel.size === len) setFn(new Set());
+    else setFn(new Set(Array.from({length:len},(_,i)=>i)));
+  };
+
+  const plan = {
+    insertar: selNuevos.size,
+    actualizar: selMods.size,
+    eliminar: selDel.size,
+  };
+
+  const ejecutar = async () => {
+    if (esConsulta) return;
+    setEjecutando(true);
+    const r = { inserted:0, updated:0, deleted:0, errors:[] };
+
+    const nuevosAInsertar = Array.from(selNuevos).map(i => buckets.nuevos[i].row);
+    if (nuevosAInsertar.length) {
+      try {
+        const res = await bulkInsertPorFacturarPlain(nuevosAInsertar.map(row => ({...row, empresaId})));
+        r.inserted = res.inserted || 0;
+        if (res.error) r.errors.push(`Inserción: ${res.error.message || res.error}`);
+      } catch (e) { r.errors.push(`Inserción: ${e.message || e}`); }
+    }
+
+    const modsAActualizar = Array.from(selMods).map(i => buckets.modificados[i]);
+    for (const m of modsAActualizar) {
+      try {
+        await updatePorFacturar(m.sistema.id, {
+          cliente: m.excel.cliente || m.sistema.cliente,
+          concepto: m.excel.concepto || "",
+          importe: +m.excel.importe || 0,
+          moneda: m.excel.moneda || "MXN",
+          notas: m.excel.notas || "",
+          numOs: m.excel.numOs || "",
+          fechaVenta: m.excel.fechaVenta || "",
+          destino: m.excel.destino || "",
+        });
+        r.updated++;
+      } catch (e) { r.errors.push(`Update ${m.sistema.numOs}: ${e.message || e}`); }
+    }
+
+    const aEliminar = Array.from(selDel).map(i => buckets.soloSistema[i]);
+    for (const s of aEliminar) {
+      try { await deletePorFacturar(s.id); r.deleted++; }
+      catch (e) { r.errors.push(`Delete ${s.numOs}: ${e.message || e}`); }
+    }
+
+    try {
+      const { supabase } = await import("./supabase.js");
+      const { data } = await supabase.from("por_facturar").select("*").eq("empresa_id", empresaId).order("created_at", { ascending:false });
+      const fresh = (data||[]).map(row => ({
+        id:row.id, empresaId:row.empresa_id, cliente:row.cliente||"", concepto:row.concepto||"",
+        importe:+row.importe||0, moneda:row.moneda||"MXN", notas:row.notas||"",
+        numOs:row.num_os||"", fechaVenta:row.fecha_venta||"", destino:row.destino||"",
+        createdAt:row.created_at||""
+      }));
+      setPorFacturar(fresh);
+    } catch (e) { r.errors.push(`Refresh: ${e.message || e}`); }
+
+    setResultado(r);
+    setEjecutando(false);
+  };
+
+  const TabBtn = ({id, l, count, color}) => (
+    <button onClick={()=>setTab(id)}
+      style={{padding:"8px 14px",border:"none",borderBottom:`3px solid ${tab===id?color:"transparent"}`,background:tab===id?"#fff":"#F5F5F5",color:tab===id?color:C.muted,fontWeight:tab===id?800:600,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+      {l} <span style={{background:tab===id?color:"#E0E0E0",color:tab===id?"#fff":C.muted,borderRadius:10,padding:"1px 8px",fontSize:11,marginLeft:4}}>{count}</span>
+    </button>
+  );
+
+  const sinOsCount = buckets.nuevos.filter(n=>n.sinOs).length;
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",zIndex:1100,display:"flex",alignItems:"center",justifyContent:"center",padding:10}}
+      onClick={ejecutando?undefined:onClose}>
+      <div style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:1400,maxHeight:"95vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.4)"}}
+        onClick={e=>e.stopPropagation()}>
+
+        <div style={{padding:"18px 24px",background:"#E65100",borderRadius:"16px 16px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontWeight:800,color:"#fff",fontSize:17}}>🔄 Conciliar Excel — Pendiente por Facturar</div>
+            <div style={{fontSize:12,color:"#FFE0B2",marginTop:3}}>
+              Archivo: <b>{fileName}</b> · {excelRows.length} {excelRows.length===1?"registro leído":"registros leídos"} · Llave de match: <b>(# OS, cliente)</b>
+            </div>
+          </div>
+          <button onClick={onClose} disabled={ejecutando}
+            style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",width:34,height:34,cursor:ejecutando?"not-allowed":"pointer",fontSize:20,opacity:ejecutando?0.4:1}}>×</button>
+        </div>
+
+        {resultado && (
+          <div style={{padding:"16px 24px",background:resultado.errors.length?"#FFEBEE":"#E8F5E9",borderBottom:`1px solid ${resultado.errors.length?"#FFCDD2":"#A5D6A7"}`}}>
+            <div style={{fontWeight:800,fontSize:14,color:resultado.errors.length?C.danger:"#2E7D32",marginBottom:6}}>
+              {resultado.errors.length?"⚠️ Conciliación completada con errores":"✅ Conciliación completada"}
+            </div>
+            <div style={{fontSize:13,color:C.text}}>
+              🆕 Insertados: <b>{resultado.inserted}</b> · ✏️ Actualizados: <b>{resultado.updated}</b> · ❌ Eliminados: <b>{resultado.deleted}</b>
+            </div>
+            {resultado.errors.length>0 && (
+              <ul style={{fontSize:12,color:C.danger,marginTop:8,paddingLeft:20}}>
+                {resultado.errors.slice(0,5).map((e,i)=><li key={i}>{e}</li>)}
+                {resultado.errors.length>5 && <li>...y {resultado.errors.length-5} más</li>}
+              </ul>
+            )}
+            <button onClick={onClose} style={{...btnStyle,background:"#2E7D32",padding:"6px 14px",fontSize:13,marginTop:10}}>Cerrar</button>
+          </div>
+        )}
+
+        {!resultado && (buckets.dupsInternos.length>0 || sinOsCount>0) && (
+          <div style={{padding:"10px 24px",background:"#FFF8E1",borderBottom:`1px solid #FFE082`,fontSize:12,color:"#E65100"}}>
+            {buckets.dupsInternos.length>0 && (
+              <div>⚠️ {buckets.dupsInternos.length} duplicado(s) interno(s) en el Excel (misma OS + cliente); se conservó el primero.</div>
+            )}
+            {sinOsCount>0 && (
+              <div>⚠️ {sinOsCount} registro(s) del Excel sin # OS — se importarán como nuevos sin intentar match.</div>
+            )}
+          </div>
+        )}
+
+        {!resultado && (
+          <div style={{display:"flex",borderBottom:`1px solid ${C.border}`,background:"#FAFAFA"}}>
+            <TabBtn id="nuevos"       l="🆕 Nuevos"          count={buckets.nuevos.length}      color="#2E7D32"/>
+            <TabBtn id="modificados"  l="✏️ Modificados"     count={buckets.modificados.length} color="#E65100"/>
+            <TabBtn id="iguales"      l="✅ Iguales"         count={buckets.iguales.length}     color="#1565C0"/>
+            <TabBtn id="solo_sistema" l="❌ Solo en sistema" count={buckets.soloSistema.length} color="#C62828"/>
+          </div>
+        )}
+
+        {!resultado && (
+          <div style={{overflowY:"auto",flex:1,padding:"12px 24px"}}>
+
+            {tab==="nuevos" && (
+              buckets.nuevos.length===0 ? (
+                <div style={{textAlign:"center",padding:40,color:C.muted}}>No hay registros nuevos en este Excel.</div>
+              ) : (
+                <div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                    <div style={{fontSize:13,color:C.muted}}>Marcadas para insertar: <b style={{color:"#2E7D32"}}>{selNuevos.size}</b> de {buckets.nuevos.length}</div>
+                    <button onClick={()=>toggleAll(setSelNuevos, buckets.nuevos.length, selNuevos)}
+                      style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"5px 12px",fontSize:12}}>
+                      {selNuevos.size===buckets.nuevos.length?"Deseleccionar todos":"Seleccionar todos"}
+                    </button>
+                  </div>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                    <thead><tr style={{background:C.navy,color:"#fff"}}>
+                      <th style={{padding:"8px",width:30}}></th>
+                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>Cliente</th>
+                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>Concepto</th>
+                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}># OS</th>
+                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>Destino</th>
+                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>Fecha</th>
+                      <th style={{padding:"8px 10px",textAlign:"right",fontSize:11,textTransform:"uppercase"}}>Importe</th>
+                    </tr></thead>
+                    <tbody>
+                      {buckets.nuevos.map((n,i)=>{
+                        const r = n.row;
+                        return (
+                          <tr key={i} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFF"}}>
+                            <td style={{padding:"8px",textAlign:"center"}}>
+                              <input type="checkbox" checked={selNuevos.has(i)} onChange={()=>toggleSel(setSelNuevos,i)}/>
+                            </td>
+                            <td style={{padding:"8px 10px",fontWeight:700,color:"#2E7D32",fontSize:12}}>
+                              {r.cliente}
+                              {n.sinOs && <span style={{marginLeft:6,background:"#FFE0B2",color:"#E65100",padding:"1px 6px",borderRadius:8,fontSize:10}}>sin OS</span>}
+                            </td>
+                            <td style={{padding:"8px 10px",color:C.muted,fontSize:12}}>{r.concepto||"—"}</td>
+                            <td style={{padding:"8px 10px",color:C.blue,fontWeight:600,fontSize:12}}>{r.numOs||"—"}</td>
+                            <td style={{padding:"8px 10px",fontSize:12}}>{r.destino||"—"}</td>
+                            <td style={{padding:"8px 10px",fontSize:12,color:C.muted}}>{r.fechaVenta||"—"}</td>
+                            <td style={{padding:"8px 10px",textAlign:"right",fontWeight:800,color:"#2E7D32",fontSize:13}}>{r.moneda==="EUR"?"€":"$"}{fmt(+r.importe||0)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            )}
+
+            {tab==="modificados" && (
+              buckets.modificados.length===0 ? (
+                <div style={{textAlign:"center",padding:40,color:C.muted}}>No hay registros modificados. Todo lo que matchea coincide en todos los campos.</div>
+              ) : (
+                <div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                    <div style={{fontSize:13,color:C.muted}}>
+                      Aplicar cambios del Excel a: <b style={{color:"#E65100"}}>{selMods.size}</b> de {buckets.modificados.length}
+                    </div>
+                    <button onClick={()=>toggleAll(setSelMods, buckets.modificados.length, selMods)}
+                      style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"5px 12px",fontSize:12}}>
+                      {selMods.size===buckets.modificados.length?"Deseleccionar todos":"Seleccionar todos"}
+                    </button>
+                  </div>
+                  {buckets.modificados.map((m,i)=>(
+                    <div key={i} style={{border:`1px solid ${selMods.has(i)?"#FFB74D":C.border}`,borderRadius:8,padding:12,marginBottom:10,background:selMods.has(i)?"#FFF8E1":"#FAFBFF"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                        <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13,fontWeight:700,color:"#E65100"}}>
+                          <input type="checkbox" checked={selMods.has(i)} onChange={()=>toggleSel(setSelMods,i)}/>
+                          ✏️ {m.sistema.cliente} · OS {m.sistema.numOs}
+                        </label>
+                        <span style={{fontSize:11,color:C.muted}}>{m.diffs.length} {m.diffs.length===1?"campo cambió":"campos cambiaron"}</span>
+                      </div>
+                      <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}>
+                        <thead><tr style={{background:"#F5F5F5"}}>
+                          <th style={{padding:"6px 10px",textAlign:"left",color:C.muted,fontWeight:600}}>Campo</th>
+                          <th style={{padding:"6px 10px",textAlign:"left",color:C.muted,fontWeight:600}}>En sistema</th>
+                          <th style={{padding:"6px 10px",textAlign:"left",color:C.muted,fontWeight:600}}>En Excel</th>
+                        </tr></thead>
+                        <tbody>
+                          {m.diffs.map(d=>(
+                            <tr key={d.campo} style={{borderTop:`1px solid ${C.border}`}}>
+                              <td style={{padding:"6px 10px",fontWeight:600}}>{d.label}</td>
+                              <td style={{padding:"6px 10px",color:C.danger,textDecoration:"line-through"}}>{d.render(d.sistema, m.sistema.moneda)}</td>
+                              <td style={{padding:"6px 10px",color:"#2E7D32",fontWeight:600}}>{d.render(d.excel, m.excel.moneda)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+
+            {tab==="iguales" && (
+              buckets.iguales.length===0 ? (
+                <div style={{textAlign:"center",padding:40,color:C.muted}}>No hay registros idénticos.</div>
+              ) : (
+                <div>
+                  <div style={{fontSize:13,color:C.muted,marginBottom:8}}>Estos {buckets.iguales.length} registros ya están en sistema con los mismos datos. No se hará nada con ellos.</div>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                    <thead><tr style={{background:C.navy,color:"#fff"}}>
+                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>Cliente</th>
+                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>Concepto</th>
+                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}># OS</th>
+                      <th style={{padding:"8px 10px",textAlign:"right",fontSize:11,textTransform:"uppercase"}}>Importe</th>
+                    </tr></thead>
+                    <tbody>
+                      {buckets.iguales.map((it,i)=>{
+                        const r = it.sistema;
+                        return (
+                          <tr key={i} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFF"}}>
+                            <td style={{padding:"8px 10px",fontWeight:600,color:"#1565C0",fontSize:12}}>{r.cliente}</td>
+                            <td style={{padding:"8px 10px",color:C.muted,fontSize:12}}>{r.concepto||"—"}</td>
+                            <td style={{padding:"8px 10px",color:C.blue,fontWeight:600,fontSize:12}}>{r.numOs||"—"}</td>
+                            <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:"#1565C0",fontSize:13}}>{r.moneda==="EUR"?"€":"$"}{fmt(+r.importe||0)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            )}
+
+            {tab==="solo_sistema" && (
+              buckets.soloSistema.length===0 ? (
+                <div style={{textAlign:"center",padding:40,color:C.muted}}>El Excel contiene todo lo que hay en sistema (o más). Nada que decidir aquí.</div>
+              ) : (
+                <div>
+                  <div style={{padding:"8px 12px",background:"#FFEBEE",borderRadius:8,marginBottom:10,fontSize:12,color:"#C62828"}}>
+                    ⚠️ Estos registros están en sistema pero NO en el Excel actual. Marca los que quieras eliminar. Por default <b>no</b> se elimina nada.
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                    <div style={{fontSize:13,color:C.muted}}>Marcados para eliminar: <b style={{color:C.danger}}>{selDel.size}</b> de {buckets.soloSistema.length}</div>
+                    <button onClick={()=>toggleAll(setSelDel, buckets.soloSistema.length, selDel)}
+                      style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"5px 12px",fontSize:12}}>
+                      {selDel.size===buckets.soloSistema.length?"Deseleccionar todos":"Seleccionar todos"}
+                    </button>
+                  </div>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                    <thead><tr style={{background:C.navy,color:"#fff"}}>
+                      <th style={{padding:"8px",width:30}}></th>
+                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>Cliente</th>
+                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>Concepto</th>
+                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}># OS</th>
+                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>Destino</th>
+                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>Fecha</th>
+                      <th style={{padding:"8px 10px",textAlign:"right",fontSize:11,textTransform:"uppercase"}}>Importe</th>
+                    </tr></thead>
+                    <tbody>
+                      {buckets.soloSistema.map((r,i)=>(
+                        <tr key={r.id} style={{borderTop:`1px solid ${C.border}`,background:selDel.has(i)?"#FFEBEE":(i%2===0?"#fff":"#FAFBFF")}}>
+                          <td style={{padding:"8px",textAlign:"center"}}>
+                            <input type="checkbox" checked={selDel.has(i)} onChange={()=>toggleSel(setSelDel,i)}/>
+                          </td>
+                          <td style={{padding:"8px 10px",fontWeight:600,fontSize:12,color:selDel.has(i)?C.danger:C.text}}>{r.cliente}</td>
+                          <td style={{padding:"8px 10px",color:C.muted,fontSize:12}}>{r.concepto||"—"}</td>
+                          <td style={{padding:"8px 10px",color:C.blue,fontWeight:600,fontSize:12}}>{r.numOs||"—"}</td>
+                          <td style={{padding:"8px 10px",fontSize:12}}>{r.destino||"—"}</td>
+                          <td style={{padding:"8px 10px",fontSize:12,color:C.muted}}>{r.fechaVenta||"—"}</td>
+                          <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,fontSize:13,color:selDel.has(i)?C.danger:C.text}}>{r.moneda==="EUR"?"€":"$"}{fmt(+r.importe||0)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            )}
+
+          </div>
+        )}
+
+        {!resultado && (
+          <div style={{padding:"14px 24px",borderTop:`1px solid ${C.border}`,background:"#FAFAFA",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+            <div style={{fontSize:13,color:C.text}}>
+              <b>Plan:</b>
+              <span style={{marginLeft:10,color:"#2E7D32",fontWeight:700}}>🆕 Insertar {plan.insertar}</span>
+              <span style={{marginLeft:10,color:"#E65100",fontWeight:700}}>✏️ Actualizar {plan.actualizar}</span>
+              <span style={{marginLeft:10,color:C.danger,fontWeight:700}}>❌ Eliminar {plan.eliminar}</span>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={onClose} disabled={ejecutando}
+                style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"8px 16px",fontSize:13,opacity:ejecutando?0.5:1}}>
+                Cancelar
+              </button>
+              <button onClick={ejecutar}
+                disabled={ejecutando || esConsulta || (plan.insertar+plan.actualizar+plan.eliminar===0)}
+                style={{...btnStyle,background:"#E65100",color:"#fff",padding:"8px 18px",fontSize:13,opacity:(ejecutando||esConsulta||(plan.insertar+plan.actualizar+plan.eliminar===0))?0.5:1}}>
+                {ejecutando?"Aplicando...":"✓ Ejecutar conciliación"}
+              </button>
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );

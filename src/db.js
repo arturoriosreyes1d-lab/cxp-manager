@@ -648,6 +648,26 @@ export async function bulkInsertPorFacturar(rows) {
   return { inserted: (data || []).length };
 }
 
+// Insert plano (sin upsert) — usado por el flujo de Conciliación donde el matching
+// ya se hace en el cliente con llave (num_os, cliente) y NO queremos que el onConflict
+// del upsert (que incluye fecha_venta) decida por nosotros.
+export async function bulkInsertPorFacturarPlain(rows) {
+  const dbRows = rows.map(r => ({
+    empresa_id: r.empresaId,
+    cliente: r.cliente,
+    concepto: r.concepto || '',
+    importe: +r.importe || 0,
+    moneda: r.moneda || 'MXN',
+    notas: r.notas || '',
+    num_os: r.numOs || null,
+    fecha_venta: r.fechaVenta || null,
+    destino: r.destino || null,
+  }));
+  const { data, error } = await supabase.from('por_facturar').insert(dbRows).select();
+  if (error) { console.error('bulkInsertPorFacturarPlain:', error); return { inserted: 0, data: [], error }; }
+  return { inserted: (data || []).length, data: data || [] };
+}
+
 /* ── Financiamientos ─────────────────────────────────────────────── */
 export async function fetchFinanciamientos(empresaId) {
   let q = supabase.from('financiamientos').select('*').order('fecha_inicio');

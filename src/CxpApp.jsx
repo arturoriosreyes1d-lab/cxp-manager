@@ -15,7 +15,7 @@ import {
   fetchIngresos, fetchCobros, fetchInvoiceIngresos, fetchCategoriasIngreso,
   upsertInvoiceIngreso, deleteInvoiceIngreso,
   fetchClientes, upsertCliente, deleteCliente,
-  fetchPorFacturar, insertPorFacturar, updatePorFacturar, deletePorFacturar, bulkInsertPorFacturar,
+  fetchPorFacturar, insertPorFacturar, updatePorFacturar, deletePorFacturar, bulkInsertPorFacturar, bulkInsertPorFacturarPlain,
   fetchFinanciamientos, insertFinanciamiento, updateFinanciamiento, deleteFinanciamiento,
   fetchFinanciamientoPagos, insertFinanciamientoPago, deleteFinanciamientoPago,
   fetchTarjetas, updateTarjetaSaldo, fetchTarjetaMovimientos, bulkInsertMovimientos,
@@ -8585,6 +8585,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             updatePorFacturar={updatePorFacturar}
             deletePorFacturar={deletePorFacturar}
             bulkInsertPorFacturar={bulkInsertPorFacturar}
+            bulkInsertPorFacturarPlain={bulkInsertPorFacturarPlain}
           />
         )}
 
