@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef } from "react";
 import * as XLSX from "xlsx";
 import ExportarReporteCxC from "./ExportarReporteCxC";
+import { exportarPendientesFacturar } from "./ExportPorFacturar";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
@@ -3639,6 +3640,7 @@ export default function CxcView({
           porFacturar={porFacturar}
           setPorFacturar={setPorFacturar}
           ingresos={ingresos}
+          clientes={clientes}
           insertPorFacturar={insertPorFacturar}
           updatePorFacturar={updatePorFacturar}
           deletePorFacturar={deletePorFacturar}
@@ -4929,7 +4931,7 @@ function CobrosCxC({ cobros, ingresos, fmt, C, monedaSym, MESES_NOMBRES, onIngre
 }
 
 /* ── PorFacturarModal ────────────────────────────────────────────────── */
-function PorFacturarModal({ empresaId, porFacturar, setPorFacturar, ingresos, insertPorFacturar, updatePorFacturar, deletePorFacturar, bulkInsertPorFacturar, onClose, esConsulta, fmt, C, btnStyle, inputStyle, XLSX, porFacturarRef }) {
+function PorFacturarModal({ empresaId, porFacturar, setPorFacturar, ingresos, clientes=[], insertPorFacturar, updatePorFacturar, deletePorFacturar, bulkInsertPorFacturar, onClose, esConsulta, fmt, C, btnStyle, inputStyle, XLSX, porFacturarRef }) {
   const [form, setForm] = React.useState(null);
   const [editId, setEditId] = React.useState(null);
   const [deleteId, setDeleteId] = React.useState(null);
@@ -4942,6 +4944,8 @@ function PorFacturarModal({ empresaId, porFacturar, setPorFacturar, ingresos, in
   const [seleccionados, setSeleccionados] = React.useState(()=>new Set());
   const [confirmMasivo, setConfirmMasivo] = React.useState(false);
   const [borrandoMasivo, setBorrandoMasivo] = React.useState(false);
+  // Sub-modal de exportación para clientes
+  const [exportModal, setExportModal] = React.useState(false);
 
   const toggleId = (id) => setSeleccionados(prev=>{
     const n=new Set(prev); if(n.has(id))n.delete(id); else n.add(id); return n;
@@ -5101,18 +5105,26 @@ function PorFacturarModal({ empresaId, porFacturar, setPorFacturar, ingresos, in
         )}
 
         {/* Action buttons */}
-        {!esConsulta && (
-          <div style={{padding:"12px 24px",borderBottom:`1px solid ${C.border}`,display:"flex",gap:8}}>
-            <button onClick={()=>{setForm(emptyForm());setEditId(null);}}
-              style={{...btnStyle,background:"#6A1B9A",padding:"8px 16px",fontSize:13}}>
-              + Agregar manual
+        <div style={{padding:"12px 24px",borderBottom:`1px solid ${C.border}`,display:"flex",gap:8,flexWrap:"wrap"}}>
+          {!esConsulta && (
+            <>
+              <button onClick={()=>{setForm(emptyForm());setEditId(null);}}
+                style={{...btnStyle,background:"#6A1B9A",padding:"8px 16px",fontSize:13}}>
+                + Agregar manual
+              </button>
+              <button onClick={()=>porFacturarRef.current?.click()}
+                style={{...btnStyle,background:"#E65100",color:"#fff",padding:"8px 16px",fontSize:13}}>
+                📥 Importar Excel
+              </button>
+            </>
+          )}
+          {porFacturar.length>0 && (
+            <button onClick={()=>setExportModal(true)}
+              style={{...btnStyle,background:"#388E3C",color:"#fff",padding:"8px 16px",fontSize:13}}>
+              📧 Exportar para clientes
             </button>
-            <button onClick={()=>porFacturarRef.current?.click()}
-              style={{...btnStyle,background:"#E65100",color:"#fff",padding:"8px 16px",fontSize:13}}>
-              📥 Importar Excel
-            </button>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Add/Edit form */}
         {form && (
@@ -5393,11 +5405,356 @@ function PorFacturarModal({ empresaId, porFacturar, setPorFacturar, ingresos, in
             );
           })()}
         </div>
+
+        {/* Sub-modal: Exportar para clientes */}
+        {exportModal && (
+          <ExportarClientesModal
+            porFacturar={porFacturar}
+            clientes={clientes}
+            preseleccionados={seleccionados}
+            fmt={fmt}
+            C={C}
+            btnStyle={btnStyle}
+            inputStyle={inputStyle}
+            onClose={()=>setExportModal(false)}
+          />
+        )}
       </div>
     </div>
   );
 }
 
+
+
+/* ── ExportarClientesModal ────────────────────────────────────────
+   Sub-modal para elegir qué clientes y qué pendientes exportar a Excel
+   profesional. Soporta:
+   - Lista jerárquica: cliente con master checkbox tri-state + expand
+     para ver y refinar selección de pendientes individuales
+   - Buscador (cliente o # OS)
+   - Modo: archivos separados (uno por cliente, ZIP si >1) o consolidado
+   - Preselección: si llega un Set de ids preseleccionados, arranca con
+     esos marcados; si no, todos marcados
+*/
+function ExportarClientesModal({ porFacturar, clientes, preseleccionados, fmt, C, btnStyle, inputStyle, onClose }) {
+  // Calculamos selección inicial
+  const idInicial = React.useMemo(() => {
+    if (preseleccionados && preseleccionados.size > 0) {
+      // Si el usuario marcó algunos en el modal principal, respetamos esa selección
+      return new Set(preseleccionados);
+    }
+    return new Set(porFacturar.map(r => r.id));
+  }, [porFacturar, preseleccionados]);
+
+  const [marcados, setMarcados] = React.useState(idInicial);
+  const [expandidos, setExpandidos] = React.useState(()=>new Set());
+  const [busqueda, setBusqueda] = React.useState("");
+  const [modo, setModo] = React.useState("separados"); // "separados" | "consolidado"
+  const [generando, setGenerando] = React.useState(false);
+  const [error, setError] = React.useState(null);
+
+  const normaliza = (s) => String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+
+  // Mapa nombre cliente -> info de tabla clientes (RFC, email, etc) por nombre
+  const clientesInfoPorNombre = React.useMemo(() => {
+    const m = new Map();
+    (clientes||[]).forEach(c => {
+      if (c && c.nombre) m.set(normaliza(c.nombre), c);
+    });
+    return m;
+  }, [clientes]);
+
+  // Agrupamos pendientes por cliente
+  const gruposCliente = React.useMemo(() => {
+    const map = new Map();
+    porFacturar.forEach(r => {
+      const k = r.cliente || "(sin nombre)";
+      if (!map.has(k)) map.set(k, []);
+      map.get(k).push(r);
+    });
+    // Filtro de búsqueda
+    const q = normaliza(busqueda.trim());
+    const grupos = Array.from(map.entries()).map(([nombre, regs]) => {
+      const info = clientesInfoPorNombre.get(normaliza(nombre)) || null;
+      // Cálculo de totales por moneda
+      const totMon = {};
+      regs.forEach(r => {
+        const m = r.moneda || "MXN";
+        totMon[m] = (totMon[m]||0) + (+r.importe||0);
+      });
+      return { nombre, regs, info, totMon };
+    });
+    // Filtrar por búsqueda (matchea cliente o numOs de cualquier pendiente)
+    const filtrados = q ? grupos.filter(g =>
+      normaliza(g.nombre).includes(q) ||
+      g.regs.some(r => normaliza(r.numOs).includes(q))
+    ) : grupos;
+    // Orden por total descendente
+    return filtrados.sort((a,b) => {
+      const ta = Object.values(a.totMon).reduce((s,x)=>s+x,0);
+      const tb = Object.values(b.totMon).reduce((s,x)=>s+x,0);
+      return tb - ta;
+    });
+  }, [porFacturar, busqueda, clientesInfoPorNombre]);
+
+  // Estados derivados de selección
+  const estadoCliente = (g) => {
+    const ids = g.regs.map(r=>r.id);
+    const marcadosDeGrupo = ids.filter(id => marcados.has(id));
+    if (marcadosDeGrupo.length === 0) return "ninguno";
+    if (marcadosDeGrupo.length === ids.length) return "todos";
+    return "parcial";
+  };
+
+  const toggleCliente = (g) => {
+    const ids = g.regs.map(r=>r.id);
+    const est = estadoCliente(g);
+    setMarcados(prev => {
+      const n = new Set(prev);
+      if (est === "todos") ids.forEach(id => n.delete(id));
+      else ids.forEach(id => n.add(id));
+      return n;
+    });
+  };
+
+  const togglePendiente = (id) => {
+    setMarcados(prev => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  };
+
+  const toggleExpand = (nombre) => {
+    setExpandidos(prev => {
+      const n = new Set(prev);
+      if (n.has(nombre)) n.delete(nombre); else n.add(nombre);
+      return n;
+    });
+  };
+
+  const marcarTodos = () => setMarcados(new Set(porFacturar.map(r=>r.id)));
+  const desmarcarTodos = () => setMarcados(new Set());
+
+  // Master tri-state controlado
+  const MasterTri = ({checked, indeterminate, onChange}) => {
+    const ref = React.useRef();
+    React.useEffect(()=>{ if (ref.current) ref.current.indeterminate = !!indeterminate; }, [indeterminate]);
+    return <input ref={ref} type="checkbox" checked={!!checked} onChange={onChange} onClick={e=>e.stopPropagation()} style={{cursor:"pointer"}}/>;
+  };
+
+  // Totales del plan
+  const plan = React.useMemo(() => {
+    let clientesConSel = 0;
+    let pendientesSel = 0;
+    const totMon = {};
+    gruposCliente.forEach(g => {
+      const seleccionadosEnG = g.regs.filter(r => marcados.has(r.id));
+      if (seleccionadosEnG.length > 0) {
+        clientesConSel++;
+        pendientesSel += seleccionadosEnG.length;
+        seleccionadosEnG.forEach(r => {
+          const m = r.moneda || "MXN";
+          totMon[m] = (totMon[m]||0) + (+r.importe||0);
+        });
+      }
+    });
+    return { clientesConSel, pendientesSel, totMon };
+  }, [gruposCliente, marcados]);
+
+  const puedeDescargar = plan.pendientesSel > 0;
+
+  const descargar = async () => {
+    if (!puedeDescargar) return;
+    setError(null);
+    setGenerando(true);
+    try {
+      // Construimos el payload solo con clientes que tienen algo marcado
+      const porCliente = gruposCliente
+        .map(g => ({
+          nombre: g.nombre,
+          info: g.info,
+          regs: g.regs.filter(r => marcados.has(r.id)),
+        }))
+        .filter(x => x.regs.length > 0);
+
+      await exportarPendientesFacturar({ porCliente, modo });
+      onClose();
+    } catch (e) {
+      console.error("exportarPendientesFacturar error:", e);
+      setError(`Error al generar: ${e.message || e}`);
+    } finally {
+      setGenerando(false);
+    }
+  };
+
+  const totalRegs = porFacturar.length;
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",zIndex:1100,display:"flex",alignItems:"center",justifyContent:"center",padding:10}}
+      onClick={generando?undefined:onClose}>
+      <div style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:900,maxHeight:"92vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.4)"}}
+        onClick={e=>e.stopPropagation()}>
+
+        {/* Header */}
+        <div style={{padding:"18px 24px",background:"#388E3C",borderRadius:"16px 16px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontWeight:800,color:"#fff",fontSize:17}}>📧 Exportar para clientes</div>
+            <div style={{fontSize:12,color:"#C8E6C9",marginTop:3}}>Genera el Excel profesional para enviar a cada cliente</div>
+          </div>
+          <button onClick={onClose} disabled={generando}
+            style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",width:34,height:34,cursor:generando?"not-allowed":"pointer",fontSize:20,opacity:generando?0.4:1}}>×</button>
+        </div>
+
+        {/* Controles arriba */}
+        <div style={{padding:"14px 24px",borderBottom:`1px solid ${C.border}`,background:"#FAFAFA",display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+            <div style={{position:"relative",display:"flex",alignItems:"center",flex:"1 1 220px",minWidth:200,maxWidth:360}}>
+              <span style={{position:"absolute",left:10,fontSize:13,color:C.muted,pointerEvents:"none"}}>🔍</span>
+              <input
+                value={busqueda}
+                onChange={e=>setBusqueda(e.target.value)}
+                placeholder="Buscar cliente o # OS..."
+                style={{...inputStyle,paddingLeft:30,paddingRight:busqueda?28:10,fontSize:12,width:"100%",borderColor:busqueda?"#388E3C":C.border}}
+              />
+              {busqueda && (
+                <button onClick={()=>setBusqueda("")}
+                  style={{position:"absolute",right:6,background:"transparent",border:"none",color:C.muted,cursor:"pointer",fontSize:14,padding:"2px 6px",fontFamily:"inherit"}}>✕</button>
+              )}
+            </div>
+            <button onClick={marcarTodos}
+              style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"5px 10px",fontSize:12}}>
+              Marcar todos ({totalRegs})
+            </button>
+            <button onClick={desmarcarTodos}
+              style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"5px 10px",fontSize:12}}>
+              Desmarcar todos
+            </button>
+          </div>
+
+          {/* Formato */}
+          <div style={{display:"flex",gap:14,alignItems:"center",flexWrap:"wrap",fontSize:12,color:C.text}}>
+            <span style={{color:C.muted}}>Formato:</span>
+            <label style={{display:"flex",alignItems:"center",gap:5,cursor:"pointer"}}>
+              <input type="radio" name="modo" checked={modo==="separados"} onChange={()=>setModo("separados")}/>
+              📧 Archivos separados {plan.clientesConSel>1 && <span style={{color:C.muted}}>(ZIP con {plan.clientesConSel})</span>}
+            </label>
+            <label style={{display:"flex",alignItems:"center",gap:5,cursor:"pointer"}}>
+              <input type="radio" name="modo" checked={modo==="consolidado"} onChange={()=>setModo("consolidado")}/>
+              📦 Un archivo (multi-hojas)
+            </label>
+          </div>
+        </div>
+
+        {/* Resumen de plan */}
+        <div style={{padding:"10px 24px",background:"#E8F5E9",borderBottom:`1px solid #A5D6A7`,fontSize:13,color:"#1B5E20",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+          <div>
+            <b>{plan.clientesConSel}</b> cliente{plan.clientesConSel===1?"":"s"} · <b>{plan.pendientesSel}</b> pendiente{plan.pendientesSel===1?"":"s"} marcados
+          </div>
+          <div style={{display:"flex",gap:12,fontWeight:700}}>
+            {Object.entries(plan.totMon).sort().map(([mon,t])=>(
+              <span key={mon}>{mon==="MXN"?"🇲🇽":mon==="USD"?"🇺🇸":"€"} {mon==="EUR"?"€":"$"}{fmt(t)}</span>
+            ))}
+          </div>
+        </div>
+
+        {error && (
+          <div style={{padding:"10px 24px",background:"#FFEBEE",color:C.danger,fontSize:13,borderBottom:`1px solid #FFCDD2`}}>
+            ⚠️ {error}
+          </div>
+        )}
+
+        {/* Lista de clientes */}
+        <div style={{overflowY:"auto",flex:1,padding:"6px 0"}}>
+          {gruposCliente.length === 0 ? (
+            <div style={{textAlign:"center",padding:40,color:C.muted}}>
+              <div style={{fontSize:36,marginBottom:8}}>🔍</div>
+              <div>Sin resultados</div>
+            </div>
+          ) : (
+            gruposCliente.map(g => {
+              const est = estadoCliente(g);
+              const expandido = expandidos.has(g.nombre);
+              return (
+                <div key={g.nombre} style={{borderBottom:`1px solid ${C.border}`}}>
+                  {/* Fila del cliente */}
+                  <div
+                    onClick={()=>toggleExpand(g.nombre)}
+                    style={{display:"flex",alignItems:"center",padding:"10px 24px",cursor:"pointer",background:est==="parcial"?"#FFF3E0":(est==="todos"?"#F3E5F5":"#fff"),gap:10}}>
+                    <span style={{display:"inline-block",width:14,fontSize:11,color:C.muted,transform:expandido?"rotate(0deg)":"rotate(-90deg)",transition:"transform .15s"}}>▼</span>
+                    <MasterTri
+                      checked={est==="todos"}
+                      indeterminate={est==="parcial"}
+                      onChange={(e)=>{e.stopPropagation();toggleCliente(g);}}
+                    />
+                    <div style={{flex:1,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                      <span style={{fontWeight:700,color:est==="ninguno"?C.muted:"#1B5E20",fontSize:13}}>
+                        👤 {g.nombre}
+                      </span>
+                    </div>
+                    <span style={{fontSize:12,color:C.muted}}>
+                      {g.regs.length} pend.
+                    </span>
+                    <div style={{display:"flex",gap:10,minWidth:140,justifyContent:"flex-end"}}>
+                      {Object.entries(g.totMon).sort().map(([mon,t])=>(
+                        <span key={mon} style={{fontSize:12,color:"#1B5E20",fontWeight:700}}>
+                          {mon==="EUR"?"€":"$"}{fmt(t)} {mon}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Pendientes individuales expandidos */}
+                  {expandido && (
+                    <div style={{background:"#FAFAFA",padding:"4px 0 8px 0"}}>
+                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                        <tbody>
+                          {g.regs.map(r => {
+                            const ch = marcados.has(r.id);
+                            return (
+                              <tr key={r.id} style={{borderTop:`1px solid #EEE`}}>
+                                <td style={{padding:"4px 24px 4px 64px",width:30}}>
+                                  <input type="checkbox" checked={ch} onChange={()=>togglePendiente(r.id)} style={{cursor:"pointer"}}/>
+                                </td>
+                                <td style={{padding:"4px 8px",color:C.muted,fontSize:11,width:80}}>{r.concepto||"—"}</td>
+                                <td style={{padding:"4px 8px",color:C.blue,fontWeight:600,fontSize:11,width:60}}>OS {r.numOs||"—"}</td>
+                                <td style={{padding:"4px 8px",fontSize:11,width:100}}>{r.destino||"—"}</td>
+                                <td style={{padding:"4px 8px",color:C.muted,fontSize:11,width:90,whiteSpace:"nowrap"}}>{r.fechaVenta||"—"}</td>
+                                <td style={{padding:"4px 8px",fontSize:11}}>
+                                  <span style={{background:r.moneda==="MXN"?"#E3F2FD":"#E8F5E9",color:r.moneda==="MXN"?"#1565C0":"#2E7D32",padding:"1px 6px",borderRadius:10,fontSize:10,fontWeight:700}}>{r.moneda}</span>
+                                </td>
+                                <td style={{padding:"4px 24px 4px 8px",textAlign:"right",fontWeight:700,color:"#1B5E20",fontSize:12,whiteSpace:"nowrap"}}>
+                                  {r.moneda==="EUR"?"€":"$"}{fmt(+r.importe||0)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{padding:"14px 24px",borderTop:`1px solid ${C.border}`,background:"#FAFAFA",display:"flex",justifyContent:"flex-end",gap:8}}>
+          <button onClick={onClose} disabled={generando}
+            style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"8px 16px",fontSize:13,opacity:generando?0.5:1}}>
+            Cancelar
+          </button>
+          <button onClick={descargar} disabled={!puedeDescargar || generando}
+            style={{...btnStyle,background:"#388E3C",color:"#fff",padding:"8px 18px",fontSize:13,opacity:(!puedeDescargar||generando)?0.5:1}}>
+            {generando ? "Generando..." : `✓ Descargar ${plan.pendientesSel}`}
+          </button>
+        </div>
+
+      </div>
+    </div>
+  );
+}
 
 /* ── ConciliacionModal ───────────────────────────────────────────────
    Compara filas del Excel vs lo que ya hay en sistema (porFacturar)
