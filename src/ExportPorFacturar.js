@@ -140,7 +140,7 @@ function escribirHojaCliente(ws, clienteNombre, regs, clienteInfo, fechaReporte)
     { width: 10 }, // C
     { width: 18 }, // D
     { width: 13 }, // E
-    { width: 16 }, // F
+    { width: 20 }, // F
   ];
 
   let r = 1;
@@ -164,12 +164,15 @@ function escribirHojaCliente(ws, clienteNombre, regs, clienteInfo, fechaReporte)
   // Espaciador
   r++;
 
-  // Bloque cliente
-  ws.getCell(`A${r}`).value = "Cliente:";
-  ws.mergeCells(`B${r}:F${r}`);
-  ws.getCell(`B${r}`).value = clienteNombre;
-  aplicar(ws, `A${r}:A${r}`, styleLabel());
-  aplicar(ws, `B${r}:F${r}`, styleValor({ bold:true, size:12, color: COLOR_MORADO }));
+  // Bloque cliente: una sola celda mergeada A:F (resuelve el corte de
+  // "Cliente:" en la columna A que es estrecha para la tabla)
+  ws.mergeCells(`A${r}:F${r}`);
+  ws.getCell(`A${r}`).value = `Cliente:  ${clienteNombre}`;
+  aplicar(ws, `A${r}:F${r}`, {
+    font: { name: FONT, size: 13, bold: true, color: { argb: COLOR_MORADO } },
+    alignment: { vertical: "middle", horizontal: "left", indent: 1 },
+  });
+  ws.getRow(r).height = 22;
   r++;
 
   // Espaciador
@@ -199,7 +202,14 @@ function escribirHojaCliente(ws, clienteNombre, regs, clienteInfo, fechaReporte)
   });
 
   monedas.forEach(mon => {
-    const filas = porMon[mon];
+    // Orden por # OS descendente. Numeric-aware: si los OS son números puros
+    // los ordena numéricamente; si tienen letras, usa localeCompare con {numeric:true}.
+    const filas = [...porMon[mon]].sort((a, b) => {
+      const na = parseFloat(a.numOs);
+      const nb = parseFloat(b.numOs);
+      if (!isNaN(na) && !isNaN(nb)) return nb - na;
+      return String(b.numOs || "").localeCompare(String(a.numOs || ""), "es", { numeric: true });
+    });
     const subtotal = filas.reduce((s, x) => s + (+x.importe || 0), 0);
 
     // Header moneda
@@ -278,7 +288,7 @@ function escribirHojaCliente(ws, clienteNombre, regs, clienteInfo, fechaReporte)
   aplicar(ws, `A${r}:F${r}`, stylePie());
 
   // Freeze de cabezera
-  ws.views = [{ state: "frozen", ySplit: 3 }];
+  ws.views = [{ state: "frozen", ySplit: 3, showGridLines: false }];
 }
 
 // ─── Hoja "Resumen" para consolidado ──────────────────────────────
@@ -287,7 +297,7 @@ function escribirHojaResumen(ws, porCliente, fechaReporte) {
     { width: 36 },
     { width: 14 },
     { width: 18 },
-    { width: 18 },
+    { width: 20 },
   ];
   let r = 1;
 
@@ -353,7 +363,7 @@ function escribirHojaResumen(ws, porCliente, fechaReporte) {
   aplicar(ws, `D${r}:D${r}`, styleTotal("right"));
   ws.getRow(r).height = 22;
 
-  ws.views = [{ state: "frozen", ySplit: 4 }];
+  ws.views = [{ state: "frozen", ySplit: 4, showGridLines: false }];
 }
 
 // ─── API pública ──────────────────────────────────────────────────
