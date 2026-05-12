@@ -29,6 +29,7 @@ import {
   fetchSaldosTotalesPorFecha,
   fetchSaldoReporteDia, upsertSaldoReporteDia,
   fetchUltimoSaldoReporteAntes, fetchMovimientosDia,
+  fetchAuditLog,
 } from "./db.js";
 import CxcView from "./CxcView.jsx";
 import { EMPRESAS } from "./empresas.js";
@@ -139,6 +140,7 @@ const KpiCard = ({label,value,sub,color=C.navy,icon,onClick}) => (
    ═══════════════════════════════════════════════════════════════════════════ */
 export default function CxpApp({ user, onLogout }) {
   const esConsulta = user?.rol === 'consulta';
+  const esSuperadmin = (user?.rol || '').toLowerCase() === 'superadmin';
   const [view, setView] = useState("dashboard");
   const [currency, setCurrency] = useState("MXN");
   const [suppliers, setSuppliers] = useState([]);
@@ -3229,7 +3231,7 @@ export default function CxpApp({ user, onLogout }) {
 
     // Edición histórica: solo admin, requiere confirmación
     const [edicionHistoricaHabilitada, setEdicionHistoricaHabilitada] = useState(false);
-    const esAdmin = (user?.rol || '').toLowerCase() === 'admin';
+    const esAdmin = (user?.rol || '').toLowerCase() === 'superadmin';
     // bloqueoEdicion = true cuando NO se puede editar
     const bloqueoEdicion = esVistaHistorica && !edicionHistoricaHabilitada;
 
@@ -7445,6 +7447,9 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             <button onClick={()=>addClase(ncInput)} style={btnStyle}>Agregar</button>
           </div>
         </div>
+        {esSuperadmin && (
+          <HistorialActividad C={C} btnStyle={btnStyle} inputStyle={inputStyle} />
+        )}
       </div>
     );
   };
@@ -10376,5 +10381,208 @@ function ProveedorPicker({ curInvoices, filtroProveedores, setFiltroProveedores,
         </div>
       )}
     </>
+  );
+}
+
+/* ── HistorialActividad ───────────────────────────────────────────────
+   Vista de auditoría (light): muestra la tabla audit_log con filtros.
+   Solo accesible para rol superadmin (gated en renderConfig).
+*/
+function HistorialActividad({ C, btnStyle, inputStyle }) {
+  const [logs, setLogs] = React.useState([]);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState(null);
+  const [filtros, setFiltros] = React.useState({
+    username: "",
+    entidad: "",
+    accion: "",
+    desde: "",
+    hasta: "",
+    limit: 200,
+  });
+
+  const cargar = React.useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      const opts = {
+        limit: filtros.limit,
+        username: filtros.username || undefined,
+        entidad: filtros.entidad || undefined,
+        accion: filtros.accion || undefined,
+        desde: filtros.desde || undefined,
+        hasta: filtros.hasta ? filtros.hasta + "T23:59:59" : undefined,
+      };
+      const data = await fetchAuditLog(opts);
+      setLogs(data);
+    } catch (e) {
+      setError(e.message || String(e));
+    }
+    setLoading(false);
+  }, [filtros]);
+
+  React.useEffect(() => { cargar(); }, [cargar]);
+
+  const usernamesUnicos = React.useMemo(() => {
+    const s = new Set(logs.map(l => l.username).filter(Boolean));
+    return [...s].sort();
+  }, [logs]);
+
+  const entidadesUnicas = React.useMemo(() => {
+    const s = new Set(logs.map(l => l.entidad).filter(Boolean));
+    return [...s].sort();
+  }, [logs]);
+
+  const accionLabel = (a) => {
+    const m = {
+      crear: { l: "Crear", color: "#2E7D32", bg: "#E8F5E9" },
+      editar: { l: "Editar", color: "#1565C0", bg: "#E3F2FD" },
+      eliminar: { l: "Eliminar", color: "#C62828", bg: "#FFEBEE" },
+      importar: { l: "Importar", color: "#6A1B9A", bg: "#F3E5F5" },
+      conciliar_insert: { l: "Conciliar", color: "#6A1B9A", bg: "#F3E5F5" },
+    };
+    return m[a] || { l: a, color: "#616161", bg: "#F5F5F5" };
+  };
+
+  const entidadLabel = (e) => {
+    const m = {
+      ingreso: "💰 Ingreso CxC",
+      cobro: "💵 Cobro",
+      por_facturar: "📋 Por Facturar",
+      financiamiento: "🏦 Financiamiento",
+      pago_cxp: "💸 Pago CxP",
+      factura_cxp: "🧾 Factura CxP",
+    };
+    return m[e] || e;
+  };
+
+  const fmtFecha = (iso) => {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    const dd = String(d.getDate()).padStart(2,"0");
+    const mm = String(d.getMonth()+1).padStart(2,"0");
+    const yyyy = d.getFullYear();
+    const hh = String(d.getHours()).padStart(2,"0");
+    const min = String(d.getMinutes()).padStart(2,"0");
+    return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
+  };
+
+  return (
+    <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:16,padding:24,marginTop:24}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
+        <h3 style={{fontWeight:700,color:C.navy,margin:0}}>📋 Historial de actividad</h3>
+        <span style={{fontSize:12,color:C.muted}}>
+          Solo visible para superadmin · {logs.length} registros mostrados
+        </span>
+      </div>
+
+      {/* Filtros */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10,marginBottom:16,padding:12,background:"#FAFAFA",borderRadius:10,border:`1px solid ${C.border}`}}>
+        <div>
+          <label style={{display:"block",fontSize:11,color:C.muted,fontWeight:600,marginBottom:4}}>Usuario</label>
+          <select value={filtros.username} onChange={e=>setFiltros(f=>({...f,username:e.target.value}))} style={{...inputStyle,fontSize:12,padding:"6px 8px",width:"100%"}}>
+            <option value="">Todos</option>
+            {usernamesUnicos.map(u=><option key={u} value={u}>{u}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={{display:"block",fontSize:11,color:C.muted,fontWeight:600,marginBottom:4}}>Entidad</label>
+          <select value={filtros.entidad} onChange={e=>setFiltros(f=>({...f,entidad:e.target.value}))} style={{...inputStyle,fontSize:12,padding:"6px 8px",width:"100%"}}>
+            <option value="">Todas</option>
+            {entidadesUnicas.map(e=><option key={e} value={e}>{entidadLabel(e)}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={{display:"block",fontSize:11,color:C.muted,fontWeight:600,marginBottom:4}}>Acción</label>
+          <select value={filtros.accion} onChange={e=>setFiltros(f=>({...f,accion:e.target.value}))} style={{...inputStyle,fontSize:12,padding:"6px 8px",width:"100%"}}>
+            <option value="">Todas</option>
+            <option value="crear">Crear</option>
+            <option value="editar">Editar</option>
+            <option value="eliminar">Eliminar</option>
+            <option value="importar">Importar</option>
+            <option value="conciliar_insert">Conciliar</option>
+          </select>
+        </div>
+        <div>
+          <label style={{display:"block",fontSize:11,color:C.muted,fontWeight:600,marginBottom:4}}>Desde</label>
+          <input type="date" value={filtros.desde} onChange={e=>setFiltros(f=>({...f,desde:e.target.value}))} style={{...inputStyle,fontSize:12,padding:"6px 8px",width:"100%"}}/>
+        </div>
+        <div>
+          <label style={{display:"block",fontSize:11,color:C.muted,fontWeight:600,marginBottom:4}}>Hasta</label>
+          <input type="date" value={filtros.hasta} onChange={e=>setFiltros(f=>({...f,hasta:e.target.value}))} style={{...inputStyle,fontSize:12,padding:"6px 8px",width:"100%"}}/>
+        </div>
+        <div>
+          <label style={{display:"block",fontSize:11,color:C.muted,fontWeight:600,marginBottom:4}}>Máximo</label>
+          <select value={filtros.limit} onChange={e=>setFiltros(f=>({...f,limit:+e.target.value}))} style={{...inputStyle,fontSize:12,padding:"6px 8px",width:"100%"}}>
+            <option value={100}>100</option>
+            <option value={200}>200</option>
+            <option value={500}>500</option>
+            <option value={1000}>1000</option>
+          </select>
+        </div>
+      </div>
+
+      <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+        <button onClick={cargar} disabled={loading} style={{...btnStyle,padding:"6px 14px",fontSize:12,opacity:loading?0.5:1}}>
+          {loading?"Cargando…":"🔄 Refrescar"}
+        </button>
+        <button
+          onClick={()=>setFiltros({username:"",entidad:"",accion:"",desde:"",hasta:"",limit:200})}
+          style={{...btnStyle,background:"#F1F5F9",color:C.text,padding:"6px 14px",fontSize:12}}>
+          Limpiar filtros
+        </button>
+      </div>
+
+      {error && (
+        <div style={{padding:10,background:"#FFEBEE",color:C.danger,borderRadius:8,fontSize:12,marginBottom:12}}>
+          ⚠️ {error}
+        </div>
+      )}
+
+      {logs.length === 0 && !loading ? (
+        <div style={{textAlign:"center",padding:40,color:C.muted,fontSize:13}}>
+          <div style={{fontSize:36,marginBottom:8}}>📭</div>
+          Sin actividad registrada con esos filtros
+        </div>
+      ) : (
+        <div style={{overflowX:"auto",border:`1px solid ${C.border}`,borderRadius:10}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead>
+              <tr style={{background:C.navy,color:"#fff"}}>
+                <th style={{padding:"10px 12px",textAlign:"left",fontSize:11,textTransform:"uppercase",whiteSpace:"nowrap"}}>Fecha y hora</th>
+                <th style={{padding:"10px 12px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>Usuario</th>
+                <th style={{padding:"10px 12px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>Acción</th>
+                <th style={{padding:"10px 12px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>Entidad</th>
+                <th style={{padding:"10px 12px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>ID afectado</th>
+                <th style={{padding:"10px 12px",textAlign:"left",fontSize:11,textTransform:"uppercase"}}>Contexto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.map((l,i) => {
+                const ac = accionLabel(l.accion);
+                return (
+                  <tr key={l.id} style={{borderTop:`1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFF"}}>
+                    <td style={{padding:"8px 12px",color:C.muted,whiteSpace:"nowrap"}}>{fmtFecha(l.createdAt)}</td>
+                    <td style={{padding:"8px 12px",fontWeight:700,color:C.navy}}>{l.username || "—"}</td>
+                    <td style={{padding:"8px 12px"}}>
+                      <span style={{background:ac.bg,color:ac.color,padding:"2px 10px",borderRadius:20,fontSize:11,fontWeight:700}}>{ac.l}</span>
+                    </td>
+                    <td style={{padding:"8px 12px",color:C.text}}>{entidadLabel(l.entidad)}</td>
+                    <td style={{padding:"8px 12px",fontFamily:"monospace",fontSize:11,color:C.muted}}>{l.entidadId || "—"}</td>
+                    <td style={{padding:"8px 12px",fontSize:11,color:C.muted,maxWidth:300,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
+                      title={l.contexto ? JSON.stringify(l.contexto) : ""}>
+                      {l.contexto ? (
+                        l.contexto.campos ? `Campos: ${l.contexto.campos.join(", ")}` :
+                        l.contexto.count != null ? `${l.contexto.count} registros` :
+                        JSON.stringify(l.contexto).slice(0,80)
+                      ) : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }

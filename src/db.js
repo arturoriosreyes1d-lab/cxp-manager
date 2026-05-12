@@ -141,11 +141,15 @@ export async function upsertManyInvoices(invArr) {
 }
 
 export async function deleteInvoiceDB(id) {
+  await logAudit({ accion:'eliminar', entidad:'factura_cxp', entidadId:id });
+
   const { error } = await supabase.from('invoices').delete().eq('id', id);
   if (error) console.error('deleteInvoice:', error);
 }
 
 export async function updateInvoiceField(id, fields) {
+  await logAudit({ accion:'editar', entidad:'factura_cxp', entidadId:id, contexto:{ campos: Object.keys(fields||{}) } });
+
   // fields: { clasificacion: 'x' } or { fecha_programacion: 'y' } etc
   const dbFields = {};
   if ('clasificacion' in fields) dbFields.clasificacion = fields.clasificacion;
@@ -253,6 +257,8 @@ export async function fetchPayments(empresaId) {
 }
 
 export async function insertPayment(p) {
+  const _auditFolio = p?.invoiceId;
+
   const row = {
     invoice_id: p.invoiceId, monto: p.monto, fecha_pago: p.fechaPago,
     notas: p.notas || '', tipo: p.tipo || 'realizado',
@@ -260,6 +266,7 @@ export async function insertPayment(p) {
   };
   const { data, error } = await supabase.from('payments').insert(row).select().single();
   if (error) { console.error('insertPayment:', error); return p; }
+  await logAudit({ accion:'crear', entidad:'pago_cxp', entidadId:data.id, contexto:{ invoiceId:_auditFolio } });
   return {
     id: data.id, invoiceId: data.invoice_id, monto: +data.monto,
     fechaPago: data.fecha_pago, notas: data.notas || '', tipo: data.tipo || 'realizado',
@@ -268,11 +275,15 @@ export async function insertPayment(p) {
 }
 
 export async function deletePayment(id) {
+  await logAudit({ accion:'eliminar', entidad:'pago_cxp', entidadId:id });
+
   const { error } = await supabase.from('payments').delete().eq('id', id);
   if (error) console.error('deletePayment:', error);
 }
 
 export async function updatePayment(id, fields) {
+  await logAudit({ accion:'editar', entidad:'pago_cxp', entidadId:id, contexto:{ campos: Object.keys(fields||{}) } });
+
   const dbFields = {};
   if ('monto' in fields) dbFields.monto = fields.monto;
   if ('fechaPago' in fields) dbFields.fecha_pago = fields.fechaPago;
@@ -343,17 +354,20 @@ export async function upsertIngreso(ing) {
     delete row.id;
     const { data, error } = await supabase.from('ingresos').insert(row).select().single();
     if (error) { console.error('insertIngreso:', error); return ing; }
+    await logAudit({ accion:'crear', entidad:'ingreso', entidadId:data.id, empresaId:data.empresa_id });
     return ingresoToApp(data);
   } else {
     const { data, error } = await supabase.from('ingresos').update(row).eq('id', row.id).select().single();
     if (error) { console.error('updateIngreso:', error); return ing; }
+    await logAudit({ accion:'editar', entidad:'ingreso', entidadId:data.id, empresaId:data.empresa_id });
     return ingresoToApp(data);
   }
 }
 
 export async function deleteIngreso(id) {
   const { error } = await supabase.from('ingresos').delete().eq('id', id);
-  if (error) console.error('deleteIngreso:', error);
+  if (error) { console.error('deleteIngreso:', error); return; }
+  await logAudit({ accion:'eliminar', entidad:'ingreso', entidadId:id });
 }
 
 /* ── Bulk delete ingresos TAS ─────────────────────────────── */
@@ -391,6 +405,9 @@ export async function deleteTASTodo(empresaId) {
 }
 
 export async function updateIngresoField(id, fields) {
+  // Audit wrap (light): registra edición a nivel campo
+  await logAudit({ accion:'editar', entidad:'ingreso', entidadId:id, contexto:{ campos: Object.keys(fields||{}) } });
+
   const dbFields = {};
   if ('fechaFicticia' in fields) dbFields.fecha_ficticia = fields.fechaFicticia || null;
   if ('diasCredito' in fields) dbFields.dias_credito = fields.diasCredito;
@@ -421,6 +438,8 @@ export async function fetchCobros(empresaId) {
 }
 
 export async function insertCobro(c) {
+  const _auditEmp = c?.empresaId;
+
   const row = {
     ingreso_id: c.ingresoId,
     monto: c.monto,
@@ -444,10 +463,13 @@ export async function insertCobro(c) {
 
 export async function deleteCobro(id) {
   const { error } = await supabase.from('cobros').delete().eq('id', id);
-  if (error) console.error('deleteCobro:', error);
+  if (error) { console.error('deleteCobro:', error); return; }
+  await logAudit({ accion:'eliminar', entidad:'cobro', entidadId:id });
 }
 
 export async function updateCobro(id, fields) {
+  await logAudit({ accion:'editar', entidad:'cobro', entidadId:id, contexto:{ campos: Object.keys(fields||{}) } });
+
   const row = {};
   if ('monto'      in fields) row.monto       = +fields.monto;
   if ('fechaCobro' in fields) row.fecha_cobro  = fields.fechaCobro;
@@ -606,10 +628,13 @@ export async function insertPorFacturar(r) {
   };
   const { data, error } = await supabase.from('por_facturar').insert(row).select().single();
   if (error) { console.error('insertPorFacturar:', error); return null; }
+  await logAudit({ accion:'crear', entidad:'por_facturar', entidadId:data.id, empresaId:r?.empresaId });
   return { id: data.id, ...r };
 }
 
 export async function updatePorFacturar(id, fields) {
+  await logAudit({ accion:'editar', entidad:'por_facturar', entidadId:id, contexto:{ campos: Object.keys(fields||{}) } });
+
   const row = {};
   if ('cliente'    in fields) row.cliente     = fields.cliente;
   if ('concepto'   in fields) row.concepto    = fields.concepto;
@@ -625,7 +650,8 @@ export async function updatePorFacturar(id, fields) {
 
 export async function deletePorFacturar(id) {
   const { error } = await supabase.from('por_facturar').delete().eq('id', id);
-  if (error) console.error('deletePorFacturar:', error);
+  if (error) { console.error('deletePorFacturar:', error); return; }
+  await logAudit({ accion:'eliminar', entidad:'por_facturar', entidadId:id });
 }
 
 export async function bulkInsertPorFacturar(rows) {
@@ -645,6 +671,7 @@ export async function bulkInsertPorFacturar(rows) {
     .upsert(dbRows, { onConflict: 'empresa_id,num_os,cliente,fecha_venta', ignoreDuplicates: false })
     .select();
   if (error) { console.error('bulkInsertPorFacturar:', error); return { inserted: 0, error }; }
+  await logAudit({ accion:'importar', entidad:'por_facturar', entidadId:null, contexto:{ count: (data||[]).length, modo:'upsert' } });
   return { inserted: (data || []).length };
 }
 
@@ -665,6 +692,7 @@ export async function bulkInsertPorFacturarPlain(rows) {
   }));
   const { data, error } = await supabase.from('por_facturar').insert(dbRows).select();
   if (error) { console.error('bulkInsertPorFacturarPlain:', error); return { inserted: 0, data: [], error }; }
+  await logAudit({ accion:'conciliar_insert', entidad:'por_facturar', entidadId:null, contexto:{ count: (data||[]).length } });
   return { inserted: (data || []).length, data: data || [] };
 }
 
@@ -690,6 +718,8 @@ export async function fetchFinanciamientos(empresaId) {
 }
 
 export async function insertFinanciamiento(f) {
+  const _auditEmp = f?.empresaId;
+
   const row = {
     empresa_id: f.empresaId,
     nombre: f.nombre || '',
@@ -704,10 +734,13 @@ export async function insertFinanciamiento(f) {
   };
   const { data, error } = await supabase.from('financiamientos').insert(row).select().single();
   if (error) { console.error('insertFinanciamiento:', error); return null; }
+  await logAudit({ accion:'crear', entidad:'financiamiento', entidadId:data.id, empresaId:_auditEmp });
   return { id: data.id, ...f };
 }
 
 export async function updateFinanciamiento(id, fields) {
+  await logAudit({ accion:'editar', entidad:'financiamiento', entidadId:id, contexto:{ campos: Object.keys(fields||{}) } });
+
   const map = { nombre:'nombre', concepto:'concepto', moneda:'moneda', montoMensual:'monto_mensual',
     fechaInicio:'fecha_inicio', fechaFin:'fecha_fin', diaPago:'dia_pago', activo:'activo', notas:'notas' };
   const row = {};
@@ -717,6 +750,8 @@ export async function updateFinanciamiento(id, fields) {
 }
 
 export async function deleteFinanciamiento(id) {
+  await logAudit({ accion:'eliminar', entidad:'financiamiento', entidadId:id });
+
   const { error } = await supabase.from('financiamientos').delete().eq('id', id);
   if (error) console.error('deleteFinanciamiento:', error);
 }
@@ -1220,4 +1255,59 @@ export async function fetchSugerenciasIngresos(empresaId) {
     clientes: [...clientes].sort((a, b) => a.localeCompare(b, 'es')),
     conceptos: [...conceptos].sort((a, b) => a.localeCompare(b, 'es')),
   };
+}
+
+/* ── Audit log (light) ──────────────────────────────────────────────
+   Registra acciones del usuario contra entidades de dinero. Versión
+   light: quién, cuándo, qué tipo de acción, sobre qué entidad/id. NO
+   guarda diff antes/después (eso es la versión completa, postergada).
+
+   Uso: await logAudit({ user, accion: 'crear'|'editar'|'eliminar',
+                         entidad: 'ingreso'|'cobro'|..., entidadId, contexto? })
+
+   Fail-silent: si el insert al log falla, NO interrumpe la operación
+   principal. Mejor perder un log que romper una transacción de negocio. */
+let _auditUser = null;
+export function setAuditUser(user) { _auditUser = user || null; }
+
+export async function logAudit({ user, accion, entidad, entidadId, empresaId, contexto }) {
+  try {
+    const u = user || _auditUser;
+    if (!u) return;
+    const row = {
+      user_id:    u.id || null,
+      username:   u.username || null,
+      empresa_id: empresaId || null,
+      accion:     String(accion || ''),
+      entidad:    String(entidad || ''),
+      entidad_id: entidadId != null ? String(entidadId) : null,
+      contexto:   contexto || null,
+    };
+    const { error } = await supabase.from('audit_log').insert(row);
+    if (error) console.warn('logAudit:', error.message || error);
+  } catch (e) {
+    console.warn('logAudit exception:', e);
+  }
+}
+
+export async function fetchAuditLog({ limit = 200, username, entidad, accion, desde, hasta } = {}) {
+  let q = supabase.from('audit_log').select('*').order('created_at', { ascending: false }).limit(limit);
+  if (username) q = q.eq('username', username);
+  if (entidad)  q = q.eq('entidad', entidad);
+  if (accion)   q = q.eq('accion', accion);
+  if (desde)    q = q.gte('created_at', desde);
+  if (hasta)    q = q.lte('created_at', hasta);
+  const { data, error } = await q;
+  if (error) { console.error('fetchAuditLog:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id,
+    createdAt: r.created_at,
+    userId: r.user_id,
+    username: r.username,
+    empresaId: r.empresa_id,
+    accion: r.accion,
+    entidad: r.entidad,
+    entidadId: r.entidad_id,
+    contexto: r.contexto,
+  }));
 }
