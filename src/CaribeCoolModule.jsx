@@ -7440,6 +7440,202 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
     }
   }
 
+  // ─── Versión vertical optimizada para WhatsApp ───
+  // Renderiza el reporte en un wrapper off-screen de 720px de ancho
+  // (resultado final ~1080px @ scale 1.5). Todo apilado verticalmente,
+  // tipografía grande, ideal para mandar como imagen en WhatsApp.
+  async function descargarImagenWhatsApp() {
+    if (hayIncompletos) {
+      alert(
+        `⛔ Hay ${boletosIncompletos.length} boleto${
+          boletosIncompletos.length !== 1 ? 's' : ''
+        } sin terminar de capturar. Complétalos antes de generar el reporte.`
+      );
+      return;
+    }
+
+    // Construir HTML del reporte vertical
+    const colors = {
+      navy: '#0F172A',
+      venta: '#0F8F70',
+      costo: '#DC2626',
+      utilidad: '#16A34A',
+      muted: '#64748B',
+      border: '#E2E8F0',
+      bgSoft: '#F8FAFC',
+    };
+
+    const formatMoney = (n) => {
+      if (n == null || isNaN(n)) return '$0.00';
+      return (
+        '$' +
+        Number(n).toLocaleString('en-US', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })
+      );
+    };
+
+    // Lista de boletos por caja (mismo orden que el preview normal)
+    const seccionesHtml = distribucion
+      .map((g) => {
+        const cat = g.categoria;
+        const filasHtml = g.boletos
+          .map((b, i) => {
+            const bg = i % 2 === 0 ? 'white' : '#FAFBFF';
+            const descLimpia = b.descripcion
+              ? b.descripcion.replace(/Venta del billete /, '')
+              : '';
+            return `
+              <tr style="background: ${bg};">
+                <td style="padding: 12px 16px; font-family: ui-monospace, monospace; font-weight: 700; color: ${colors.navy}; font-size: 16px; vertical-align: top; white-space: nowrap;">${b.pnr || ''}</td>
+                <td style="padding: 12px 16px; color: #334155; font-size: 16px; vertical-align: top;">
+                  <div style="font-weight: 600;">${b.cliente || '(sin cliente)'}</div>
+                  <div style="font-size: 13px; color: ${colors.muted}; margin-top: 3px;">${descLimpia}</div>
+                </td>
+                <td style="padding: 12px 16px; text-align: right; font-family: ui-monospace, monospace; font-weight: 700; color: ${colors.navy}; font-size: 16px; vertical-align: top; white-space: nowrap;">${b.precio_venta != null ? formatMoney(b.precio_venta) : '—'}</td>
+              </tr>`;
+          })
+          .join('');
+
+        return `
+          <div style="border: 1px solid ${colors.border}; border-radius: 12px; overflow: hidden; margin-bottom: 16px;">
+            <div style="padding: 16px 20px; background: ${cat.bgSoft || colors.bgSoft}; display: flex; align-items: center; gap: 12px;">
+              <span style="font-size: 26px;">${cat.icon}</span>
+              <span style="font-weight: 700; font-size: 18px; color: ${cat.color || colors.navy}; flex: 1;">${cat.label}</span>
+            </div>
+            <div style="padding: 8px 20px; background: ${cat.bgSoft || colors.bgSoft}; border-top: 1px solid ${colors.border}; display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 14px; color: ${colors.muted}; font-weight: 500;">${g.count} boleto${g.count !== 1 ? 's' : ''}</span>
+              <span style="font-weight: 800; font-size: 22px; color: ${cat.color || colors.navy}; font-family: ui-monospace, monospace;">${formatMoney(g.total)}</span>
+            </div>
+            ${g.boletos.length > 0 ? `<table style="width: 100%; border-collapse: collapse; background: white;"><tbody>${filasHtml}</tbody></table>` : ''}
+          </div>`;
+      })
+      .join('');
+
+    const html = `
+      <div style="width: 720px; background: white; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: ${colors.navy};">
+        <!-- BANNER -->
+        <div style="padding: 32px; background: linear-gradient(135deg, ${colors.navy} 0%, #1E3A5F 100%); color: white;">
+          <div style="font-size: 13px; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.12em; font-weight: 600;">
+            Reporte Venta Boletería · Caribe Cool
+          </div>
+          <div style="font-size: 38px; font-weight: 800; margin-top: 12px; letter-spacing: -0.02em;">
+            ${formatDate(fecha)}
+          </div>
+          <div style="font-size: 15px; opacity: 0.7; margin-top: 8px;">
+            Viajes Libero · Generado el ${formatDate(hoy)}
+          </div>
+        </div>
+
+        <!-- SECCIÓN 1: RESUMEN -->
+        <div style="padding: 28px 24px; background: white;">
+          <div style="font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: ${colors.muted}; margin-bottom: 18px;">
+            1 · Resumen del día
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+            <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid ${colors.border}; border-top: 4px solid ${colors.navy};">
+              <div style="font-size: 13px; color: ${colors.muted}; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;">Boletos</div>
+              <div style="font-size: 36px; font-weight: 800; color: ${colors.navy}; margin-top: 6px; letter-spacing: -0.02em;">${resumen.count}</div>
+            </div>
+            <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid ${colors.border}; border-top: 4px solid ${colors.venta};">
+              <div style="font-size: 13px; color: ${colors.muted}; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;">Venta</div>
+              <div style="font-size: 30px; font-weight: 800; color: ${colors.venta}; margin-top: 6px; font-family: ui-monospace, monospace; letter-spacing: -0.02em;">${formatMoney(resumen.venta)}</div>
+            </div>
+            <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid ${colors.border}; border-top: 4px solid ${colors.costo};">
+              <div style="font-size: 13px; color: ${colors.muted}; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;">Costo</div>
+              <div style="font-size: 30px; font-weight: 800; color: ${colors.costo}; margin-top: 6px; font-family: ui-monospace, monospace; letter-spacing: -0.02em;">${formatMoney(resumen.costo)}</div>
+            </div>
+            <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid ${colors.border}; border-top: 4px solid ${resumen.utilidad >= 0 ? colors.utilidad : colors.costo};">
+              <div style="font-size: 13px; color: ${colors.muted}; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;">Utilidad</div>
+              <div style="font-size: 30px; font-weight: 800; color: ${resumen.utilidad >= 0 ? colors.utilidad : colors.costo}; margin-top: 6px; font-family: ui-monospace, monospace; letter-spacing: -0.02em;">${resumen.utilidad >= 0 ? '+' : '-'}${formatMoney(Math.abs(resumen.utilidad))}</div>
+              <div style="font-size: 12px; color: ${colors.muted}; margin-top: 6px; font-weight: 500;">${resumen.margen.toFixed(1)}% margen</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SECCIÓN 2: ¿DÓNDE ESTÁ EL DINERO? -->
+        <div style="padding: 28px 24px; background: white; border-top: 1px solid ${colors.border};">
+          <div style="font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: ${colors.muted}; margin-bottom: 18px;">
+            2 · ¿Dónde está el dinero?
+          </div>
+          ${
+            distribucion.length === 0
+              ? `<div style="color: ${colors.muted}; font-size: 15px;">Sin cobros registrados del día.</div>`
+              : seccionesHtml
+          }
+        </div>
+
+        <!-- SECCIÓN 3: SALDO CARIBE COOL -->
+        <div style="padding: 28px 24px; background: white; border-top: 1px solid ${colors.border};">
+          <div style="font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: ${colors.muted}; margin-bottom: 18px;">
+            3 · Saldo Caribe Cool
+          </div>
+          <table style="width: 100%; border-collapse: collapse; font-size: 16px;">
+            <tbody>
+              <tr style="border-bottom: 1px solid #F1F5F9;">
+                <td style="padding: 14px 0; color: ${colors.muted};">Saldo al inicio del día</td>
+                <td style="padding: 14px 0; text-align: right; font-family: ui-monospace, monospace; font-weight: 600;">${formatMoney(saldoCC.inicio)}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #F1F5F9;">
+                <td style="padding: 14px 0;">Recargas del día (${saldoCC.recargasDiaCount})</td>
+                <td style="padding: 14px 0; text-align: right; color: ${colors.utilidad}; font-weight: 700; font-family: ui-monospace, monospace;">${saldoCC.recargasDia > 0 ? '+' : ''}${formatMoney(saldoCC.recargasDia)}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #F1F5F9;">
+                <td style="padding: 14px 0;">Consumos del día (${saldoCC.consumosDiaCount} boletos)</td>
+                <td style="padding: 14px 0; text-align: right; color: ${colors.costo}; font-weight: 700; font-family: ui-monospace, monospace;">-${formatMoney(saldoCC.consumosDia)}</td>
+              </tr>
+              <tr style="background: ${colors.bgSoft};">
+                <td style="padding: 18px 12px; font-weight: 700; font-size: 17px;">Saldo al cierre del día</td>
+                <td style="padding: 18px 12px; text-align: right; font-weight: 800; font-size: 24px; font-family: ui-monospace, monospace; color: ${saldoCC.cierre >= 0 ? colors.navy : colors.costo};">${saldoCC.cierre < 0 ? '-' : ''}${formatMoney(Math.abs(saldoCC.cierre))}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Footer -->
+        <div style="padding: 16px 24px; background: ${colors.bgSoft}; text-align: center; font-size: 12px; color: ${colors.muted}; border-top: 1px solid ${colors.border};">
+          Generado por CxP Manager · Viajes Libero
+        </div>
+      </div>`;
+
+    // Crear wrapper off-screen, montar HTML, capturar con html2canvas, limpiar
+    const wrapper = document.createElement('div');
+    wrapper.style.position = 'fixed';
+    wrapper.style.top = '-99999px';
+    wrapper.style.left = '0';
+    wrapper.style.zIndex = '-1';
+    wrapper.innerHTML = html;
+    document.body.appendChild(wrapper);
+
+    try {
+      const target = wrapper.firstElementChild;
+      const canvas = await html2canvas(target, {
+        scale: 1.5, // 720 * 1.5 = 1080px (ancho recomendado para WhatsApp Status)
+        backgroundColor: '#FFFFFF',
+        logging: false,
+        useCORS: true,
+        width: 720,
+      });
+      canvas.toBlob(
+        (blob) => {
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.download = `Reporte_WhatsApp_${fecha}.png`;
+          link.href = url;
+          link.click();
+          setTimeout(() => URL.revokeObjectURL(url), 100);
+        },
+        'image/png',
+        1.0
+      );
+    } catch (err) {
+      alert('⚠ Error generando la imagen: ' + (err.message || err));
+    } finally {
+      document.body.removeChild(wrapper);
+    }
+  }
+
   // 1. Resumen del día
   const resumen = useMemo(() => {
     const count = boletosDia.length;
@@ -7837,6 +8033,26 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
             }}
           >
             📸 Imagen
+          </button>
+          <button
+            onClick={descargarImagenWhatsApp}
+            disabled={hayIncompletos}
+            title="Imagen vertical optimizada para mandar por WhatsApp"
+            style={{
+              padding: '8px 14px',
+              borderRadius: 8,
+              border: hayIncompletos
+                ? '1px solid #CBD5E1'
+                : '1px solid #25D366',
+              background: 'white',
+              color: hayIncompletos ? '#94A3B8' : '#0D8849',
+              fontWeight: 700,
+              fontSize: 12,
+              cursor: hayIncompletos ? 'not-allowed' : 'pointer',
+              opacity: hayIncompletos ? 0.5 : 1,
+            }}
+          >
+            📱 WhatsApp
           </button>
           <button
             onClick={descargarPDF}
