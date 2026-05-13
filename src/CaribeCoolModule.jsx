@@ -7575,7 +7575,7 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
 </head><body>
   <div class="header">
     <div class="header-label">Reporte Venta Boletería · Caribe Cool · Viajes Libero</div>
-    <div class="header-title">Reporte Venta Boletería Caribe Cool del ${fechaFmt}</div>
+    <div class="header-title">${fechaFmt}</div>
     <div class="header-sub">Generado el ${formatDate(hoy)}</div>
   </div>
   <div class="section">
@@ -7673,7 +7673,7 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
     // Hoja 1: Resumen
     const resumenRows = [
       [`REPORTE VENTA BOLETERÍA · CARIBE COOL · VIAJES LIBERO`],
-      [`Reporte Venta Boletería Caribe Cool del ${fechaFmt}`],
+      [fechaFmt],
       [`Generado: ${formatDate(hoy)}`],
       [],
       ['1 · RESUMEN DEL DÍA'],
@@ -8060,7 +8060,7 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
             Reporte Venta Boletería · Caribe Cool · Viajes Libero
           </div>
           <div style={{ fontSize: 18, fontWeight: 700, marginTop: 4 }}>
-            Reporte Venta Boletería Caribe Cool del {formatDate(fecha)}
+            {formatDate(fecha)}
           </div>
           <div
             style={{
