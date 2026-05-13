@@ -142,8 +142,25 @@ const CATEGORIAS = [
   },
 ];
 
+// Detecta boletos en estado "POR CONFIRMAR":
+// Son ventas en EFECTIVO CUBA marcadas como PENDIENTE. El dinero
+// posiblemente ya entró a la caja de Cuba pero el equipo allá aún no
+// nos confirmó. Se cuentan en Caja Cuba pero con etiqueta visual ámbar.
+// Cuando el equipo confirma, el usuario cambia el estatus a COBRADO
+// y la marca "Por confirmar" desaparece.
+function esPorConfirmar(b) {
+  return (
+    b.forma_pago === 'EFECTIVO CUBA' &&
+    b.estatus === 'PENDIENTE' &&
+    b.precio_venta != null
+  );
+}
+
 // Dado un boleto, retorna el id de la categoría a la que pertenece su cobro
 function categoriaDelBoleto(b) {
+  // Caso especial: EFECTIVO CUBA + PENDIENTE = "Por confirmar" → va a Caja Cuba
+  if (esPorConfirmar(b)) return 'caja_cuba';
+
   if (!b.forma_pago || b.estatus !== 'COBRADO') {
     // Si está como PENDIENTE pero con CREDITO seleccionado, va a crédito pendiente
     if (b.forma_pago === 'CREDITO') return 'credito_pendiente';
@@ -264,10 +281,14 @@ function esSaldoInicial(m) {
 
 // Mapeo: dada una venta cobrada (boleto), retorna a qué caja real va el dinero
 // según su forma_pago + moneda_cobro.
-// Retorna { caja_id, monto, moneda } o null si no aplica (pendiente / sin forma).
+// Retorna { caja_id, monto, moneda, porConfirmar } o null si no aplica.
+// porConfirmar=true cuando el dinero "probablemente" ya entró pero falta
+// que el equipo en Cuba confirme (EFECTIVO CUBA + PENDIENTE).
 function ventaACaja(b) {
-  if (b.estatus !== 'COBRADO' || !b.forma_pago) return null;
-  if (b.precio_venta == null) return null;
+  if (b.precio_venta == null || !b.forma_pago) return null;
+  const porConfirmar = esPorConfirmar(b);
+  // Solo procede si está COBRADO o si es un caso "Por confirmar"
+  if (b.estatus !== 'COBRADO' && !porConfirmar) return null;
   // Monto en moneda de cobro (no en USD necesariamente)
   const monto =
     b.moneda_cobro === 'MXN' && b.precio_venta_local != null
@@ -278,24 +299,24 @@ function ventaACaja(b) {
   switch (b.forma_pago) {
     case 'EFECTIVO CUBA':
     case 'SO CUBA':
-      return { caja_id: 'caja_cuba', monto, moneda: 'USD' };
+      return { caja_id: 'caja_cuba', monto, moneda: 'USD', porConfirmar };
     case 'EFECTIVO MEX OPERACIONES':
-      return { caja_id: 'caja_ops_mex', monto, moneda };
+      return { caja_id: 'caja_ops_mex', monto, moneda, porConfirmar };
     case 'EFECTIVO MEX CONTABILIDAD':
-      return { caja_id: 'caja_contab_mex', monto, moneda };
+      return { caja_id: 'caja_contab_mex', monto, moneda, porConfirmar };
     case 'BNMX USD':
-      return { caja_id: 'bnmx_usd', monto: b.precio_venta, moneda: 'USD' };
+      return { caja_id: 'bnmx_usd', monto: b.precio_venta, moneda: 'USD', porConfirmar };
     case 'BNMX MN':
-      return { caja_id: 'bnmx_mn', monto, moneda: 'MXN' };
+      return { caja_id: 'bnmx_mn', monto, moneda: 'MXN', porConfirmar };
     case 'TARJETA':
     case 'TRANSFERENCIA':
       // Caen en BNMX según moneda
       if (moneda === 'MXN') {
-        return { caja_id: 'bnmx_mn', monto, moneda: 'MXN' };
+        return { caja_id: 'bnmx_mn', monto, moneda: 'MXN', porConfirmar };
       }
-      return { caja_id: 'bnmx_usd', monto: b.precio_venta, moneda: 'USD' };
+      return { caja_id: 'bnmx_usd', monto: b.precio_venta, moneda: 'USD', porConfirmar };
     case 'PAYPAL':
-      return { caja_id: 'paypal', monto: b.precio_venta, moneda: 'USD' };
+      return { caja_id: 'paypal', monto: b.precio_venta, moneda: 'USD', porConfirmar };
     case 'CREDITO':
       return null; // crédito no entra a ninguna caja todavía
     default:
@@ -6063,6 +6084,9 @@ function CajaYBancos({
         entradasCobros: 0, // suma de ventas cobradas que llegaron aquí (en moneda nativa)
         entradasMovs: 0,
         salidasMovs: 0,
+        porConfirmarUsd: 0, // monto en USD de cobros "por confirmar" (EFECTIVO CUBA + PENDIENTE)
+        porConfirmarMxn: 0,
+        porConfirmarCount: 0, // cuántos boletos están "por confirmar"
       };
     });
 
@@ -6075,6 +6099,13 @@ function CajaYBancos({
       if (v.moneda === 'MXN') s.mxn += v.monto;
       else s.usd += v.monto;
       s.entradasCobros += v.monto;
+      // Trackear cuánto es "por confirmar" (suma al saldo igual, pero lo guardamos
+      // separado para mostrar el desglose visual)
+      if (v.porConfirmar) {
+        if (v.moneda === 'MXN') s.porConfirmarMxn += v.monto;
+        else s.porConfirmarUsd += v.monto;
+        s.porConfirmarCount += 1;
+      }
     }
 
     // 2. Movimientos: ajustar origen (salida) y destino (entrada)
@@ -6104,6 +6135,8 @@ function CajaYBancos({
         categoria: c,
         boletos: [],
         breakdown: {}, // por forma_pago
+        porConfirmarCount: 0, // cuántos boletos están "por confirmar" en este grupo
+        porConfirmarUSD: 0,
       };
     });
     for (const b of filtered) {
@@ -6111,6 +6144,11 @@ function CajaYBancos({
       const grupo = result[catId];
       if (!grupo) continue;
       grupo.boletos.push(b);
+      const porConfirmar = esPorConfirmar(b);
+      if (porConfirmar) {
+        grupo.porConfirmarCount += 1;
+        grupo.porConfirmarUSD += b.precio_venta || 0;
+      }
       const fp = b.forma_pago || '(sin forma de pago)';
       if (!grupo.breakdown[fp]) {
         grupo.breakdown[fp] = {
@@ -6118,6 +6156,8 @@ function CajaYBancos({
           totalUSD: 0,
           totalMXN: 0,
           totalLocalOtras: {}, // por si en el futuro hay otras monedas
+          porConfirmarCount: 0,
+          porConfirmarUSD: 0,
         };
       }
       const row = grupo.breakdown[fp];
@@ -6125,6 +6165,10 @@ function CajaYBancos({
       row.totalUSD += b.precio_venta || 0;
       if (b.moneda_cobro === 'MXN' && b.precio_venta_local != null) {
         row.totalMXN += b.precio_venta_local;
+      }
+      if (porConfirmar) {
+        row.porConfirmarCount += 1;
+        row.porConfirmarUSD += b.precio_venta || 0;
       }
     }
     return result;
@@ -6139,6 +6183,13 @@ function CajaYBancos({
     const cobrado = filtered
       .filter((b) => b.estatus === 'COBRADO')
       .reduce((s, b) => s + (b.precio_venta || 0), 0);
+    // Por confirmar = EFECTIVO CUBA + PENDIENTE (probable en caja, falta confirmar)
+    const porConfirmarBoletos = filtered.filter((b) => esPorConfirmar(b));
+    const porConfirmar = porConfirmarBoletos.reduce(
+      (s, b) => s + (b.precio_venta || 0),
+      0
+    );
+    const porConfirmarCount = porConfirmarBoletos.length;
     const totalCosto = filtered.reduce((s, b) => s + (b.costo_usd || 0), 0);
     // Utilidad = venta - costo (sobre todo lo capturado)
     const utilidad = filtered
@@ -6154,7 +6205,16 @@ function CajaYBancos({
       )
       .reduce((s, b) => s + (b.precio_venta || 0), 0);
     const margen = venta > 0 ? (utilidad / venta) * 100 : 0;
-    return { venta, cobrado, totalCosto, utilidad, pendiente, margen };
+    return {
+      venta,
+      cobrado,
+      porConfirmar,
+      porConfirmarCount,
+      totalCosto,
+      utilidad,
+      pendiente,
+      margen,
+    };
   }, [filtered]);
 
   const fmtMoney = (n) =>
@@ -6405,6 +6465,33 @@ function CajaYBancos({
                     )}
                   </div>
                 )}
+                {/* Badge "Por confirmar" — solo si hay boletos EFECTIVO CUBA + PENDIENTE */}
+                {s.porConfirmarCount > 0 && (
+                  <div
+                    style={{
+                      marginTop: 6,
+                      padding: '4px 8px',
+                      background: '#FEF3C7',
+                      border: '1px solid #FCD34D',
+                      borderRadius: 6,
+                      fontSize: 11,
+                      color: '#92400E',
+                      fontWeight: 600,
+                      lineHeight: 1.3,
+                    }}
+                  >
+                    🟡 Por confirmar:{' '}
+                    <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 800 }}>
+                      ${s.porConfirmarUsd.toLocaleString('en-US', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>{' '}
+                    <span style={{ fontWeight: 500, opacity: 0.8 }}>
+                      ({s.porConfirmarCount} {s.porConfirmarCount === 1 ? 'boleto' : 'boletos'})
+                    </span>
+                  </div>
+                )}
               </button>
             );
           })}
@@ -6449,8 +6536,14 @@ function CajaYBancos({
         <KpiClickable onClick={() => setDetailKpi('cobrado')}>
           <KpiCard
             label="Cobrado"
-            value={fmtMoney(kpis.cobrado)}
-            subtitle="USD · ya entró el dinero"
+            value={fmtMoney(kpis.cobrado + kpis.porConfirmar)}
+            subtitle={
+              kpis.porConfirmarCount > 0
+                ? `USD · ${fmtMoney(kpis.cobrado)} confirmado + ${fmtMoney(
+                    kpis.porConfirmar
+                  )} 🟡 por confirmar`
+                : 'USD · ya entró el dinero'
+            }
           />
         </KpiClickable>
         <KpiClickable onClick={() => setDetailKpi('cxc')}>
@@ -6573,6 +6666,29 @@ function CajaYBancos({
                         }}
                       >
                         {fp}
+                        {data.porConfirmarCount > 0 && (
+                          <span
+                            style={{
+                              marginLeft: 8,
+                              padding: '2px 6px',
+                              fontSize: 10,
+                              fontWeight: 700,
+                              color: '#92400E',
+                              background: '#FEF3C7',
+                              border: '1px solid #FCD34D',
+                              borderRadius: 4,
+                              letterSpacing: '0.04em',
+                              verticalAlign: 'middle',
+                            }}
+                            title={`${data.porConfirmarCount} ${
+                              data.porConfirmarCount === 1 ? 'boleto' : 'boletos'
+                            } por confirmar con tu equipo (${fmtMoney(
+                              data.porConfirmarUSD
+                            )} USD). Cambia el estatus a COBRADO cuando te confirmen.`}
+                          >
+                            🟡 {data.porConfirmarCount} POR CONFIRMAR
+                          </span>
+                        )}
                       </td>
                       <td
                         style={{
