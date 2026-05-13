@@ -331,39 +331,77 @@ function parseDescripcion(desc) {
   return { tipo_viaje: tipo ? tipo[1] : null, ruta: ruta ? ruta[1] : null };
 }
 
+// Helper: formato YYYY-MM-DD en zona horaria LOCAL (NO UTC).
+// La columna fecha_venta es DATE en la DB (solo día, sin hora ni timezone),
+// así que la fecha "11/05/2026 19:31:04" del Excel debe guardarse como
+// "2026-05-11" sin importar la zona horaria. Usar toISOString() causa que
+// fechas de la tarde/noche local salten al día siguiente en UTC.
+function toLocalDateString(date) {
+  if (!date || isNaN(date.getTime())) return null;
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function excelDateToISO(v) {
   if (v == null || v === '') return null;
-  if (v instanceof Date) return v.toISOString();
+  if (v instanceof Date) return toLocalDateString(v);
   if (typeof v === 'number') {
-    const d = new Date((v - 25569) * 86400 * 1000);
-    return d.toISOString();
+    // Serial date de Excel: días desde 1900-01-01 (con bug del año bisiesto).
+    // Lo construimos componente a componente para evitar el shift por UTC.
+    const dUtc = new Date(Math.round((v - 25569) * 86400 * 1000));
+    // Como el serial de Excel representa una fecha "wall-clock", usamos los
+    // componentes UTC para obtener la fecha de calendario correcta.
+    const yyyy = dUtc.getUTCFullYear();
+    const mm = String(dUtc.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(dUtc.getUTCDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
   }
   if (typeof v === 'string') {
+    // Si el string ya viene en formato ISO con fecha, intentar parsear sin shift
+    // Casos: "2026-05-11", "2026-05-11T19:31:04", "11/05/2026", etc.
+    // Primero probar formato dd/mm/yyyy
+    const slashMatch = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (slashMatch) {
+      const dd = slashMatch[1].padStart(2, '0');
+      const mm = slashMatch[2].padStart(2, '0');
+      const yyyy = slashMatch[3];
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    // Formato yyyy-mm-dd directamente (con o sin hora después)
+    const isoMatch = v.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) {
+      return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+    }
+    // Fallback: parsear como Date y extraer fecha local
     const d = new Date(v);
-    return isNaN(d.getTime()) ? null : d.toISOString();
+    return isNaN(d.getTime()) ? null : toLocalDateString(d);
   }
   return null;
 }
 
-// "12/05/2026 9:09:28" → ISO
+// "12/05/2026 9:09:28" → "2026-05-12" (formato YYYY-MM-DD local)
 function parseFechaPaste(s) {
   if (!s) return null;
   const m = String(s).match(
     /(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/
   );
   if (m) {
-    const d = new Date(
-      parseInt(m[3]),
-      parseInt(m[2]) - 1,
-      parseInt(m[1]),
-      m[4] ? parseInt(m[4]) : 0,
-      m[5] ? parseInt(m[5]) : 0,
-      m[6] ? parseInt(m[6]) : 0
-    );
-    if (!isNaN(d.getTime())) return d.toISOString();
+    // Día y mes pueden venir como 1-2 dígitos: padStart a 2
+    const dd = m[1].padStart(2, '0');
+    const mm = m[2].padStart(2, '0');
+    const yyyy = m[3];
+    // Validar que sea una fecha real (mes 1-12, día 1-31)
+    const month = parseInt(mm, 10);
+    const day = parseInt(dd, 10);
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return `${yyyy}-${mm}-${dd}`;
+    }
   }
+  // Fallback: intentar Date y extraer fecha local
   const d = new Date(s);
-  return isNaN(d.getTime()) ? null : d.toISOString();
+  return isNaN(d.getTime()) ? null : toLocalDateString(d);
 }
 
 // Parsea texto pegado de Caribe Cool. Soporta 2 formatos:
@@ -532,9 +570,9 @@ function parseSoField(raw, plaza) {
 function parseFechaIngresoOrCredit(raw) {
   const out = { fecha_cobro: '', cliente_pagador: '', dias_credito: null };
   if (raw == null || raw === '') return out;
-  // Date object
+  // Date object → extraer fecha LOCAL directamente (no pasar por toISOString)
   if (raw instanceof Date) {
-    out.fecha_cobro = dateOnly(raw.toISOString());
+    out.fecha_cobro = toLocalDateString(raw);
     return out;
   }
   const s = String(raw).trim();
@@ -556,7 +594,7 @@ function parseFechaIngresoOrCredit(raw) {
   // Intentar como fecha (Date, ISO, etc.)
   const dParsed = new Date(s);
   if (!isNaN(dParsed.getTime()) && /\d{4}/.test(s)) {
-    out.fecha_cobro = dateOnly(dParsed.toISOString());
+    out.fecha_cobro = toLocalDateString(dParsed);
     return out;
   }
   // Fallback: tratar como cliente
