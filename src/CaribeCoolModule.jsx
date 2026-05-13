@@ -7574,8 +7574,8 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
 </style>
 </head><body>
   <div class="header">
-    <div class="header-label">Reporte Diario · Viajes Libero</div>
-    <div class="header-title">Operaciones del ${fechaFmt}</div>
+    <div class="header-label">Reporte Venta Boletería · Caribe Cool · Viajes Libero</div>
+    <div class="header-title">Reporte Venta Boletería Caribe Cool del ${fechaFmt}</div>
     <div class="header-sub">Generado el ${formatDate(hoy)}</div>
   </div>
   <div class="section">
@@ -7638,41 +7638,6 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
       }${fmt(saldoCC.cierre)}</td></tr>
     </table>
   </div>
-  <div class="section">
-    <div class="section-title">4 · Boletos del día (${
-      listaPnrs.length
-    })</div>
-    ${
-      listaPnrs.length === 0
-        ? '<p style="color:#94A3B8;">Sin boletos registrados.</p>'
-        : listaPnrs
-            .map((b) => {
-              const util =
-                b.precio_venta != null
-                  ? b.precio_venta - (b.costo_usd || 0)
-                  : null;
-              return `<div class="pnr-block">
-        <div class="pnr-head">${b.pnr} · ${b.cliente || '(sin cliente)'}</div>
-        <div class="pnr-meta">
-          Costo: ${fmt(b.costo_usd)} ·
-          Venta: ${b.precio_venta != null ? fmt(b.precio_venta) : '—'}
-          ${
-            util != null
-              ? ` · Utilidad: <span class="${
-                  util >= 0 ? 'green' : 'red'
-                }">${util >= 0 ? '+' : '-'}${fmt(util)}</span>`
-              : ''
-          }
-        </div>
-        <div class="pnr-meta">
-          ${b.forma_pago || '(sin forma de pago)'} ·
-          ${b.vendedor || ''}
-        </div>
-      </div>`;
-            })
-            .join('')
-    }
-  </div>
   <p style="text-align:center; color:#94A3B8; font-size: 11px; margin-top: 24px;">
     Generado por la app CxP Manager · Viajes Libero
   </p>
@@ -7707,8 +7672,8 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
 
     // Hoja 1: Resumen
     const resumenRows = [
-      [`REPORTE DIARIO · VIAJES LIBERO`],
-      [`Operaciones del ${fechaFmt}`],
+      [`REPORTE VENTA BOLETERÍA · CARIBE COOL · VIAJES LIBERO`],
+      [`Reporte Venta Boletería Caribe Cool del ${fechaFmt}`],
       [`Generado: ${formatDate(hoy)}`],
       [],
       ['1 · RESUMEN DEL DÍA'],
@@ -8092,10 +8057,10 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
               letterSpacing: '0.08em',
             }}
           >
-            Reporte Diario · Viajes Libero
+            Reporte Venta Boletería · Caribe Cool · Viajes Libero
           </div>
           <div style={{ fontSize: 18, fontWeight: 700, marginTop: 4 }}>
-            Operaciones del {formatDate(fecha)}
+            Reporte Venta Boletería Caribe Cool del {formatDate(fecha)}
           </div>
           <div
             style={{
@@ -8486,97 +8451,6 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
               </tr>
             </tbody>
           </table>
-        </div>
-
-        {/* 4. Lista de PNRs */}
-        <div style={{ padding: '16px 20px' }}>
-          <div
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              textTransform: 'uppercase',
-              letterSpacing: '0.06em',
-              color: C.muted,
-              marginBottom: 14,
-            }}
-          >
-            4 · Boletos del día ({listaPnrs.length})
-          </div>
-          {listaPnrs.length === 0 ? (
-            <div style={{ color: C.muted, fontSize: 13 }}>
-              Sin boletos registrados.
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {listaPnrs.map((b) => {
-                const util =
-                  b.precio_venta != null
-                    ? b.precio_venta - (b.costo_usd || 0)
-                    : null;
-                return (
-                  <div
-                    key={b.id}
-                    style={{
-                      padding: '10px 12px',
-                      background: C.bgSoft,
-                      borderRadius: 6,
-                      fontSize: 12,
-                    }}
-                  >
-                    <div
-                      style={{ fontWeight: 700, color: C.navy }}
-                    >
-                      <span
-                        style={{
-                          fontFamily: 'ui-monospace, monospace',
-                        }}
-                      >
-                        {b.pnr}
-                      </span>{' '}
-                      · {b.cliente || '(sin cliente)'}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: C.muted,
-                        marginTop: 3,
-                      }}
-                    >
-                      Costo: {fmt(b.costo_usd)} · Venta:{' '}
-                      {b.precio_venta != null
-                        ? fmt(b.precio_venta)
-                        : '—'}
-                      {util != null && (
-                        <>
-                          {' '}
-                          · Utilidad:{' '}
-                          <span
-                            style={{
-                              color: util >= 0 ? C.utilidad : C.costo,
-                              fontWeight: 600,
-                            }}
-                          >
-                            {util >= 0 ? '+' : '-'}
-                            {fmt(util)}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: C.muted,
-                        marginTop: 2,
-                      }}
-                    >
-                      {b.forma_pago || '(sin forma de pago)'} ·{' '}
-                      {b.vendedor || ''}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </div>
       </div>
 
