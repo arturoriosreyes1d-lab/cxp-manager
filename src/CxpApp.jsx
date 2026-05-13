@@ -32,7 +32,7 @@ import {
   fetchAuditLog,
 } from "./db.js";
 import CxcView from "./CxcView.jsx";
-import CaribeCoolModule from "./CaribeCoolModule.jsx";
+import ReportesView from "./ReportesView.jsx";
 import { EMPRESAS } from "./empresas.js";
 
 /* ── Palette ─────────────────────────────────────────────────────────────── */
@@ -8522,9 +8522,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         <NavItem id="importar" icon="📥" label="Importar"/>
         <NavItem id="proveedores" icon="🏢" label="Proveedores"/>
         <NavItem id="saldos" icon="🏦" label="Saldos Bancarios"/>
-        {empresaId === 'empresa_1' && (
-          <NavItem id="caribecool" icon="🎫" label="Caribe Cool"/>
-        )}
+        <NavItem id="reportes" icon="📊" label="Reportes"/>
         <NavItem id="cxc" icon="💵" label="CxC — Ingresos"/>
         <NavItem id="clientes" icon="👥" label="Clientes CxC"/>
         <NavItem id="config" icon="⚙️" label="Configuración"/>
@@ -8573,8 +8571,8 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         {view==="importar" && renderImportar()}
         {view==="config" && renderConfig()}
         {view==="saldos" && <SaldosBancarios />}
-        {view==="caribecool" && empresaId === 'empresa_1' && (
-          <CaribeCoolModule
+        {view==="reportes" && (
+          <ReportesView
             empresaId={empresaId}
             user={user}
             esConsulta={esConsulta}
