@@ -31,6 +31,76 @@ export function makeBusinessId(pnr, descripcion) {
   return `${pnr || 'nopnr'}::${desc}`;
 }
 
+/**
+ * Versión LAXA del business_id: ignora el último corchete `[...]` que
+ * suele contener el nombre del pasajero. Útil para hacer matching cuando
+ * el Excel de Pamela trae el nombre del pasajero pero el de Caribe Cool no
+ * (o viceversa).
+ *
+ * Ejemplos:
+ *   "Venta del billete [RT] HAV>CUN"                  → "ventadelbillete[rt]hav>cun"
+ *   "Venta del billete [RT] HAV>CUN [MIRYAM MARTIN]"   → "ventadelbillete[rt]hav>cun"
+ */
+export function makeLooseBusinessId(pnr, descripcion) {
+  const desc = (descripcion || '')
+    .replace(/\s*\[[^\]]*\]\s*$/, '') // quita ÚLTIMO corchete al final
+    .toLowerCase()
+    .replace(/\s+/g, '');
+  return `${pnr || 'nopnr'}::${desc}`;
+}
+
+/**
+ * Busca un boleto existente en el array dado, intentando 3 estrategias en
+ * cascada (de más estricta a más permisiva):
+ *   1. Match exacto por business_id (pnr + descripción completa)
+ *   2. Match laxo ignorando nombre del pasajero entre [...]
+ *      Si hay varios candidatos, desempata por cliente exacto
+ *   3. Match por PNR único cuando solo hay 1 boleto con ese PNR
+ *
+ * Retorna el boleto existente o null si no hay match seguro.
+ * Si hay ambigüedad (múltiples candidatos sin desempate), retorna null
+ * para evitar mergear boletos diferentes accidentalmente.
+ */
+export function findExistingBoleto(patch, existingBoletos) {
+  if (!patch || !patch.pnr || !existingBoletos || existingBoletos.length === 0) {
+    return null;
+  }
+
+  // Estrategia 1: match exacto por business_id
+  const exactBid = makeBusinessId(patch.pnr, patch.descripcion);
+  const exactMatch = existingBoletos.find(
+    (b) => makeBusinessId(b.pnr, b.descripcion) === exactBid
+  );
+  if (exactMatch) return exactMatch;
+
+  // Estrategia 2: match laxo (ignorando último corchete = nombre pasajero)
+  const looseBid = makeLooseBusinessId(patch.pnr, patch.descripcion);
+  const looseCandidates = existingBoletos.filter(
+    (b) => makeLooseBusinessId(b.pnr, b.descripcion) === looseBid
+  );
+  if (looseCandidates.length === 1) return looseCandidates[0];
+  if (looseCandidates.length > 1) {
+    // Múltiples candidatos: desempatar por cliente exacto
+    const byClient = looseCandidates.find(
+      (b) =>
+        String(b.cliente || '').trim().toLowerCase() ===
+        String(patch.cliente || '').trim().toLowerCase()
+    );
+    if (byClient) return byClient;
+    return null; // Ambigüedad: mejor no mergear que crear merge incorrecto
+  }
+
+  // Estrategia 3: PNR único en la app
+  const samePnr = existingBoletos.filter(
+    (b) =>
+      String(b.pnr || '').toUpperCase() ===
+      String(patch.pnr || '').toUpperCase()
+  );
+  if (samePnr.length === 1) return samePnr[0];
+
+  return null;
+}
+
 // ─── Conversión: row DB → objeto app ──────────────────────────────
 const boletoToApp = (row) => ({
   id: row.id,

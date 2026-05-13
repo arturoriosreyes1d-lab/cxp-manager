@@ -12,6 +12,7 @@ import {
   upsertMovimientoCC,
   deleteMovimientoCC,
   makeBusinessId,
+  findExistingBoleto,
 } from './db_caribe_cool.js';
 
 // ─── Iconos como componentes locales (reemplazan lucide-react) ──
@@ -983,17 +984,13 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
       return;
     }
     const skip = skipIds instanceof Set ? skipIds : new Set();
-    const byBusinessId = new Map(
-      boletos.map((b) => [makeBusinessId(b.pnr, b.descripcion), b])
-    );
     let nuevos = 0,
       sobrescritos = 0,
       omitidos = 0;
     const toUpsert = [];
 
     for (const p of parsed) {
-      const businessId = makeBusinessId(p.pnr, p.descripcion);
-      const existing = byBusinessId.get(businessId);
+      const existing = findExistingBoleto(p, boletos);
       if (existing) {
         if (skip.has(p.id) || skip.has(existing.id)) {
           omitidos++;
@@ -1310,14 +1307,18 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
 
   // Para Excel formato Pamela: calcula el diff entre lo que viene en el Excel
   // y lo que ya está en la app. Retorna 3 categorías:
-  //   matches  — id existe en la app: data manual del Excel se podrá aplicar
-  //   orphans  — id NO existe en la app (Pamela lo tiene, nosotros no)
-  //   missing  — id en la app pero NO en el Excel (Pamela no lo procesó)
+  //   matches  — boleto existe en la app: data manual del Excel se podrá aplicar
+  //   orphans  — boleto NO existe en la app (Pamela lo tiene, nosotros no)
+  //   missing  — en la app pero NO en el Excel (Pamela no lo procesó)
+  //
+  // Matching robusto en 3 estrategias (ver findExistingBoleto):
+  //   1. exact:  pnr + descripción completa
+  //   2. loose:  pnr + descripción sin nombre del pasajero entre [...]
+  //   3. pnr:    si solo hay 1 boleto con ese PNR, asumir match
   function buildDiff(patches, existingBoletos) {
-    const byId = new Map(existingBoletos.map((b) => [b.id, b]));
-    const incomingIds = new Set();
     const matches = [];
     const orphans = [];
+    const matchedExistingIds = new Set(); // Para detectar "missing"
 
     const MANUAL_KEYS = [
       'so_mexico',
@@ -1337,12 +1338,28 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
 
     const cobrosDesconocidos = new Set();
 
+    // Diagnóstico: muestra primer match/no-match en consola para debug
+    let diagPrinted = 0;
+    const MAX_DIAG = 3;
+
     for (const p of patches) {
-      incomingIds.add(p.id);
       if (p._unrecognizedFormas) {
         p._unrecognizedFormas.forEach((c) => cobrosDesconocidos.add(c));
       }
-      const existing = byId.get(p.id);
+      const existing = findExistingBoleto(p, existingBoletos);
+
+      // Log diagnóstico de los primeros casos
+      if (diagPrinted < MAX_DIAG) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[buildDiff] PNR=${p.pnr} desc="${(p.descripcion || '').slice(0, 80)}" → ` +
+            (existing
+              ? `MATCH (existing.id=${existing.id?.slice(0, 8)}..., existing.desc="${(existing.descripcion || '').slice(0, 80)}")`
+              : 'NO MATCH (huérfano)')
+        );
+        diagPrinted++;
+      }
+
       // Construir el patch manual (solo MANUAL_KEYS con valores presentes)
       const manualPatch = {};
       const changes = [];
@@ -1358,8 +1375,9 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
         }
       }
       if (existing) {
+        matchedExistingIds.add(existing.id);
         matches.push({
-          id: p.id,
+          id: existing.id, // UUID real de Supabase
           pnr: p.pnr,
           existing,
           manualPatch,
@@ -1367,22 +1385,23 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
         });
       } else {
         // Huérfano: tomamos todos los campos del Excel para crear nuevo si así
-        // decide el usuario
+        // decide el usuario. El `id` aquí es solo para identificar la fila
+        // en el modal (checkbox), no es un UUID de DB.
         orphans.push({
-          id: p.id,
+          id: p.id || makeBusinessId(p.pnr, p.descripcion),
           pnr: p.pnr,
           fullPatch: p,
         });
       }
     }
 
-    // Faltantes: en la app pero no en el Excel
-    const missing = [];
-    for (const b of existingBoletos) {
-      if (!incomingIds.has(b.id)) {
-        missing.push(b);
-      }
-    }
+    // Faltantes: en la app pero no fueron matched por ningún patch
+    const missing = existingBoletos.filter((b) => !matchedExistingIds.has(b.id));
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[buildDiff] Resumen: ${matches.length} matches, ${orphans.length} huérfanos, ${missing.length} faltantes (en app, no en Excel)`
+    );
 
     return {
       matches,
@@ -1476,9 +1495,6 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
       });
       return;
     }
-    const byBusinessId = new Map(
-      boletos.map((b) => [makeBusinessId(b.pnr, b.descripcion), b])
-    );
     let nuevos = 0,
       actualizados = 0,
       sinCambios = 0;
@@ -1524,8 +1540,8 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
       if (hasManual) manualFields++;
       if (hasCaribe) caribeFields++;
 
-      const businessId = makeBusinessId(p.pnr, p.descripcion);
-      const existing = byBusinessId.get(businessId);
+      // Usar findExistingBoleto para matching robusto (mismo método que buildDiff)
+      const existing = findExistingBoleto(p, boletos);
 
       if (existing) {
         const merged = { ...existing, ...p };
