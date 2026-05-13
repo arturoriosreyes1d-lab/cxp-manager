@@ -8057,29 +8057,31 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
       >
         <div
           style={{
-            padding: '12px 16px',
-            background: C.navy,
+            padding: '24px 28px',
+            background: `linear-gradient(135deg, ${C.navy} 0%, #1E3A5F 100%)`,
             color: 'white',
+            position: 'relative',
           }}
         >
           <div
             style={{
-              fontSize: 10,
-              opacity: 0.7,
+              fontSize: 12,
+              opacity: 0.75,
               textTransform: 'uppercase',
-              letterSpacing: '0.08em',
+              letterSpacing: '0.1em',
+              fontWeight: 600,
             }}
           >
             Reporte Venta Boletería · Caribe Cool · Viajes Libero
           </div>
-          <div style={{ fontSize: 16, fontWeight: 700, marginTop: 2 }}>
+          <div style={{ fontSize: 28, fontWeight: 800, marginTop: 8, letterSpacing: '-0.02em' }}>
             {formatDate(fecha)}
           </div>
           <div
             style={{
-              fontSize: 11,
+              fontSize: 13,
               opacity: 0.7,
-              marginTop: 2,
+              marginTop: 6,
             }}
           >
             Generado el {formatDate(hoy)}
@@ -8089,18 +8091,18 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
         {/* 1. Resumen del día */}
         <div
           style={{
-            padding: '12px 16px',
+            padding: '24px 28px',
             borderBottom: `1px solid ${C.border}`,
           }}
         >
           <div
             style={{
-              fontSize: 10,
+              fontSize: 12,
               fontWeight: 700,
               textTransform: 'uppercase',
-              letterSpacing: '0.06em',
+              letterSpacing: '0.08em',
               color: C.muted,
-              marginBottom: 8,
+              marginBottom: 16,
             }}
           >
             1 · Resumen del día
@@ -8109,23 +8111,27 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
             style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(4, 1fr)',
-              gap: 8,
+              gap: 14,
             }}
           >
             <div
               style={{
-                background: C.bgSoft,
-                padding: 10,
-                borderRadius: 6,
+                background: 'white',
+                padding: 18,
+                borderRadius: 10,
+                border: `1px solid ${C.border}`,
+                borderTop: `3px solid ${C.navy}`,
+                boxShadow: '0 1px 3px rgba(15,23,42,0.04)',
               }}
             >
-              <div style={{ fontSize: 10, color: C.muted }}>Boletos</div>
+              <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Boletos</div>
               <div
                 style={{
-                  fontSize: 17,
+                  fontSize: 28,
                   fontWeight: 800,
                   color: C.navy,
-                  marginTop: 2,
+                  marginTop: 6,
+                  letterSpacing: '-0.02em',
                 }}
               >
                 {resumen.count}
@@ -8133,18 +8139,23 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
             </div>
             <div
               style={{
-                background: C.bgSoft,
-                padding: 10,
-                borderRadius: 6,
+                background: 'white',
+                padding: 18,
+                borderRadius: 10,
+                border: `1px solid ${C.border}`,
+                borderTop: `3px solid ${C.venta}`,
+                boxShadow: '0 1px 3px rgba(15,23,42,0.04)',
               }}
             >
-              <div style={{ fontSize: 10, color: C.muted }}>Venta</div>
+              <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Venta</div>
               <div
                 style={{
-                  fontSize: 17,
+                  fontSize: 26,
                   fontWeight: 800,
                   color: C.venta,
-                  marginTop: 2,
+                  marginTop: 6,
+                  letterSpacing: '-0.02em',
+                  fontFamily: 'ui-monospace, monospace',
                 }}
               >
                 {fmt(resumen.venta)}
@@ -8152,18 +8163,23 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
             </div>
             <div
               style={{
-                background: C.bgSoft,
-                padding: 10,
-                borderRadius: 6,
+                background: 'white',
+                padding: 18,
+                borderRadius: 10,
+                border: `1px solid ${C.border}`,
+                borderTop: `3px solid ${C.costo}`,
+                boxShadow: '0 1px 3px rgba(15,23,42,0.04)',
               }}
             >
-              <div style={{ fontSize: 10, color: C.muted }}>Costo</div>
+              <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Costo</div>
               <div
                 style={{
-                  fontSize: 17,
+                  fontSize: 26,
                   fontWeight: 800,
                   color: C.costo,
-                  marginTop: 2,
+                  marginTop: 6,
+                  letterSpacing: '-0.02em',
+                  fontFamily: 'ui-monospace, monospace',
                 }}
               >
                 {fmt(resumen.costo)}
@@ -8171,18 +8187,23 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
             </div>
             <div
               style={{
-                background: C.bgSoft,
-                padding: 10,
-                borderRadius: 6,
+                background: 'white',
+                padding: 18,
+                borderRadius: 10,
+                border: `1px solid ${C.border}`,
+                borderTop: `3px solid ${resumen.utilidad >= 0 ? C.utilidad : C.costo}`,
+                boxShadow: '0 1px 3px rgba(15,23,42,0.04)',
               }}
             >
-              <div style={{ fontSize: 10, color: C.muted }}>Utilidad</div>
+              <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Utilidad</div>
               <div
                 style={{
-                  fontSize: 17,
+                  fontSize: 26,
                   fontWeight: 800,
                   color: resumen.utilidad >= 0 ? C.utilidad : C.costo,
-                  marginTop: 2,
+                  marginTop: 6,
+                  letterSpacing: '-0.02em',
+                  fontFamily: 'ui-monospace, monospace',
                 }}
               >
                 {resumen.utilidad >= 0 ? '+' : '-'}
@@ -8190,9 +8211,10 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
               </div>
               <div
                 style={{
-                  fontSize: 10,
+                  fontSize: 11,
                   color: C.muted,
-                  marginTop: 2,
+                  marginTop: 6,
+                  fontWeight: 500,
                 }}
               >
                 {resumen.margen.toFixed(1)}% margen
@@ -8204,18 +8226,18 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
         {/* 2. ¿Dónde está el dinero? */}
         <div
           style={{
-            padding: '12px 16px',
+            padding: '24px 28px',
             borderBottom: `1px solid ${C.border}`,
           }}
         >
           <div
             style={{
-              fontSize: 10,
+              fontSize: 12,
               fontWeight: 700,
               textTransform: 'uppercase',
-              letterSpacing: '0.06em',
+              letterSpacing: '0.08em',
               color: C.muted,
-              marginBottom: 8,
+              marginBottom: 16,
             }}
           >
             2 · ¿Dónde está el dinero?
@@ -8225,7 +8247,7 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
               Sin cobros registrados del día.
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {distribucion.map((g) => (
                 <div
                   key={g.categoria.id}
@@ -8238,43 +8260,46 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
                   {/* Header de la caja */}
                   <div
                     style={{
-                      padding: '6px 12px',
+                      padding: '14px 18px',
                       background: g.categoria.bgSoft || C.bgSoft,
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 6,
+                      gap: 10,
                       borderBottom:
                         g.boletos.length > 0
                           ? `1px solid ${C.border}`
                           : 'none',
                     }}
                   >
-                    <span style={{ fontSize: 14 }}>{g.categoria.icon}</span>
+                    <span style={{ fontSize: 22 }}>{g.categoria.icon}</span>
                     <span
                       style={{
                         fontWeight: 700,
-                        fontSize: 12,
+                        fontSize: 15,
                         color: g.categoria.color || C.navy,
                         flex: 1,
+                        letterSpacing: '-0.01em',
                       }}
                     >
                       {g.categoria.label}
                     </span>
                     <span
                       style={{
-                        fontSize: 10,
+                        fontSize: 12,
                         color: C.muted,
-                        marginRight: 10,
+                        marginRight: 14,
+                        fontWeight: 500,
                       }}
                     >
                       {g.count} boleto{g.count !== 1 ? 's' : ''}
                     </span>
                     <span
                       style={{
-                        fontWeight: 700,
-                        fontSize: 13,
+                        fontWeight: 800,
+                        fontSize: 18,
                         color: g.categoria.color || C.navy,
                         fontFamily: 'ui-monospace, monospace',
+                        letterSpacing: '-0.01em',
                       }}
                     >
                       {fmt(g.total)}
@@ -8285,7 +8310,7 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
                     <table
                       style={{
                         width: '100%',
-                        fontSize: 11,
+                        fontSize: 13,
                         borderCollapse: 'collapse',
                         tableLayout: 'fixed',
                       }}
@@ -8306,7 +8331,7 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
                           >
                             <td
                               style={{
-                                padding: '4px 12px',
+                                padding: '10px 16px',
                                 fontFamily: 'ui-monospace, monospace',
                                 fontWeight: 700,
                                 color: C.navy,
@@ -8317,7 +8342,7 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
                             </td>
                             <td
                               style={{
-                                padding: '4px 12px',
+                                padding: '10px 16px',
                                 color: C.slate,
                                 overflow: 'hidden',
                                 textOverflow: 'ellipsis',
@@ -8329,7 +8354,7 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
                             </td>
                             <td
                               style={{
-                                padding: '4px 12px',
+                                padding: '10px 16px',
                                 color: C.muted,
                                 fontSize: 11,
                                 overflow: 'hidden',
@@ -8347,7 +8372,7 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
                             </td>
                             <td
                               style={{
-                                padding: '4px 12px',
+                                padding: '10px 16px',
                                 textAlign: 'right',
                                 fontFamily: 'ui-monospace, monospace',
                                 fontWeight: 600,
@@ -8373,18 +8398,18 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
         {/* 3. Saldo Caribe Cool */}
         <div
           style={{
-            padding: '12px 16px',
+            padding: '24px 28px',
             borderBottom: `1px solid ${C.border}`,
           }}
         >
           <div
             style={{
-              fontSize: 10,
+              fontSize: 12,
               fontWeight: 700,
               textTransform: 'uppercase',
-              letterSpacing: '0.06em',
+              letterSpacing: '0.08em',
               color: C.muted,
-              marginBottom: 8,
+              marginBottom: 16,
             }}
           >
             3 · Saldo Caribe Cool
@@ -8392,13 +8417,13 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
           <table
             style={{
               width: '100%',
-              fontSize: 12,
+              fontSize: 14,
               borderCollapse: 'collapse',
             }}
           >
             <tbody>
               <tr style={{ borderBottom: `1px solid #F1F5F9` }}>
-                <td style={{ padding: '5px 0', color: C.muted }}>
+                <td style={{ padding: '12px 4px', color: C.muted }}>
                   Saldo al inicio del día
                 </td>
                 <td
@@ -8412,12 +8437,12 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
                 </td>
               </tr>
               <tr style={{ borderBottom: `1px solid #F1F5F9` }}>
-                <td style={{ padding: '5px 0' }}>
+                <td style={{ padding: '12px 4px' }}>
                   Recargas del día ({saldoCC.recargasDiaCount})
                 </td>
                 <td
                   style={{
-                    padding: '5px 0',
+                    padding: '12px 4px',
                     textAlign: 'right',
                     color: C.utilidad,
                     fontWeight: 600,
@@ -8429,12 +8454,12 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
                 </td>
               </tr>
               <tr style={{ borderBottom: `1px solid #F1F5F9` }}>
-                <td style={{ padding: '5px 0' }}>
+                <td style={{ padding: '12px 4px' }}>
                   Consumos del día ({saldoCC.consumosDiaCount} boletos)
                 </td>
                 <td
                   style={{
-                    padding: '5px 0',
+                    padding: '12px 4px',
                     textAlign: 'right',
                     color: C.costo,
                     fontWeight: 600,
@@ -8445,15 +8470,15 @@ function ReporteDiario({ boletos, movimientos, onEditBoleto }) {
                 </td>
               </tr>
               <tr style={{ background: C.bgSoft }}>
-                <td style={{ padding: '7px 0', fontWeight: 700 }}>
+                <td style={{ padding: '14px 8px', fontWeight: 700, fontSize: 15 }}>
                   Saldo al cierre del día
                 </td>
                 <td
                   style={{
-                    padding: '7px 0',
+                    padding: '14px 8px',
                     textAlign: 'right',
                     fontWeight: 800,
-                    fontSize: 14,
+                    fontSize: 20,
                     fontFamily: 'ui-monospace, monospace',
                     color: saldoCC.cierre >= 0 ? C.navy : C.costo,
                   }}
