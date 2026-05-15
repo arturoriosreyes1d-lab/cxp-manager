@@ -4795,7 +4795,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:20,marginBottom:20}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:8}}>
-            <h3 style={{fontSize:16,fontWeight:700,color:C.navy,margin:0}}>🏦 Saldos Bancarios - {empresa.nombre}</h3>
+            <h3 style={{fontSize:20,fontWeight:800,color:C.navy,margin:0,letterSpacing:0.2}}>🏦 Saldos Bancarios - {empresa.nombre}</h3>
             <div style={{fontSize:11,color:C.muted,display:"flex",alignItems:"center",gap:6}}>
               {saldosLoading && <span>⏳ Cargando...</span>}
               {saldosSaving && <span style={{color:"#FB8C00"}}>💾 Guardando...</span>}
@@ -4892,10 +4892,10 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           {/* Sub-sección: Ingresos del Día */}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14,flexWrap:'wrap',gap:8}}>
             <div style={{display:'flex',alignItems:'center',gap:10}}>
-              <div style={{width:36,height:36,borderRadius:10,background:'#E8F5E9',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>💵</div>
+              <div style={{width:42,height:42,borderRadius:10,background:'#E8F5E9',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22}}>💵</div>
               <div>
-                <h4 style={{fontSize:15,fontWeight:700,color:'#1B5E20',margin:0}}>Ingresos del Día</h4>
-                <p style={{fontSize:11,color:C.muted,margin:'2px 0 0'}}>Captura manual · {ingresosDia.length} {ingresosDia.length === 1 ? 'entrada' : 'entradas'}</p>
+                <h4 style={{fontSize:20,fontWeight:800,color:'#1B5E20',margin:0,letterSpacing:0.2}}>Ingresos del Día</h4>
+                <p style={{fontSize:12,color:C.muted,margin:'3px 0 0'}}>Captura manual · {ingresosDia.length} {ingresosDia.length === 1 ? 'entrada' : 'entradas'}</p>
               </div>
             </div>
             {!esConsulta && (
@@ -5156,11 +5156,11 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
         {/* ═══════════ CAMBIO DE DIVISAS ═══════════ */}
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:16,marginBottom:20}}>
-          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
-            <div style={{width:34,height:34,borderRadius:10,background:'#E3F2FD',display:'flex',alignItems:'center',justifyContent:'center',fontSize:17}}>💱</div>
+          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
+            <div style={{width:42,height:42,borderRadius:10,background:'#E3F2FD',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22}}>💱</div>
             <div>
-              <h3 style={{fontSize:15,fontWeight:700,color:C.navy,margin:0}}>Cambio de Divisas</h3>
-              <p style={{fontSize:11,color:C.muted,margin:'2px 0 0'}}>Operaciones de cambio del día · afectan el Saldo Disponible</p>
+              <h3 style={{fontSize:20,fontWeight:800,color:C.navy,margin:0,letterSpacing:0.2}}>Cambio de Divisas</h3>
+              <p style={{fontSize:12,color:C.muted,margin:'3px 0 0'}}>Operaciones de cambio del día · afectan el Saldo Disponible</p>
             </div>
           </div>
 
@@ -5261,18 +5261,18 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         {/* Saldo Disponible = Saldos + Ingresos ± Cambio de Divisas */}
         <div style={{background:'linear-gradient(135deg, #E3F2FD 0%, #F5FAFF 50%, #E1F5FE 100%)',border:`2px solid #1976D2`,borderRadius:14,padding:16,marginBottom:20,position:'relative',overflow:'hidden'}}>
           <div style={{position:'relative',zIndex:1}}>
-            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
-              <div style={{fontSize:20}}>💰</div>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
+              <div style={{fontSize:26}}>💰</div>
               <div>
-                <h3 style={{fontSize:15,fontWeight:800,color:"#0D47A1",margin:0}}>
+                <h3 style={{fontSize:20,fontWeight:800,color:"#0D47A1",margin:0,letterSpacing:0.2}}>
                   Saldo Disponible
                   {analisisLiquidez.hayEsperados && (
-                    <span style={{fontSize:11,fontWeight:600,color:'#6A1B9A',marginLeft:8,padding:'2px 8px',background:'#F3E5F5',borderRadius:6,verticalAlign:'middle'}}>
+                    <span style={{fontSize:12,fontWeight:600,color:'#6A1B9A',marginLeft:10,padding:'3px 10px',background:'#F3E5F5',borderRadius:6,verticalAlign:'middle'}}>
                       ⏳ Con cobranza esperada disponible
                     </span>
                   )}
                 </h3>
-                <p style={{fontSize:11,color:"#1565C0",margin:"1px 0 0",opacity:0.8}}>
+                <p style={{fontSize:12,color:"#1565C0",margin:"3px 0 0",opacity:0.85}}>
                   {analisisLiquidez.hayEsperados
                     ? 'Saldos bancarios + Ingresos reales · Versión esperada incluye cobranzas probables'
                     : 'Saldos bancarios + Ingresos ± Cambio de divisas'}
@@ -5301,14 +5301,14 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                     ✓ Real
                   </div>
                   {espIng > 0 && (
-                    <div style={{marginTop:10,paddingTop:8,borderTop:`1px dashed ${border}`}}>
-                      <div style={{fontSize:18,fontWeight:800,color:'#6A1B9A',lineHeight:1.1,fontVariantNumeric:'tabular-nums'}}>
+                    <div style={{marginTop:12,paddingTop:12,borderTop:`1px dashed ${border}`}}>
+                      <div style={{fontSize:24,fontWeight:800,color:'#6A1B9A',lineHeight:1.1,fontVariantNumeric:'tabular-nums'}}>
                         {sym}{fmt(esperado)}
                       </div>
-                      <div style={{fontSize:10,fontWeight:600,color:'#6A1B9A',marginTop:3,letterSpacing:0.3,textTransform:'uppercase'}}>
+                      <div style={{fontSize:11,fontWeight:700,color:'#6A1B9A',marginTop:4,letterSpacing:0.3,textTransform:'uppercase'}}>
                         ⏳ Con cobranza esperada
                       </div>
-                      <div style={{fontSize:10,color:'#6A1B9A',marginTop:2,opacity:0.7}}>
+                      <div style={{fontSize:11,color:'#6A1B9A',marginTop:3,opacity:0.75,fontWeight:500}}>
                         (+{sym}{fmt(espIng)} probable)
                       </div>
                     </div>
@@ -5459,10 +5459,10 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         </div>
 
         <div style={{background:"#F0FFF4",border:`1px solid #A5D6A7`,borderRadius:14,padding:20}}>
-          <h3 style={{fontSize:16,fontWeight:700,color:"#1B5E20",margin:"0 0 16px"}}>
+          <h3 style={{fontSize:20,fontWeight:800,color:"#1B5E20",margin:"0 0 18px",letterSpacing:0.2}}>
             💰 Saldos Después de Pagos
             {analisisLiquidez.hayEsperados && (
-              <span style={{fontSize:11,fontWeight:600,color:'#6A1B9A',marginLeft:8,padding:'2px 8px',background:'#F3E5F5',borderRadius:6,verticalAlign:'middle'}}>
+              <span style={{fontSize:12,fontWeight:600,color:'#6A1B9A',marginLeft:10,padding:'3px 10px',background:'#F3E5F5',borderRadius:6,verticalAlign:'middle'}}>
                 ⏳ Comparativa con cobranza esperada
               </span>
             )}
@@ -5481,18 +5481,18 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
               return (
                 <div key={mon} style={{textAlign:"center"}}>
                   <div style={{fontSize:14,fontWeight:600,color:"#2E7D32",marginBottom:4}}>{mon}</div>
-                  <div style={{fontSize:20,fontWeight:800,color:esPositivo ? "#1B5E20" : "#D32F2F",fontVariantNumeric:'tabular-nums',letterSpacing:0.2}}>
+                  <div style={{fontSize:22,fontWeight:800,color:esPositivo ? "#1B5E20" : "#D32F2F",fontVariantNumeric:'tabular-nums',letterSpacing:0.2}}>
                     {saldoFinal < 0 ? '-' : ''}{sym}{fmt(Math.abs(saldoFinal))}
                   </div>
                   <div style={{fontSize:11,color:esPositivo?"#2E7D32":"#C62828",marginTop:2,fontWeight:600}}>
                     {esPositivo ? '+ Excedente · ✓ Real' : '- Déficit · ✓ Real'}
                   </div>
                   {espIng > 0 && (
-                    <div style={{marginTop:10,paddingTop:10,borderTop:'1px dashed #A5D6A7'}}>
-                      <div style={{fontSize:18,fontWeight:800,color:esPositivoEsp ? "#6A1B9A" : "#C62828",fontVariantNumeric:'tabular-nums',letterSpacing:0.2}}>
+                    <div style={{marginTop:12,paddingTop:12,borderTop:'1px dashed #A5D6A7'}}>
+                      <div style={{fontSize:22,fontWeight:800,color:esPositivoEsp ? "#6A1B9A" : "#C62828",fontVariantNumeric:'tabular-nums',letterSpacing:0.2}}>
                         {saldoFinalEsperado < 0 ? '-' : '+'}{sym}{fmt(Math.abs(saldoFinalEsperado))}
                       </div>
-                      <div style={{fontSize:10,color:esPositivoEsp?"#6A1B9A":"#C62828",marginTop:2,fontWeight:600,letterSpacing:0.3,textTransform:'uppercase'}}>
+                      <div style={{fontSize:11,color:esPositivoEsp?"#6A1B9A":"#C62828",marginTop:3,fontWeight:700,letterSpacing:0.3,textTransform:'uppercase'}}>
                         {esPositivoEsp ? '⏳ Con cobranza esperada' : '⏳ Aún con déficit'}
                       </div>
                     </div>
