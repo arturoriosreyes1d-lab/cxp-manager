@@ -3435,7 +3435,7 @@ export default function CxpApp({ user, onLogout }) {
     const cancelarCeldaCambio = () => { setEditandoCambio(null); setValorCambio(''); };
 
     // Agregar fila vacía
-    const agregarIngreso = async () => {
+    const agregarIngreso = async (esEsperado = false) => {
       if (esConsulta || bloqueoEdicion) return;
       const nuevo = {
         empresaId,
@@ -3445,7 +3445,7 @@ export default function CxpApp({ user, onLogout }) {
         concepto: '',
         montoMXN: 0, montoUSD: 0, montoEUR: 0,
         orden: ingresosDia.length,
-        confirmado: true, // por defecto: real
+        confirmado: !esEsperado, // si esEsperado=true → confirmado=false (proyectado)
       };
       const id = await upsertIngresoDia(nuevo, user?.nombre || 'desconocido');
       if (id) {
@@ -3875,10 +3875,18 @@ export default function CxpApp({ user, onLogout }) {
       const convUSD = parseSaldo(conversiones.usd_to_mxn) * parseTc(tiposCambio.usdMxn);
       const convEUR = parseSaldo(conversiones.eur_to_mxn) * parseTc(tiposCambio.eurMxn);
       
-      // Ingresos del día (sumados por moneda)
-      const ingresosMXN = ingresosDia.reduce((s, i) => s + (+i.montoMXN || 0), 0);
-      const ingresosUSD = ingresosDia.reduce((s, i) => s + (+i.montoUSD || 0), 0);
-      const ingresosEUR = ingresosDia.reduce((s, i) => s + (+i.montoEUR || 0), 0);
+      // Ingresos del día — SEPARADOS por confirmado (real) vs esperado
+      // Los esperados NO suman al saldo disponible "real", solo al "esperado"
+      const ingresosRealesMXN = ingresosDia.reduce((s, i) => i.confirmado !== false ? s + (+i.montoMXN || 0) : s, 0);
+      const ingresosRealesUSD = ingresosDia.reduce((s, i) => i.confirmado !== false ? s + (+i.montoUSD || 0) : s, 0);
+      const ingresosRealesEUR = ingresosDia.reduce((s, i) => i.confirmado !== false ? s + (+i.montoEUR || 0) : s, 0);
+      const ingresosEsperadosMXN = ingresosDia.reduce((s, i) => i.confirmado === false ? s + (+i.montoMXN || 0) : s, 0);
+      const ingresosEsperadosUSD = ingresosDia.reduce((s, i) => i.confirmado === false ? s + (+i.montoUSD || 0) : s, 0);
+      const ingresosEsperadosEUR = ingresosDia.reduce((s, i) => i.confirmado === false ? s + (+i.montoEUR || 0) : s, 0);
+      // Compat: ingresosMXN/USD/EUR ahora solo son los reales (para no romper código existente)
+      const ingresosMXN = ingresosRealesMXN;
+      const ingresosUSD = ingresosRealesUSD;
+      const ingresosEUR = ingresosRealesEUR;
       
       // Cambios de divisa de HOY (efecto neto por moneda)
       // direcciones: 'USD_MXN', 'MXN_USD', 'EUR_MXN', 'MXN_EUR'
@@ -3902,23 +3910,38 @@ export default function CxpApp({ user, onLogout }) {
       const saldoInicialUSD = saldoUSD - parseSaldo(conversiones.usd_to_mxn) + cambiosNetoUSD;
       const saldoInicialEUR = saldoEUR - parseSaldo(conversiones.eur_to_mxn) + cambiosNetoEUR;
       
-      // Saldo disponible = saldo inicial + ingresos del día
+      // Saldo disponible REAL = saldo inicial + ingresos REALES del día
       const disponibleMXN = saldoInicialMXN + ingresosMXN;
       const disponibleUSD = saldoInicialUSD + ingresosUSD;
       const disponibleEUR = saldoInicialEUR + ingresosEUR;
-      
-      // Déficit/Excedente = disponible - pagos
+
+      // Saldo disponible ESPERADO = saldo disponible REAL + ingresos esperados
+      const disponibleEsperadoMXN = disponibleMXN + ingresosEsperadosMXN;
+      const disponibleEsperadoUSD = disponibleUSD + ingresosEsperadosUSD;
+      const disponibleEsperadoEUR = disponibleEUR + ingresosEsperadosEUR;
+
+      // Déficit/Excedente = disponible - pagos (versión real)
       const deficitMXN = disponibleMXN - totalesPagos.MXN;
       const deficitUSD = disponibleUSD - totalesPagos.USD;
       const deficitEUR = disponibleEUR - totalesPagos.EUR;
-      
+
+      // Déficit/Excedente ESPERADO = disponible esperado - pagos
+      const deficitEsperadoMXN = disponibleEsperadoMXN - totalesPagos.MXN;
+      const deficitEsperadoUSD = disponibleEsperadoUSD - totalesPagos.USD;
+      const deficitEsperadoEUR = disponibleEsperadoEUR - totalesPagos.EUR;
+
       return {
         saldoInicial: { MXN: saldoInicialMXN, USD: saldoInicialUSD, EUR: saldoInicialEUR },
-        ingresos: { MXN: ingresosMXN, USD: ingresosUSD, EUR: ingresosEUR },
+        ingresos: { MXN: ingresosMXN, USD: ingresosUSD, EUR: ingresosEUR }, // solo reales (compat)
+        ingresosReales: { MXN: ingresosRealesMXN, USD: ingresosRealesUSD, EUR: ingresosRealesEUR },
+        ingresosEsperados: { MXN: ingresosEsperadosMXN, USD: ingresosEsperadosUSD, EUR: ingresosEsperadosEUR },
+        hayEsperados: (ingresosEsperadosMXN + ingresosEsperadosUSD + ingresosEsperadosEUR) > 0,
         cambios: { MXN: cambiosNetoMXN, USD: cambiosNetoUSD, EUR: cambiosNetoEUR },
         disponible: { MXN: disponibleMXN, USD: disponibleUSD, EUR: disponibleEUR },
-        saldoFinal: { MXN: disponibleMXN, USD: disponibleUSD, EUR: disponibleEUR }, // compat: ahora es el disponible
+        disponibleEsperado: { MXN: disponibleEsperadoMXN, USD: disponibleEsperadoUSD, EUR: disponibleEsperadoEUR },
+        saldoFinal: { MXN: disponibleMXN, USD: disponibleUSD, EUR: disponibleEUR },
         deficit: { MXN: deficitMXN, USD: deficitUSD, EUR: deficitEUR },
+        deficitEsperado: { MXN: deficitEsperadoMXN, USD: deficitEsperadoUSD, EUR: deficitEsperadoEUR },
         statusMXN: deficitMXN >= 0 ? '✅' : deficitMXN > -50000 ? '🟡' : '🔴',
         statusUSD: deficitUSD >= 0 ? '✅' : deficitUSD > -5000 ? '🟡' : '🔴',
         statusEUR: deficitEUR >= 0 ? '✅' : '🟡'
@@ -4876,8 +4899,21 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
               </div>
             </div>
             {!esConsulta && (
-              <div style={{display:'flex',gap:8}}>
-                <button onClick={agregarIngreso} style={{background:'#1B5E20',color:'#fff',border:'none',padding:'8px 14px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 1px 3px rgba(27,94,32,0.25)'}}>+ Agregar ingreso</button>
+              <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                <button
+                  onClick={() => agregarIngreso(false)}
+                  title="Ingreso que YA entró al banco (real, confirmado)"
+                  style={{background:'#1B5E20',color:'#fff',border:'none',padding:'8px 14px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 1px 3px rgba(27,94,32,0.25)'}}
+                >
+                  ✅ + Ingreso Real
+                </button>
+                <button
+                  onClick={() => agregarIngreso(true)}
+                  title="Ingreso que esperas recibir HOY (cobranza probable, aún no entra)"
+                  style={{background:'#6A1B9A',color:'#fff',border:'none',padding:'8px 14px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 1px 3px rgba(106,27,154,0.25)'}}
+                >
+                  ⏳ + Ingreso Esperado
+                </button>
                 <button onClick={() => setImportarIngresosModal({ open: true, monedaGlobal: 'MXN', archivo: null, textoPegado: '', rows: [] })} style={{background:'#1976D2',color:'#fff',border:'none',padding:'8px 14px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 1px 3px rgba(25,118,210,0.25)'}}>📥 Importar Excel</button>
               </div>
             )}
@@ -4890,7 +4926,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             <div style={{padding:'22px 20px',textAlign:'center',color:C.muted,display:'flex',alignItems:'center',justifyContent:'center',gap:10,flexWrap:'wrap'}}>
               <div style={{fontSize:22}}>💵</div>
               <div style={{fontSize:13,color:'#1B5E20',fontWeight:600}}>Aún no hay ingresos capturados hoy.</div>
-              <div style={{fontSize:12,color:C.muted}}>Usa "+ Agregar ingreso" para la primera entrada.</div>
+              <div style={{fontSize:12,color:C.muted}}>Usa "+ Ingreso Real" o "+ Ingreso Esperado" para la primera entrada.</div>
             </div>
           ) : (
             <>
@@ -5228,17 +5264,28 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
               <div style={{fontSize:20}}>💰</div>
               <div>
-                <h3 style={{fontSize:15,fontWeight:800,color:"#0D47A1",margin:0}}>Saldo Disponible</h3>
-                <p style={{fontSize:11,color:"#1565C0",margin:"1px 0 0",opacity:0.8}}>Saldos bancarios + Ingresos ± Cambio de divisas</p>
+                <h3 style={{fontSize:15,fontWeight:800,color:"#0D47A1",margin:0}}>
+                  Saldo Disponible
+                  {analisisLiquidez.hayEsperados && (
+                    <span style={{fontSize:11,fontWeight:600,color:'#6A1B9A',marginLeft:8,padding:'2px 8px',background:'#F3E5F5',borderRadius:6,verticalAlign:'middle'}}>
+                      ⏳ Con cobranza esperada disponible
+                    </span>
+                  )}
+                </h3>
+                <p style={{fontSize:11,color:"#1565C0",margin:"1px 0 0",opacity:0.8}}>
+                  {analisisLiquidez.hayEsperados
+                    ? 'Saldos bancarios + Ingresos reales · Versión esperada incluye cobranzas probables'
+                    : 'Saldos bancarios + Ingresos ± Cambio de divisas'}
+                </p>
               </div>
             </div>
 
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
               {[
-                {moneda: 'MXN', disponible: analisisLiquidez.disponible.MXN, color: C.mxn, bg: '#E3F2FD', border: '#90CAF9', sym: '$'},
-                {moneda: 'USD', disponible: analisisLiquidez.disponible.USD, color: C.usd, bg: '#E8F5E9', border: '#A5D6A7', sym: '$'},
-                {moneda: 'EUR', disponible: analisisLiquidez.disponible.EUR, color: C.eur, bg: '#F3E5F5', border: '#CE93D8', sym: '€'}
-              ].map(({moneda, disponible, color, bg, border, sym}) => (
+                {moneda: 'MXN', disponible: analisisLiquidez.disponible.MXN, esperado: analisisLiquidez.disponibleEsperado.MXN, espIng: analisisLiquidez.ingresosEsperados.MXN, color: C.mxn, bg: '#E3F2FD', border: '#90CAF9', sym: '$'},
+                {moneda: 'USD', disponible: analisisLiquidez.disponible.USD, esperado: analisisLiquidez.disponibleEsperado.USD, espIng: analisisLiquidez.ingresosEsperados.USD, color: C.usd, bg: '#E8F5E9', border: '#A5D6A7', sym: '$'},
+                {moneda: 'EUR', disponible: analisisLiquidez.disponible.EUR, esperado: analisisLiquidez.disponibleEsperado.EUR, espIng: analisisLiquidez.ingresosEsperados.EUR, color: C.eur, bg: '#F3E5F5', border: '#CE93D8', sym: '€'}
+              ].map(({moneda, disponible, esperado, espIng, color, bg, border, sym}) => (
                 <div key={moneda} style={{
                   background:bg,
                   border:`2px solid ${border}`,
@@ -5250,6 +5297,22 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                   <div style={{fontSize:24,fontWeight:800,color,lineHeight:1.1,fontVariantNumeric:'tabular-nums'}}>
                     {sym}{fmt(disponible)}
                   </div>
+                  <div style={{fontSize:10,fontWeight:600,color,marginTop:4,opacity:0.75,letterSpacing:0.3,textTransform:'uppercase'}}>
+                    ✓ Real
+                  </div>
+                  {espIng > 0 && (
+                    <div style={{marginTop:10,paddingTop:8,borderTop:`1px dashed ${border}`}}>
+                      <div style={{fontSize:18,fontWeight:800,color:'#6A1B9A',lineHeight:1.1,fontVariantNumeric:'tabular-nums'}}>
+                        {sym}{fmt(esperado)}
+                      </div>
+                      <div style={{fontSize:10,fontWeight:600,color:'#6A1B9A',marginTop:3,letterSpacing:0.3,textTransform:'uppercase'}}>
+                        ⏳ Con cobranza esperada
+                      </div>
+                      <div style={{fontSize:10,color:'#6A1B9A',marginTop:2,opacity:0.7}}>
+                        (+{sym}{fmt(espIng)} probable)
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -5396,14 +5459,25 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         </div>
 
         <div style={{background:"#F0FFF4",border:`1px solid #A5D6A7`,borderRadius:14,padding:20}}>
-          <h3 style={{fontSize:16,fontWeight:700,color:"#1B5E20",margin:"0 0 16px"}}>💰 Saldos Después de Pagos</h3>
+          <h3 style={{fontSize:16,fontWeight:700,color:"#1B5E20",margin:"0 0 16px"}}>
+            💰 Saldos Después de Pagos
+            {analisisLiquidez.hayEsperados && (
+              <span style={{fontSize:11,fontWeight:600,color:'#6A1B9A',marginLeft:8,padding:'2px 8px',background:'#F3E5F5',borderRadius:6,verticalAlign:'middle'}}>
+                ⏳ Comparativa con cobranza esperada
+              </span>
+            )}
+          </h3>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16}}>
             {['MXN','USD','EUR'].map(mon => {
               const sym = mon === 'EUR' ? '€' : '$';
               const disponible = analisisLiquidez.disponible[mon];
+              const disponibleEsperado = analisisLiquidez.disponibleEsperado[mon];
+              const espIng = analisisLiquidez.ingresosEsperados[mon];
               const pagos = totalesPagos[mon];
               const saldoFinal = disponible - pagos;
+              const saldoFinalEsperado = disponibleEsperado - pagos;
               const esPositivo = saldoFinal >= 0;
+              const esPositivoEsp = saldoFinalEsperado >= 0;
               return (
                 <div key={mon} style={{textAlign:"center"}}>
                   <div style={{fontSize:14,fontWeight:600,color:"#2E7D32",marginBottom:4}}>{mon}</div>
@@ -5411,8 +5485,18 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                     {saldoFinal < 0 ? '-' : ''}{sym}{fmt(Math.abs(saldoFinal))}
                   </div>
                   <div style={{fontSize:11,color:esPositivo?"#2E7D32":"#C62828",marginTop:2,fontWeight:600}}>
-                    {esPositivo ? '+ Excedente' : '- Déficit'}
+                    {esPositivo ? '+ Excedente · ✓ Real' : '- Déficit · ✓ Real'}
                   </div>
+                  {espIng > 0 && (
+                    <div style={{marginTop:10,paddingTop:10,borderTop:'1px dashed #A5D6A7'}}>
+                      <div style={{fontSize:18,fontWeight:800,color:esPositivoEsp ? "#6A1B9A" : "#C62828",fontVariantNumeric:'tabular-nums',letterSpacing:0.2}}>
+                        {saldoFinalEsperado < 0 ? '-' : '+'}{sym}{fmt(Math.abs(saldoFinalEsperado))}
+                      </div>
+                      <div style={{fontSize:10,color:esPositivoEsp?"#6A1B9A":"#C62828",marginTop:2,fontWeight:600,letterSpacing:0.3,textTransform:'uppercase'}}>
+                        {esPositivoEsp ? '⏳ Con cobranza esperada' : '⏳ Aún con déficit'}
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
