@@ -812,7 +812,7 @@ export default function CxpApp({ user, onLogout }) {
           const allNew = [...ni.MXN,...ni.USD,...ni.EUR];
           // Save to Supabase and then reload from DB to get correct UUIDs
           upsertManyInvoices(allNew).then(() => {
-            fetchInvoices().then(inv => setInvoices(inv));
+            fetchInvoices(empresaId).then(inv => setInvoices(inv));
           });
           // Optimistic local update
           setInvoices(prev=>({MXN:[...prev.MXN,...ni.MXN],USD:[...prev.USD,...ni.USD],EUR:[...prev.EUR,...ni.EUR]}));

@@ -100,12 +100,14 @@ const supToDB = (sup) => ({
 
 /* ── Invoices ────────────────────────────────────────────────── */
 export async function fetchInvoices(empresaId) {
-  let q = supabase.from('invoices').select('*').order('fecha', { ascending: false });
-  if (empresaId) q = q.eq('empresa_id', empresaId);
-  const { data, error } = await q;
-  if (error) { console.error('fetchInvoices:', error); return { MXN: [], USD: [], EUR: [] }; }
+  const res = await fetchAllPaginated(() => {
+    let q = supabase.from('invoices').select('*').order('fecha', { ascending: false });
+    if (empresaId) q = q.eq('empresa_id', empresaId);
+    return q;
+  });
+  if (res.error) { console.error('fetchInvoices:', res.error); return { MXN: [], USD: [], EUR: [] }; }
   const grouped = { MXN: [], USD: [], EUR: [] };
-  (data || []).forEach(row => {
+  (res.data || []).forEach(row => {
     const inv = toApp(row);
     if (grouped[inv.moneda]) grouped[inv.moneda].push(inv);
     else grouped.MXN.push(inv);
@@ -233,23 +235,59 @@ export async function saveClasificaciones(list, empresaId) {
 }
 
 /* ── Payments (pagos programados y realizados) ───────────────── */
+// Helper: pagina resultados de Supabase en chunks de 1000 para evitar el
+// límite por defecto. Devuelve TODOS los registros que coincidan, no solo
+// los primeros 1000.
+async function fetchAllPaginated(builderFactory) {
+  const PAGE = 1000;
+  let allRows = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await builderFactory().range(from, from + PAGE - 1);
+    if (error) return { data: null, error };
+    if (!data || data.length === 0) break;
+    allRows = allRows.concat(data);
+    if (data.length < PAGE) break;
+    from += PAGE;
+  }
+  return { data: allRows, error: null };
+}
+
 export async function fetchPayments(empresaId) {
   // Payments linked to invoices of this empresa
   if (empresaId) {
-    const { data: invData } = await supabase.from('invoices').select('id').eq('empresa_id', empresaId);
-    const ids = (invData || []).map(r => r.id);
+    // 1. Traer IDs de invoices con paginación (en VL pueden ser 645+)
+    const invRes = await fetchAllPaginated(() =>
+      supabase.from('invoices').select('id').eq('empresa_id', empresaId)
+    );
+    if (invRes.error) { console.error('fetchPayments(invoices):', invRes.error); return []; }
+    const ids = (invRes.data || []).map(r => r.id);
     if (ids.length === 0) return [];
-    const { data, error } = await supabase.from('payments').select('*').in('invoice_id', ids).order('fecha_pago', { ascending: false });
-    if (error) { console.error('fetchPayments:', error); return []; }
-    return (data || []).map(r => ({
+
+    // 2. Traer payments en CHUNKS de IDs para no exceder límite de URL.
+    //    Supabase rechaza URLs > ~16KB; 200 UUIDs ≈ 8KB (seguro con margen).
+    const CHUNK = 200;
+    let allPayments = [];
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const slice = ids.slice(i, i + CHUNK);
+      const res = await fetchAllPaginated(() =>
+        supabase.from('payments').select('*').in('invoice_id', slice).order('fecha_pago', { ascending: false })
+      );
+      if (res.error) { console.error('fetchPayments(chunk):', res.error); continue; }
+      allPayments = allPayments.concat(res.data || []);
+    }
+    return allPayments.map(r => ({
       id: r.id, invoiceId: r.invoice_id, monto: +r.monto || 0,
       fechaPago: r.fecha_pago || '', notas: r.notas || '', tipo: r.tipo || 'realizado',
-      metodoPago: r.metodo_pago || 'banco',  // 'banco' | 'tdc' | 'otro'
+      metodoPago: r.metodo_pago || 'banco',
     }));
   }
-  const { data, error } = await supabase.from('payments').select('*').order('fecha_pago', { ascending: false });
-  if (error) { console.error('fetchPayments:', error); return []; }
-  return (data || []).map(r => ({
+  // Sin filtro de empresa: paginado simple
+  const res = await fetchAllPaginated(() =>
+    supabase.from('payments').select('*').order('fecha_pago', { ascending: false })
+  );
+  if (res.error) { console.error('fetchPayments:', res.error); return []; }
+  return (res.data || []).map(r => ({
     id: r.id, invoiceId: r.invoice_id, monto: +r.monto || 0,
     fechaPago: r.fecha_pago || '', notas: r.notas || '', tipo: r.tipo || 'realizado',
     metodoPago: r.metodo_pago || 'banco',
@@ -425,16 +463,33 @@ export async function updateIngresoField(id, fields) {
 /* ── Cobros ──────────────────────────────────────────────────── */
 export async function fetchCobros(empresaId) {
   if (empresaId) {
-    const { data: ingData } = await supabase.from('ingresos').select('id').eq('empresa_id', empresaId);
-    const ids = (ingData || []).map(r => r.id);
+    // Traer IDs de ingresos paginados (puede haber >1000)
+    const ingRes = await fetchAllPaginated(() =>
+      supabase.from('ingresos').select('id').eq('empresa_id', empresaId)
+    );
+    if (ingRes.error) { console.error('fetchCobros(ingresos):', ingRes.error); return []; }
+    const ids = (ingRes.data || []).map(r => r.id);
     if (ids.length === 0) return [];
-    const { data, error } = await supabase.from('cobros').select('*').in('ingreso_id', ids).order('fecha_cobro', { ascending: false });
-    if (error) { console.error('fetchCobros:', error); return []; }
-    return (data || []).map(r => ({ id: r.id, ingresoId: r.ingreso_id, monto: +r.monto || 0, fechaCobro: r.fecha_cobro || '', notas: r.notas || '', tipo: r.tipo || 'realizado', banco: r.banco || '' }));
+
+    // Traer cobros en chunks de 200 IDs para no exceder límite de URL
+    const CHUNK = 200;
+    let allCobros = [];
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const slice = ids.slice(i, i + CHUNK);
+      const res = await fetchAllPaginated(() =>
+        supabase.from('cobros').select('*').in('ingreso_id', slice).order('fecha_cobro', { ascending: false })
+      );
+      if (res.error) { console.error('fetchCobros(chunk):', res.error); continue; }
+      allCobros = allCobros.concat(res.data || []);
+    }
+    return allCobros.map(r => ({ id: r.id, ingresoId: r.ingreso_id, monto: +r.monto || 0, fechaCobro: r.fecha_cobro || '', notas: r.notas || '', tipo: r.tipo || 'realizado', banco: r.banco || '' }));
   }
-  const { data, error } = await supabase.from('cobros').select('*').order('fecha_cobro', { ascending: false });
-  if (error) { console.error('fetchCobros:', error); return []; }
-  return (data || []).map(r => ({ id: r.id, ingresoId: r.ingreso_id, monto: +r.monto || 0, fechaCobro: r.fecha_cobro || '', notas: r.notas || '', tipo: r.tipo || 'realizado', banco: r.banco || '' }));
+  // Sin filtro de empresa: paginado simple
+  const res = await fetchAllPaginated(() =>
+    supabase.from('cobros').select('*').order('fecha_cobro', { ascending: false })
+  );
+  if (res.error) { console.error('fetchCobros:', res.error); return []; }
+  return (res.data || []).map(r => ({ id: r.id, ingresoId: r.ingreso_id, monto: +r.monto || 0, fechaCobro: r.fecha_cobro || '', notas: r.notas || '', tipo: r.tipo || 'realizado', banco: r.banco || '' }));
 }
 
 export async function insertCobro(c) {
@@ -482,16 +537,33 @@ export async function updateCobro(id, fields) {
 /* ── Invoice-Ingresos ────────────────────────────────────────── */
 export async function fetchInvoiceIngresos(empresaId) {
   if (empresaId) {
-    const { data: invData } = await supabase.from('invoices').select('id').eq('empresa_id', empresaId);
-    const ids = (invData || []).map(r => r.id);
+    // Traer IDs de invoices paginados
+    const invRes = await fetchAllPaginated(() =>
+      supabase.from('invoices').select('id').eq('empresa_id', empresaId)
+    );
+    if (invRes.error) { console.error('fetchInvoiceIngresos(invoices):', invRes.error); return []; }
+    const ids = (invRes.data || []).map(r => r.id);
     if (ids.length === 0) return [];
-    const { data, error } = await supabase.from('invoice_ingresos').select('*').in('invoice_id', ids);
-    if (error) { console.error('fetchInvoiceIngresos:', error); return []; }
-    return (data || []).map(r => ({ id: r.id, invoiceId: r.invoice_id, ingresoId: r.ingreso_id, montoAsignado: +r.monto_asignado || 0 }));
+
+    // Traer invoice_ingresos en chunks de 200 IDs
+    const CHUNK = 200;
+    let all = [];
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const slice = ids.slice(i, i + CHUNK);
+      const res = await fetchAllPaginated(() =>
+        supabase.from('invoice_ingresos').select('*').in('invoice_id', slice)
+      );
+      if (res.error) { console.error('fetchInvoiceIngresos(chunk):', res.error); continue; }
+      all = all.concat(res.data || []);
+    }
+    return all.map(r => ({ id: r.id, invoiceId: r.invoice_id, ingresoId: r.ingreso_id, montoAsignado: +r.monto_asignado || 0 }));
   }
-  const { data, error } = await supabase.from('invoice_ingresos').select('*');
-  if (error) { console.error('fetchInvoiceIngresos:', error); return []; }
-  return (data || []).map(r => ({
+  // Sin filtro: paginado simple
+  const res = await fetchAllPaginated(() =>
+    supabase.from('invoice_ingresos').select('*')
+  );
+  if (res.error) { console.error('fetchInvoiceIngresos:', res.error); return []; }
+  return (res.data || []).map(r => ({
     id: r.id,
     invoiceId: r.invoice_id,
     ingresoId: r.ingreso_id,
@@ -761,10 +833,18 @@ export async function fetchFinanciamientoPagos(empresaId) {
   const fins = await fetchFinanciamientos(empresaId);
   if (!fins.length) return [];
   const ids = fins.map(f => f.id);
-  const { data, error } = await supabase.from('financiamiento_pagos')
-    .select('*').in('financiamiento_id', ids).order('fecha_pago');
-  if (error) { console.error('fetchFinanciamientoPagos:', error); return []; }
-  return (data||[]).map(r => ({
+  // Paginar en chunks por si llegan a ser muchos
+  const CHUNK = 200;
+  let all = [];
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const slice = ids.slice(i, i + CHUNK);
+    const res = await fetchAllPaginated(() =>
+      supabase.from('financiamiento_pagos').select('*').in('financiamiento_id', slice).order('fecha_pago')
+    );
+    if (res.error) { console.error('fetchFinanciamientoPagos(chunk):', res.error); continue; }
+    all = all.concat(res.data || []);
+  }
+  return all.map(r => ({
     id: r.id,
     financiamientoId: r.financiamiento_id,
     fechaPago: r.fecha_pago || '',
