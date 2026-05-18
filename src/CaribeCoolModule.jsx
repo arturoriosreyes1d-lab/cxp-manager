@@ -1454,6 +1454,14 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
           }
         }
       }
+      // DIAGNÓSTICO: log cada match con su patch + changes (temporal)
+      if (existing) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[buildDiff] MATCH ${p.pnr} → manualPatch keys=${Object.keys(manualPatch).join(',') || '(VACIO)'} · changes=${changes.length}`,
+          { manualPatch, changes, parsedRow: p, existingId: existing.id }
+        );
+      }
       if (existing) {
         matchedExistingIds.add(existing.id);
         matches.push({
@@ -1497,13 +1505,46 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
     let creados = 0;
     const toUpsert = [];
 
+    // DIAGNÓSTICO temporal
+    // eslint-disable-next-line no-console
+    console.log('[applyPamelaDiff] entrada:', {
+      applyMatchesCount: applyMatches.length,
+      createOrphansCount: createOrphans.length,
+      applyMatchesSample: applyMatches.slice(0, 3).map(m => ({
+        id: m.id?.slice(0,8),
+        pnr: m.pnr,
+        manualPatchKeys: Object.keys(m.manualPatch || {}),
+        manualPatch: m.manualPatch,
+      })),
+    });
+
     // Aplicar matches: merge solo MANUAL_KEYS
     for (const m of applyMatches) {
       const existing = boletos.find((b) => b.id === m.id);
-      if (!existing) continue;
-      toUpsert.push({ ...existing, ...m.manualPatch });
+      if (!existing) {
+        // eslint-disable-next-line no-console
+        console.warn('[applyPamelaDiff] match.id NO encontrado en boletos:', m.id);
+        continue;
+      }
+      const merged = { ...existing, ...m.manualPatch };
+      toUpsert.push(merged);
       actualizados++;
     }
+
+    // DIAGNÓSTICO: muestra qué se va a mandar al upsert
+    // eslint-disable-next-line no-console
+    console.log('[applyPamelaDiff] toUpsert:', {
+      count: toUpsert.length,
+      sample: toUpsert.slice(0, 3).map(b => ({
+        id: b.id?.slice(0,8),
+        pnr: b.pnr,
+        precio_venta: b.precio_venta,
+        plaza: b.plaza,
+        so_mexico: b.so_mexico,
+        forma_pago: b.forma_pago,
+        estatus: b.estatus,
+      })),
+    });
 
     // Crear huérfanos como nuevos boletos
     for (const o of createOrphans) {
