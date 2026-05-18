@@ -6297,7 +6297,10 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     const saldoReal = (cId, m) => getSaldosByMomento(m)[cId]?.saldoReal || 0;
     const movsPend  = (cId, m) => getSaldosByMomento(m)[cId]?.movsPendientes || 0;
     const reservaCta = (c) => +c.reservaMinima || 0;
-    const disponible = (c, m) => Math.max(0, saldoReal(c.id, m) - reservaCta(c) - movsPend(c.id, m));
+    // Permitir negativos: si saldo - reserva - pendientes da negativo,
+    // significa que la cuenta está por debajo de su reserva mínima.
+    // Ej: saldo $1,215 - reserva $2,000 = -$784 (debes meter $784 para cumplir reserva)
+    const disponible = (c, m) => saldoReal(c.id, m) - reservaCta(c) - movsPend(c.id, m);
     const ajusteVisible = (c, m) => reservaCta(c) > 0 || movsPend(c.id, m) !== 0;
 
     // Tema por momento
@@ -6532,11 +6535,30 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                                 />
                               ) : isSaving ? (
                                 <span style={{background:t.claroFondo,padding:'6px 18px',borderRadius:6,fontWeight:800,color:t.claroTexto,fontSize:18,opacity:0.6}}>guardando...</span>
-                              ) : (
-                                <span style={{background:t.claroFondo,padding:'6px 18px',borderRadius:6,display:'inline-block',fontWeight:800,color:t.claroTexto,fontSize:18,userSelect:'none',fontVariantNumeric:'tabular-nums',letterSpacing:0.3}}>
-                                  {sym(c.moneda)}{fmt(disponible(c, momento))}
-                                </span>
-                              )}
+                              ) : (() => {
+                                const disp = disponible(c, momento);
+                                const esNeg = disp < 0;
+                                return (
+                                  <span
+                                    title={esNeg ? `Saldo por debajo de la reserva mínima ($${fmt(reservaCta(c))}). Falta ${sym(c.moneda)}${fmt(Math.abs(disp))} para alcanzarla.` : ''}
+                                    style={{
+                                      background: esNeg ? '#FFEBEE' : t.claroFondo,
+                                      border: esNeg ? '1px solid #EF9A9A' : 'none',
+                                      padding:'6px 18px',
+                                      borderRadius:6,
+                                      display:'inline-block',
+                                      fontWeight:800,
+                                      color: esNeg ? '#C62828' : t.claroTexto,
+                                      fontSize:18,
+                                      userSelect:'none',
+                                      fontVariantNumeric:'tabular-nums',
+                                      letterSpacing:0.3
+                                    }}
+                                  >
+                                    {disp < 0 ? '-' : ''}{sym(c.moneda)}{fmt(Math.abs(disp))}
+                                  </span>
+                                );
+                              })()}
                             </div>
                           </React.Fragment>
                         );
@@ -6573,9 +6595,21 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
               <div style={{borderTop:`2px solid ${C.border}`,marginTop:12,paddingTop:12,display:'flex',justifyContent:'space-between',alignItems:'center',gap:16,flexWrap:'wrap'}}>
                 <div style={{color:t.primario,fontWeight:800,fontSize:17}}>Total Disponible</div>
                 <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:8}}>
-                  <span style={{background:t.primario,padding:'8px 18px',borderRadius:5,fontWeight:800,color:'#fff',fontSize:22,fontVariantNumeric:'tabular-nums',letterSpacing:0.3}}>${fmt(totales.dispMN + totales.dispInversion)} MN</span>
-                  {totales.dispDL > 0 && <span style={{background:t.primario,padding:'5px 14px',borderRadius:5,fontWeight:700,color:'#fff',fontSize:16,fontVariantNumeric:'tabular-nums',letterSpacing:0.3}}>${fmt(totales.dispDL)} USD</span>}
-                  {totales.dispEUR > 0 && <span style={{background:t.primario,padding:'5px 14px',borderRadius:5,fontWeight:700,color:'#fff',fontSize:16,fontVariantNumeric:'tabular-nums',letterSpacing:0.3}}>€{fmt(totales.dispEUR)} EUR</span>}
+                  {(() => {
+                    const tot = totales.dispMN + totales.dispInversion;
+                    const esNeg = tot < 0;
+                    return (
+                      <span style={{background: esNeg ? '#C62828' : t.primario,padding:'8px 18px',borderRadius:5,fontWeight:800,color:'#fff',fontSize:22,fontVariantNumeric:'tabular-nums',letterSpacing:0.3}}>{esNeg ? '-' : ''}${fmt(Math.abs(tot))} MN</span>
+                    );
+                  })()}
+                  {(totales.dispDL !== 0) && (() => {
+                    const esNeg = totales.dispDL < 0;
+                    return <span style={{background: esNeg ? '#C62828' : t.primario,padding:'5px 14px',borderRadius:5,fontWeight:700,color:'#fff',fontSize:16,fontVariantNumeric:'tabular-nums',letterSpacing:0.3}}>{esNeg ? '-' : ''}${fmt(Math.abs(totales.dispDL))} USD</span>;
+                  })()}
+                  {(totales.dispEUR !== 0) && (() => {
+                    const esNeg = totales.dispEUR < 0;
+                    return <span style={{background: esNeg ? '#C62828' : t.primario,padding:'5px 14px',borderRadius:5,fontWeight:700,color:'#fff',fontSize:16,fontVariantNumeric:'tabular-nums',letterSpacing:0.3}}>{esNeg ? '-' : ''}€{fmt(Math.abs(totales.dispEUR))} EUR</span>;
+                  })()}
                 </div>
               </div>
             </div>
