@@ -57,21 +57,34 @@ export function makeLooseBusinessId(pnr, descripcion) {
  *      Si hay varios candidatos, desempata por cliente exacto
  *   3. Match por PNR único cuando solo hay 1 boleto con ese PNR
  *
+ * Si `options.strict === true`, SOLO usa la estrategia 1 (match exacto).
+ * Esto es útil para flujos donde NO queremos fusionar accidentalmente:
+ * por ejemplo, pegado de texto de Caribe Cool donde un mismo PNR puede
+ * tener varios cargos distintos (billete, equipaje, asiento, reproteccion).
+ *
+ * Modo no-strict (default): Excel de Pamela, donde puede venir el nombre
+ * del pasajero entre corchetes adicional.
+ *
  * Retorna el boleto existente o null si no hay match seguro.
  * Si hay ambigüedad (múltiples candidatos sin desempate), retorna null
  * para evitar mergear boletos diferentes accidentalmente.
  */
-export function findExistingBoleto(patch, existingBoletos) {
+export function findExistingBoleto(patch, existingBoletos, options = {}) {
   if (!patch || !patch.pnr || !existingBoletos || existingBoletos.length === 0) {
     return null;
   }
 
-  // Estrategia 1: match exacto por business_id
+  // Estrategia 1: match exacto por business_id (siempre se intenta)
   const exactBid = makeBusinessId(patch.pnr, patch.descripcion);
   const exactMatch = existingBoletos.find(
     (b) => makeBusinessId(b.pnr, b.descripcion) === exactBid
   );
   if (exactMatch) return exactMatch;
+
+  // Modo strict: NO usar estrategias laxas (2 y 3).
+  // Útil para pegado de texto Caribe Cool: un mismo PNR puede tener
+  // varios cargos distintos (billete, equipaje, asiento, etc).
+  if (options.strict) return null;
 
   // Estrategia 2: match laxo (ignorando último corchete = nombre pasajero)
   const looseBid = makeLooseBusinessId(patch.pnr, patch.descripcion);

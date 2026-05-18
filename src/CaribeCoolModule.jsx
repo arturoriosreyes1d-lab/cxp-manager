@@ -1062,7 +1062,10 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
     const toUpsert = [];
 
     for (const p of parsed) {
-      const existing = findExistingBoleto(p, boletos);
+      // Modo strict: solo mergear si descripción es 100% idéntica.
+      // Un mismo PNR puede tener varios cargos (billete, equipaje, asiento)
+      // y NO queremos fusionarlos automáticamente.
+      const existing = findExistingBoleto(p, boletos, { strict: true });
       if (existing) {
         if (skip.has(p.id) || skip.has(existing.id)) {
           omitidos++;
@@ -1387,6 +1390,11 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
   //   1. exact:  pnr + descripción completa
   //   2. loose:  pnr + descripción sin nombre del pasajero entre [...]
   //   3. pnr:    si solo hay 1 boleto con ese PNR, asumir match
+  //
+  // NOTA: Este flujo SÍ usa estrategias laxas porque Pamela a veces manda
+  // la descripción con [NOMBRE PASAJERO] adicional que no está en lo que
+  // pegamos directo de Caribe Cool. Para el pegado/Excel raw usamos modo
+  // strict (solo coincidencia exacta).
   function buildDiff(patches, existingBoletos) {
     const matches = [];
     const orphans = [];
@@ -1612,8 +1620,10 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
       if (hasManual) manualFields++;
       if (hasCaribe) caribeFields++;
 
-      // Usar findExistingBoleto para matching robusto (mismo método que buildDiff)
-      const existing = findExistingBoleto(p, boletos);
+      // Usar findExistingBoleto en modo STRICT (solo match exacto).
+      // Un mismo PNR puede tener varios cargos distintos (billete, equipaje,
+      // asiento, reproteccion). NO queremos fusionarlos automáticamente.
+      const existing = findExistingBoleto(p, boletos, { strict: true });
 
       if (existing) {
         const merged = { ...existing, ...p };
