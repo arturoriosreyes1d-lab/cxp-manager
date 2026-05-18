@@ -5334,9 +5334,9 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         <div ref={refDetalle}>
 
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",marginBottom:20}}>
-          <div style={{padding:"16px 20px",background:C.navy,color:"#fff"}}>
-            <h3 style={{fontSize:16,fontWeight:700,margin:0}}>📋 Pagos Programados para Hoy</h3>
-            <p style={{fontSize:13,margin:"4px 0 0",opacity:0.8}}>Total: {pagosProgramadosHoy.length} proveedores</p>
+          <div style={{padding:"18px 22px",background:C.navy,color:"#fff"}}>
+            <h3 style={{fontSize:20,fontWeight:800,margin:0,letterSpacing:0.2}}>📋 Pagos Programados para Hoy</h3>
+            <p style={{fontSize:14,margin:"4px 0 0",opacity:0.85}}>Total: {pagosProgramadosHoy.length} proveedores</p>
           </div>
           
           {pagosProgramadosHoy.length === 0 ? (
@@ -5347,7 +5347,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             </div>
           ) : (
             <div style={{overflowX:"auto"}}>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:15}}>
                 <thead>
                   <tr style={{background:"#F8FAFC"}}>
                     {[
@@ -5362,7 +5362,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                       <th key={h.k}
                           onClick={() => toggleSort(h.k)}
                           title="Clic para ordenar"
-                          style={{padding:"12px 16px",textAlign:h.align,color:C.navy,fontWeight:700,fontSize:12,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`,cursor:"pointer",userSelect:"none",background:sortBy===h.k?"#E3F2FD":"transparent"}}>
+                          style={{padding:"14px 18px",textAlign:h.align,color:C.navy,fontWeight:800,fontSize:13,textTransform:"uppercase",borderBottom:`2px solid ${C.border}`,cursor:"pointer",userSelect:"none",background:sortBy===h.k?"#E3F2FD":"transparent",letterSpacing:0.3}}>
                         {h.label}{sortIcon(h.k)}
                       </th>
                     ))}
@@ -5380,18 +5380,18 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                     return (
                     <React.Fragment key={i}>
                       <tr style={{borderBottom:(pago.detalleFacturas && pago.detalleFacturas.length > 0) ? 'none' : `1px solid ${C.border}`,background:i%2===0?"#fff":"#FAFBFC"}}>
-                        <td style={{padding:"12px 16px",fontWeight:600,color:C.navy}}>{pago.proveedor}</td>
-                        <td style={{padding:"12px 16px",textAlign:"center"}}>
-                          <span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[pago.moneda],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[pago.moneda],padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>{pago.moneda}</span>
+                        <td style={{padding:"14px 18px",fontWeight:700,fontSize:15,color:C.navy}}>{pago.proveedor}</td>
+                        <td style={{padding:"14px 18px",textAlign:"center"}}>
+                          <span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[pago.moneda],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[pago.moneda],padding:"3px 10px",borderRadius:20,fontSize:13,fontWeight:700}}>{pago.moneda}</span>
                         </td>
                         <td onClick={() => setDetalleModal({ pago, tipo: 'adeudo' })}
                           title="Clic para ver desglose del importe adeudado"
-                          style={{padding:"12px 16px",textAlign:"right",fontWeight:700,fontSize:13,cursor:'pointer',color:'#1976D2',textDecoration:'underline',textDecorationStyle:'dotted',textDecorationColor:'#1976D2'}}>
+                          style={{padding:"14px 18px",textAlign:"right",fontWeight:700,fontSize:15,cursor:'pointer',color:'#1976D2',textDecoration:'underline',textDecorationStyle:'dotted',textDecorationColor:'#1976D2'}}>
                           {monedaSym(pago.moneda)}{fmt(pago.importeAdeudado)}
                         </td>
                         <td onClick={() => setDetalleModal({ pago, tipo: 'pago' })}
                           title="Clic para ver desglose del pago del día"
-                          style={{padding:"12px 16px",textAlign:"right",fontWeight:800,fontSize:14,color:"#D32F2F",cursor:'pointer',textDecoration:'underline',textDecorationStyle:'dotted',textDecorationColor:'#D32F2F'}}>
+                          style={{padding:"14px 18px",textAlign:"right",fontWeight:800,fontSize:16,color:"#D32F2F",cursor:'pointer',textDecoration:'underline',textDecorationStyle:'dotted',textDecorationColor:'#D32F2F'}}>
                           {monedaSym(pago.moneda)}{fmt(pago.pagoHoy)}
                           {pago.pagoTDC > 0 && (
                             <span title={`Pagado con TDC: ${monedaSym(pago.moneda)}${fmt(pago.pagoTDC)}`} style={{display:'inline-block',marginLeft:6,background:'#F3E5F5',color:'#6A1B9A',padding:'2px 7px',borderRadius:8,fontSize:10,fontWeight:700,verticalAlign:'middle'}}>💳 TDC</span>
@@ -5400,25 +5400,25 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                             <span title={`Otro método: ${monedaSym(pago.moneda)}${fmt(pago.pagoOtro)}`} style={{display:'inline-block',marginLeft:6,background:'#F5F5F5',color:'#616161',padding:'2px 7px',borderRadius:8,fontSize:10,fontWeight:700,verticalAlign:'middle'}}>➕ Otro</span>
                           )}
                         </td>
-                        <td style={{padding:"12px 16px",textAlign:"right",fontWeight:700,fontSize:13,color:pago.saldoDespuesPago <= 0 ? "#2E7D32" : "#F57C00"}}>{monedaSym(pago.moneda)}{fmt(pago.saldoDespuesPago)}</td>
-                        <td style={{padding:"12px 16px",textAlign:"center",color:C.muted}}>{pago.facturas}</td>
+                        <td style={{padding:"14px 18px",textAlign:"right",fontWeight:700,fontSize:15,color:pago.saldoDespuesPago <= 0 ? "#2E7D32" : "#F57C00"}}>{monedaSym(pago.moneda)}{fmt(pago.saldoDespuesPago)}</td>
+                        <td style={{padding:"14px 18px",textAlign:"center",fontSize:14,fontWeight:600,color:C.muted}}>{pago.facturas}</td>
                         {esVistaHistorica && (
-                          <td style={{padding:"12px 16px",textAlign:"center"}}>
-                            <span style={{background:estadoMeta.bg,color:estadoMeta.color,padding:"3px 10px",borderRadius:12,fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>{estadoMeta.label}</span>
+                          <td style={{padding:"14px 18px",textAlign:"center"}}>
+                            <span style={{background:estadoMeta.bg,color:estadoMeta.color,padding:"4px 12px",borderRadius:12,fontSize:13,fontWeight:700,whiteSpace:'nowrap'}}>{estadoMeta.label}</span>
                           </td>
                         )}
                       </tr>
                       {/* Subfilas: desglose de facturas que se pagan hoy */}
                       {pago.detalleFacturas && pago.detalleFacturas.length > 0 && pago.detalleFacturas.map((f, j) => (
                         <tr key={`${i}-f-${j}`} style={{borderBottom:j === pago.detalleFacturas.length - 1 ? `1px solid ${C.border}` : 'none', background:i%2===0?"#F9FAFB":"#F5F6F8"}}>
-                          <td style={{padding:"6px 16px 6px 32px",fontSize:11,color:"#6B7280",display:'flex',alignItems:'center',gap:6}}>
-                            <span style={{color:'#9CA3AF',fontSize:10}}>↳</span>
-                            <span style={{fontFamily:'monospace',fontWeight:700,background:'#E5E7EB',padding:'1px 6px',borderRadius:4,color:'#374151',fontSize:10,letterSpacing:0.3}}>{f.serie}{f.folio ? ` ${f.folio}` : ''}</span>
-                            <span style={{color:'#4B5563',fontSize:11}}>{f.concepto || '—'}</span>
+                          <td style={{padding:"10px 18px 10px 38px",fontSize:13,color:"#6B7280",display:'flex',alignItems:'center',gap:8}}>
+                            <span style={{color:'#9CA3AF',fontSize:13}}>↳</span>
+                            <span style={{fontFamily:'monospace',fontWeight:700,background:'#E5E7EB',padding:'2px 8px',borderRadius:4,color:'#374151',fontSize:12,letterSpacing:0.3}}>{f.serie}{f.folio ? ` ${f.folio}` : ''}</span>
+                            <span style={{color:'#4B5563',fontSize:13}}>{f.concepto || '—'}</span>
                           </td>
                           <td></td>
                           <td></td>
-                          <td style={{padding:"6px 16px",textAlign:"right",fontSize:12,fontWeight:600,color:"#6B7280",fontVariantNumeric:'tabular-nums'}}>
+                          <td style={{padding:"10px 18px",textAlign:"right",fontSize:14,fontWeight:700,color:"#6B7280",fontVariantNumeric:'tabular-nums'}}>
                             {monedaSym(pago.moneda)}{fmt(f.pagoHoy)}
                             {f.metodoPago === 'tdc' && (
                               <span style={{display:'inline-block',marginLeft:6,background:'#F3E5F5',color:'#6A1B9A',padding:'1px 6px',borderRadius:6,fontSize:9,fontWeight:700,verticalAlign:'middle'}}>💳</span>
@@ -5439,22 +5439,22 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                 <tfoot>
                   {['USD','MXN','EUR'].filter(m => totalesCompletos[m].pago > 0 || totalesCompletos[m].adeudado > 0).map((m, idx, arr) => (
                     <tr key={m} style={{background:"#EEF2FF",borderTop:idx===0?`2px solid ${C.blue}`:`1px solid ${C.border}`}}>
-                      <td style={{padding:"14px 16px",fontWeight:800,color:C.navy,fontSize:14}}>
+                      <td style={{padding:"16px 18px",fontWeight:800,color:C.navy,fontSize:16,letterSpacing:0.2}}>
                         TOTAL {m}
                       </td>
-                      <td style={{padding:"14px 16px",textAlign:"center"}}>
-                        <span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[m],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[m],padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800}}>{m}</span>
+                      <td style={{padding:"16px 18px",textAlign:"center"}}>
+                        <span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[m],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[m],padding:"4px 12px",borderRadius:20,fontSize:13,fontWeight:800}}>{m}</span>
                       </td>
-                      <td style={{padding:"14px 16px",textAlign:"right",fontWeight:800,color:C.navy,fontSize:18}}>
+                      <td style={{padding:"16px 18px",textAlign:"right",fontWeight:800,color:C.navy,fontSize:20,fontVariantNumeric:'tabular-nums'}}>
                         {monedaSym(m)}{fmt(totalesCompletos[m].adeudado)}
                       </td>
-                      <td style={{padding:"14px 16px",textAlign:"right",fontWeight:800,color:"#D32F2F",fontSize:18}}>
+                      <td style={{padding:"16px 18px",textAlign:"right",fontWeight:800,color:"#D32F2F",fontSize:20,fontVariantNumeric:'tabular-nums'}}>
                         {monedaSym(m)}{fmt(totalesCompletos[m].pago)}
                       </td>
-                      <td style={{padding:"14px 16px",textAlign:"right",fontWeight:800,color:totalesCompletos[m].saldoDespues <= 0 ? "#2E7D32" : "#F57C00",fontSize:18}}>
+                      <td style={{padding:"16px 18px",textAlign:"right",fontWeight:800,color:totalesCompletos[m].saldoDespues <= 0 ? "#2E7D32" : "#F57C00",fontSize:20,fontVariantNumeric:'tabular-nums'}}>
                         {monedaSym(m)}{fmt(totalesCompletos[m].saldoDespues)}
                       </td>
-                      <td style={{padding:"14px 16px",textAlign:"center",fontWeight:800,color:C.navy,fontSize:14}}>
+                      <td style={{padding:"16px 18px",textAlign:"center",fontWeight:800,color:C.navy,fontSize:16}}>
                         {totalesCompletos[m].facturas}
                       </td>
                       {esVistaHistorica && <td></td>}
