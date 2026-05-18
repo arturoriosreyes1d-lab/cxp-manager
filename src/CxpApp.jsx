@@ -4461,11 +4461,19 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
       wrapper.appendChild(header);
 
       // Clones de los contenidos
+      // Si no hay cambios de divisa activos, ocultar esa sección en el export
+      // (se conserva visible en pantalla para capturar nuevos, pero no se exporta)
+      const hayCambiosDivisa = cambiosHoy.some(c => (+c.montoVendido || 0) > 0 || (+c.montoComprado || 0) > 0);
       contenidos.forEach((nodoOriginal, idx) => {
         if (!nodoOriginal) return;
         const clon = nodoOriginal.cloneNode(true);
         // Remover bordes redondeados externos para look más continuo
         clon.style.marginBottom = idx === contenidos.length - 1 ? '0' : '18px';
+        // Quitar la sección de Cambio de Divisas si está vacía
+        if (!hayCambiosDivisa) {
+          const seccionDivisas = clon.querySelectorAll('[data-seccion="cambio-divisas"]');
+          seccionDivisas.forEach(n => n.remove());
+        }
         wrapper.appendChild(clon);
       });
 
@@ -5155,7 +5163,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         </div>
 
         {/* ═══════════ CAMBIO DE DIVISAS ═══════════ */}
-        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:16,marginBottom:20}}>
+        <div data-seccion="cambio-divisas" style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:16,marginBottom:20}}>
           <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
             <div style={{width:42,height:42,borderRadius:10,background:'#E3F2FD',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22}}>💱</div>
             <div>
