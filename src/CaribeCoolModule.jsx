@@ -904,6 +904,11 @@ const th = {
   fontWeight: 700,
   letterSpacing: '0.06em',
   textTransform: 'uppercase',
+  position: 'sticky',
+  top: 0,
+  background: '#042C53',
+  color: '#fff',
+  zIndex: 5,
 };
 
 const td = { padding: '10px 12px', verticalAlign: 'middle' };
@@ -1058,7 +1063,10 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
     const totalUtilidad = totalVenta - costoDeConVenta;
     const margen = totalVenta > 0 ? totalUtilidad / totalVenta : null;
     const pendientes = filtered.filter((b) => !isConciliado(b)).length;
-    return { num, totalVenta, totalCosto, totalUtilidad, margen, pendientes };
+    const cancelaciones = filtered.filter(
+      (b) => (b.descripcion || '').toLowerCase().startsWith('cancelación')
+    ).length;
+    return { num, totalVenta, totalCosto, totalUtilidad, margen, pendientes, cancelaciones };
   }, [filtered]);
 
   async function mergeImported(parsed, skipIds) {
@@ -2580,6 +2588,65 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
         </div>
       )}
 
+      {/* Mini-resumen ─ visión rápida arriba de la tabla */}
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: 14,
+          padding: '10px 16px',
+          background: '#F8FAFC',
+          border: `1px solid ${C.border}`,
+          borderRadius: 10,
+          marginBottom: 10,
+          fontSize: 12,
+          color: C.muted,
+        }}
+      >
+        <span>
+          <span style={{ fontWeight: 700, color: C.navy, fontSize: 14 }}>{kpis.num}</span>{' '}
+          {kpis.num === 1 ? 'boleto' : 'boletos'}
+        </span>
+        <span style={{ color: '#E2E8F0' }}>·</span>
+        {kpis.cancelaciones > 0 ? (
+          <span style={{ color: '#C62828' }}>
+            <span style={{ fontWeight: 700 }}>{kpis.cancelaciones}</span>{' '}
+            {kpis.cancelaciones === 1 ? 'cancelación' : 'cancelaciones'}
+          </span>
+        ) : (
+          <span style={{ color: '#9CA3AF' }}>Sin cancelaciones</span>
+        )}
+        <span style={{ color: '#E2E8F0' }}>·</span>
+        <span>
+          Total costo:{' '}
+          <span style={{ fontWeight: 700, color: C.costo, fontVariantNumeric: 'tabular-nums' }}>
+            ${fmt(kpis.totalCosto)}
+          </span>{' '}
+          USD
+        </span>
+        {kpis.totalVenta > 0 && (
+          <>
+            <span style={{ color: '#E2E8F0' }}>·</span>
+            <span>
+              Venta:{' '}
+              <span style={{ fontWeight: 700, color: C.venta, fontVariantNumeric: 'tabular-nums' }}>
+                ${fmt(kpis.totalVenta)}
+              </span>{' '}
+              USD
+            </span>
+          </>
+        )}
+        {kpis.pendientes > 0 && (
+          <>
+            <span style={{ color: '#E2E8F0' }}>·</span>
+            <span style={{ color: C.warn }}>
+              <span style={{ fontWeight: 700 }}>{kpis.pendientes}</span> sin conciliar
+            </span>
+          </>
+        )}
+      </div>
+
       {/* Table */}
       <div
         style={{
@@ -2589,7 +2656,7 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
           border: `1px solid ${C.border}`,
         }}
       >
-        <div style={{ overflowX: 'auto' }}>
+        <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 380px)', minHeight: 300 }}>
           <table
             style={{
               width: '100%',
@@ -2674,21 +2741,23 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                     : '#FAFBFF'
                   : C.warnBg;
                 const rowBg = selected ? '#EDE9FE' : baseBg;
+                const esCancelacion = (b.descripcion || '').toLowerCase().startsWith('cancelación');
                 return (
                   <tr
                     key={b.id}
                     style={{
-                      background: rowBg,
+                      background: esCancelacion ? '#FEFCFC' : rowBg,
                       borderBottom: '1px solid #F1F5F9',
+                      boxShadow: esCancelacion ? 'inset 3px 0 0 0 #E24B4A' : 'none',
                       cursor: 'pointer',
                     }}
                     onClick={() => setEditingId(b.id)}
                     onMouseEnter={(e) => {
                       if (!selected)
-                        e.currentTarget.style.background = '#EFF6FF';
+                        e.currentTarget.style.background = esCancelacion ? '#FCEBEB' : '#EFF6FF';
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.background = rowBg;
+                      e.currentTarget.style.background = esCancelacion ? '#FEFCFC' : rowBg;
                     }}
                   >
                     <td
@@ -2789,6 +2858,7 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                         textAlign: 'right',
                         color: C.costo,
                         fontWeight: 600,
+                        fontVariantNumeric: 'tabular-nums',
                       }}
                     >
                       ${fmt(b.costo_usd)}
@@ -2800,6 +2870,7 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                         color: C.costo,
                         fontSize: 11,
                         fontWeight: 500,
+                        fontVariantNumeric: 'tabular-nums',
                       }}
                     >
                       {b.trans_negativa ? (
@@ -2807,7 +2878,7 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                           -${fmt(b.trans_negativa)}
                         </span>
                       ) : (
-                        <span style={{ color: '#CBD5E1' }}>—</span>
+                        <span style={{ color: '#E5E7EB', fontSize: 11 }}>—</span>
                       )}
                     </td>
                     <td
@@ -2816,12 +2887,13 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                         textAlign: 'right',
                         color: C.venta,
                         fontWeight: 600,
+                        fontVariantNumeric: 'tabular-nums',
                       }}
                     >
                       {b.precio_venta != null ? (
                         `$${fmt(b.precio_venta)}`
                       ) : (
-                        <span style={{ color: '#CBD5E1' }}>—</span>
+                        <span style={{ color: '#E5E7EB', fontSize: 11 }}>—</span>
                       )}
                     </td>
                     <td
@@ -2829,6 +2901,7 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                         ...td,
                         textAlign: 'right',
                         fontWeight: 700,
+                        fontVariantNumeric: 'tabular-nums',
                         color:
                           utilidad != null
                             ? utilidad >= 0
@@ -2857,7 +2930,7 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                           {b.plaza === 'MEX' ? 'México' : 'Cuba'}
                         </span>
                       ) : (
-                        <span style={{ color: '#CBD5E1' }}>—</span>
+                        <span style={{ color: '#E5E7EB', fontSize: 11 }}>—</span>
                       )}
                     </td>
                     <td
@@ -2868,7 +2941,7 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                       }}
                     >
                       {b.so_mexico || (
-                        <span style={{ color: '#CBD5E1' }}>—</span>
+                        <span style={{ color: '#E5E7EB', fontSize: 11 }}>—</span>
                       )}
                     </td>
                     <td
@@ -2879,17 +2952,17 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                       }}
                     >
                       {b.so_cuba || (
-                        <span style={{ color: '#CBD5E1' }}>—</span>
+                        <span style={{ color: '#E5E7EB', fontSize: 11 }}>—</span>
                       )}
                     </td>
                     <td style={{ ...td, fontSize: 12 }}>
                       {b.forma_pago || (
-                        <span style={{ color: '#CBD5E1' }}>—</span>
+                        <span style={{ color: '#E5E7EB', fontSize: 11 }}>—</span>
                       )}
                     </td>
                     <td style={{ ...td, fontSize: 12 }}>
                       {b.cliente_pagador || (
-                        <span style={{ color: '#CBD5E1' }}>—</span>
+                        <span style={{ color: '#E5E7EB', fontSize: 11 }}>—</span>
                       )}
                     </td>
                     <td
@@ -2918,7 +2991,7 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                             : `${b.dias_credito} días`}
                         </span>
                       ) : (
-                        <span style={{ color: '#CBD5E1' }}>—</span>
+                        <span style={{ color: '#E5E7EB', fontSize: 11 }}>—</span>
                       )}
                     </td>
                     <td
@@ -2945,14 +3018,14 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                           {b.estatus}
                         </span>
                       ) : (
-                        <span style={{ color: '#CBD5E1' }}>—</span>
+                        <span style={{ color: '#E5E7EB', fontSize: 11 }}>—</span>
                       )}
                     </td>
                     <td style={{ ...td, fontSize: 12 }}>
                       {b.fecha_cobro ? (
                         formatDate(b.fecha_cobro)
                       ) : (
-                        <span style={{ color: '#CBD5E1' }}>—</span>
+                        <span style={{ color: '#E5E7EB', fontSize: 11 }}>—</span>
                       )}
                     </td>
                     <td
@@ -2982,7 +3055,7 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                           USD
                         </span>
                       ) : (
-                        <span style={{ color: '#CBD5E1' }}>—</span>
+                        <span style={{ color: '#E5E7EB', fontSize: 11 }}>—</span>
                       )}
                     </td>
                     <td
@@ -2997,7 +3070,7 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                       b.moneda_cobro !== 'USD' ? (
                         `$${fmt(b.precio_venta_local)}`
                       ) : (
-                        <span style={{ color: '#CBD5E1' }}>—</span>
+                        <span style={{ color: '#E5E7EB', fontSize: 11 }}>—</span>
                       )}
                     </td>
                     <td
@@ -3011,7 +3084,7 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                       {b.tipo_cambio != null ? (
                         b.tipo_cambio.toFixed(2)
                       ) : (
-                        <span style={{ color: '#CBD5E1' }}>—</span>
+                        <span style={{ color: '#E5E7EB', fontSize: 11 }}>—</span>
                       )}
                     </td>
                     <td style={td}>
@@ -4283,7 +4356,7 @@ function KpiDetailModal({ kpiType, boletos, onClose }) {
                           Cuba
                         </span>
                       ) : (
-                        <span style={{ color: '#CBD5E1' }}>—</span>
+                        <span style={{ color: '#E5E7EB', fontSize: 11 }}>—</span>
                       )}
                     </td>
                     <td style={kpiDetailTd}>{b.forma_pago || '—'}</td>
@@ -4313,7 +4386,7 @@ function KpiDetailModal({ kpiType, boletos, onClose }) {
                           {b.estatus}
                         </span>
                       ) : (
-                        <span style={{ color: '#CBD5E1' }}>—</span>
+                        <span style={{ color: '#E5E7EB', fontSize: 11 }}>—</span>
                       )}
                     </td>
                     {cfg.showVentaCosto && (
@@ -5957,7 +6030,7 @@ TIO AYMEE (VIAJES LIBERO)`}
                                 }}
                               >
                                 {e.isNew ? (
-                                  <span style={{ color: '#CBD5E1' }}>—</span>
+                                  <span style={{ color: '#E5E7EB', fontSize: 11 }}>—</span>
                                 ) : (
                                   <input
                                     type="checkbox"
