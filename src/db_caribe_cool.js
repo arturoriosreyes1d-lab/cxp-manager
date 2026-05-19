@@ -306,25 +306,10 @@ export async function upsertManyBoletosCC(boletos, empresaId) {
   }
   const uniqueRows = Array.from(dedup.values());
   if (uniqueRows.length < rows.length) {
-    // eslint-disable-next-line no-console
     console.warn(
       `[upsertManyBoletosCC] deduplicadas ${rows.length - uniqueRows.length} filas duplicadas por business_id`
     );
   }
-
-  // DIAGNÓSTICO temporal
-  // eslint-disable-next-line no-console
-  console.log('[upsertManyBoletosCC] enviando', uniqueRows.length, 'filas. Sample:',
-    uniqueRows.slice(0, 2).map(r => ({
-      pnr: r.pnr,
-      business_id: r.business_id,
-      precio_venta: r.precio_venta,
-      plaza: r.plaza,
-      so_mexico: r.so_mexico,
-      forma_pago: r.forma_pago,
-      estatus: r.estatus,
-    }))
-  );
 
   const { data, error } = await supabase
     .from('boletos_caribe_cool')
@@ -332,21 +317,9 @@ export async function upsertManyBoletosCC(boletos, empresaId) {
     .select();
 
   if (error) {
-    console.error('upsertManyBoletosCC ERROR:', error);
-    // eslint-disable-next-line no-console
-    console.error('[upsertManyBoletosCC] error completo:', JSON.stringify(error));
+    console.error('upsertManyBoletosCC:', error);
     return boletos;
   }
-  // DIAGNÓSTICO
-  // eslint-disable-next-line no-console
-  console.log('[upsertManyBoletosCC] OK. Recibí', (data || []).length, 'filas de Supabase. Sample:',
-    (data || []).slice(0, 2).map(r => ({
-      pnr: r.pnr,
-      precio_venta: r.precio_venta,
-      plaza: r.plaza,
-      so_mexico: r.so_mexico,
-    }))
-  );
   await logAudit({
     accion: 'importar',
     entidad: 'boletos_cc',
