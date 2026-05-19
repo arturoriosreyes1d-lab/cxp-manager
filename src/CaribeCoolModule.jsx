@@ -510,6 +510,15 @@ function buildTicket(cells) {
     baseIdx = 6;
   }
 
+  // DIAGNÓSTICO temporal — log para cancelaciones
+  if (String(descripcion).toLowerCase().startsWith('cancelación')) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[buildTicket CANCEL] PNR=${pnr} venta="${venta2Raw}" cell5="${cell5}" → trans_neg=${trans_neg}`,
+      { totalCells: cells.length, allCells: cells }
+    );
+  }
+
   const venta2 = parseVenta2(venta2Raw);
   const desc = parseDescripcion(descripcion);
   const descTrim = String(descripcion).trim();
