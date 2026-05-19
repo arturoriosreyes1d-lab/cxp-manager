@@ -900,9 +900,9 @@ const C = {
   muted: '#64748B',
   border: '#E2E8F0',
   bgSoft: '#F8FAFC',
-  costo: '#DC2626',
-  venta: '#0D9488',
-  utilidad: '#16A34A',
+  costo: '#B91C1C',
+  venta: '#15803D',
+  utilidad: '#1D4ED8',
   warn: '#CA8A04',
   warnBg: '#FEFCE8',
 };
@@ -2665,7 +2665,8 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
             style={{
               width: '100%',
               borderCollapse: 'collapse',
-              fontSize: 13,
+              fontSize: 15,
+              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
               minWidth: 1100,
             }}
           >
@@ -2703,7 +2704,7 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                 <th style={th}>Tipo de Viaje</th>
                 <th style={th}>Vendedor</th>
                 <th style={th}>Costo</th>
-                <th style={th}>Trans. Neg.</th>
+                <th style={th}>Transacciones Negativas</th>
                 <th style={th}>Precio de Venta</th>
                 <th style={th}>Utilidad</th>
                 <th style={th}>Plaza de Venta</th>
@@ -2716,7 +2717,7 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                 <th style={th}>Fecha de Cobro</th>
                 <th style={th}>Moneda</th>
                 <th style={th}>Precio Local</th>
-                <th style={th}>TC</th>
+                <th style={th}>Tipo de Cambio</th>
                 <th style={{ ...th, width: 30 }}></th>
               </tr>
             </thead>
@@ -2841,7 +2842,7 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                       style={{
                         ...td,
                         fontFamily: 'ui-monospace, monospace',
-                        fontSize: 12,
+                        fontSize: 14,
                       }}
                     >
                       {b.ruta || '—'}
@@ -2862,7 +2863,7 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                         {b.tipo_viaje || '—'}
                       </span>
                     </td>
-                    <td style={{ ...td, fontSize: 12 }}>{b.vendedor}</td>
+                    <td style={{ ...td, fontSize: 14 }}>{b.vendedor}</td>
                     <td
                       style={{
                         ...td,
