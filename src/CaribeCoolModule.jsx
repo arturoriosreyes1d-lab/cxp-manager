@@ -1268,6 +1268,14 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
         patch.moneda_costo = v.currency || 'USD';
       }
     }
+    // ───────── Transacciones Negativas (Caribe Cool) ─────────
+    if (has(cols.transNeg)) {
+      const raw = String(r[cols.transNeg]).trim();
+      // Solo guarda si tiene un valor "real" (no vacío, no cero)
+      if (raw && raw !== '0' && raw !== '0.00' && raw !== '-') {
+        patch.trans_negativa = raw;
+      }
+    }
     if (has(cols.estado)) patch.estado_caribe = String(r[cols.estado]).trim();
     if (has(cols.tipoPago))
       patch.tipo_pago_caribe = String(r[cols.tipoPago]).trim();
@@ -2749,6 +2757,26 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                         color: C.navy,
                       }}
                     >
+                      {(b.descripcion || '').toLowerCase().startsWith('cancelación') && (
+                        <span
+                          title={b.descripcion}
+                          style={{
+                            display: 'inline-block',
+                            background: '#FCEBEB',
+                            color: '#791F1F',
+                            fontSize: 9,
+                            fontWeight: 700,
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                            letterSpacing: 0.3,
+                            marginRight: 6,
+                            verticalAlign: 'middle',
+                            fontFamily: 'inherit',
+                          }}
+                        >
+                          ❌ CANCEL.
+                        </span>
+                      )}
                       {b.pnr}
                     </td>
                     <td style={td}>{b.cliente}</td>
@@ -2799,7 +2827,9 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                       }}
                     >
                       {b.trans_negativa ? (
-                        String(b.trans_negativa)
+                        <span style={{ color: '#C62828', fontWeight: 700 }}>
+                          -${String(b.trans_negativa).replace(/^[^\d.,-]+|\s+[A-Z]{3}$/g, '')}
+                        </span>
                       ) : (
                         <span style={{ color: '#CBD5E1' }}>—</span>
                       )}
