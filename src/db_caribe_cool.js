@@ -282,10 +282,25 @@ export async function upsertManyBoletosCC(boletos, empresaId) {
   if (!boletos || boletos.length === 0) return [];
   const rows = boletos.map((b) => boletoToDB(b, empresaId));
 
+  // Deduplicar por business_id: Postgres rechaza ON CONFLICT con duplicados
+  // dentro del mismo batch. Si llega el mismo business_id 2 veces, mantenemos
+  // solo la ÚLTIMA (que tiene los datos más actualizados).
+  const dedup = new Map();
+  for (const r of rows) {
+    if (r.business_id) dedup.set(r.business_id, r);
+  }
+  const uniqueRows = Array.from(dedup.values());
+  if (uniqueRows.length < rows.length) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[upsertManyBoletosCC] deduplicadas ${rows.length - uniqueRows.length} filas duplicadas por business_id`
+    );
+  }
+
   // DIAGNÓSTICO temporal
   // eslint-disable-next-line no-console
-  console.log('[upsertManyBoletosCC] enviando', rows.length, 'filas. Sample:',
-    rows.slice(0, 2).map(r => ({
+  console.log('[upsertManyBoletosCC] enviando', uniqueRows.length, 'filas. Sample:',
+    uniqueRows.slice(0, 2).map(r => ({
       pnr: r.pnr,
       business_id: r.business_id,
       precio_venta: r.precio_venta,
@@ -298,7 +313,7 @@ export async function upsertManyBoletosCC(boletos, empresaId) {
 
   const { data, error } = await supabase
     .from('boletos_caribe_cool')
-    .upsert(rows, { onConflict: 'empresa_id,business_id' })
+    .upsert(uniqueRows, { onConflict: 'empresa_id,business_id' })
     .select();
 
   if (error) {

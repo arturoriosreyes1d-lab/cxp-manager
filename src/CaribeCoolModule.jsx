@@ -1426,7 +1426,10 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
       if (p._unrecognizedFormas) {
         p._unrecognizedFormas.forEach((c) => cobrosDesconocidos.add(c));
       }
-      const existing = findExistingBoleto(p, existingBoletos);
+      // Excluir boletos ya matchados por filas anteriores del Excel
+      // (evita que Postgres rechace upsert por ON CONFLICT duplicado)
+      const candidatos = existingBoletos.filter((b) => !matchedExistingIds.has(b.id));
+      const existing = findExistingBoleto(p, candidatos);
 
       // Log diagnóstico de los primeros casos
       if (diagPrinted < MAX_DIAG) {
