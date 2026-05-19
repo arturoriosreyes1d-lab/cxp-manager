@@ -2588,65 +2588,6 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
         </div>
       )}
 
-      {/* Mini-resumen ─ visión rápida arriba de la tabla */}
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          gap: 14,
-          padding: '10px 16px',
-          background: '#F8FAFC',
-          border: `1px solid ${C.border}`,
-          borderRadius: 10,
-          marginBottom: 10,
-          fontSize: 12,
-          color: C.muted,
-        }}
-      >
-        <span>
-          <span style={{ fontWeight: 700, color: C.navy, fontSize: 14 }}>{kpis.num}</span>{' '}
-          {kpis.num === 1 ? 'boleto' : 'boletos'}
-        </span>
-        <span style={{ color: '#E2E8F0' }}>·</span>
-        {kpis.cancelaciones > 0 ? (
-          <span style={{ color: '#C62828' }}>
-            <span style={{ fontWeight: 700 }}>{kpis.cancelaciones}</span>{' '}
-            {kpis.cancelaciones === 1 ? 'cancelación' : 'cancelaciones'}
-          </span>
-        ) : (
-          <span style={{ color: '#9CA3AF' }}>Sin cancelaciones</span>
-        )}
-        <span style={{ color: '#E2E8F0' }}>·</span>
-        <span>
-          Total costo:{' '}
-          <span style={{ fontWeight: 700, color: C.costo, fontVariantNumeric: 'tabular-nums' }}>
-            ${fmt(kpis.totalCosto)}
-          </span>{' '}
-          USD
-        </span>
-        {kpis.totalVenta > 0 && (
-          <>
-            <span style={{ color: '#E2E8F0' }}>·</span>
-            <span>
-              Venta:{' '}
-              <span style={{ fontWeight: 700, color: C.venta, fontVariantNumeric: 'tabular-nums' }}>
-                ${fmt(kpis.totalVenta)}
-              </span>{' '}
-              USD
-            </span>
-          </>
-        )}
-        {kpis.pendientes > 0 && (
-          <>
-            <span style={{ color: '#E2E8F0' }}>·</span>
-            <span style={{ color: C.warn }}>
-              <span style={{ fontWeight: 700 }}>{kpis.pendientes}</span> sin conciliar
-            </span>
-          </>
-        )}
-      </div>
-
       {/* Table */}
       <div
         style={{
