@@ -1422,6 +1422,7 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
       'moneda_cobro',
       'precio_venta_local',
       'tipo_cambio',
+      'trans_negativa',
     ];
 
     const cobrosDesconocidos = new Set();
@@ -1647,6 +1648,7 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
       'moneda_cobro',
       'precio_venta_local',
       'tipo_cambio',
+      'trans_negativa',
     ];
     const cobrosDesconocidos = new Set();
     const CARIBE_KEYS = [
@@ -2826,11 +2828,17 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                         fontWeight: 500,
                       }}
                     >
-                      {b.trans_negativa ? (
-                        <span style={{ color: '#C62828', fontWeight: 700 }}>
-                          -${String(b.trans_negativa).replace(/^[^\d.,-]+|\s+[A-Z]{3}$/g, '')}
-                        </span>
-                      ) : (
+                      {b.trans_negativa ? (() => {
+                          // Soporta string "40 USD", "$40", o número 40.0
+                          const raw = String(b.trans_negativa).trim();
+                          const num = parseFloat(raw.replace(/[^\d.,-]/g, '').replace(',', '.'));
+                          const display = !isNaN(num) ? fmt(Math.abs(num)) : raw;
+                          return (
+                            <span style={{ color: '#C62828', fontWeight: 700 }}>
+                              -${display}
+                            </span>
+                          );
+                        })() : (
                         <span style={{ color: '#CBD5E1' }}>—</span>
                       )}
                     </td>
