@@ -974,7 +974,7 @@ const th = {
   zIndex: 5,
 };
 
-const td = { padding: '10px 12px', verticalAlign: 'middle' };
+const td = { padding: '8px 12px', verticalAlign: 'middle', whiteSpace: 'nowrap' };
 
 const btnPrimary = {
   display: 'inline-flex',
@@ -2665,7 +2665,7 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
             style={{
               width: '100%',
               borderCollapse: 'collapse',
-              fontSize: 15,
+              fontSize: 14,
               fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
               minWidth: 1100,
             }}
@@ -2842,7 +2842,7 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                       style={{
                         ...td,
                         fontFamily: 'ui-monospace, monospace',
-                        fontSize: 14,
+                        fontSize: 13,
                       }}
                     >
                       {b.ruta || '—'}
@@ -2863,7 +2863,7 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                         {b.tipo_viaje || '—'}
                       </span>
                     </td>
-                    <td style={{ ...td, fontSize: 14 }}>{b.vendedor}</td>
+                    <td style={{ ...td, fontSize: 13 }}>{b.vendedor}</td>
                     <td
                       style={{
                         ...td,
