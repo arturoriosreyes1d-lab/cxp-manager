@@ -974,7 +974,8 @@ const C = {
   muted: '#64748B',
   border: '#E2E8F0',
   bgSoft: '#F8FAFC',
-  costo: '#B91C1C',
+  costo: '#0F172A',
+  danger: '#B91C1C',
   venta: '#15803D',
   utilidad: '#1D4ED8',
   warn: '#CA8A04',
@@ -2966,7 +2967,7 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                     >
                       <MoneyCell
                         amount={utilidad}
-                        color={utilidad != null ? (utilidad >= 0 ? C.utilidad : C.costo) : undefined}
+                        color={utilidad != null ? (utilidad >= 0 ? C.utilidad : C.danger) : undefined}
                         weight={700}
                       />
                     </td>
