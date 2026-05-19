@@ -2828,17 +2828,11 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                         fontWeight: 500,
                       }}
                     >
-                      {b.trans_negativa ? (() => {
-                          // Soporta string "40 USD", "$40", o número 40.0
-                          const raw = String(b.trans_negativa).trim();
-                          const num = parseFloat(raw.replace(/[^\d.,-]/g, '').replace(',', '.'));
-                          const display = !isNaN(num) ? fmt(Math.abs(num)) : raw;
-                          return (
-                            <span style={{ color: '#C62828', fontWeight: 700 }}>
-                              -${display}
-                            </span>
-                          );
-                        })() : (
+                      {b.trans_negativa ? (
+                        <span style={{ color: '#C62828', fontWeight: 700 }}>
+                          -${fmt(b.trans_negativa)}
+                        </span>
+                      ) : (
                         <span style={{ color: '#CBD5E1' }}>—</span>
                       )}
                     </td>

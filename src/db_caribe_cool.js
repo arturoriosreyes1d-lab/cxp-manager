@@ -114,6 +114,21 @@ export function findExistingBoleto(patch, existingBoletos, options = {}) {
   return null;
 }
 
+// Helper: extrae monto numérico de trans_negativa.
+// Acepta: number (40.0), string ("40 USD", "40", "$40"), null, ""
+// Retorna: number > 0, o null si vacío/cero/inválido
+function parseTransNegativa(v) {
+  if (v == null || v === '' || v === false || v === 'false') return null;
+  if (typeof v === 'number') return v > 0 ? v : null;
+  const s = String(v).trim();
+  if (!s || s === '-' || s === 'false') return null;
+  // Quitar todo lo que no sea dígito, punto, coma o guión
+  const cleaned = s.replace(/[^\d.,-]/g, '').replace(',', '.');
+  const num = parseFloat(cleaned);
+  if (isNaN(num) || num === 0) return null;
+  return num;
+}
+
 // ─── Conversión: row DB → objeto app ──────────────────────────────
 const boletoToApp = (row) => ({
   id: row.id,
@@ -132,7 +147,7 @@ const boletoToApp = (row) => ({
   estado_caribe: row.estado_caribe || '',
   tipo_pago_caribe: row.tipo_pago_caribe || '',
   vendedor: row.vendedor || '',
-  trans_negativa: !!row.trans_negativa,
+  trans_negativa: parseTransNegativa(row.trans_negativa),
 
   // Datos manuales (Pamela)
   so_mexico: row.so_mexico || '',
@@ -176,7 +191,7 @@ const boletoToDB = (b, empresaId) => {
     estado_caribe: b.estado_caribe || null,
     tipo_pago_caribe: b.tipo_pago_caribe || null,
     vendedor: b.vendedor || null,
-    trans_negativa: !!b.trans_negativa,
+    trans_negativa: parseTransNegativa(b.trans_negativa),
 
     so_mexico: b.so_mexico || null,
     so_cuba: b.so_cuba || null,
