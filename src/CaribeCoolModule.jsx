@@ -510,17 +510,27 @@ function buildTicket(cells) {
     baseIdx = 6;
   }
 
-  // FIX cancelaciones: cuando copias desde Caribe Cool, las celdas vacías
-  // se colapsan. Si la descripción es una "Cancelación" Y trae un monto en
-  // "Venta", ese monto en realidad pertenece a trans_negativa (las
-  // cancelaciones NO facturan venta — siempre son 0).
-  const esCancelacion = String(descripcion).toLowerCase().startsWith('cancelación');
-  if (esCancelacion) {
+  // FIX columnas colapsadas: cuando copias desde Caribe Cool, las celdas
+  // vacías de "Venta" se colapsan y el monto de "Transacciones negativas"
+  // se desplaza a la posición de Venta. Detectamos por el tipo de cargo:
+  //   - Venta del billete   → SIEMPRE va a Venta (es ingreso real)
+  //   - Penalización        → SIEMPRE va a Venta (es ingreso real, $50)
+  //   - Equipaje adicional  → SIEMPRE va a Venta (es ingreso real)
+  //   - Cancelación / Cambio del billete / Asiento priority → si tiene
+  //     monto en "Venta", en realidad es trans_negativa (Caribe Cool no
+  //     factura estos cargos como venta, pero sí los reporta como neg)
+  const lowerDesc = String(descripcion).toLowerCase();
+  const esVentaReal =
+    lowerDesc.startsWith('venta del billete') ||
+    lowerDesc.startsWith('venta de billete') ||
+    lowerDesc.includes('penaliz') ||
+    lowerDesc.startsWith('equipaje adicional');
+  if (!esVentaReal) {
     const ventaParsed = parseVenta2(String(venta2Raw));
-    // Si venta > 0, mover a trans_negativa y limpiar venta
-    if (ventaParsed.amount != null && ventaParsed.amount > 0) {
+    // Si venta tiene cualquier valor (incluido 0), mover a trans_negativa
+    if (ventaParsed.amount != null) {
       trans_neg = String(venta2Raw).trim();
-      venta2Raw = '';  // venta queda en 0
+      venta2Raw = '';
     }
   }
 
@@ -896,6 +906,59 @@ const C = {
   warn: '#CA8A04',
   warnBg: '#FEFCE8',
 };
+
+// ─── Concepto limpio (derivado de descripcion) ───────────────────
+// Toma la descripción de Caribe Cool y le quita toda la metadata
+// (PNR, ruta, cliente, asiento, coupons, etc) para mostrar solo el
+// CONCEPTO del cargo. Ej:
+//   "Cambio del billete [0002...] [OW] CUN>HAV [GLADYS] [coupons: [...]]"
+//   →  "Cambio del billete"
+//   "ASIENTO PRIORITY (Equipaje de mano 15 Kg) [CUN>HAV] [...]"
+//   →  "ASIENTO PRIORITY (Equipaje de mano 15 Kg)"
+function getConceptoLimpio(descripcion) {
+  const raw = String(descripcion || '').trim();
+  if (!raw) return { label: '', bg: '#F1F5F9', color: '#475569' };
+
+  // Cortar en el primer [ (donde inicia la metadata)
+  const idx = raw.indexOf('[');
+  let concepto = idx >= 0 ? raw.slice(0, idx).trim() : raw;
+
+  // Quitar separadores residuales al final
+  concepto = concepto.replace(/[:\-\s]+$/, '').trim();
+
+  if (!concepto) return { label: '', bg: '#F1F5F9', color: '#475569' };
+
+  // Detectar tipo para asignar color
+  const lower = concepto.toLowerCase();
+
+  // Cancelaciones → rojo
+  if (lower.startsWith('cancelación') || lower.startsWith('cancelacion')) {
+    return { label: concepto, bg: '#FCEBEB', color: '#791F1F' };
+  }
+
+  // Penalizaciones / Cambios → ámbar
+  if (lower.includes('penaliz') || lower.startsWith('cambio')) {
+    return { label: concepto, bg: '#FAEEDA', color: '#854F0B' };
+  }
+
+  // Venta del billete = Boleto → azul
+  if (lower.startsWith('venta del billete') || lower.startsWith('venta de billete')) {
+    return { label: 'Boleto', bg: '#E6F1FB', color: '#0C447C' };
+  }
+
+  // Equipaje → verde
+  if (lower.includes('equipaje')) {
+    return { label: concepto, bg: '#EAF3DE', color: '#27500A' };
+  }
+
+  // Asiento priority → morado
+  if (lower.includes('asiento')) {
+    return { label: concepto, bg: '#EEEDFE', color: '#3C3489' };
+  }
+
+  // Default → gris
+  return { label: concepto, bg: '#F1F5F9', color: '#475569' };
+}
 
 const th = {
   padding: '11px 12px',
@@ -2634,6 +2697,7 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                 <th style={{ ...th, width: 30 }}></th>
                 <th style={th}>PNR</th>
                 <th style={th}>Cliente</th>
+                <th style={th}>Concepto</th>
                 <th style={th}>Fecha de Venta</th>
                 <th style={th}>Ruta</th>
                 <th style={th}>Tipo de Viaje</th>
@@ -2743,29 +2807,35 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                         color: C.navy,
                       }}
                     >
-                      {(b.descripcion || '').toLowerCase().startsWith('cancelación') && (
-                        <span
-                          title={b.descripcion}
-                          style={{
-                            display: 'inline-block',
-                            background: '#FCEBEB',
-                            color: '#791F1F',
-                            fontSize: 9,
-                            fontWeight: 700,
-                            padding: '1px 6px',
-                            borderRadius: 4,
-                            letterSpacing: 0.3,
-                            marginRight: 6,
-                            verticalAlign: 'middle',
-                            fontFamily: 'inherit',
-                          }}
-                        >
-                          ❌ CANCEL.
-                        </span>
-                      )}
                       {b.pnr}
                     </td>
                     <td style={td}>{b.cliente}</td>
+                    <td style={td}>
+                      {(() => {
+                        const c = getConceptoLimpio(b.descripcion);
+                        if (!c.label) {
+                          return <span style={{ color: '#E5E7EB', fontSize: 11 }}>—</span>;
+                        }
+                        return (
+                          <span
+                            title={b.descripcion}
+                            style={{
+                              display: 'inline-block',
+                              background: c.bg,
+                              color: c.color,
+                              fontSize: 10,
+                              fontWeight: 600,
+                              padding: '3px 8px',
+                              borderRadius: 4,
+                              letterSpacing: '0.2px',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {c.label}
+                          </span>
+                        );
+                      })()}
+                    </td>
                     <td style={td}>{formatDate(b.fecha_venta)}</td>
                     <td
                       style={{
