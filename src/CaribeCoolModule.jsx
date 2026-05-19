@@ -573,13 +573,6 @@ function buildTicket(cells) {
   //   - Para OTROS conceptos (asientos priority, cambios, equipaje)
   //     SÍ puede haber venta real, así que NO movemos el monto
   const esCancelacion = String(descripcion).toLowerCase().startsWith('cancelación');
-  // LOG TEMPORAL para diagnosticar: muestra qué entra al parser y qué sale
-  if (String(descripcion).toLowerCase().includes('asiento') || esCancelacion) {
-    // eslint-disable-next-line no-console
-    console.log(
-      `[buildTicket v2] desc="${String(descripcion).slice(0, 50)}..." venta="${venta2Raw}" cell5_trans="${cell5}" esCancelacion=${esCancelacion}`
-    );
-  }
   if (esCancelacion) {
     const ventaParsed = parseVenta2(String(venta2Raw));
     if (ventaParsed.amount != null) {
