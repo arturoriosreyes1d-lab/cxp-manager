@@ -349,6 +349,59 @@ const fmt = (n) =>
 const fmtPct = (n) =>
   n == null || isNaN(n) ? '—' : `${(n * 100).toFixed(1)}%`;
 
+// ─── Componente: Celda de dinero con formato contable ────────────
+// Renderiza un importe en formato contable:
+//   - $ alineado a la izquierda
+//   - número alineado a la derecha
+//   - cero o null → "—" centrado (gris claro)
+//   - negativos → entre paréntesis (formato contable clásico)
+function MoneyCell({ amount, color, weight }) {
+  const isNull = amount == null || isNaN(amount);
+  const num = isNull ? 0 : Number(amount);
+  const isZero = !isNull && num === 0;
+  const isNeg = !isNull && num < 0;
+  const absStr = isNull
+    ? ''
+    : Math.abs(num).toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+
+  if (isNull || isZero) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          color: '#CBD5E1',
+          fontWeight: 500,
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      >
+        <span>$</span>
+        <span>—</span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        color: color || 'inherit',
+        fontWeight: weight || 600,
+        fontVariantNumeric: 'tabular-nums',
+      }}
+    >
+      <span>$</span>
+      <span>{isNeg ? `(${absStr})` : absStr}</span>
+    </div>
+  );
+}
+
 function parseVenta2(s) {
   // "319,00  USD" → { amount: 319, currency: 'USD' }
   if (!s || typeof s !== 'string') return { amount: null, currency: null };
@@ -582,6 +635,27 @@ function formatDate(iso) {
       month: 'short',
       year: 'numeric',
     });
+  } catch {
+    return '—';
+  }
+}
+
+// Formato numérico DD/MM/YYYY (usado en tabla de Boletería)
+function formatDateDmy(iso) {
+  if (!iso) return '—';
+  try {
+    let d;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+      const [y, m, day] = iso.split('-').map(Number);
+      d = new Date(y, m - 1, day);
+    } else {
+      d = new Date(iso);
+    }
+    if (isNaN(d.getTime())) return '—';
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
   } catch {
     return '—';
   }
@@ -2803,7 +2877,6 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                     <td
                       style={{
                         ...td,
-                        fontFamily: 'ui-monospace, monospace',
                         fontWeight: 700,
                         color: C.navy,
                       }}
@@ -2824,11 +2897,10 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                               display: 'inline-block',
                               background: c.bg,
                               color: c.color,
-                              fontSize: 10,
+                              fontSize: 12,
                               fontWeight: 600,
-                              padding: '3px 8px',
+                              padding: '4px 10px',
                               borderRadius: 4,
-                              letterSpacing: '0.2px',
                               whiteSpace: 'nowrap',
                             }}
                           >
@@ -2837,15 +2909,9 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                         );
                       })()}
                     </td>
-                    <td style={td}>{formatDate(b.fecha_venta)}</td>
-                    <td
-                      style={{
-                        ...td,
-                        fontFamily: 'ui-monospace, monospace',
-                        fontSize: 13,
-                      }}
-                    >
-                      {b.ruta || '—'}
+                    <td style={td}>{formatDateDmy(b.fecha_venta)}</td>
+                    <td style={td}>
+                      {b.ruta ? b.ruta.replace(/>/g, ' › ') : '—'}
                     </td>
                     <td style={td}>
                       <span
@@ -2868,61 +2934,41 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
                       style={{
                         ...td,
                         textAlign: 'right',
-                        color: C.costo,
-                        fontWeight: 600,
-                        fontVariantNumeric: 'tabular-nums',
                       }}
                     >
-                      ${fmt(b.costo_usd)}
+                      <MoneyCell amount={b.costo_usd} color={C.costo} weight={600} />
                     </td>
                     <td
                       style={{
                         ...td,
                         textAlign: 'right',
-                        color: C.costo,
-                        fontSize: 11,
-                        fontWeight: 500,
-                        fontVariantNumeric: 'tabular-nums',
                       }}
                     >
                       {b.trans_negativa ? (
-                        <span style={{ color: '#C62828', fontWeight: 700 }}>
-                          -${fmt(b.trans_negativa)}
-                        </span>
+                        <MoneyCell amount={-Math.abs(Number(b.trans_negativa))} color="#C62828" weight={700} />
                       ) : (
-                        <span style={{ color: '#E5E7EB', fontSize: 11 }}>—</span>
+                        <MoneyCell amount={null} />
                       )}
                     </td>
                     <td
                       style={{
                         ...td,
                         textAlign: 'right',
-                        color: C.venta,
-                        fontWeight: 600,
-                        fontVariantNumeric: 'tabular-nums',
                       }}
                     >
-                      {b.precio_venta != null ? (
-                        `$${fmt(b.precio_venta)}`
-                      ) : (
-                        <span style={{ color: '#E5E7EB', fontSize: 11 }}>—</span>
-                      )}
+                      <MoneyCell amount={b.precio_venta} color={C.venta} weight={600} />
                     </td>
                     <td
                       style={{
                         ...td,
                         textAlign: 'right',
-                        fontWeight: 700,
-                        fontVariantNumeric: 'tabular-nums',
-                        color:
-                          utilidad != null
-                            ? utilidad >= 0
-                              ? C.utilidad
-                              : C.costo
-                            : '#CBD5E1',
                       }}
                     >
-                      {utilidad != null ? `$${fmt(utilidad)}` : '—'}
+                      <MoneyCell
+                        amount={utilidad}
+                        color={utilidad != null ? (utilidad >= 0 ? C.utilidad : C.costo) : undefined}
+                        weight={700}
+                      />
                     </td>
                     <td style={td}>
                       {b.plaza ? (
