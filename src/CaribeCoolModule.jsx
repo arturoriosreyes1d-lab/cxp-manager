@@ -498,7 +498,7 @@ function buildTicket(cells) {
   const cliente = cells[1] || '';
   const fechaRaw = cells[2] || '';
   const descripcion = cells[3] || '';
-  const venta2Raw = cells[4] || '';
+  let venta2Raw = cells[4] || '';
 
   // Detecta si hay trans_negativa antes de "Validado/etc"
   // Patrón: número o número+moneda
@@ -510,11 +510,25 @@ function buildTicket(cells) {
     baseIdx = 6;
   }
 
+  // FIX cancelaciones: cuando copias desde Caribe Cool, las celdas vacías
+  // se colapsan. Si la descripción es una "Cancelación" Y trae un monto en
+  // "Venta", ese monto en realidad pertenece a trans_negativa (las
+  // cancelaciones NO facturan venta — siempre son 0).
+  const esCancelacion = String(descripcion).toLowerCase().startsWith('cancelación');
+  if (esCancelacion) {
+    const ventaParsed = parseVenta2(String(venta2Raw));
+    // Si venta > 0, mover a trans_negativa y limpiar venta
+    if (ventaParsed.amount != null && ventaParsed.amount > 0) {
+      trans_neg = String(venta2Raw).trim();
+      venta2Raw = '';  // venta queda en 0
+    }
+  }
+
   // DIAGNÓSTICO temporal — log para cancelaciones
-  if (String(descripcion).toLowerCase().startsWith('cancelación')) {
+  if (esCancelacion) {
     // eslint-disable-next-line no-console
     console.log(
-      `[buildTicket CANCEL] PNR=${pnr} venta="${venta2Raw}" cell5="${cell5}" → trans_neg=${trans_neg}`,
+      `[buildTicket CANCEL] PNR=${pnr} venta="${cells[4] || ''}" → venta_final="${venta2Raw}" trans_neg=${trans_neg}`,
       { totalCells: cells.length, allCells: cells }
     );
   }
