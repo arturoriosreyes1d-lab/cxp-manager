@@ -563,24 +563,25 @@ function buildTicket(cells) {
     baseIdx = 6;
   }
 
-  // FIX columnas colapsadas: cuando copias desde Caribe Cool, las celdas
-  // vacías de "Venta" se colapsan y el monto de "Transacciones negativas"
-  // se desplaza a la posición de Venta. Detectamos por el tipo de cargo:
-  //   - Venta del billete   → SIEMPRE va a Venta (es ingreso real)
-  //   - Penalización        → SIEMPRE va a Venta (es ingreso real, $50)
-  //   - Equipaje adicional  → SIEMPRE va a Venta (es ingreso real)
-  //   - Cancelación / Cambio del billete / Asiento priority → si tiene
-  //     monto en "Venta", en realidad es trans_negativa (Caribe Cool no
-  //     factura estos cargos como venta, pero sí los reporta como neg)
-  const lowerDesc = String(descripcion).toLowerCase();
-  const esVentaReal =
-    lowerDesc.startsWith('venta del billete') ||
-    lowerDesc.startsWith('venta de billete') ||
-    lowerDesc.includes('penaliz') ||
-    lowerDesc.startsWith('equipaje adicional');
-  if (!esVentaReal) {
+  // FIX celdas colapsadas en cancelaciones: cuando copias desde Caribe
+  // Cool web, las celdas vacías de "Venta" se colapsan y el monto de
+  // "Transacciones negativas" se desplaza a la posición de Venta.
+  // ESTA regla aplica ÚNICAMENTE a cancelaciones porque:
+  //   - Las cancelaciones NUNCA generan venta (siempre $0 en Venta)
+  //   - Por tanto, cualquier monto en "Venta" de una cancelación
+  //     pertenece realmente a trans_negativa
+  //   - Para OTROS conceptos (asientos priority, cambios, equipaje)
+  //     SÍ puede haber venta real, así que NO movemos el monto
+  const esCancelacion = String(descripcion).toLowerCase().startsWith('cancelación');
+  // LOG TEMPORAL para diagnosticar: muestra qué entra al parser y qué sale
+  if (String(descripcion).toLowerCase().includes('asiento') || esCancelacion) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[buildTicket v2] desc="${String(descripcion).slice(0, 50)}..." venta="${venta2Raw}" cell5_trans="${cell5}" esCancelacion=${esCancelacion}`
+    );
+  }
+  if (esCancelacion) {
     const ventaParsed = parseVenta2(String(venta2Raw));
-    // Si venta tiene cualquier valor (incluido 0), mover a trans_negativa
     if (ventaParsed.amount != null) {
       trans_neg = String(venta2Raw).trim();
       venta2Raw = '';
