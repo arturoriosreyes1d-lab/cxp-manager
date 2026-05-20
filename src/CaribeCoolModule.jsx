@@ -1488,11 +1488,30 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
     }
     // ───────── Fecha de Ingreso ─────────
     if (has(cols.fechaIngreso)) {
+      // LOG TEMPORAL
+      const _isRubenDebug = String(patch.pnr || '') === '008FIS' &&
+                            String(r[cols.descripcion] || '').includes('RUBEN SOMARRIBA') &&
+                            String(r[cols.descripcion] || '').includes('Asiento 2B');
+      if (_isRubenDebug) {
+        // eslint-disable-next-line no-console
+        console.log('[rowToPatch fecha_cobro DEBUG]', {
+          rawValue: r[cols.fechaIngreso],
+          rawType: typeof r[cols.fechaIngreso],
+          isDate: r[cols.fechaIngreso] instanceof Date,
+          fechaIngresoIdx: cols.fechaIngreso,
+          clienteCreditoIdx: cols.clienteCredito,
+          diasCreditoIdx: cols.diasCredito,
+        });
+      }
       // Si hay columnas separadas de crédito, solo trata como fecha
       const hasCreditCols =
         cols.clienteCredito >= 0 || cols.diasCredito >= 0;
       if (hasCreditCols) {
         const d = excelDateToISO(r[cols.fechaIngreso]);
+        if (_isRubenDebug) {
+          // eslint-disable-next-line no-console
+          console.log('[rowToPatch fecha_cobro DEBUG] hasCreditCols=true → excelDateToISO result:', d);
+        }
         if (d) patch.fecha_cobro = dateOnly(d);
       } else {
         // Legacy: puede contener texto "CLIENTE CREDITO X DIAS"
