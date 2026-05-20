@@ -446,10 +446,18 @@ function excelDateToISO(v) {
     return `${yyyy}-${mm}-${dd}`;
   }
   if (typeof v === 'string') {
+    // Quitar prefijo de día de semana si lo hay: "Fri 15/05/2026", "Lun 11/05/2026", etc.
+    // Acepta inglés (Mon-Sun), español (Lun-Dom), y abreviaturas con/sin punto
+    const cleaned = v
+      .replace(
+        /^(mon|tue|wed|thu|fri|sat|sun|lun|mar|mi[eé]|jue|vie|s[aá]b|dom)\.?\s+/i,
+        ''
+      )
+      .trim();
     // Si el string ya viene en formato ISO con fecha, intentar parsear sin shift
     // Casos: "2026-05-11", "2026-05-11T19:31:04", "11/05/2026", etc.
     // Primero probar formato dd/mm/yyyy
-    const slashMatch = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    const slashMatch = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
     if (slashMatch) {
       const dd = slashMatch[1].padStart(2, '0');
       const mm = slashMatch[2].padStart(2, '0');
@@ -457,12 +465,12 @@ function excelDateToISO(v) {
       return `${yyyy}-${mm}-${dd}`;
     }
     // Formato yyyy-mm-dd directamente (con o sin hora después)
-    const isoMatch = v.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const isoMatch = cleaned.match(/^(\d{4})-(\d{2})-(\d{2})/);
     if (isoMatch) {
       return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
     }
     // Fallback: parsear como Date y extraer fecha local
-    const d = new Date(v);
+    const d = new Date(cleaned);
     return isNaN(d.getTime()) ? null : toLocalDateString(d);
   }
   return null;
@@ -1488,30 +1496,11 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
     }
     // ───────── Fecha de Ingreso ─────────
     if (has(cols.fechaIngreso)) {
-      // LOG TEMPORAL
-      const _isRubenDebug = String(patch.pnr || '') === '008FIS' &&
-                            String(r[cols.descripcion] || '').includes('RUBEN SOMARRIBA') &&
-                            String(r[cols.descripcion] || '').includes('Asiento 2B');
-      if (_isRubenDebug) {
-        // eslint-disable-next-line no-console
-        console.log('[rowToPatch fecha_cobro DEBUG]', {
-          rawValue: r[cols.fechaIngreso],
-          rawType: typeof r[cols.fechaIngreso],
-          isDate: r[cols.fechaIngreso] instanceof Date,
-          fechaIngresoIdx: cols.fechaIngreso,
-          clienteCreditoIdx: cols.clienteCredito,
-          diasCreditoIdx: cols.diasCredito,
-        });
-      }
       // Si hay columnas separadas de crédito, solo trata como fecha
       const hasCreditCols =
         cols.clienteCredito >= 0 || cols.diasCredito >= 0;
       if (hasCreditCols) {
         const d = excelDateToISO(r[cols.fechaIngreso]);
-        if (_isRubenDebug) {
-          // eslint-disable-next-line no-console
-          console.log('[rowToPatch fecha_cobro DEBUG] hasCreditCols=true → excelDateToISO result:', d);
-        }
         if (d) patch.fecha_cobro = dateOnly(d);
       } else {
         // Legacy: puede contener texto "CLIENTE CREDITO X DIAS"

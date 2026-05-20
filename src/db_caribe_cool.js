@@ -83,37 +83,12 @@ export function findExistingBoleto(patch, existingBoletos, options = {}) {
     (b) => makeBusinessId(b.pnr, b.descripcion) === exactBid
   );
 
-  // LOG TEMPORAL: solo cuando hay PNR 008FIS RUBEN 2B para diagnosticar
-  const isDebugCase = String(patch.descripcion || '').includes('RUBEN SOMARRIBA') &&
-                      String(patch.descripcion || '').includes('Asiento 2B') &&
-                      !String(patch.descripcion || '').toLowerCase().includes('cancelación');
-  if (isDebugCase) {
-    // eslint-disable-next-line no-console
-    console.log('[findExistingBoleto DEBUG]', {
-      patch_pnr: patch.pnr,
-      patch_fecha: patch.fecha_venta,
-      patch_fecha_type: typeof patch.fecha_venta,
-      patch_desc_short: String(patch.descripcion).slice(-40),
-      exactMatches_count: exactMatches.length,
-      exactMatches_data: exactMatches.map(b => ({
-        id: b.id,
-        fecha: b.fecha_venta,
-        fecha_type: typeof b.fecha_venta,
-        desc_short: String(b.descripcion).slice(-40),
-      })),
-    });
-  }
-
   if (exactMatches.length > 0) {
     // Si el patch tiene fecha, EXIGIR que coincida con la del boleto
     if (patch.fecha_venta) {
       const byDate = exactMatches.find(
         (b) => b.fecha_venta === patch.fecha_venta
       );
-      if (isDebugCase) {
-        // eslint-disable-next-line no-console
-        console.log('[findExistingBoleto DEBUG] byDate result:', byDate ? `MATCH id=${byDate.id}` : 'NO MATCH → return null');
-      }
       if (byDate) return byDate;
       // Hay boletos con mismo business_id pero ninguno del día correcto
       // → esta fila del Excel es huérfana (no debe matchear con otra fecha)
