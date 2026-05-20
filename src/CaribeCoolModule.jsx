@@ -571,21 +571,43 @@ function buildTicket(cells) {
     baseIdx = 6;
   }
 
-  // FIX celdas colapsadas en cancelaciones: cuando copias desde Caribe
-  // Cool web, las celdas vacías de "Venta" se colapsan y el monto de
-  // "Transacciones negativas" se desplaza a la posición de Venta.
-  // ESTA regla aplica ÚNICAMENTE a cancelaciones porque:
-  //   - Las cancelaciones NUNCA generan venta (siempre $0 en Venta)
-  //   - Por tanto, cualquier monto en "Venta" de una cancelación
-  //     pertenece realmente a trans_negativa
-  //   - Para OTROS conceptos (asientos priority, cambios, equipaje)
-  //     SÍ puede haber venta real, así que NO movemos el monto
-  const esCancelacion = String(descripcion).toLowerCase().startsWith('cancelación');
-  if (esCancelacion) {
+  // FIX celdas colapsadas: cuando copias desde Caribe Cool web, las celdas
+  // vacías de "Venta" se colapsan y el monto de "Transacciones negativas"
+  // se desplaza a la posición de Venta. Aplicamos esta regla a conceptos
+  // que NUNCA generan venta (siempre devuelven dinero o cargan trans neg):
+  //   - Cancelación      → siempre Venta=0, monto va en Trans Neg
+  //   - Reembolso        → siempre Venta=0, monto va en Trans Neg
+  // Para otros conceptos (asientos priority, cambios, equipaje, boletos)
+  // SÍ puede haber venta real, así que NO movemos el monto.
+  const _lowerDesc = String(descripcion).toLowerCase();
+  const esTransNegPura =
+    _lowerDesc.startsWith('cancelación') ||
+    _lowerDesc.startsWith('cancelacion') ||
+    _lowerDesc.startsWith('reembolso') ||
+    _lowerDesc.startsWith('reembolzo'); // por si hay typo
+
+  // LOG TEMPORAL: para diagnosticar Reembolso
+  if (_lowerDesc.includes('reembolso')) {
+    // eslint-disable-next-line no-console
+    console.log('[buildTicket REEMBOLSO]', {
+      pnr,
+      descripcion: descripcion.slice(0, 60),
+      venta2Raw,
+      cell5,
+      esTransNegPura,
+      antes_trans_neg: trans_neg,
+    });
+  }
+
+  if (esTransNegPura) {
     const ventaParsed = parseVenta2(String(venta2Raw));
     if (ventaParsed.amount != null) {
       trans_neg = String(venta2Raw).trim();
       venta2Raw = '';
+      if (_lowerDesc.includes('reembolso')) {
+        // eslint-disable-next-line no-console
+        console.log('[buildTicket REEMBOLSO] → trans_neg movido:', { trans_neg, venta2Raw });
+      }
     }
   }
 
@@ -1008,8 +1030,13 @@ function getConceptoLimpio(descripcion) {
   // Detectar tipo para asignar color
   const lower = concepto.toLowerCase();
 
-  // Cancelaciones → rojo
-  if (lower.startsWith('cancelación') || lower.startsWith('cancelacion')) {
+  // Cancelaciones / Reembolsos → rojo (devuelven dinero)
+  if (
+    lower.startsWith('cancelación') ||
+    lower.startsWith('cancelacion') ||
+    lower.startsWith('reembolso') ||
+    lower.startsWith('reembolzo')
+  ) {
     return { label: concepto, bg: '#FCEBEB', color: '#791F1F' };
   }
 
@@ -1026,6 +1053,11 @@ function getConceptoLimpio(descripcion) {
   // Equipaje → verde
   if (lower.includes('equipaje')) {
     return { label: concepto, bg: '#EAF3DE', color: '#27500A' };
+  }
+
+  // Mascotas en carga → cian (transporte de animales)
+  if (lower.includes('mascota')) {
+    return { label: concepto, bg: '#DEF2F4', color: '#0E4F5C' };
   }
 
   // Asiento priority → morado
