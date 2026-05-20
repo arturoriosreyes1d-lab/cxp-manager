@@ -2278,6 +2278,7 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
           { id: 'movimientos', label: 'Movimientos', icon: '📦' },
           { id: 'cuenta_cc', label: 'Caribe Cool', icon: '🔻' },
           { id: 'reporte_diario', label: 'Reporte Diario', icon: '📤' },
+          { id: 'reporte_semanal', label: 'Reporte Semanal', icon: '📅' },
         ].map((tab) => {
           const active = activeTab === tab.id;
           return (
@@ -2373,6 +2374,11 @@ export default function CaribeCoolModule({ empresaId, user, esConsulta = false }
           movimientos={movimientos}
           onEditBoleto={(id) => setEditingId(id)}
         />
+      )}
+
+      {/* Vista Reporte Semanal */}
+      {activeTab === 'reporte_semanal' && (
+        <ReporteSemanal boletos={boletos} />
       )}
 
       {/* Vista Captura: KPIs + Filtros + Tabla */}
@@ -11153,6 +11159,513 @@ function PlaceholderCard({ icon, title, description }) {
       >
         Próximamente
       </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════
+// ReporteSemanal · Vista de resumen ejecutivo descargable como imagen
+// ════════════════════════════════════════════════════════════════════
+function ReporteSemanal({ boletos }) {
+  // Selector: 'esta_semana', 'semana_pasada', 'ultimos_7', 'personalizado'
+  const [periodo, setPeriodo] = React.useState('semana_pasada');
+  const [customFrom, setCustomFrom] = React.useState('');
+  const [customTo, setCustomTo] = React.useState('');
+  const [downloading, setDownloading] = React.useState(false);
+  const reportRef = React.useRef(null);
+
+  // Calcular rango de fechas según el período seleccionado
+  const { fromDate, toDate, label } = React.useMemo(() => {
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    const dow = hoy.getDay(); // 0=dom, 1=lun, ...
+
+    const fmtIso = (d) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+        d.getDate()
+      ).padStart(2, '0')}`;
+
+    if (periodo === 'esta_semana') {
+      // Lunes de esta semana a hoy
+      const lunes = new Date(hoy);
+      const diasDesdeLunes = dow === 0 ? 6 : dow - 1;
+      lunes.setDate(hoy.getDate() - diasDesdeLunes);
+      return {
+        fromDate: fmtIso(lunes),
+        toDate: fmtIso(hoy),
+        label: 'Esta semana',
+      };
+    }
+    if (periodo === 'semana_pasada') {
+      // Lunes de la semana pasada a domingo de la semana pasada
+      const lunesPrev = new Date(hoy);
+      const diasDesdeLunes = dow === 0 ? 6 : dow - 1;
+      lunesPrev.setDate(hoy.getDate() - diasDesdeLunes - 7);
+      const domingoPrev = new Date(lunesPrev);
+      domingoPrev.setDate(lunesPrev.getDate() + 6);
+      return {
+        fromDate: fmtIso(lunesPrev),
+        toDate: fmtIso(domingoPrev),
+        label: 'Semana pasada',
+      };
+    }
+    if (periodo === 'ultimos_7') {
+      const hace7 = new Date(hoy);
+      hace7.setDate(hoy.getDate() - 6);
+      return {
+        fromDate: fmtIso(hace7),
+        toDate: fmtIso(hoy),
+        label: 'Últimos 7 días',
+      };
+    }
+    // personalizado
+    return {
+      fromDate: customFrom,
+      toDate: customTo,
+      label: 'Personalizado',
+    };
+  }, [periodo, customFrom, customTo]);
+
+  // Filtrar boletos del rango
+  const boletosFiltrados = React.useMemo(() => {
+    if (!fromDate || !toDate) return [];
+    return (boletos || []).filter((b) => {
+      if (!b.fecha_venta) return false;
+      return b.fecha_venta >= fromDate && b.fecha_venta <= toDate;
+    });
+  }, [boletos, fromDate, toDate]);
+
+  // Cálculos KPIs
+  const stats = React.useMemo(() => {
+    const list = boletosFiltrados;
+    const sum = (key) =>
+      list.reduce((acc, b) => acc + (Number(b[key]) || 0), 0);
+
+    const costoTotal = sum('costo_usd');
+    const ventaTotal = sum('precio_venta');
+    const utilidad = ventaTotal - costoTotal;
+    const margen = ventaTotal > 0 ? (utilidad / ventaTotal) * 100 : 0;
+
+    // Cobranza
+    let cobrado = 0,
+      porCobrar = 0,
+      vencido = 0;
+    let cobradoBol = 0,
+      porCobrarBol = 0,
+      vencidoBol = 0;
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    list.forEach((b) => {
+      const pv = Number(b.precio_venta) || 0;
+      if (pv <= 0) return;
+      const estatus = String(b.estatus || '').toUpperCase();
+      if (estatus === 'COBRADO') {
+        cobrado += pv;
+        cobradoBol++;
+      } else {
+        // Por cobrar o vencido
+        const fc = b.fecha_cobro;
+        if (fc) {
+          const fcDate = new Date(fc);
+          fcDate.setHours(0, 0, 0, 0);
+          if (fcDate < hoy) {
+            vencido += pv;
+            vencidoBol++;
+          } else {
+            porCobrar += pv;
+            porCobrarBol++;
+          }
+        } else {
+          porCobrar += pv;
+          porCobrarBol++;
+        }
+      }
+    });
+
+    // Por día
+    const byDay = {};
+    list.forEach((b) => {
+      const d = b.fecha_venta;
+      if (!d) return;
+      if (!byDay[d]) byDay[d] = { count: 0, costo: 0, venta: 0 };
+      byDay[d].count++;
+      byDay[d].costo += Number(b.costo_usd) || 0;
+      byDay[d].venta += Number(b.precio_venta) || 0;
+    });
+    const dias = Object.keys(byDay)
+      .sort()
+      .map((d) => ({
+        fecha: d,
+        ...byDay[d],
+        utilidad: byDay[d].venta - byDay[d].costo,
+      }));
+
+    // Por plaza
+    const byPlaza = { MEX: { count: 0, venta: 0 }, CUBA: { count: 0, venta: 0 }, '—': { count: 0, venta: 0 } };
+    list.forEach((b) => {
+      const p = String(b.plaza || '').toUpperCase();
+      const key = p === 'MEX' ? 'MEX' : p === 'CUBA' ? 'CUBA' : '—';
+      byPlaza[key].count++;
+      byPlaza[key].venta += Number(b.precio_venta) || 0;
+    });
+
+    // Top cliente pagador
+    const byPagador = {};
+    list.forEach((b) => {
+      const p = String(b.cliente_pagador || '').trim();
+      if (!p) return;
+      if (!byPagador[p]) byPagador[p] = 0;
+      byPagador[p] += Number(b.precio_venta) || 0;
+    });
+    const topPagadores = Object.entries(byPagador)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+
+    return {
+      boletos: list.length,
+      costoTotal,
+      ventaTotal,
+      utilidad,
+      margen,
+      cobrado,
+      porCobrar,
+      vencido,
+      cobradoBol,
+      porCobrarBol,
+      vencidoBol,
+      dias,
+      byPlaza,
+      topPagadores,
+    };
+  }, [boletosFiltrados]);
+
+  const fmt = (n) =>
+    n == null || isNaN(n)
+      ? '$0'
+      : '$' +
+        Number(n).toLocaleString('en-US', {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 0,
+        });
+
+  // Día abreviado en español
+  const diaAbrev = (iso) => {
+    const [y, m, d] = iso.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    const dias = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+    return `${dias[date.getDay()]} ${String(d).padStart(2, '0')}`;
+  };
+
+  const rangoFmt = React.useMemo(() => {
+    if (!fromDate || !toDate) return '';
+    const [y1, m1, d1] = fromDate.split('-').map(Number);
+    const [y2, m2, d2] = toDate.split('-').map(Number);
+    const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    const sameYear = y1 === y2;
+    const sameMonth = sameYear && m1 === m2;
+    if (sameMonth) return `${d1} – ${d2} ${meses[m1 - 1]} ${y1}`;
+    if (sameYear) return `${d1} ${meses[m1 - 1]} – ${d2} ${meses[m2 - 1]} ${y1}`;
+    return `${d1} ${meses[m1 - 1]} ${y1} – ${d2} ${meses[m2 - 1]} ${y2}`;
+  }, [fromDate, toDate]);
+
+  async function handleDownload() {
+    if (!reportRef.current) return;
+    setDownloading(true);
+    try {
+      const canvas = await html2canvas(reportRef.current, {
+        scale: 2, // mayor resolución
+        backgroundColor: '#ffffff',
+        useCORS: true,
+      });
+      const dataUrl = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.download = `reporte_semanal_${fromDate}_${toDate}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (e) {
+      console.error('Error al generar imagen:', e);
+      alert('Error al generar la imagen. Intenta de nuevo.');
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  return (
+    <div style={{ padding: '24px 0' }}>
+      {/* Controles */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 12,
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          marginBottom: 20,
+          padding: 16,
+          background: '#F8FAFC',
+          borderRadius: 8,
+          border: '0.5px solid #E2E8F0',
+        }}
+      >
+        <span style={{ fontSize: 13, fontWeight: 600, color: '#475569' }}>
+          Período:
+        </span>
+        <select
+          value={periodo}
+          onChange={(e) => setPeriodo(e.target.value)}
+          style={{
+            padding: '8px 12px',
+            border: '1px solid #CBD5E1',
+            borderRadius: 6,
+            fontSize: 13,
+            background: 'white',
+            cursor: 'pointer',
+          }}
+        >
+          <option value="esta_semana">Esta semana (lun – hoy)</option>
+          <option value="semana_pasada">Semana pasada (lun – dom)</option>
+          <option value="ultimos_7">Últimos 7 días</option>
+          <option value="personalizado">Personalizado</option>
+        </select>
+        {periodo === 'personalizado' && (
+          <>
+            <input
+              type="date"
+              value={customFrom}
+              onChange={(e) => setCustomFrom(e.target.value)}
+              style={{
+                padding: '8px 12px',
+                border: '1px solid #CBD5E1',
+                borderRadius: 6,
+                fontSize: 13,
+              }}
+            />
+            <span style={{ color: '#94A3B8' }}>—</span>
+            <input
+              type="date"
+              value={customTo}
+              onChange={(e) => setCustomTo(e.target.value)}
+              style={{
+                padding: '8px 12px',
+                border: '1px solid #CBD5E1',
+                borderRadius: 6,
+                fontSize: 13,
+              }}
+            />
+          </>
+        )}
+        <div style={{ flex: 1 }} />
+        <button
+          onClick={handleDownload}
+          disabled={downloading || stats.boletos === 0}
+          style={{
+            padding: '10px 18px',
+            background: downloading || stats.boletos === 0 ? '#94A3B8' : '#16A34A',
+            color: 'white',
+            border: 'none',
+            borderRadius: 6,
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: downloading || stats.boletos === 0 ? 'not-allowed' : 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          {downloading ? '⏳ Generando...' : '📷 Descargar imagen'}
+        </button>
+      </div>
+
+      {stats.boletos === 0 ? (
+        <div
+          style={{
+            padding: 60,
+            textAlign: 'center',
+            color: '#94A3B8',
+            background: '#F8FAFC',
+            borderRadius: 8,
+            border: '1px dashed #CBD5E1',
+          }}
+        >
+          📭 No hay boletos en este período
+        </div>
+      ) : (
+        <div
+          ref={reportRef}
+          style={{
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
+            maxWidth: 760,
+            margin: '0 auto',
+            background: 'white',
+            padding: 32,
+            borderRadius: 12,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.06)',
+            color: '#0F172A',
+          }}
+        >
+          {/* HEADER */}
+          <div style={{ borderBottom: '2px solid #042C53', paddingBottom: 16, marginBottom: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+              <div>
+                <div style={{ fontSize: 11, color: '#64748B', textTransform: 'uppercase', letterSpacing: 1.2, fontWeight: 600 }}>
+                  Caribe Cool · Viajes Libero
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: '#042C53', marginTop: 4 }}>
+                  Resumen Semanal
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 13, color: '#475569', fontWeight: 600 }}>{rangoFmt}</div>
+                <div style={{ fontSize: 10, color: '#94A3B8' }}>{stats.dias.length} días operativos</div>
+              </div>
+            </div>
+          </div>
+
+          {/* KPIs */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, marginBottom: 24 }}>
+            <div style={{ background: '#F8FAFC', padding: 14, borderRadius: 8, borderLeft: '3px solid #042C53' }}>
+              <div style={{ fontSize: 9, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600 }}>Boletos</div>
+              <div style={{ fontSize: 26, fontWeight: 700, color: '#0F172A', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{stats.boletos}</div>
+            </div>
+            <div style={{ background: '#FEE2E2', padding: 14, borderRadius: 8, borderLeft: '3px solid #B91C1C' }}>
+              <div style={{ fontSize: 9, color: '#991B1B', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600 }}>Costo total</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#B91C1C', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{fmt(stats.costoTotal)}</div>
+            </div>
+            <div style={{ background: '#DCFCE7', padding: 14, borderRadius: 8, borderLeft: '3px solid #15803D' }}>
+              <div style={{ fontSize: 9, color: '#166534', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600 }}>Venta total</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#15803D', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{fmt(stats.ventaTotal)}</div>
+            </div>
+            <div style={{ background: '#DBEAFE', padding: 14, borderRadius: 8, borderLeft: '3px solid #1D4ED8' }}>
+              <div style={{ fontSize: 9, color: '#1E40AF', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600 }}>Utilidad</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#1D4ED8', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{fmt(stats.utilidad)}</div>
+              <div style={{ fontSize: 10, color: '#2563EB', marginTop: 2 }}>{stats.margen.toFixed(1)}% margen</div>
+            </div>
+          </div>
+
+          {/* COBRANZA */}
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 11, color: '#475569', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 0.8, marginBottom: 10 }}>
+              💰 Cobranza
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+              <div style={{ background: 'white', padding: 12, borderRadius: 8, border: '1px solid #BBF7D0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: 11, color: '#166534', fontWeight: 600 }}>✓ COBRADO</div>
+                  <div style={{ fontSize: 9, color: '#16A34A', background: '#DCFCE7', padding: '2px 6px', borderRadius: 3 }}>{stats.cobradoBol} bol.</div>
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: '#15803D', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{fmt(stats.cobrado)}</div>
+              </div>
+              <div style={{ background: 'white', padding: 12, borderRadius: 8, border: '1px solid #FDE68A' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: 11, color: '#92400E', fontWeight: 600 }}>⏳ POR COBRAR</div>
+                  <div style={{ fontSize: 9, color: '#B45309', background: '#FEF3C7', padding: '2px 6px', borderRadius: 3 }}>{stats.porCobrarBol} bol.</div>
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: '#B45309', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{fmt(stats.porCobrar)}</div>
+              </div>
+              <div style={{ background: 'white', padding: 12, borderRadius: 8, border: '1px solid #FCA5A5' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: 11, color: '#991B1B', fontWeight: 600 }}>⚠ VENCIDAS</div>
+                  <div style={{ fontSize: 9, color: '#DC2626', background: '#FEE2E2', padding: '2px 6px', borderRadius: 3 }}>{stats.vencidoBol} bol.</div>
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: '#991B1B', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{fmt(stats.vencido)}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* POR DÍA */}
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 11, color: '#475569', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 0.8, marginBottom: 10 }}>
+              📅 Por Día
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+              <thead>
+                <tr style={{ background: '#042C53', color: 'white' }}>
+                  <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600 }}>DÍA</th>
+                  <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600 }}>BOL.</th>
+                  <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600 }}>COSTO</th>
+                  <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600 }}>VENTA</th>
+                  <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600 }}>UTILIDAD</th>
+                </tr>
+              </thead>
+              <tbody style={{ fontVariantNumeric: 'tabular-nums' }}>
+                {stats.dias.map((d, idx) => (
+                  <tr key={d.fecha} style={{ borderBottom: '0.5px solid #F1F5F9', background: idx % 2 === 1 ? '#F8FAFC' : 'white' }}>
+                    <td style={{ padding: '6px 8px' }}>{diaAbrev(d.fecha)}</td>
+                    <td style={{ padding: '6px 8px', textAlign: 'right' }}>{d.count}</td>
+                    <td style={{ padding: '6px 8px', textAlign: 'right' }}>{fmt(d.costo)}</td>
+                    <td style={{ padding: '6px 8px', textAlign: 'right', color: '#15803D' }}>{fmt(d.venta)}</td>
+                    <td style={{ padding: '6px 8px', textAlign: 'right', color: '#1D4ED8' }}>{fmt(d.utilidad)}</td>
+                  </tr>
+                ))}
+                <tr style={{ background: '#042C53', color: 'white', fontWeight: 700 }}>
+                  <td style={{ padding: '7px 8px' }}>TOTAL</td>
+                  <td style={{ padding: '7px 8px', textAlign: 'right' }}>{stats.boletos}</td>
+                  <td style={{ padding: '7px 8px', textAlign: 'right' }}>{fmt(stats.costoTotal)}</td>
+                  <td style={{ padding: '7px 8px', textAlign: 'right' }}>{fmt(stats.ventaTotal)}</td>
+                  <td style={{ padding: '7px 8px', textAlign: 'right' }}>{fmt(stats.utilidad)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* PLAZA + TOP PAGADORES */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+            <div>
+              <div style={{ fontSize: 11, color: '#475569', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 0.8, marginBottom: 8 }}>
+                📍 Por Plaza
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                <tbody>
+                  <tr style={{ background: '#DCFCE7' }}>
+                    <td style={{ padding: '6px 8px', fontWeight: 600, color: '#166534' }}>MEX</td>
+                    <td style={{ padding: '6px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{stats.byPlaza.MEX.count} bol.</td>
+                    <td style={{ padding: '6px 8px', textAlign: 'right', color: '#15803D', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmt(stats.byPlaza.MEX.venta)}</td>
+                  </tr>
+                  <tr style={{ background: '#FEE2E2' }}>
+                    <td style={{ padding: '6px 8px', fontWeight: 600, color: '#991B1B' }}>CUBA</td>
+                    <td style={{ padding: '6px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{stats.byPlaza.CUBA.count} bol.</td>
+                    <td style={{ padding: '6px 8px', textAlign: 'right', color: '#B91C1C', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmt(stats.byPlaza.CUBA.venta)}</td>
+                  </tr>
+                  {stats.byPlaza['—'].count > 0 && (
+                    <tr style={{ background: '#F1F5F9' }}>
+                      <td style={{ padding: '6px 8px', fontWeight: 600, color: '#475569' }}>Sin asignar</td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{stats.byPlaza['—'].count} bol.</td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right', color: '#64748B', fontVariantNumeric: 'tabular-nums' }}>{fmt(stats.byPlaza['—'].venta)}</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 11, color: '#475569', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 0.8, marginBottom: 8 }}>
+                🏢 Top Cliente Pagador
+              </div>
+              {stats.topPagadores.length === 0 ? (
+                <div style={{ fontSize: 11, color: '#94A3B8', padding: '12px 8px' }}>Sin datos</div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                  <tbody>
+                    {stats.topPagadores.map(([name, monto], idx) => (
+                      <tr key={name} style={{ borderBottom: '0.5px solid #F1F5F9', background: idx % 2 === 1 ? '#F8FAFC' : 'white' }}>
+                        <td style={{ padding: '6px 8px' }}>{name}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(monto)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+
+          {/* FOOTER */}
+          <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: 9, color: '#94A3B8' }}>
+              Generado: {new Date().toLocaleString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })} · Viajes Libero
+            </div>
+            <div style={{ fontSize: 9, color: '#94A3B8' }}>Caribe Cool</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
