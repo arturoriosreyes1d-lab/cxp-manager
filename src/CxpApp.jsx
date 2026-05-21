@@ -33,6 +33,7 @@ import {
 } from "./db.js";
 import CxcView from "./CxcView.jsx";
 import ReportesView from "./ReportesView.jsx";
+import FlujoIngresos from "./FlujoIngresos.jsx";
 import { EMPRESAS } from "./empresas.js";
 
 /* ── Palette ─────────────────────────────────────────────────────────────── */
@@ -8648,6 +8649,9 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         <NavItem id="importar" icon="📥" label="Importar"/>
         <NavItem id="proveedores" icon="🏢" label="Proveedores"/>
         <NavItem id="saldos" icon="🏦" label="Saldos Bancarios"/>
+        {empresaId === "empresa_2" && (
+          <NavItem id="flujo_efectivo" icon="💧" label="Flujo de Efectivo"/>
+        )}
         <NavItem id="reportes" icon="📊" label="Reportes"/>
         <NavItem id="cxc" icon="💵" label="CxC — Ingresos"/>
         <NavItem id="clientes" icon="👥" label="Clientes CxC"/>
@@ -8697,6 +8701,9 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         {view==="importar" && renderImportar()}
         {view==="config" && renderConfig()}
         {view==="saldos" && <SaldosBancarios />}
+        {view==="flujo_efectivo" && empresaId === "empresa_2" && (
+          <FlujoIngresos empresaId={empresaId} />
+        )}
         {view==="reportes" && (
           <ReportesView
             empresaId={empresaId}
