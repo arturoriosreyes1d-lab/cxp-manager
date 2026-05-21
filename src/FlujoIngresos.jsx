@@ -113,40 +113,40 @@ function parseMoney(s) {
 // Datos semilla
 // ───────────────────────────────────────────────────────────────
 const SEED_CLIENTS = [
-  ["Transporte", "AEROVIAS DE MEXICO"],
-  ["Transporte", "AEROLINEAS ARGENTINAS"],
-  ["Transporte", "AEROLITORAL"],
+  ["TRANSPORTE", "AEROVIAS DE MEXICO"],
+  ["TRANSPORTE", "AEROLINEAS ARGENTINAS"],
+  ["TRANSPORTE", "AEROLITORAL"],
   ["TAS", "ALASKA AIRLINES, INC"],
   ["TAS", "ALAVE SOLUCIONES AEREAS"],
-  ["Transporte", "ALLFUN EXCURSIONS"],
+  ["TRANSPORTE", "ALLFUN EXCURSIONS"],
   ["TAS", "AMERICAN AIRLINES INC"],
-  ["Transporte", "AMERICAN AIRLINES INC"],
-  ["Transporte", "BAJA DESERT SERVICES"],
-  ["Transporte", "CABOTRAVEL"],
-  ["Transporte", "CABOSEASON"],
+  ["TRANSPORTE", "AMERICAN AIRLINES INC"],
+  ["TRANSPORTE", "BAJA DESERT SERVICES"],
+  ["TRANSPORTE", "CABOTRAVEL"],
+  ["TRANSPORTE", "CABOSEASON"],
   ["TAS", "DELTA AIR LINES INC"],
-  ["Transporte", "DELTA AIR LINES INC"],
-  ["Transporte", "EPE AUTOTRANSPORTES DEL CARIBE"],
-  ["Transporte", "FIDEICOMISO F/1596"],
+  ["TRANSPORTE", "DELTA AIR LINES INC"],
+  ["TRANSPORTE", "EPE AUTOTRANSPORTES DEL CARIBE"],
+  ["TRANSPORTE", "FIDEICOMISO F/1596"],
   ["TAS", "SOCIETE AIR FRANCE"],
-  ["Transporte", "SOCIETE AIR FRANCE"],
-  ["Transporte", "XPLORA RIVIERA"],
-  ["Transporte", "SKY AIRLINE PERU, SOCIEDAD ANONIMA"],
+  ["TRANSPORTE", "SOCIETE AIR FRANCE"],
+  ["TRANSPORTE", "XPLORA RIVIERA"],
+  ["TRANSPORTE", "SKY AIRLINE PERU, SOCIEDAD ANONIMA"],
   ["TAS", "SKY AIRLINE PERU, SOCIEDAD ANONIMA"],
   ["TAS", "SOUTHWEST AIRLINES CO."],
-  ["Transporte", "SOUTHWEST AIRLINES CO."],
-  ["Transporte", "TAMARAN RESORTS"],
-  ["Transporte", "NADRIA SERVICIOS"],
-  ["Transporte", "THE ONE CANCUN AGENCIA DE VIAJES"],
-  ["Transporte", "TRANSPORTES BAJA CABOS"],
-  ["Transporte", "TRANSPORTE TURISTICO LA QUEBRADA"],
-  ["Transporte", "TURISMO Y TRANSPORTACION DEL CARIBE"],
+  ["TRANSPORTE", "SOUTHWEST AIRLINES CO."],
+  ["TRANSPORTE", "TAMARAN RESORTS"],
+  ["TRANSPORTE", "NADRIA SERVICIOS"],
+  ["TRANSPORTE", "THE ONE CANCUN AGENCIA DE VIAJES"],
+  ["TRANSPORTE", "TRANSPORTES BAJA CABOS"],
+  ["TRANSPORTE", "TRANSPORTE TURISTICO LA QUEBRADA"],
+  ["TRANSPORTE", "TURISMO Y TRANSPORTACION DEL CARIBE"],
   ["TAS", "UNITED AIRLINES, INC"],
-  ["Transporte", "UNITED AIRLINES, INC"],
-  ["Transporte", "VIAJES LIBERO"],
-  ["Transporte", "PUBLICO GENERAL"],
+  ["TRANSPORTE", "UNITED AIRLINES, INC"],
+  ["TRANSPORTE", "VIAJES LIBERO"],
+  ["TRANSPORTE", "PUBLICO GENERAL"],
   ["TAS", "PRESTAMO A BROMELIA-CREDITO BNMX"],
-  ["Transporte", "DEV. CIRCUITOS Y OTROS"],
+  ["TRANSPORTE", "DEV. CIRCUITOS Y OTROS"],
   ["TAS", "OTROS INGRESOS"],
 ];
 function emptyWeek() {
@@ -810,7 +810,7 @@ function SegmentoCell({
           cursor: "pointer",
         }}
       >
-        <option value="Transporte">Transporte</option>
+        <option value="TRANSPORTE">TRANSPORTE</option>
         <option value="TAS">TAS</option>
       </select>
     </div>
@@ -995,7 +995,7 @@ export default function FlujoIngresos({
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
-  const [newSeg, setNewSeg] = useState("Transporte");
+  const [newSeg, setNewSeg] = useState("TRANSPORTE");
   const [newName, setNewName] = useState("");
   const [autoFocusId, setAutoFocusId] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
@@ -1793,7 +1793,7 @@ export default function FlujoIngresos({
         </div>
 
         <div style={{ display: "flex", borderLeft: `1px solid ${C.gridLine}`, paddingLeft: "10px", gap: "2px" }}>
-          {["todos", "Transporte", "TAS"].map(s => (
+          {["todos", "TRANSPORTE", "TAS"].map(s => (
             <button
               key={s}
               onClick={() => setSegFilter(s)}
@@ -1804,7 +1804,7 @@ export default function FlujoIngresos({
                 color: segFilter === s ? "#ffffff" : C.text,
                 borderColor: segFilter === s ? C.headerBlueDark : C.gridLine,
                 fontWeight: segFilter === s ? 700 : 400,
-                textTransform: "capitalize",
+                textTransform: "uppercase",
               }}
             >{s}</button>
           ))}
@@ -2758,19 +2758,27 @@ function ImportCxpModal({
       alert(`Faltan ${missingRubro} fila${missingRubro !== 1 ? "s" : ""} sin rubro asignado.`);
       return;
     }
-    const rowsToImport = selectedRows.map((p) => ({
-      paymentId: p.paymentId,
-      invoiceId: p.invoiceId,
-      proveedor: p.proveedor,
-      folio: p.folio,
-      concepto: p.concepto,
-      monto: p.monto,
-      moneda: p.moneda,
-      fechaPago: p.fechaPago,
-      tipo: p.tipo,
-      rubro: rowState[p.paymentId].rubro,
-      segmento: rowState[p.paymentId].segmento,
-    }));
+    const rowsToImport = selectedRows.map((p) => {
+      const rubro = rowState[p.paymentId].rubro;
+      // El segmento se deriva del rubro: REPROTECCIONES → REPROTECCIONES,
+      // NÓMINA → NOMINA, etc. Normalizamos a mayúsculas y sin acentos.
+      const segFromRubro = (rubro || "")
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // quita acentos
+        .toUpperCase();
+      return {
+        paymentId: p.paymentId,
+        invoiceId: p.invoiceId,
+        proveedor: p.proveedor,
+        folio: p.folio,
+        concepto: p.concepto,
+        monto: p.monto,
+        moneda: p.moneda,
+        fechaPago: p.fechaPago,
+        tipo: p.tipo,
+        rubro,
+        segmento: segFromRubro,
+      };
+    });
     onConfirm(rowsToImport);
   };
 
@@ -3050,7 +3058,7 @@ function ImportCxpModal({
                                   }}
                                 >
                                   <option value="TAS">TAS</option>
-                                  <option value="Transporte">Transporte</option>
+                                  <option value="TRANSPORTE">TRANSPORTE</option>
                                 </select>
                               </td>
                               <td style={{ padding: "8px 10px" }}>
