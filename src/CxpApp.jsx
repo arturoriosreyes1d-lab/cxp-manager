@@ -8702,7 +8702,11 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         {view==="config" && renderConfig()}
         {view==="saldos" && <SaldosBancarios />}
         {view==="flujo_efectivo" && empresaId === "empresa_2" && (
-          <FlujoIngresos empresaId={empresaId} />
+          <FlujoIngresos
+            empresaId={empresaId}
+            invoices={invoices}
+            payments={payments}
+          />
         )}
         {view==="reportes" && (
           <ReportesView

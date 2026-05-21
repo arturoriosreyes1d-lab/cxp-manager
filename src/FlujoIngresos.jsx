@@ -159,6 +159,10 @@ function emptyWeek() {
     planCobranza: [0, 0, 0, 0, 0],
     // Egresos — un objeto indexado por id de proveedor (rubro+índice)
     egresos: {},
+    // Importados de CxP — array dinámico de filas, cada una es 1 factura/pago
+    // Estructura de cada item: { id, rubro, proveedor, folio, concepto,
+    //   amounts: [L,M,X,J,V], paymentId, invoiceId, tipo, importedAt }
+    importados: [],
     // Compromisos por día — montos comprometidos a algo
     compromisos: [0, 0, 0, 0, 0],
   };
@@ -976,7 +980,11 @@ function toolbarBtn() {
 // ───────────────────────────────────────────────────────────────
 // Componente principal
 // ───────────────────────────────────────────────────────────────
-export default function FlujoIngresos({ empresaId = "empresa_2" }) {
+export default function FlujoIngresos({
+  empresaId = "empresa_2",
+  invoices = {},
+  payments = [],
+}) {
   useInjectFonts();
 
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()));
@@ -986,6 +994,7 @@ export default function FlujoIngresos({ empresaId = "empresa_2" }) {
   const [segFilter, setSegFilter] = useState("todos");
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const [newSeg, setNewSeg] = useState("Transporte");
   const [newName, setNewName] = useState("");
   const [autoFocusId, setAutoFocusId] = useState(null);
@@ -1017,6 +1026,7 @@ export default function FlujoIngresos({ empresaId = "empresa_2" }) {
             rows: parsed.rows || emptyWeek().rows,
             planCobranza: parsed.planCobranza || [0, 0, 0, 0, 0],
             egresos: parsed.egresos || {},
+            importados: parsed.importados || [],
             compromisos: parsed.compromisos || [0, 0, 0, 0, 0],
           });
         } else {
@@ -1168,6 +1178,17 @@ export default function FlujoIngresos({ empresaId = "empresa_2" }) {
       });
       egresosPorRubro[rubro.label] = { perDay: rubroPerDay, total: rubroTotal };
     });
+    // Sumar también los importados de CxP al total general
+    let importadosPerDay = [0, 0, 0, 0, 0];
+    let importadosTotal = 0;
+    (data.importados || []).forEach(imp => {
+      imp.amounts?.forEach((a, i) => {
+        const v = a || 0;
+        importadosPerDay[i] += v;
+        egresosPerDay[i] += v;
+        importadosTotal += v;
+      });
+    });
     const egresosGrand = egresosPerDay.reduce((a, b) => a + b, 0);
 
     // ── 3. Cascada del Saldo Inicial ──
@@ -1216,6 +1237,8 @@ export default function FlujoIngresos({ empresaId = "empresa_2" }) {
       egresosPerDay,
       egresosPorRubro,
       egresosGrand,
+      importadosPerDay,
+      importadosTotal,
       compromisos,
       flujoBancarioPerDay,
       flujoNetoPerDay,
@@ -1540,6 +1563,119 @@ export default function FlujoIngresos({ empresaId = "empresa_2" }) {
   // Totales, Plan y Proyección tienen sus propias celdas independientes.
   const ingresoRubroSpan = 1 + Math.max(visibleRows.length, 1);
 
+  // ─── IMPORTAR DE CXP ──────────────────────────────────────────
+  // Lista de rubros disponibles (los 19 estándar) — el usuario elige
+  // a cuál asignar cada factura al importar.
+  const RUBROS_DISPONIBLES = useMemo(
+    () => EGRESOS_POR_RUBRO.map(r => r.label),
+    []
+  );
+
+  // Pagos de CxP candidatos a importar: en el rango lunes-viernes de la
+  // semana actual + invoice asociado disponible. Se enriquecen con datos
+  // de la factura (proveedor, folio, concepto, clasificacion).
+  const pagosImportables = useMemo(() => {
+    if (!payments || !payments.length) return [];
+    const isoStart = formatDateKey(weekDates[0]);
+    const isoEnd = formatDateKey(weekDates[4]);
+    // Index de invoices por id, en todas las monedas
+    const invoicesById = new Map();
+    Object.entries(invoices || {}).forEach(([moneda, list]) => {
+      (list || []).forEach(inv => {
+        invoicesById.set(inv.id, { ...inv, moneda });
+      });
+    });
+    // Filtrar pagos en el rango Y de invoices de esta empresa
+    return payments
+      .filter(p => p.fechaPago >= isoStart && p.fechaPago <= isoEnd)
+      .map(p => {
+        const inv = invoicesById.get(p.invoiceId);
+        if (!inv) return null;
+        if (inv.empresaId && inv.empresaId !== empresaId) return null;
+        const folio = [inv.serie, inv.folio].filter(Boolean).join("-") || "—";
+        return {
+          paymentId: p.id,
+          invoiceId: p.invoiceId,
+          proveedor: inv.proveedor || "(sin proveedor)",
+          folio,
+          concepto: inv.concepto || p.notas || "",
+          monto: p.monto,
+          moneda: inv.moneda || "MXN",
+          fechaPago: p.fechaPago,
+          tipo: p.tipo || "realizado",
+          clasificacionSugerida: inv.clasificacion || "",
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => {
+        if (a.fechaPago !== b.fechaPago) return a.fechaPago.localeCompare(b.fechaPago);
+        return (a.proveedor || "").localeCompare(b.proveedor || "");
+      });
+  }, [payments, invoices, weekDates, empresaId]);
+
+  // Set de IDs ya importados (para mostrar duplicados)
+  const importadosPaymentIds = useMemo(() => {
+    return new Set((data.importados || []).map(i => i.paymentId));
+  }, [data.importados]);
+
+  // Aplica las filas seleccionadas al data.importados (con detección de duplicados)
+  const applyImport = useCallback((rowsToImport) => {
+    // rowsToImport: [{ paymentId, invoiceId, proveedor, folio, concepto, monto,
+    //                  fechaPago, tipo, rubro, segmento }]
+    if (!rowsToImport || !rowsToImport.length) return;
+
+    const existing = data.importados || [];
+    const existingByPayment = new Map(existing.map(r => [r.paymentId, r]));
+    const newImportados = [...existing];
+
+    rowsToImport.forEach(row => {
+      // Calcular qué día (0-4) corresponde a la fecha
+      const [y, m, d] = row.fechaPago.split("-").map(Number);
+      const fechaDate = new Date(y, m - 1, d);
+      const dayIdx = weekDates.findIndex(wd =>
+        wd.getFullYear() === fechaDate.getFullYear() &&
+        wd.getMonth() === fechaDate.getMonth() &&
+        wd.getDate() === fechaDate.getDate()
+      );
+      if (dayIdx < 0) return; // fuera de la semana
+
+      const amounts = [0, 0, 0, 0, 0];
+      amounts[dayIdx] = +row.monto || 0;
+
+      const newItem = {
+        id: `imp-${row.paymentId}`,
+        paymentId: row.paymentId,
+        invoiceId: row.invoiceId,
+        proveedor: row.proveedor,
+        folio: row.folio,
+        concepto: row.concepto,
+        rubro: row.rubro,
+        segmento: row.segmento,
+        tipo: row.tipo,
+        moneda: row.moneda || "MXN",
+        amounts,
+        importedAt: new Date().toISOString(),
+      };
+
+      if (existingByPayment.has(row.paymentId)) {
+        // Actualizar el existente
+        const idx = newImportados.findIndex(r => r.paymentId === row.paymentId);
+        if (idx >= 0) newImportados[idx] = { ...newImportados[idx], ...newItem };
+      } else {
+        // Agregar nuevo
+        newImportados.push(newItem);
+      }
+    });
+
+    setData(d => ({ ...d, importados: newImportados }));
+    setImportModalOpen(false);
+  }, [data.importados, weekDates]);
+
+  // Eliminar una fila importada
+  const removeImported = useCallback((id) => {
+    setData(d => ({ ...d, importados: (d.importados || []).filter(r => r.id !== id) }));
+  }, []);
+
   // Exportar CSV
   const exportCSV = useCallback(() => {
     const dayHeaders = weekDates.map(d => dayLabel(d));
@@ -1720,6 +1856,17 @@ export default function FlujoIngresos({ empresaId = "empresa_2" }) {
 
         <button onClick={loadDemo} style={toolbarBtn()} title="Cargar datos del screenshot">
           <Sparkles size={11} /> Demo
+        </button>
+        <button
+          onClick={() => setImportModalOpen(true)}
+          style={{
+            ...toolbarBtn(),
+            background: "#0D9488", color: "#ffffff",
+            borderColor: "#0F766E", fontWeight: 700,
+          }}
+          title="Traer pagos programados/realizados de Cartera (CxP) a la semana actual"
+        >
+          🔄 Importar CxP
         </button>
         <button onClick={exportCSV} style={toolbarBtn()} title="Descargar CSV">
           <Download size={11} /> Exportar
@@ -2199,6 +2346,129 @@ export default function FlujoIngresos({ empresaId = "empresa_2" }) {
               );
             })}
 
+            {/* ═══════════════════════════════════════════════════ */}
+            {/*   IMPORTADOS DE CXP — sección dinámica               */}
+            {/* ═══════════════════════════════════════════════════ */}
+            {(data.importados || []).length > 0 && (() => {
+              const importedRows = data.importados || [];
+              const totalRows = importedRows.length;
+              return (
+                <React.Fragment key="rubro-importados">
+                  {importedRows.map((imp, rIdx) => {
+                    const rowTotal = (imp.amounts || [0,0,0,0,0]).reduce((a, b) => a + (b || 0), 0);
+                    const hasData = rowTotal > 0;
+                    const dayBg = hasData ? C.green : "transparent";
+                    return (
+                      <tr key={imp.id}>
+                        {/* Etiqueta vertical IMPORTADOS — solo en la primera fila */}
+                        {rIdx === 0 && (
+                          <td
+                            rowSpan={totalRows}
+                            style={{
+                              ...baseCell,
+                              background: "#FFE7B5",
+                              verticalAlign: "middle",
+                              textAlign: "center",
+                              padding: 0,
+                              height: "auto",
+                              border: `1px solid ${C.gridLine}`,
+                            }}
+                          >
+                            <div
+                              style={{
+                                writingMode: "vertical-rl",
+                                transform: "rotate(180deg)",
+                                fontSize: "10px",
+                                fontWeight: 700,
+                                letterSpacing: "0.5px",
+                                color: "#7C2D12",
+                                padding: "8px 2px",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              IMPORTADOS DE CXP
+                            </div>
+                          </td>
+                        )}
+                        {/* Segmento (rubro asignado al importar) */}
+                        <td style={{
+                          ...baseCell, ...gridCell,
+                          background: "#FFF7E8",
+                          fontSize: "10px",
+                          textAlign: "left",
+                          padding: "2px 5px",
+                          fontWeight: 600,
+                          color: "#7C2D12",
+                        }}>
+                          {imp.rubro || "—"}
+                        </td>
+                        {/* Nombre del proveedor + folio + botón eliminar */}
+                        <td style={{
+                          ...baseCell, ...gridCell,
+                          textAlign: "left",
+                          padding: "2px 5px",
+                          background: hasData ? "#FFFBEB" : "transparent",
+                        }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontWeight: 600, fontSize: "11px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {imp.proveedor}
+                              </div>
+                              <div style={{ fontSize: "9px", color: C.textMuted }}>
+                                {imp.tipo === "programado" ? "📅" : "💰"} {imp.folio} · desde CxP
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => removeImported(imp.id)}
+                              title="Quitar esta importación (no afecta CxP)"
+                              style={{
+                                background: "transparent",
+                                border: "none",
+                                color: "#B91C1C",
+                                cursor: "pointer",
+                                fontSize: 12,
+                                padding: "0 4px",
+                                lineHeight: 1,
+                              }}
+                            >✕</button>
+                          </div>
+                        </td>
+                        {/* Días L-V (montos read-only desde CxP) */}
+                        {[0,1,2,3,4].map(dIdx => (
+                          <td key={dIdx} style={{ ...baseCell, ...gridCell, background: dayBg, padding: 0 }}>
+                            <AccountingCell
+                              value={imp.amounts[dIdx]}
+                              onChange={() => {}}
+                              readOnly
+                            />
+                          </td>
+                        ))}
+                        {/* Total fila */}
+                        <td style={{
+                          ...baseCell, ...gridCell,
+                          background: C.lightBlue,
+                          padding: 0,
+                        }}>
+                          <AccountingCell value={rowTotal} onChange={() => {}} readOnly bold />
+                        </td>
+                        {/* Concepto (read-only desde CxP) */}
+                        <td style={{
+                          ...baseCell, ...gridCell,
+                          background: hasData ? "#FFFBEB" : "transparent",
+                          textAlign: "left",
+                          padding: "2px 5px",
+                          fontSize: "10px",
+                          color: C.textMuted,
+                        }}>
+                          {imp.concepto || "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </React.Fragment>
+              );
+            })()}
+
             {/* TOTALES EGRESOS — fila resumen con sumas reales */}
             <tr>
               <td style={{ ...baseCell, ...gridCell, background: C.lightBlue }}></td>
@@ -2358,6 +2628,430 @@ export default function FlujoIngresos({ empresaId = "empresa_2" }) {
           <span style={{ marginLeft: "auto", opacity: 0.7 }}>
             Guardado local por semana · Migrable a Supabase
           </span>
+        </div>
+      </div>
+
+      {/* MODAL DE IMPORTACIÓN DE CXP */}
+      {importModalOpen && (
+        <ImportCxpModal
+          pagos={pagosImportables}
+          rubros={RUBROS_DISPONIBLES}
+          importadosPaymentIds={importadosPaymentIds}
+          existingImportados={data.importados || []}
+          rangeLabel={rangeLabel}
+          onCancel={() => setImportModalOpen(false)}
+          onConfirm={applyImport}
+        />
+      )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════
+// ImportCxpModal · Modal para seleccionar facturas de CxP a importar
+// ════════════════════════════════════════════════════════════════════
+function ImportCxpModal({
+  pagos,
+  rubros,
+  importadosPaymentIds,
+  existingImportados,
+  rangeLabel,
+  onCancel,
+  onConfirm,
+}) {
+  const [showProgramados, setShowProgramados] = React.useState(true);
+  const [showRealizados, setShowRealizados] = React.useState(true);
+
+  // Estado por fila: { paymentId: { selected, rubro, segmento } }
+  const initState = React.useMemo(() => {
+    const m = {};
+    const existingById = new Map(
+      (existingImportados || []).map((r) => [r.paymentId, r])
+    );
+    pagos.forEach((p) => {
+      const existing = existingById.get(p.paymentId);
+      // Sugerencia inicial de rubro: si ya estaba importado usa su rubro,
+      // si no, intenta coincidir con clasificacionSugerida; si no, vacío
+      let rubroInicial = "";
+      if (existing) {
+        rubroInicial = existing.rubro || "";
+      } else if (p.clasificacionSugerida) {
+        const sug = String(p.clasificacionSugerida).toUpperCase();
+        const found = rubros.find((r) => r.toUpperCase().includes(sug) || sug.includes(r.toUpperCase()));
+        if (found) rubroInicial = found;
+      }
+      m[p.paymentId] = {
+        selected: !!existing, // Si ya estaba importado, pre-marcado
+        rubro: rubroInicial,
+        segmento: existing?.segmento || "TAS",
+      };
+    });
+    return m;
+  }, [pagos, rubros, existingImportados]);
+
+  const [rowState, setRowState] = React.useState(initState);
+  React.useEffect(() => { setRowState(initState); }, [initState]);
+
+  const updateRow = (paymentId, patch) => {
+    setRowState((s) => ({ ...s, [paymentId]: { ...s[paymentId], ...patch } }));
+  };
+
+  // Filtros visibles
+  const visiblePagos = pagos.filter((p) => {
+    if (p.tipo === "programado" && !showProgramados) return false;
+    if (p.tipo === "realizado" && !showRealizados) return false;
+    return true;
+  });
+
+  // Master checkbox
+  const allVisibleSelected =
+    visiblePagos.length > 0 &&
+    visiblePagos.every((p) => rowState[p.paymentId]?.selected);
+  const toggleAll = () => {
+    const newSel = !allVisibleSelected;
+    const next = { ...rowState };
+    visiblePagos.forEach((p) => {
+      next[p.paymentId] = { ...next[p.paymentId], selected: newSel };
+    });
+    setRowState(next);
+  };
+
+  // Total seleccionados
+  const selectedRows = visiblePagos.filter((p) => rowState[p.paymentId]?.selected);
+  const selectedTotal = selectedRows.reduce((s, p) => s + (+p.monto || 0), 0);
+  const selectedCount = selectedRows.length;
+
+  // Validación: todos los seleccionados deben tener rubro
+  const missingRubro = selectedRows.filter((p) => !rowState[p.paymentId]?.rubro).length;
+
+  const handleConfirm = () => {
+    if (missingRubro > 0) {
+      alert(`Faltan ${missingRubro} fila${missingRubro !== 1 ? "s" : ""} sin rubro asignado.`);
+      return;
+    }
+    const rowsToImport = selectedRows.map((p) => ({
+      paymentId: p.paymentId,
+      invoiceId: p.invoiceId,
+      proveedor: p.proveedor,
+      folio: p.folio,
+      concepto: p.concepto,
+      monto: p.monto,
+      moneda: p.moneda,
+      fechaPago: p.fechaPago,
+      tipo: p.tipo,
+      rubro: rowState[p.paymentId].rubro,
+      segmento: rowState[p.paymentId].segmento,
+    }));
+    onConfirm(rowsToImport);
+  };
+
+  const fmt = (n) =>
+    "$" + Number(n || 0).toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+  const diaCorto = (iso) => {
+    const [y, m, d] = iso.split("-").map(Number);
+    const date = new Date(y, m - 1, d);
+    const dias = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+    return `${dias[date.getDay()]} ${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}`;
+  };
+
+  const countProg = pagos.filter((p) => p.tipo === "programado").length;
+  const countReal = pagos.filter((p) => p.tipo === "realizado").length;
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15, 23, 42, 0.5)",
+        zIndex: 1000,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
+      }}
+      onClick={onCancel}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "white",
+          borderRadius: 12,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
+          width: "100%",
+          maxWidth: 1100,
+          maxHeight: "92vh",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
+      >
+        {/* HEADER */}
+        <div
+          style={{
+            padding: "16px 24px",
+            borderBottom: "1px solid #E2E8F0",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#0F172A" }}>
+              🔄 Importar pagos de Cartera
+            </div>
+            <div style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>
+              Semana del {rangeLabel} · TravelAirSolutions
+            </div>
+          </div>
+          <button
+            onClick={onCancel}
+            style={{
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              fontSize: 18,
+              color: "#94A3B8",
+              padding: 4,
+            }}
+          >✕</button>
+        </div>
+
+        {/* FILTROS */}
+        <div
+          style={{
+            padding: "12px 24px",
+            background: "#F8FAFC",
+            borderBottom: "1px solid #E2E8F0",
+            display: "flex",
+            gap: 16,
+            alignItems: "center",
+            flexWrap: "wrap",
+            fontSize: 12,
+          }}
+        >
+          <span style={{ fontWeight: 600, color: "#475569" }}>Mostrar:</span>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={showProgramados}
+              onChange={(e) => setShowProgramados(e.target.checked)}
+              style={{ cursor: "pointer" }}
+            />
+            <span>📅 Programados ({countProg})</span>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={showRealizados}
+              onChange={(e) => setShowRealizados(e.target.checked)}
+              style={{ cursor: "pointer" }}
+            />
+            <span>💰 Realizados ({countReal})</span>
+          </label>
+          <div style={{ flex: 1 }}></div>
+          <span style={{ fontSize: 11, color: "#94A3B8" }}>
+            {pagos.length} pago{pagos.length !== 1 ? "s" : ""} encontrado{pagos.length !== 1 ? "s" : ""}
+          </span>
+        </div>
+
+        {/* TABLA */}
+        <div style={{ flex: 1, overflow: "auto" }}>
+          {visiblePagos.length === 0 ? (
+            <div style={{ padding: 48, textAlign: "center", color: "#94A3B8" }}>
+              📭 No hay pagos en este rango de fechas
+            </div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead style={{ position: "sticky", top: 0, background: "#042C53", color: "white", zIndex: 1 }}>
+                <tr>
+                  <th style={{ padding: "8px 10px", textAlign: "center", width: 32, fontWeight: 600 }}>
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      onChange={toggleAll}
+                      style={{ cursor: "pointer" }}
+                    />
+                  </th>
+                  <th style={{ padding: "8px 10px", textAlign: "left", fontWeight: 600 }}>PROVEEDOR / FOLIO</th>
+                  <th style={{ padding: "8px 10px", textAlign: "left", fontWeight: 600 }}>CONCEPTO</th>
+                  <th style={{ padding: "8px 10px", textAlign: "left", fontWeight: 600 }}>FECHA</th>
+                  <th style={{ padding: "8px 10px", textAlign: "center", fontWeight: 600 }}>TIPO</th>
+                  <th style={{ padding: "8px 10px", textAlign: "right", fontWeight: 600 }}>MONTO</th>
+                  <th style={{ padding: "8px 10px", textAlign: "left", fontWeight: 600 }}>SEGMENTO</th>
+                  <th style={{ padding: "8px 10px", textAlign: "left", fontWeight: 600 }}>RUBRO</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visiblePagos.map((p, idx) => {
+                  const state = rowState[p.paymentId] || { selected: false, rubro: "", segmento: "TAS" };
+                  const isDup = importadosPaymentIds.has(p.paymentId);
+                  return (
+                    <tr
+                      key={p.paymentId}
+                      style={{
+                        borderBottom: "0.5px solid #F1F5F9",
+                        background: state.selected
+                          ? "#FFFBEB"
+                          : (idx % 2 === 1 ? "#F8FAFC" : "white"),
+                      }}
+                    >
+                      <td style={{ padding: "8px 10px", textAlign: "center" }}>
+                        <input
+                          type="checkbox"
+                          checked={state.selected}
+                          onChange={(e) => updateRow(p.paymentId, { selected: e.target.checked })}
+                          style={{ cursor: "pointer" }}
+                        />
+                      </td>
+                      <td style={{ padding: "8px 10px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 600, color: "#0F172A" }}>{p.proveedor}</div>
+                            <div style={{ fontSize: 10, color: "#94A3B8", fontFamily: "ui-monospace, monospace" }}>
+                              {p.folio}
+                            </div>
+                          </div>
+                          {isDup && (
+                            <span
+                              title="Ya importado previamente — se actualizará al confirmar"
+                              style={{
+                                background: "#DBEAFE",
+                                color: "#1E40AF",
+                                fontSize: 9,
+                                fontWeight: 700,
+                                padding: "2px 6px",
+                                borderRadius: 3,
+                                whiteSpace: "nowrap",
+                              }}
+                            >🔁 YA IMPORTADO</span>
+                          )}
+                        </div>
+                      </td>
+                      <td style={{ padding: "8px 10px", color: "#475569", fontSize: 11 }}>
+                        {p.concepto || "—"}
+                      </td>
+                      <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{diaCorto(p.fechaPago)}</td>
+                      <td style={{ padding: "8px 10px", textAlign: "center" }}>
+                        {p.tipo === "programado" ? (
+                          <span style={{ background: "#FFE0B2", color: "#E65100", padding: "2px 6px", borderRadius: 3, fontSize: 10, fontWeight: 600 }}>
+                            📅 PROG
+                          </span>
+                        ) : (
+                          <span style={{ background: "#BBF7D0", color: "#166534", padding: "2px 6px", borderRadius: 3, fontSize: 10, fontWeight: 600 }}>
+                            💰 REAL
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ padding: "8px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums", color: "#B91C1C", fontWeight: 600 }}>
+                        {fmt(p.monto)} <span style={{ fontSize: 9, color: "#94A3B8" }}>{p.moneda}</span>
+                      </td>
+                      <td style={{ padding: "8px 10px" }}>
+                        <select
+                          value={state.segmento}
+                          onChange={(e) => updateRow(p.paymentId, { segmento: e.target.value })}
+                          style={{
+                            fontSize: 11,
+                            padding: "3px 6px",
+                            border: "1px solid #CBD5E1",
+                            borderRadius: 4,
+                            cursor: "pointer",
+                            width: "100%",
+                          }}
+                        >
+                          <option value="TAS">TAS</option>
+                          <option value="Transporte">Transporte</option>
+                        </select>
+                      </td>
+                      <td style={{ padding: "8px 10px" }}>
+                        <select
+                          value={state.rubro}
+                          onChange={(e) => updateRow(p.paymentId, { rubro: e.target.value })}
+                          style={{
+                            fontSize: 11,
+                            padding: "3px 6px",
+                            border: `1px solid ${(state.selected && !state.rubro) ? "#DC2626" : "#CBD5E1"}`,
+                            borderRadius: 4,
+                            cursor: "pointer",
+                            width: "100%",
+                            background: (state.selected && !state.rubro) ? "#FEE2E2" : "white",
+                          }}
+                        >
+                          <option value="">— elegir —</option>
+                          {rubros.map((r) => (
+                            <option key={r} value={r}>{r}</option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* FOOTER */}
+        <div
+          style={{
+            padding: "14px 24px",
+            background: "#F8FAFC",
+            borderTop: "1px solid #E2E8F0",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <div style={{ fontSize: 13, color: "#64748B" }}>
+            <strong>{selectedCount}</strong> seleccionado{selectedCount !== 1 ? "s" : ""}
+            {selectedCount > 0 && (
+              <>
+                {" · Total: "}
+                <span style={{ color: "#B91C1C", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                  {fmt(selectedTotal)}
+                </span>
+                {missingRubro > 0 && (
+                  <span style={{ color: "#DC2626", marginLeft: 12, fontSize: 11 }}>
+                    ⚠ {missingRubro} sin rubro
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button
+              onClick={onCancel}
+              style={{
+                padding: "8px 16px",
+                background: "#F1F5F9",
+                color: "#0F172A",
+                border: "none",
+                borderRadius: 6,
+                fontSize: 13,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >Cancelar</button>
+            <button
+              onClick={handleConfirm}
+              disabled={selectedCount === 0 || missingRubro > 0}
+              style={{
+                padding: "8px 18px",
+                background: (selectedCount === 0 || missingRubro > 0) ? "#94A3B8" : "#16A34A",
+                color: "white",
+                border: "none",
+                borderRadius: 6,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: (selectedCount === 0 || missingRubro > 0) ? "not-allowed" : "pointer",
+                fontFamily: "inherit",
+              }}
+            >💧 Importar {selectedCount > 0 ? selectedCount : ""} pago{selectedCount !== 1 ? "s" : ""}</button>
+          </div>
         </div>
       </div>
     </div>
