@@ -1179,6 +1179,7 @@ export default function FlujoIngresos({
       egresosPorRubro[rubro.label] = { perDay: rubroPerDay, total: rubroTotal };
     });
     // Sumar también los importados de CxP al total general
+    // (también se acumulan en egresosPorRubro[imp.rubro] para consistencia)
     let importadosPerDay = [0, 0, 0, 0, 0];
     let importadosTotal = 0;
     (data.importados || []).forEach(imp => {
@@ -1188,6 +1189,14 @@ export default function FlujoIngresos({
         egresosPerDay[i] += v;
         importadosTotal += v;
       });
+      // Acumular en el rubro del importado (si existe en el catálogo)
+      if (imp.rubro && egresosPorRubro[imp.rubro]) {
+        imp.amounts?.forEach((a, i) => {
+          const v = a || 0;
+          egresosPorRubro[imp.rubro].perDay[i] += v;
+          egresosPorRubro[imp.rubro].total += v;
+        });
+      }
     });
     const egresosGrand = egresosPerDay.reduce((a, b) => a + b, 0);
 
@@ -1244,7 +1253,7 @@ export default function FlujoIngresos({
       flujoNetoPerDay,
       flujoProyectadoPerDay,
     };
-  }, [data.saldoInicial, data.rows, data.planCobranza, data.egresos, data.compromisos]);
+  }, [data.saldoInicial, data.rows, data.planCobranza, data.egresos, data.compromisos, data.importados]);
 
   // Filas visibles
   const visibleRows = useMemo(() =>
@@ -1616,6 +1625,18 @@ export default function FlujoIngresos({
   // Set de IDs ya importados (para mostrar duplicados)
   const importadosPaymentIds = useMemo(() => {
     return new Set((data.importados || []).map(i => i.paymentId));
+  }, [data.importados]);
+
+  // Importados agrupados por rubro: { [rubroLabel]: [imp, imp, ...] }
+  // Las filas importadas se renderizan DENTRO de su rubro elegido (sin distinción visual)
+  const importadosPorRubro = useMemo(() => {
+    const map = {};
+    (data.importados || []).forEach(imp => {
+      const key = imp.rubro || "—";
+      if (!map[key]) map[key] = [];
+      map[key].push(imp);
+    });
+    return map;
   }, [data.importados]);
 
   // Aplica las filas seleccionadas al data.importados (con detección de duplicados)
@@ -2229,17 +2250,24 @@ export default function FlujoIngresos({
 
             {/* ═══════════════════════════════════════════════════ */}
             {/*   RUBROS DE EGRESOS — celdas editables               */}
+            {/*   Las filas importadas de CxP se inyectan dentro de  */}
+            {/*   su rubro elegido (sin distinción visual).          */}
             {/* ═══════════════════════════════════════════════════ */}
             {EGRESOS_POR_RUBRO.map((rubro) => {
+              // Importados que pertenecen a este rubro
+              const impsDelRubro = importadosPorRubro[rubro.label] || [];
+              // Total de filas del rubro (precargadas + importadas)
+              const totalRows = rubro.rows + impsDelRubro.length;
               // Bordes externos del rubro: top en la 1ra fila, bottom en la última, izq/der siempre.
               const outer = (rIdx, edges = {}) => ({
                 borderTop:    rIdx === 0              ? `1px solid ${C.gridLine}` : "none",
-                borderBottom: rIdx === rubro.rows - 1 ? `1px solid ${C.gridLine}` : "none",
+                borderBottom: rIdx === totalRows - 1  ? `1px solid ${C.gridLine}` : "none",
                 borderLeft:   edges.left  ? `1px solid ${C.gridLine}` : "none",
                 borderRight:  edges.right ? `1px solid ${C.gridLine}` : "none",
               });
               return (
                 <React.Fragment key={rubro.id}>
+                  {/* Filas precargadas del rubro (editables) */}
                   {rubro.items.map((item, rIdx) => {
                     const eg = data.egresos?.[item.id] || { amounts: [0,0,0,0,0], concepto: "" };
                     const rowTotal = eg.amounts.reduce((a, b) => a + (b || 0), 0);
@@ -2248,10 +2276,10 @@ export default function FlujoIngresos({
                     const dayBg = hasData ? C.green : "transparent";
                     return (
                       <tr key={`${rubro.id}-${rIdx}`}>
-                        {/* Etiqueta vertical del rubro — fusionada en toda su altura */}
+                        {/* Etiqueta vertical del rubro — fusionada en toda su altura (incluye importados) */}
                         {rIdx === 0 && (
                           <td
-                            rowSpan={rubro.rows}
+                            rowSpan={totalRows}
                             style={{
                               ...baseCell,
                               background: C.rubroGray,
@@ -2266,7 +2294,7 @@ export default function FlujoIngresos({
                               style={{
                                 writingMode: "vertical-rl",
                                 transform: "rotate(180deg)",
-                                fontSize: rubro.rows >= 3 ? "14px" : "11px",
+                                fontSize: totalRows >= 3 ? "14px" : "11px",
                                 fontWeight: 700,
                                 letterSpacing: "0.1em",
                                 color: C.text,
@@ -2342,85 +2370,40 @@ export default function FlujoIngresos({
                       </tr>
                     );
                   })}
-                </React.Fragment>
-              );
-            })}
 
-            {/* ═══════════════════════════════════════════════════ */}
-            {/*   IMPORTADOS DE CXP — sección dinámica               */}
-            {/* ═══════════════════════════════════════════════════ */}
-            {(data.importados || []).length > 0 && (() => {
-              const importedRows = data.importados || [];
-              const totalRows = importedRows.length;
-              return (
-                <React.Fragment key="rubro-importados">
-                  {importedRows.map((imp, rIdx) => {
+                  {/* Filas importadas de CxP — mismo estilo que las precargadas */}
+                  {impsDelRubro.map((imp, impIdx) => {
+                    const rIdx = rubro.rows + impIdx; // posición global dentro del rubro
                     const rowTotal = (imp.amounts || [0,0,0,0,0]).reduce((a, b) => a + (b || 0), 0);
                     const hasData = rowTotal > 0;
                     const dayBg = hasData ? C.green : "transparent";
                     return (
                       <tr key={imp.id}>
-                        {/* Etiqueta vertical IMPORTADOS — solo en la primera fila */}
-                        {rIdx === 0 && (
-                          <td
-                            rowSpan={totalRows}
-                            style={{
-                              ...baseCell,
-                              background: "#FFE7B5",
-                              verticalAlign: "middle",
-                              textAlign: "center",
-                              padding: 0,
-                              height: "auto",
-                              border: `1px solid ${C.gridLine}`,
-                            }}
-                          >
-                            <div
-                              style={{
-                                writingMode: "vertical-rl",
-                                transform: "rotate(180deg)",
-                                fontSize: "10px",
-                                fontWeight: 700,
-                                letterSpacing: "0.5px",
-                                color: "#7C2D12",
-                                padding: "8px 2px",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              IMPORTADOS DE CXP
-                            </div>
-                          </td>
-                        )}
-                        {/* Segmento (rubro asignado al importar) */}
+                        {/* Segmento (solo lectura) */}
                         <td style={{
-                          ...baseCell, ...gridCell,
-                          background: "#FFF7E8",
-                          fontSize: "10px",
-                          textAlign: "left",
+                          ...baseCell,
+                          ...outer(rIdx, { left: false, right: true }),
                           padding: "2px 5px",
+                          fontSize: "11px",
+                        }}>{imp.segmento || ""}</td>
+                        {/* Proveedor + botón ✕ */}
+                        <td style={{
+                          ...baseCell,
+                          ...outer(rIdx, { left: false, right: true }),
+                          padding: "2px 5px",
+                          fontSize: "11px",
                           fontWeight: 600,
-                          color: "#7C2D12",
-                        }}>
-                          {imp.rubro || "—"}
-                        </td>
-                        {/* Nombre del proveedor + folio + botón eliminar */}
-                        <td style={{
-                          ...baseCell, ...gridCell,
-                          textAlign: "left",
-                          padding: "2px 5px",
-                          background: hasData ? "#FFFBEB" : "transparent",
-                        }}>
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }} title={imp.proveedor}>
                           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontWeight: 600, fontSize: "11px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                {imp.proveedor}
-                              </div>
-                              <div style={{ fontSize: "9px", color: C.textMuted }}>
-                                {imp.tipo === "programado" ? "📅" : "💰"} {imp.folio} · desde CxP
-                              </div>
+                            <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+                              {imp.proveedor}
                             </div>
                             <button
                               onClick={() => removeImported(imp.id)}
-                              title="Quitar esta importación (no afecta CxP)"
+                              title="Quitar esta fila importada (no afecta CxP)"
                               style={{
                                 background: "transparent",
                                 border: "none",
@@ -2429,45 +2412,57 @@ export default function FlujoIngresos({
                                 fontSize: 12,
                                 padding: "0 4px",
                                 lineHeight: 1,
+                                opacity: 0.5,
                               }}
+                              onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                              onMouseLeave={e => e.currentTarget.style.opacity = 0.5}
                             >✕</button>
                           </div>
                         </td>
-                        {/* Días L-V (montos read-only desde CxP) */}
-                        {[0,1,2,3,4].map(dIdx => (
-                          <td key={dIdx} style={{ ...baseCell, ...gridCell, background: dayBg, padding: 0 }}>
+                        {/* 5 días — read-only desde CxP */}
+                        {[0,1,2,3,4].map(j => (
+                          <td key={j} style={{
+                            ...baseCell,
+                            ...outer(rIdx, { left: false, right: j === 4 }),
+                            background: dayBg,
+                            padding: 0,
+                          }}>
                             <AccountingCell
-                              value={imp.amounts[dIdx]}
+                              value={imp.amounts[j]}
                               onChange={() => {}}
                               readOnly
                             />
                           </td>
                         ))}
-                        {/* Total fila */}
+                        {/* Total auto-calculado (solo lectura) */}
                         <td style={{
-                          ...baseCell, ...gridCell,
-                          background: C.lightBlue,
+                          ...baseCell,
+                          ...outer(rIdx, { left: false, right: true }),
+                          background: dayBg,
                           padding: 0,
                         }}>
-                          <AccountingCell value={rowTotal} onChange={() => {}} readOnly bold />
+                          <AccountingCell
+                            value={rowTotal}
+                            onChange={() => {}}
+                            readOnly
+                            bold
+                          />
                         </td>
-                        {/* Concepto (read-only desde CxP) */}
+                        {/* Concepto — read-only desde CxP */}
                         <td style={{
-                          ...baseCell, ...gridCell,
-                          background: hasData ? "#FFFBEB" : "transparent",
-                          textAlign: "left",
+                          ...baseCell,
+                          ...outer(rIdx, { left: false, right: true }),
                           padding: "2px 5px",
-                          fontSize: "10px",
-                          color: C.textMuted,
+                          fontSize: "11px",
                         }}>
-                          {imp.concepto || "—"}
+                          {imp.concepto || ""}
                         </td>
                       </tr>
                     );
                   })}
                 </React.Fragment>
               );
-            })()}
+            })}
 
             {/* TOTALES EGRESOS — fila resumen con sumas reales */}
             <tr>
