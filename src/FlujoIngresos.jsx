@@ -2703,6 +2703,28 @@ function ImportCxpModal({
     return true;
   });
 
+  // Agrupar pagos visibles por fecha (YYYY-MM-DD)
+  const pagosPorDia = React.useMemo(() => {
+    const map = new Map();
+    visiblePagos.forEach((p) => {
+      if (!map.has(p.fechaPago)) map.set(p.fechaPago, []);
+      map.get(p.fechaPago).push(p);
+    });
+    // Ordenar por fecha asc
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [visiblePagos]);
+
+  // Estado de qué días están expandidos (todos contraídos por defecto)
+  const [expandedDays, setExpandedDays] = React.useState({});
+  const toggleDay = (dia) =>
+    setExpandedDays((s) => ({ ...s, [dia]: !s[dia] }));
+  const expandAll = () => {
+    const all = {};
+    pagosPorDia.forEach(([d]) => { all[d] = true; });
+    setExpandedDays(all);
+  };
+  const collapseAll = () => setExpandedDays({});
+
   // Master checkbox
   const allVisibleSelected =
     visiblePagos.length > 0 &&
@@ -2711,6 +2733,18 @@ function ImportCxpModal({
     const newSel = !allVisibleSelected;
     const next = { ...rowState };
     visiblePagos.forEach((p) => {
+      next[p.paymentId] = { ...next[p.paymentId], selected: newSel };
+    });
+    setRowState(next);
+  };
+
+  // Toggle todos los pagos de un día específico
+  const toggleDayPagos = (fechaIso) => {
+    const pagosDia = visiblePagos.filter((p) => p.fechaPago === fechaIso);
+    const allSel = pagosDia.every((p) => rowState[p.paymentId]?.selected);
+    const newSel = !allSel;
+    const next = { ...rowState };
+    pagosDia.forEach((p) => {
       next[p.paymentId] = { ...next[p.paymentId], selected: newSel };
     });
     setRowState(next);
@@ -2783,8 +2817,8 @@ function ImportCxpModal({
           borderRadius: 12,
           boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
           width: "100%",
-          maxWidth: 1100,
-          maxHeight: "92vh",
+          maxWidth: 1400,
+          maxHeight: "90vh",
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
@@ -2854,144 +2888,205 @@ function ImportCxpModal({
             <span>💰 Realizados ({countReal})</span>
           </label>
           <div style={{ flex: 1 }}></div>
+          <button
+            onClick={expandAll}
+            style={{
+              padding: "4px 10px",
+              background: "white",
+              border: "1px solid #CBD5E1",
+              borderRadius: 4,
+              fontSize: 11,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >▾ Expandir todo</button>
+          <button
+            onClick={collapseAll}
+            style={{
+              padding: "4px 10px",
+              background: "white",
+              border: "1px solid #CBD5E1",
+              borderRadius: 4,
+              fontSize: 11,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >▸ Contraer todo</button>
           <span style={{ fontSize: 11, color: "#94A3B8" }}>
             {pagos.length} pago{pagos.length !== 1 ? "s" : ""} encontrado{pagos.length !== 1 ? "s" : ""}
           </span>
         </div>
 
-        {/* TABLA */}
+        {/* ACORDEÓN POR DÍA */}
         <div style={{ flex: 1, overflow: "auto" }}>
           {visiblePagos.length === 0 ? (
             <div style={{ padding: 48, textAlign: "center", color: "#94A3B8" }}>
               📭 No hay pagos en este rango de fechas
             </div>
           ) : (
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-              <thead style={{ position: "sticky", top: 0, background: "#042C53", color: "white", zIndex: 1 }}>
-                <tr>
-                  <th style={{ padding: "8px 10px", textAlign: "center", width: 32, fontWeight: 600 }}>
+            pagosPorDia.map(([fechaIso, pagosDia]) => {
+              const isExpanded = !!expandedDays[fechaIso];
+              const [y, m, d] = fechaIso.split("-").map(Number);
+              const dt = new Date(y, m - 1, d);
+              const diasNombre = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+              const totalDia = pagosDia.reduce((s, p) => s + (+p.monto || 0), 0);
+              const allDiaSelected = pagosDia.every((p) => rowState[p.paymentId]?.selected);
+              const someDiaSelected = pagosDia.some((p) => rowState[p.paymentId]?.selected);
+
+              return (
+                <div key={fechaIso} style={{ borderBottom: "1px solid #E2E8F0" }}>
+                  {/* Header del día (clickeable) */}
+                  <div
+                    onClick={() => toggleDay(fechaIso)}
+                    style={{
+                      padding: "12px 20px",
+                      background: "linear-gradient(180deg, #F1F5F9 0%, #E2E8F0 100%)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      cursor: "pointer",
+                      userSelect: "none",
+                    }}
+                  >
+                    <span style={{ fontSize: 14, color: "#475569", width: 12 }}>
+                      {isExpanded ? "▾" : "▸"}
+                    </span>
                     <input
                       type="checkbox"
-                      checked={allVisibleSelected}
-                      onChange={toggleAll}
+                      checked={allDiaSelected}
+                      ref={(el) => { if (el) el.indeterminate = !allDiaSelected && someDiaSelected; }}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={() => toggleDayPagos(fechaIso)}
                       style={{ cursor: "pointer" }}
                     />
-                  </th>
-                  <th style={{ padding: "8px 10px", textAlign: "left", fontWeight: 600 }}>PROVEEDOR / FOLIO</th>
-                  <th style={{ padding: "8px 10px", textAlign: "left", fontWeight: 600 }}>CONCEPTO</th>
-                  <th style={{ padding: "8px 10px", textAlign: "left", fontWeight: 600 }}>FECHA</th>
-                  <th style={{ padding: "8px 10px", textAlign: "center", fontWeight: 600 }}>TIPO</th>
-                  <th style={{ padding: "8px 10px", textAlign: "right", fontWeight: 600 }}>MONTO</th>
-                  <th style={{ padding: "8px 10px", textAlign: "left", fontWeight: 600 }}>SEGMENTO</th>
-                  <th style={{ padding: "8px 10px", textAlign: "left", fontWeight: 600 }}>RUBRO</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visiblePagos.map((p, idx) => {
-                  const state = rowState[p.paymentId] || { selected: false, rubro: "", segmento: "TAS" };
-                  const isDup = importadosPaymentIds.has(p.paymentId);
-                  return (
-                    <tr
-                      key={p.paymentId}
-                      style={{
-                        borderBottom: "0.5px solid #F1F5F9",
-                        background: state.selected
-                          ? "#FFFBEB"
-                          : (idx % 2 === 1 ? "#F8FAFC" : "white"),
-                      }}
-                    >
-                      <td style={{ padding: "8px 10px", textAlign: "center" }}>
-                        <input
-                          type="checkbox"
-                          checked={state.selected}
-                          onChange={(e) => updateRow(p.paymentId, { selected: e.target.checked })}
-                          style={{ cursor: "pointer" }}
-                        />
-                      </td>
-                      <td style={{ padding: "8px 10px" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 600, color: "#0F172A" }}>{p.proveedor}</div>
-                            <div style={{ fontSize: 10, color: "#94A3B8", fontFamily: "ui-monospace, monospace" }}>
-                              {p.folio}
-                            </div>
-                          </div>
-                          {isDup && (
-                            <span
-                              title="Ya importado previamente — se actualizará al confirmar"
+                    <div style={{ flex: 1 }}>
+                      <span style={{ color: "#0F172A", fontSize: 14, fontWeight: 600 }}>
+                        📆 {diasNombre[dt.getDay()]} {String(d).padStart(2, "0")}/{String(m).padStart(2, "0")}
+                      </span>
+                      <span style={{ fontSize: 11, color: "#64748B", marginLeft: 10, fontWeight: 400 }}>
+                        {pagosDia.length} pago{pagosDia.length !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 13, color: "#B91C1C", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                      {fmt(totalDia)}
+                    </div>
+                  </div>
+
+                  {/* Contenido expandido */}
+                  {isExpanded && (
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ background: "#042C53", color: "white", fontSize: 10 }}>
+                          <th style={{ padding: "6px 10px", textAlign: "center", width: 32, fontWeight: 600 }}></th>
+                          <th style={{ padding: "6px 10px", textAlign: "left", fontWeight: 600 }}>PROVEEDOR / FOLIO</th>
+                          <th style={{ padding: "6px 10px", textAlign: "left", fontWeight: 600 }}>CONCEPTO</th>
+                          <th style={{ padding: "6px 10px", textAlign: "center", fontWeight: 600 }}>TIPO</th>
+                          <th style={{ padding: "6px 10px", textAlign: "right", fontWeight: 600 }}>MONTO</th>
+                          <th style={{ padding: "6px 10px", textAlign: "left", fontWeight: 600 }}>SEGMENTO</th>
+                          <th style={{ padding: "6px 10px", textAlign: "left", fontWeight: 600 }}>RUBRO</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pagosDia.map((p, idx) => {
+                          const state = rowState[p.paymentId] || { selected: false, rubro: "", segmento: "TAS" };
+                          const isDup = importadosPaymentIds.has(p.paymentId);
+                          return (
+                            <tr
+                              key={p.paymentId}
                               style={{
-                                background: "#DBEAFE",
-                                color: "#1E40AF",
-                                fontSize: 9,
-                                fontWeight: 700,
-                                padding: "2px 6px",
-                                borderRadius: 3,
-                                whiteSpace: "nowrap",
+                                borderBottom: "0.5px solid #F1F5F9",
+                                background: state.selected ? "#FFFBEB" : (idx % 2 === 1 ? "#F8FAFC" : "white"),
                               }}
-                            >🔁 YA IMPORTADO</span>
-                          )}
-                        </div>
-                      </td>
-                      <td style={{ padding: "8px 10px", color: "#475569", fontSize: 11 }}>
-                        {p.concepto || "—"}
-                      </td>
-                      <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{diaCorto(p.fechaPago)}</td>
-                      <td style={{ padding: "8px 10px", textAlign: "center" }}>
-                        {p.tipo === "programado" ? (
-                          <span style={{ background: "#FFE0B2", color: "#E65100", padding: "2px 6px", borderRadius: 3, fontSize: 10, fontWeight: 600 }}>
-                            📅 PROG
-                          </span>
-                        ) : (
-                          <span style={{ background: "#BBF7D0", color: "#166534", padding: "2px 6px", borderRadius: 3, fontSize: 10, fontWeight: 600 }}>
-                            💰 REAL
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ padding: "8px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums", color: "#B91C1C", fontWeight: 600 }}>
-                        {fmt(p.monto)} <span style={{ fontSize: 9, color: "#94A3B8" }}>{p.moneda}</span>
-                      </td>
-                      <td style={{ padding: "8px 10px" }}>
-                        <select
-                          value={state.segmento}
-                          onChange={(e) => updateRow(p.paymentId, { segmento: e.target.value })}
-                          style={{
-                            fontSize: 11,
-                            padding: "3px 6px",
-                            border: "1px solid #CBD5E1",
-                            borderRadius: 4,
-                            cursor: "pointer",
-                            width: "100%",
-                          }}
-                        >
-                          <option value="TAS">TAS</option>
-                          <option value="Transporte">Transporte</option>
-                        </select>
-                      </td>
-                      <td style={{ padding: "8px 10px" }}>
-                        <select
-                          value={state.rubro}
-                          onChange={(e) => updateRow(p.paymentId, { rubro: e.target.value })}
-                          style={{
-                            fontSize: 11,
-                            padding: "3px 6px",
-                            border: `1px solid ${(state.selected && !state.rubro) ? "#DC2626" : "#CBD5E1"}`,
-                            borderRadius: 4,
-                            cursor: "pointer",
-                            width: "100%",
-                            background: (state.selected && !state.rubro) ? "#FEE2E2" : "white",
-                          }}
-                        >
-                          <option value="">— elegir —</option>
-                          {rubros.map((r) => (
-                            <option key={r} value={r}>{r}</option>
-                          ))}
-                        </select>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                            >
+                              <td style={{ padding: "8px 10px", textAlign: "center" }}>
+                                <input
+                                  type="checkbox"
+                                  checked={state.selected}
+                                  onChange={(e) => updateRow(p.paymentId, { selected: e.target.checked })}
+                                  style={{ cursor: "pointer" }}
+                                />
+                              </td>
+                              <td style={{ padding: "8px 10px" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontWeight: 600, color: "#0F172A" }}>{p.proveedor}</div>
+                                    <div style={{ fontSize: 10, color: "#94A3B8", fontFamily: "ui-monospace, monospace" }}>{p.folio}</div>
+                                  </div>
+                                  {isDup && (
+                                    <span
+                                      title="Ya importado previamente — se actualizará al confirmar"
+                                      style={{
+                                        background: "#DBEAFE",
+                                        color: "#1E40AF",
+                                        fontSize: 9,
+                                        fontWeight: 700,
+                                        padding: "2px 6px",
+                                        borderRadius: 3,
+                                        whiteSpace: "nowrap",
+                                      }}
+                                    >🔁 YA IMPORTADO</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td style={{ padding: "8px 10px", color: "#475569", fontSize: 11 }}>
+                                {p.concepto || "—"}
+                              </td>
+                              <td style={{ padding: "8px 10px", textAlign: "center" }}>
+                                {p.tipo === "programado" ? (
+                                  <span style={{ background: "#FFE0B2", color: "#E65100", padding: "2px 6px", borderRadius: 3, fontSize: 10, fontWeight: 600 }}>📅 PROG</span>
+                                ) : (
+                                  <span style={{ background: "#BBF7D0", color: "#166534", padding: "2px 6px", borderRadius: 3, fontSize: 10, fontWeight: 600 }}>💰 REAL</span>
+                                )}
+                              </td>
+                              <td style={{ padding: "8px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums", color: "#B91C1C", fontWeight: 600 }}>
+                                {fmt(p.monto)} <span style={{ fontSize: 9, color: "#94A3B8" }}>{p.moneda}</span>
+                              </td>
+                              <td style={{ padding: "8px 10px" }}>
+                                <select
+                                  value={state.segmento}
+                                  onChange={(e) => updateRow(p.paymentId, { segmento: e.target.value })}
+                                  style={{
+                                    fontSize: 11,
+                                    padding: "3px 6px",
+                                    border: "1px solid #CBD5E1",
+                                    borderRadius: 4,
+                                    cursor: "pointer",
+                                    width: "100%",
+                                  }}
+                                >
+                                  <option value="TAS">TAS</option>
+                                  <option value="Transporte">Transporte</option>
+                                </select>
+                              </td>
+                              <td style={{ padding: "8px 10px" }}>
+                                <select
+                                  value={state.rubro}
+                                  onChange={(e) => updateRow(p.paymentId, { rubro: e.target.value })}
+                                  style={{
+                                    fontSize: 11,
+                                    padding: "3px 6px",
+                                    border: `1px solid ${(state.selected && !state.rubro) ? "#DC2626" : "#CBD5E1"}`,
+                                    borderRadius: 4,
+                                    cursor: "pointer",
+                                    width: "100%",
+                                    background: (state.selected && !state.rubro) ? "#FEE2E2" : "white",
+                                  }}
+                                >
+                                  <option value="">— elegir —</option>
+                                  {rubros.map((r) => (
+                                    <option key={r} value={r}>{r}</option>
+                                  ))}
+                                </select>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
 
