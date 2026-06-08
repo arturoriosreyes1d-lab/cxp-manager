@@ -6784,7 +6784,12 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     }
 
     return (
-      <div>
+      <div style={{
+        fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
+        WebkitFontSmoothing: 'antialiased',
+        MozOsxFontSmoothing: 'grayscale',
+        textRendering: 'optimizeLegibility',
+      }}>
         {/* HEADER */}
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14,paddingBottom:12,borderBottom:`1px solid ${C.border}`,flexWrap:'wrap',gap:12}}>
           <div>
@@ -7671,7 +7676,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     };
 
     return (
-      <div onClick={onClose} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(31,41,55,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:20}}>
+      <div onClick={onClose} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(31,41,55,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:20,fontFamily:'"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',WebkitFontSmoothing:'antialiased',MozOsxFontSmoothing:'grayscale',textRendering:'optimizeLegibility'}}>
         <div onClick={(e) => e.stopPropagation()} style={{background:'#fff',borderRadius:14,padding:24,maxWidth:460,width:'100%',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:16,paddingBottom:12,borderBottom:`1px solid ${C.border}`}}>
             <div>
@@ -7782,7 +7787,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     };
 
     return (
-      <div onClick={onClose} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(31,41,55,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:20}}>
+      <div onClick={onClose} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(31,41,55,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:20,fontFamily:'"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',WebkitFontSmoothing:'antialiased',MozOsxFontSmoothing:'grayscale',textRendering:'optimizeLegibility'}}>
         <div onClick={(e) => e.stopPropagation()} style={{background:'#fff',borderRadius:14,padding:24,maxWidth:760,width:'100%',maxHeight:'85vh',display:'flex',flexDirection:'column',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14,paddingBottom:12,borderBottom:`1px solid ${C.border}`}}>
             <div>
