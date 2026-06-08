@@ -1391,3 +1391,128 @@ export async function fetchAuditLog({ limit = 200, username, entidad, accion, de
     contexto: r.contexto,
   }));
 }
+
+
+// ═══════════════════════════════════════════════════════════════════
+// PRÉSTAMOS BANCARIOS
+// Un préstamo por empresa (por ahora). Movimientos registran
+// disposiciones (uso del dinero) y pagos (devolución).
+// ═══════════════════════════════════════════════════════════════════
+
+export async function fetchPrestamos(empresaId) {
+  const { data, error } = await supabase
+    .from('prestamos')
+    .select('*')
+    .eq('empresa_id', empresaId)
+    .eq('activo', true)
+    .order('created_at', { ascending: true });
+  if (error) { console.error('fetchPrestamos:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id,
+    empresaId: r.empresa_id,
+    banco: r.banco || '',
+    cuentaId: r.cuenta_id || null,
+    numeroCuenta: r.numero_cuenta || '',
+    montoAutorizado: +r.monto_autorizado || 0,
+    moneda: r.moneda || 'MXN',
+    fechaRecepcion: r.fecha_recepcion,
+    concepto: r.concepto || '',
+    activo: r.activo !== false,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }));
+}
+
+export async function upsertPrestamo(p, usuario) {
+  const row = {
+    empresa_id: p.empresaId,
+    banco: p.banco,
+    cuenta_id: p.cuentaId || null,
+    numero_cuenta: p.numeroCuenta || null,
+    monto_autorizado: +p.montoAutorizado || 0,
+    moneda: p.moneda || 'MXN',
+    fecha_recepcion: p.fechaRecepcion || null,
+    concepto: p.concepto || null,
+    activo: p.activo !== false,
+    updated_by: usuario || 'desconocido',
+  };
+  const isUUID = p.id && /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(p.id);
+  if (isUUID) {
+    const { data, error } = await supabase.from('prestamos').update(row).eq('id', p.id).select().single();
+    if (error) { console.error('upsertPrestamo update:', error); return null; }
+    return data?.id;
+  } else {
+    row.created_by = usuario || 'desconocido';
+    const { data, error } = await supabase.from('prestamos').insert(row).select().single();
+    if (error) { console.error('upsertPrestamo insert:', error); return null; }
+    return data?.id;
+  }
+}
+
+export async function deletePrestamo(id) {
+  // Soft delete
+  const { error } = await supabase.from('prestamos').update({ activo: false }).eq('id', id);
+  if (error) console.error('deletePrestamo:', error);
+}
+
+// MOVIMIENTOS DEL PRÉSTAMO
+export async function fetchPrestamoMovimientos(prestamoId) {
+  const { data, error } = await supabase
+    .from('prestamo_movimientos')
+    .select('*')
+    .eq('prestamo_id', prestamoId)
+    .order('fecha', { ascending: true })
+    .order('created_at', { ascending: true });
+  if (error) { console.error('fetchPrestamoMovimientos:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id,
+    prestamoId: r.prestamo_id,
+    empresaId: r.empresa_id,
+    fecha: r.fecha,
+    tipo: r.tipo,            // 'disposicion' | 'pago' | 'inicial'
+    monto: +r.monto || 0,    // siempre positivo
+    concepto: r.concepto || '',
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }));
+}
+
+export async function upsertPrestamoMovimiento(m, usuario) {
+  const row = {
+    prestamo_id: m.prestamoId,
+    empresa_id: m.empresaId,
+    fecha: m.fecha,
+    tipo: m.tipo,
+    monto: +m.monto || 0,
+    concepto: m.concepto || null,
+    updated_by: usuario || 'desconocido',
+  };
+  const isUUID = m.id && /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(m.id);
+  if (isUUID) {
+    const { data, error } = await supabase.from('prestamo_movimientos').update(row).eq('id', m.id).select().single();
+    if (error) { console.error('upsertPrestamoMovimiento update:', error); return null; }
+    return data?.id;
+  } else {
+    row.created_by = usuario || 'desconocido';
+    const { data, error } = await supabase.from('prestamo_movimientos').insert(row).select().single();
+    if (error) { console.error('upsertPrestamoMovimiento insert:', error); return null; }
+    return data?.id;
+  }
+}
+
+export async function deletePrestamoMovimiento(id) {
+  const { error } = await supabase.from('prestamo_movimientos').delete().eq('id', id);
+  if (error) console.error('deletePrestamoMovimiento:', error);
+}
+
+// Cálculo: monto utilizado = sum(disposiciones) - sum(pagos)
+// 'inicial' no afecta porque representa la recepción y el dinero
+// está físicamente en la cuenta bancaria.
+export function calcularUtilizadoPrestamo(movimientos) {
+  let utilizado = 0;
+  (movimientos || []).forEach(m => {
+    if (m.tipo === 'disposicion') utilizado += +m.monto || 0;
+    else if (m.tipo === 'pago')   utilizado -= +m.monto || 0;
+  });
+  return Math.max(0, utilizado); // no permitir negativos
+}

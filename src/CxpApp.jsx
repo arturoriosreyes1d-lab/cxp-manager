@@ -30,6 +30,9 @@ import {
   fetchSaldoReporteDia, upsertSaldoReporteDia,
   fetchUltimoSaldoReporteAntes, fetchMovimientosDia,
   fetchAuditLog,
+  fetchPrestamos, upsertPrestamo, deletePrestamo,
+  fetchPrestamoMovimientos, upsertPrestamoMovimiento, deletePrestamoMovimiento,
+  calcularUtilizadoPrestamo,
 } from "./db.js";
 import CxcView from "./CxcView.jsx";
 import ReportesView from "./ReportesView.jsx";
@@ -6248,6 +6251,13 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     const [edicionHistoricaSaldos, setEdicionHistoricaSaldos] = useState(false);
     const [showCopiarMenu, setShowCopiarMenu] = useState(false);
     const [importarECModal, setImportarECModal] = useState(null);
+    // Préstamos: por ahora un solo préstamo activo por empresa
+    const [prestamo, setPrestamo] = useState(null);          // {id, banco, montoAutorizado, ...} o null
+    const [prestamoMovs, setPrestamoMovs] = useState([]);    // movimientos del préstamo activo
+    const [showPrestamoMov, setShowPrestamoMov] = useState(null);  // {tipo, mov} o null — modal nuevo/editar
+    const [showPrestamoHist, setShowPrestamoHist] = useState(false);
+    const [editandoMontoPrestamo, setEditandoMontoPrestamo] = useState(false);
+    const [valorMontoPrestamo, setValorMontoPrestamo] = useState('');
     const refInicio = useRef(null);
     const refCierre = useRef(null);
     const refAmbos = useRef(null);
@@ -6267,13 +6277,14 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     // Bloqueo de edición: solo bloqueamos en histórico SIN edición habilitada
     const bloqueoSaldos = !esHoy && !edicionHistoricaSaldos;
 
-    // Cargar cuentas + saldos del día (ambos momentos en paralelo)
+    // Cargar cuentas + saldos del día (ambos momentos en paralelo) + préstamo activo
     const recargar = async () => {
       setLoading(true);
-      const [cs, ssIni, ssCie] = await Promise.all([
+      const [cs, ssIni, ssCie, prestamos] = await Promise.all([
         fetchCuentasBancarias(empresaId),
         fetchSaldosDiarios(empresaId, fechaConsulta, 'inicio'),
         fetchSaldosDiarios(empresaId, fechaConsulta, 'cierre'),
+        fetchPrestamos(empresaId),
       ]);
       setCuentas(cs);
       const procesar = (arr) => {
@@ -6294,7 +6305,23 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
       setSaldosCierre(cie.map);
       setMetaInicio({ updatedAt: ini.lastUpdate, updatedBy: ini.lastBy });
       setMetaCierre({ updatedAt: cie.lastUpdate, updatedBy: cie.lastBy });
+      // Préstamo activo (por ahora tomamos el primero; futuro: soporte multi-préstamo)
+      const pActivo = prestamos[0] || null;
+      setPrestamo(pActivo);
+      if (pActivo) {
+        const movs = await fetchPrestamoMovimientos(pActivo.id);
+        setPrestamoMovs(movs);
+      } else {
+        setPrestamoMovs([]);
+      }
       setLoading(false);
+    };
+
+    // Recargar solo movimientos (después de crear/editar/borrar)
+    const recargarMovsPrestamo = async () => {
+      if (!prestamo) return;
+      const movs = await fetchPrestamoMovimientos(prestamo.id);
+      setPrestamoMovs(movs);
     };
 
     useEffect(() => { recargar(); /* eslint-disable-next-line */ }, [empresaId, fechaConsulta]);
@@ -6311,6 +6338,25 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     // Ej: saldo $1,215 - reserva $2,000 = -$784 (debes meter $784 para cumplir reserva)
     const disponible = (c, m) => saldoReal(c.id, m) - reservaCta(c) - movsPend(c.id, m);
     const ajusteVisible = (c, m) => reservaCta(c) > 0 || movsPend(c.id, m) !== 0;
+
+    // ─── Cálculos del préstamo ─────────────────────────────────────
+    // utilizado = suma de disposiciones - suma de pagos
+    // bloqueado = autorizado - utilizado  (lo que NO se ha tomado)
+    // El bloqueado se resta del Total Disponible MN para que el flujo
+    // proyectado no contemple ese dinero como operativo.
+    const prestamoCalc = useMemo(() => {
+      if (!prestamo) return null;
+      const utilizado = calcularUtilizadoPrestamo(prestamoMovs);
+      const autorizado = +prestamo.montoAutorizado || 0;
+      const bloqueado = Math.max(0, autorizado - utilizado);
+      const pctUtilizado = autorizado > 0 ? Math.round((utilizado / autorizado) * 100) : 0;
+      // Estado del chip: 'bloqueado' (sin uso) | 'enUso' (parcial) | 'agotado' (100%)
+      let estado = 'bloqueado';
+      if (utilizado > 0 && utilizado < autorizado) estado = 'enUso';
+      else if (utilizado >= autorizado && autorizado > 0) estado = 'agotado';
+      const movsContables = (prestamoMovs || []).filter(m => m.tipo !== 'inicial').length;
+      return { autorizado, utilizado, bloqueado, pctUtilizado, estado, movsContables };
+    }, [prestamo, prestamoMovs]);
 
     // Tema por momento
     const tema = (m) => {
@@ -6602,10 +6648,18 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
               {/* Separador continuo de ancho completo */}
               <div style={{borderTop:`2px solid ${C.border}`,marginTop:12,paddingTop:12,display:'flex',justifyContent:'space-between',alignItems:'center',gap:16,flexWrap:'wrap'}}>
-                <div style={{color:t.primario,fontWeight:800,fontSize:17}}>Total Disponible</div>
+                <div>
+                  <div style={{color:t.primario,fontWeight:800,fontSize:17}}>Total Disponible</div>
+                  {prestamoCalc && prestamoCalc.bloqueado > 0 && (
+                    <div style={{fontSize:10,color:C.muted,marginTop:2,fontWeight:500}}>
+                      MN excluye <span style={{fontVariantNumeric:'tabular-nums',color:'#B45309'}}>${fmt(prestamoCalc.bloqueado)}</span> bloqueado del préstamo
+                    </div>
+                  )}
+                </div>
                 <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:8}}>
                   {(() => {
-                    const tot = totales.dispMN + totales.dispInversion;
+                    const bloq = prestamoCalc ? prestamoCalc.bloqueado : 0;
+                    const tot = totales.dispMN + totales.dispInversion - bloq;
                     const esNeg = tot < 0;
                     return (
                       <span style={{background: esNeg ? '#C62828' : t.primario,padding:'8px 18px',borderRadius:5,fontWeight:800,color:'#fff',fontSize:22,fontVariantNumeric:'tabular-nums',letterSpacing:0.3}}>{esNeg ? '-' : ''}${fmt(Math.abs(tot))} MN</span>
@@ -6622,6 +6676,99 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      );
+    };
+
+    // ──── Sub-componente: Chip lateral del préstamo ────
+    const ChipPrestamo = () => {
+      if (!prestamo || !prestamoCalc) return null;
+      const pc = prestamoCalc;
+      // Paleta por estado
+      const skin = {
+        bloqueado: { headerBg:'#FEF3C7', headerText:'#92400E', icon:'🔒', estado:'PRÉSTAMO BLOQUEADO', sub:'Sin utilizar', barColor:'#F59E0B' },
+        enUso:     { headerBg:'#DBEAFE', headerText:'#1E40AF', icon:'⏳', estado:'PRÉSTAMO EN USO',     sub:'Parcialmente utilizado', barColor:'#3B82F6' },
+        agotado:   { headerBg:'#FEE2E2', headerText:'#991B1B', icon:'⚠️', estado:'PRÉSTAMO AGOTADO',     sub:'Totalmente utilizado', barColor:'#DC2626' },
+      }[pc.estado];
+      const colorUtilizado = pc.estado === 'agotado' ? '#DC2626' : (pc.estado === 'enUso' ? '#1E40AF' : '#1F2937');
+      return (
+        <div style={{width:300,flexShrink:0,background:'#fff',border:`1px solid ${C.border}`,borderRadius:8,overflow:'hidden',alignSelf:'flex-start'}}>
+          <div style={{background:skin.headerBg,padding:'12px 14px',borderBottom:`1px solid ${C.border}`}}>
+            <div style={{display:'flex',alignItems:'center',gap:6}}>
+              <span style={{fontSize:16}}>{skin.icon}</span>
+              <span style={{fontSize:11,fontWeight:800,color:skin.headerText,letterSpacing:0.6}}>{skin.estado}</span>
+            </div>
+            <div style={{fontSize:10,color:skin.headerText,opacity:0.85,marginTop:2}}>{skin.sub}</div>
+          </div>
+          <div style={{padding:14}}>
+            <div style={{fontSize:10,color:C.muted,marginBottom:2}}>Banco</div>
+            <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>{prestamo.banco}{prestamo.numeroCuenta ? ` · Cta. ${limpiaCta(prestamo.numeroCuenta)}` : ''}</div>
+
+            <div style={{fontSize:10,color:C.muted,marginBottom:2}}>Bloqueado</div>
+            {editandoMontoPrestamo ? (
+              <div style={{display:'flex',gap:4,marginBottom:10,alignItems:'center'}}>
+                <input
+                  autoFocus
+                  value={valorMontoPrestamo}
+                  onChange={(e) => setValorMontoPrestamo(e.target.value.replace(/[^\d.]/g, ''))}
+                  onKeyDown={async (e) => {
+                    if (e.key === 'Enter') {
+                      const nuevoMonto = parseFloat(valorMontoPrestamo) || 0;
+                      await upsertPrestamo({ ...prestamo, montoAutorizado: nuevoMonto }, user?.nombre);
+                      setEditandoMontoPrestamo(false);
+                      await recargar();
+                    } else if (e.key === 'Escape') {
+                      setEditandoMontoPrestamo(false);
+                    }
+                  }}
+                  style={{flex:1,border:`2px solid ${C.navy}`,padding:'4px 8px',borderRadius:4,fontSize:14,fontFamily:'inherit',fontVariantNumeric:'tabular-nums'}}
+                />
+                <button onClick={() => setEditandoMontoPrestamo(false)} style={{background:'transparent',border:`1px solid ${C.border}`,padding:'4px 8px',borderRadius:4,fontSize:11,cursor:'pointer',fontFamily:'inherit'}}>×</button>
+              </div>
+            ) : (
+              <div style={{display:'flex',alignItems:'baseline',gap:6,marginBottom:10}}>
+                <div style={{fontSize:18,fontWeight:800,color:'#1F2937',fontVariantNumeric:'tabular-nums'}}>${fmt(pc.bloqueado)}</div>
+                {esHoy && !esConsulta && (
+                  <button
+                    onClick={() => { setValorMontoPrestamo(String(prestamo.montoAutorizado)); setEditandoMontoPrestamo(true); }}
+                    title="Editar monto autorizado"
+                    style={{background:'transparent',border:`1px solid ${C.border}`,padding:'2px 6px',borderRadius:4,fontSize:10,cursor:'pointer',color:C.muted,fontFamily:'inherit'}}
+                  >✎</button>
+                )}
+              </div>
+            )}
+
+            {/* Barra de progreso */}
+            <div style={{height:6,background:'#F3F4F6',borderRadius:999,overflow:'hidden',marginBottom:5}}>
+              <div style={{width:`${Math.min(100, pc.pctUtilizado)}%`,height:'100%',background:skin.barColor,transition:'width 0.3s'}}/>
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:C.muted,marginBottom:10}}>
+              <span>{pc.pctUtilizado}% utilizado</span>
+              <span style={{fontVariantNumeric:'tabular-nums'}}>${fmt(pc.autorizado)}</span>
+            </div>
+
+            <div style={{borderTop:`1px solid ${C.border}`,paddingTop:10,marginTop:4,fontSize:11,color:C.muted}}>
+              <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+                <span>Utilizado</span>
+                <span style={{color:colorUtilizado,fontWeight:700,fontVariantNumeric:'tabular-nums'}}>${fmt(pc.utilizado)}</span>
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between'}}>
+                <span>Movimientos</span>
+                <span style={{color:'#1F2937',fontWeight:600}}>{pc.movsContables}</span>
+              </div>
+            </div>
+
+            {esHoy && !esConsulta && (
+              <button
+                onClick={() => setShowPrestamoMov({ tipo:'disposicion', mov:null })}
+                style={{width:'100%',marginTop:12,padding:'8px',background:C.navy,color:'#fff',border:'none',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}
+              >+ Registrar movimiento</button>
+            )}
+            <button
+              onClick={() => setShowPrestamoHist(true)}
+              style={{width:'100%',marginTop:6,padding:'8px',background:'#fff',color:C.text,border:`1px solid ${C.border}`,borderRadius:6,fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}
+            >📜 Ver histórico</button>
           </div>
         </div>
       );
@@ -6650,6 +6797,9 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             )}
             <button onClick={() => setShowCuentas(true)} disabled={esConsulta} style={{background:'#fff',border:`1px solid ${C.border}`,padding:'7px 12px',borderRadius:7,fontSize:11,color:C.text,fontWeight:600,cursor:esConsulta?'not-allowed':'pointer',opacity:esConsulta?0.5:1,fontFamily:'inherit'}}>⚙️ Cuentas</button>
             <button onClick={() => setShowHistorico(true)} style={{background:'#fff',border:`1px solid ${C.border}`,padding:'7px 12px',borderRadius:7,fontSize:11,color:C.text,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>📜 Histórico</button>
+            {!prestamo && esHoy && !esConsulta && (
+              <button onClick={() => setShowPrestamoMov({ tipo:'crear-prestamo', mov:null })} style={{background:'#fff',border:`1px solid #F59E0B`,color:'#92400E',padding:'7px 12px',borderRadius:7,fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>+ Registrar préstamo</button>
+            )}
             <button onClick={() => setImportarECModal({ open: true, archivo: null, parseando: false, resultado: null, sobreescribir: new Set() })} disabled={esConsulta} style={{background:esConsulta?'#999':'#1976D2',color:'#fff',border:'none',padding:'7px 12px',borderRadius:7,fontSize:11,fontWeight:700,cursor:esConsulta?'not-allowed':'pointer',fontFamily:'inherit'}}>📥 Importar Excel</button>
             <button onClick={() => setShowCopiarMenu(true)} disabled={cuentas.length===0} style={{background:cuentas.length===0?'#999':C.navy,color:'#fff',border:'none',padding:'7px 12px',borderRadius:7,fontSize:11,fontWeight:700,cursor:cuentas.length===0?'not-allowed':'pointer',fontFamily:'inherit'}}>📸 Copiar Imagen</button>
           </div>
@@ -6698,22 +6848,37 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             {!esConsulta && <button onClick={() => setShowCuentas(true)} style={btnStyle}>⚙️ Configurar cuentas</button>}
           </div>
         ) : verHistorico ? (
-          /* MODO HISTÓRICO: si momento === null muestra ambos cuadros, si no solo el seleccionado */
+          /* MODO HISTÓRICO: si momento === null muestra ambos cuadros, si no solo el seleccionado.
+             Cada cuadro va dentro de un wrapper flex (ref de captura) que incluye el chip
+             del préstamo, para que las 3 opciones de "Copiar Imagen" lo incluyan. */
           momentoConsulta === null ? (
             <div ref={refAmbos} style={{display:'flex',flexDirection:'column',gap:24,alignItems:'center'}}>
-              <CuadroSaldos momento="inicio" innerRef={refInicio}/>
-              <CuadroSaldos momento="cierre" innerRef={refCierre}/>
+              <div ref={refInicio} style={{display:'flex',gap:16,alignItems:'flex-start',justifyContent:'center',flexWrap:'wrap',background:'#fff',padding:8}}>
+                <CuadroSaldos momento="inicio"/>
+                <ChipPrestamo/>
+              </div>
+              <div ref={refCierre} style={{display:'flex',gap:16,alignItems:'flex-start',justifyContent:'center',flexWrap:'wrap',background:'#fff',padding:8}}>
+                <CuadroSaldos momento="cierre"/>
+                <ChipPrestamo/>
+              </div>
             </div>
           ) : (
-            <div ref={refAmbos}>
+            <div ref={refAmbos} style={{display:'flex',gap:16,alignItems:'flex-start',justifyContent:'center',flexWrap:'wrap',background:'#fff',padding:8}}>
               <CuadroSaldos momento={momentoConsulta} innerRef={momentoConsulta==='cierre'?refCierre:refInicio}/>
+              <ChipPrestamo/>
             </div>
           )
         ) : (
-          /* MODO HOY: ambos cuadros apilados */
+          /* MODO HOY: chip al lado de CADA cuadro; refAmbos engloba todo. */
           <div ref={refAmbos} style={{display:'flex',flexDirection:'column',gap:24,alignItems:'center'}}>
-            <CuadroSaldos momento="inicio" innerRef={refInicio}/>
-            <CuadroSaldos momento="cierre" innerRef={refCierre}/>
+            <div ref={refInicio} style={{display:'flex',gap:16,alignItems:'flex-start',justifyContent:'center',flexWrap:'wrap',background:'#fff',padding:8}}>
+              <CuadroSaldos momento="inicio"/>
+              <ChipPrestamo/>
+            </div>
+            <div ref={refCierre} style={{display:'flex',gap:16,alignItems:'flex-start',justifyContent:'center',flexWrap:'wrap',background:'#fff',padding:8}}>
+              <CuadroSaldos momento="cierre"/>
+              <ChipPrestamo/>
+            </div>
           </div>
         )}
 
@@ -6783,6 +6948,47 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           }
           setShowHistorico(false);
         }} />}
+
+        {/* MODAL: Nuevo/editar movimiento de préstamo, o crear préstamo */}
+        {showPrestamoMov && (() => {
+          const isCrearPrestamo = showPrestamoMov.tipo === 'crear-prestamo';
+          const isEditarMov = !!showPrestamoMov.mov;
+          const movDefault = showPrestamoMov.mov || { tipo:'disposicion', fecha:today(), monto:'', concepto:'' };
+          return (
+            <PrestamoMovModal
+              isCrearPrestamo={isCrearPrestamo}
+              isEditarMov={isEditarMov}
+              movDefault={movDefault}
+              prestamo={prestamo}
+              prestamoCalc={prestamoCalc}
+              empresaId={empresaId}
+              empresa={empresa}
+              usuario={user}
+              onClose={() => setShowPrestamoMov(null)}
+              onSaved={async () => { setShowPrestamoMov(null); await recargar(); }}
+            />
+          );
+        })()}
+
+        {/* MODAL: Histórico de movimientos del préstamo */}
+        {showPrestamoHist && prestamo && (
+          <PrestamoHistoricoModal
+            prestamo={prestamo}
+            movimientos={prestamoMovs}
+            prestamoCalc={prestamoCalc}
+            esConsulta={esConsulta}
+            usuario={user}
+            onClose={() => setShowPrestamoHist(false)}
+            onEditar={(mov) => { setShowPrestamoHist(false); setShowPrestamoMov({ tipo:mov.tipo, mov }); }}
+            onBorrar={async (id) => {
+              if (window.confirm('¿Borrar este movimiento? No se puede deshacer.')) {
+                await deletePrestamoMovimiento(id);
+                await recargarMovsPrestamo();
+              }
+            }}
+            onNuevo={() => { setShowPrestamoHist(false); setShowPrestamoMov({ tipo:'disposicion', mov:null }); }}
+          />
+        )}
         
         {importarECModal?.open && (() => {
           const m = importarECModal;
@@ -7367,6 +7573,294 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
               })}
             </div>
           )}
+        </div>
+      </div>
+    );
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
+  // MODAL: Nuevo / Editar movimiento de préstamo (o crear préstamo)
+  // ═══════════════════════════════════════════════════════════════════
+  const PrestamoMovModal = ({ isCrearPrestamo, isEditarMov, movDefault, prestamo, prestamoCalc, empresaId, empresa, usuario, onClose, onSaved }) => {
+    // Si crear préstamo: campos del préstamo
+    const [banco, setBanco] = useState('BANAMEX');
+    const [numeroCuenta, setNumeroCuenta] = useState('');
+    const [montoAutorizado, setMontoAutorizado] = useState('');
+    const [fechaRecepcion, setFechaRecepcion] = useState(today());
+    // Si movimiento: campos del movimiento
+    const [tipoMov, setTipoMov] = useState(movDefault.tipo || 'disposicion');
+    const [fechaMov, setFechaMov] = useState(movDefault.fecha || today());
+    const [montoMov, setMontoMov] = useState(movDefault.monto !== '' && movDefault.monto != null ? String(movDefault.monto) : '');
+    const [conceptoMov, setConceptoMov] = useState(movDefault.concepto || '');
+    const [guardando, setGuardando] = useState(false);
+
+    const parseMonto = (v) => parseFloat(String(v).replace(/[^\d.]/g, '')) || 0;
+
+    // Preview del efecto del movimiento (solo cuando no es crear-prestamo)
+    const previewEfecto = useMemo(() => {
+      if (isCrearPrestamo || !prestamoCalc) return null;
+      const monto = parseMonto(montoMov);
+      let utilizadoNuevo = prestamoCalc.utilizado;
+      if (isEditarMov) {
+        // Si editamos, primero revertir el efecto del movimiento original
+        if (movDefault.tipo === 'disposicion') utilizadoNuevo -= +movDefault.monto || 0;
+        else if (movDefault.tipo === 'pago')   utilizadoNuevo += +movDefault.monto || 0;
+      }
+      if (tipoMov === 'disposicion') utilizadoNuevo += monto;
+      else if (tipoMov === 'pago')   utilizadoNuevo -= monto;
+      utilizadoNuevo = Math.max(0, utilizadoNuevo);
+      const bloqueadoNuevo = Math.max(0, prestamoCalc.autorizado - utilizadoNuevo);
+      return {
+        utilizadoAntes: prestamoCalc.utilizado,
+        utilizadoDespues: utilizadoNuevo,
+        bloqueadoAntes: prestamoCalc.bloqueado,
+        bloqueadoDespues: bloqueadoNuevo,
+      };
+    }, [montoMov, tipoMov, isCrearPrestamo, isEditarMov, prestamoCalc, movDefault]);
+
+    const puedeGuardar = isCrearPrestamo
+      ? (banco.trim() && parseMonto(montoAutorizado) > 0)
+      : (parseMonto(montoMov) > 0);
+
+    const handleGuardar = async () => {
+      if (!puedeGuardar || guardando) return;
+      setGuardando(true);
+      try {
+        if (isCrearPrestamo) {
+          // Crear préstamo nuevo + movimiento "inicial" informativo
+          const monto = parseMonto(montoAutorizado);
+          const nuevoId = await upsertPrestamo({
+            empresaId,
+            banco: banco.trim(),
+            numeroCuenta: numeroCuenta.trim() || null,
+            montoAutorizado: monto,
+            moneda: 'MXN',
+            fechaRecepcion: fechaRecepcion || null,
+            concepto: `Préstamo recibido de ${banco.trim()}`,
+            activo: true,
+          }, usuario?.nombre);
+          if (nuevoId) {
+            await upsertPrestamoMovimiento({
+              prestamoId: nuevoId,
+              empresaId,
+              fecha: fechaRecepcion || today(),
+              tipo: 'inicial',
+              monto: monto,
+              concepto: `Recepción de préstamo ${banco.trim()}`,
+            }, usuario?.nombre);
+          }
+        } else {
+          // Crear o editar movimiento
+          await upsertPrestamoMovimiento({
+            id: isEditarMov ? movDefault.id : undefined,
+            prestamoId: prestamo.id,
+            empresaId,
+            fecha: fechaMov,
+            tipo: tipoMov,
+            monto: parseMonto(montoMov),
+            concepto: conceptoMov.trim() || null,
+          }, usuario?.nombre);
+        }
+        await onSaved();
+      } catch (err) {
+        console.error('guardar préstamo:', err);
+        alert('No se pudo guardar. Revisa la consola.');
+      } finally {
+        setGuardando(false);
+      }
+    };
+
+    return (
+      <div onClick={onClose} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(31,41,55,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:20}}>
+        <div onClick={(e) => e.stopPropagation()} style={{background:'#fff',borderRadius:14,padding:24,maxWidth:460,width:'100%',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:16,paddingBottom:12,borderBottom:`1px solid ${C.border}`}}>
+            <div>
+              <h3 style={{fontSize:16,fontWeight:800,color:C.navy,margin:0}}>
+                {isCrearPrestamo ? '💰 Registrar préstamo' : (isEditarMov ? '✎ Editar movimiento' : '+ Nuevo movimiento')}
+              </h3>
+              <p style={{fontSize:11,color:C.muted,margin:'4px 0 0'}}>
+                {isCrearPrestamo ? `Empresa: ${empresa?.nombre || ''}` : `${prestamo?.banco || ''}${prestamo?.numeroCuenta ? ' · Cta. ' + prestamo.numeroCuenta : ''}`}
+              </p>
+            </div>
+            <button onClick={onClose} style={{background:'transparent',border:'none',fontSize:22,cursor:'pointer',color:C.muted,padding:0,lineHeight:1}}>×</button>
+          </div>
+
+          {isCrearPrestamo ? (
+            <>
+              <div style={{marginBottom:12}}>
+                <label style={{fontSize:11,color:C.muted,display:'block',marginBottom:4,fontWeight:600}}>Banco</label>
+                <input value={banco} onChange={(e) => setBanco(e.target.value)} style={{width:'100%',border:`1px solid ${C.border}`,padding:'8px 10px',borderRadius:6,fontSize:13,fontFamily:'inherit'}}/>
+              </div>
+              <div style={{marginBottom:12}}>
+                <label style={{fontSize:11,color:C.muted,display:'block',marginBottom:4,fontWeight:600}}>Número de cuenta (opcional)</label>
+                <input value={numeroCuenta} onChange={(e) => setNumeroCuenta(e.target.value)} placeholder="Ej: 1032831260" style={{width:'100%',border:`1px solid ${C.border}`,padding:'8px 10px',borderRadius:6,fontSize:13,fontFamily:'inherit'}}/>
+              </div>
+              <div style={{marginBottom:12}}>
+                <label style={{fontSize:11,color:C.muted,display:'block',marginBottom:4,fontWeight:600}}>Monto autorizado</label>
+                <input value={montoAutorizado} onChange={(e) => setMontoAutorizado(e.target.value.replace(/[^\d.]/g, ''))} placeholder="2900000" style={{width:'100%',border:`1px solid ${C.border}`,padding:'8px 10px',borderRadius:6,fontSize:14,fontFamily:'monospace',fontVariantNumeric:'tabular-nums'}}/>
+                {parseMonto(montoAutorizado) > 0 && (
+                  <div style={{fontSize:11,color:C.muted,marginTop:4}}>${fmt(parseMonto(montoAutorizado))} MXN</div>
+                )}
+              </div>
+              <div style={{marginBottom:16}}>
+                <label style={{fontSize:11,color:C.muted,display:'block',marginBottom:4,fontWeight:600}}>Fecha de recepción</label>
+                <input type="date" value={fechaRecepcion} onChange={(e) => setFechaRecepcion(e.target.value)} style={{width:'100%',border:`1px solid ${C.border}`,padding:'8px 10px',borderRadius:6,fontSize:13,fontFamily:'inherit'}}/>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Tabs Disposición / Pago */}
+              <div style={{display:'flex',gap:6,padding:4,background:'#F3F4F6',borderRadius:8,marginBottom:14}}>
+                <button onClick={() => setTipoMov('disposicion')} style={{flex:1,padding:'8px',background:tipoMov==='disposicion'?'#fff':'transparent',border:tipoMov==='disposicion'?`1px solid ${C.border}`:'1px solid transparent',borderRadius:6,fontSize:12,fontWeight:tipoMov==='disposicion'?700:500,color:tipoMov==='disposicion'?C.navy:C.muted,cursor:'pointer',fontFamily:'inherit'}}>↓ Disposición</button>
+                <button onClick={() => setTipoMov('pago')} style={{flex:1,padding:'8px',background:tipoMov==='pago'?'#fff':'transparent',border:tipoMov==='pago'?`1px solid ${C.border}`:'1px solid transparent',borderRadius:6,fontSize:12,fontWeight:tipoMov==='pago'?700:500,color:tipoMov==='pago'?'#92400E':C.muted,cursor:'pointer',fontFamily:'inherit'}}>↑ Pago</button>
+              </div>
+
+              <div style={{marginBottom:12}}>
+                <label style={{fontSize:11,color:C.muted,display:'block',marginBottom:4,fontWeight:600}}>Fecha</label>
+                <input type="date" value={fechaMov} onChange={(e) => setFechaMov(e.target.value)} style={{width:'100%',border:`1px solid ${C.border}`,padding:'8px 10px',borderRadius:6,fontSize:13,fontFamily:'inherit'}}/>
+              </div>
+              <div style={{marginBottom:12}}>
+                <label style={{fontSize:11,color:C.muted,display:'block',marginBottom:4,fontWeight:600}}>Monto</label>
+                <input value={montoMov} onChange={(e) => setMontoMov(e.target.value.replace(/[^\d.]/g, ''))} placeholder="500000" style={{width:'100%',border:`1px solid ${C.border}`,padding:'8px 10px',borderRadius:6,fontSize:14,fontFamily:'monospace',fontVariantNumeric:'tabular-nums'}}/>
+                {parseMonto(montoMov) > 0 && (
+                  <div style={{fontSize:11,color:C.muted,marginTop:4}}>${fmt(parseMonto(montoMov))} MXN</div>
+                )}
+              </div>
+              <div style={{marginBottom:14}}>
+                <label style={{fontSize:11,color:C.muted,display:'block',marginBottom:4,fontWeight:600}}>Concepto</label>
+                <input value={conceptoMov} onChange={(e) => setConceptoMov(e.target.value)} placeholder="Ej: Pago nómina quincena 1" style={{width:'100%',border:`1px solid ${C.border}`,padding:'8px 10px',borderRadius:6,fontSize:13,fontFamily:'inherit'}}/>
+              </div>
+
+              {/* Preview del efecto */}
+              {previewEfecto && parseMonto(montoMov) > 0 && (
+                <div style={{background:'#F9FAFB',border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 12px',marginBottom:16}}>
+                  <div style={{fontSize:10,color:C.muted,marginBottom:6,fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>Después de este movimiento:</div>
+                  <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:3,fontVariantNumeric:'tabular-nums'}}>
+                    <span style={{color:C.muted}}>Bloqueado</span>
+                    <span>${fmt(previewEfecto.bloqueadoAntes)} → <span style={{color:tipoMov==='disposicion'?'#1E40AF':'#92400E',fontWeight:700}}>${fmt(previewEfecto.bloqueadoDespues)}</span></span>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',fontSize:12,fontVariantNumeric:'tabular-nums'}}>
+                    <span style={{color:C.muted}}>Utilizado</span>
+                    <span>${fmt(previewEfecto.utilizadoAntes)} → <span style={{color:tipoMov==='disposicion'?'#1E40AF':'#92400E',fontWeight:700}}>${fmt(previewEfecto.utilizadoDespues)}</span></span>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          <div style={{display:'flex',gap:8}}>
+            <button onClick={onClose} disabled={guardando} style={{flex:1,background:'#fff',border:`1px solid ${C.border}`,color:C.text,padding:'9px',borderRadius:7,fontSize:13,fontWeight:600,cursor:guardando?'not-allowed':'pointer',fontFamily:'inherit'}}>Cancelar</button>
+            <button onClick={handleGuardar} disabled={!puedeGuardar || guardando} style={{flex:1,background:puedeGuardar?C.navy:'#9CA3AF',color:'#fff',border:'none',padding:'9px',borderRadius:7,fontSize:13,fontWeight:700,cursor:(!puedeGuardar||guardando)?'not-allowed':'pointer',fontFamily:'inherit'}}>
+              {guardando ? 'Guardando...' : (isCrearPrestamo ? 'Crear préstamo' : 'Guardar')}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
+  // MODAL: Histórico de movimientos del préstamo
+  // ═══════════════════════════════════════════════════════════════════
+  const PrestamoHistoricoModal = ({ prestamo, movimientos, prestamoCalc, esConsulta, onClose, onEditar, onBorrar, onNuevo }) => {
+    // Calcular saldo bloqueado después de cada movimiento (recorrido cronológico)
+    const movsConSaldo = useMemo(() => {
+      let utilAcum = 0;
+      return (movimientos || []).map(m => {
+        if (m.tipo === 'disposicion') utilAcum += +m.monto || 0;
+        else if (m.tipo === 'pago')   utilAcum -= +m.monto || 0;
+        utilAcum = Math.max(0, utilAcum);
+        return { ...m, bloqueadoDespues: Math.max(0, (+prestamo.montoAutorizado || 0) - utilAcum) };
+      });
+    }, [movimientos, prestamo]);
+
+    const tipoBadge = (tipo) => {
+      if (tipo === 'inicial')     return { bg:'#D1FAE5', color:'#065F46', text:'Inicial', sign:'+' };
+      if (tipo === 'disposicion') return { bg:'#DBEAFE', color:'#1E40AF', text:'Disposición', sign:'−' };
+      if (tipo === 'pago')        return { bg:'#FEF3C7', color:'#92400E', text:'Pago', sign:'+' };
+      return { bg:'#F3F4F6', color:'#374151', text:tipo, sign:'' };
+    };
+
+    return (
+      <div onClick={onClose} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(31,41,55,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:20}}>
+        <div onClick={(e) => e.stopPropagation()} style={{background:'#fff',borderRadius:14,padding:24,maxWidth:760,width:'100%',maxHeight:'85vh',display:'flex',flexDirection:'column',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14,paddingBottom:12,borderBottom:`1px solid ${C.border}`}}>
+            <div>
+              <h3 style={{fontSize:16,fontWeight:800,color:C.navy,margin:0}}>📜 Histórico del préstamo</h3>
+              <p style={{fontSize:11,color:C.muted,margin:'4px 0 0'}}>{prestamo.banco}{prestamo.numeroCuenta ? ` · Cta. ${prestamo.numeroCuenta}` : ''}</p>
+            </div>
+            <div style={{display:'flex',gap:8,alignItems:'center'}}>
+              {!esConsulta && (
+                <button onClick={onNuevo} style={{background:C.navy,color:'#fff',border:'none',padding:'7px 14px',borderRadius:7,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>+ Nuevo movimiento</button>
+              )}
+              <button onClick={onClose} style={{background:'transparent',border:'none',fontSize:22,cursor:'pointer',color:C.muted,padding:0,lineHeight:1}}>×</button>
+            </div>
+          </div>
+
+          {/* KPIs */}
+          {prestamoCalc && (
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3, 1fr)',gap:10,marginBottom:14}}>
+              <div style={{background:'#F9FAFB',borderRadius:8,padding:'10px 12px'}}>
+                <div style={{fontSize:10,color:C.muted,fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>Autorizado</div>
+                <div style={{fontSize:16,fontWeight:800,marginTop:2,fontFamily:'monospace',fontVariantNumeric:'tabular-nums',color:'#1F2937'}}>${fmt(prestamoCalc.autorizado)}</div>
+              </div>
+              <div style={{background:'#EFF6FF',borderRadius:8,padding:'10px 12px'}}>
+                <div style={{fontSize:10,color:'#1E40AF',fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>Utilizado</div>
+                <div style={{fontSize:16,fontWeight:800,marginTop:2,fontFamily:'monospace',fontVariantNumeric:'tabular-nums',color:'#1E40AF'}}>${fmt(prestamoCalc.utilizado)}</div>
+              </div>
+              <div style={{background:'#FEF3C7',borderRadius:8,padding:'10px 12px'}}>
+                <div style={{fontSize:10,color:'#92400E',fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>Bloqueado</div>
+                <div style={{fontSize:16,fontWeight:800,marginTop:2,fontFamily:'monospace',fontVariantNumeric:'tabular-nums',color:'#92400E'}}>${fmt(prestamoCalc.bloqueado)}</div>
+              </div>
+            </div>
+          )}
+
+          {/* Tabla */}
+          <div style={{flex:1,overflowY:'auto',border:`1px solid ${C.border}`,borderRadius:8}}>
+            {movsConSaldo.length === 0 ? (
+              <div style={{padding:40,textAlign:'center',color:C.muted}}>
+                <div style={{fontSize:36,marginBottom:8}}>📋</div>
+                <div style={{fontSize:13}}>Sin movimientos registrados todavía.</div>
+              </div>
+            ) : (
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                <thead style={{background:'#F9FAFB',position:'sticky',top:0}}>
+                  <tr style={{borderBottom:`1px solid ${C.border}`}}>
+                    <th style={{textAlign:'left',padding:'9px 10px',fontWeight:700,color:C.muted,fontSize:10,letterSpacing:0.5,textTransform:'uppercase'}}>Fecha</th>
+                    <th style={{textAlign:'left',padding:'9px 10px',fontWeight:700,color:C.muted,fontSize:10,letterSpacing:0.5,textTransform:'uppercase'}}>Tipo</th>
+                    <th style={{textAlign:'left',padding:'9px 10px',fontWeight:700,color:C.muted,fontSize:10,letterSpacing:0.5,textTransform:'uppercase'}}>Concepto</th>
+                    <th style={{textAlign:'right',padding:'9px 10px',fontWeight:700,color:C.muted,fontSize:10,letterSpacing:0.5,textTransform:'uppercase'}}>Monto</th>
+                    <th style={{textAlign:'right',padding:'9px 10px',fontWeight:700,color:C.muted,fontSize:10,letterSpacing:0.5,textTransform:'uppercase'}}>Bloqueado</th>
+                    <th style={{width:80}}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {movsConSaldo.map((m, idx) => {
+                    const b = tipoBadge(m.tipo);
+                    return (
+                      <tr key={m.id || idx} style={{borderBottom:idx<movsConSaldo.length-1?`1px solid ${C.border}`:'none'}}>
+                        <td style={{padding:'9px 10px',fontFamily:'monospace',fontSize:11,color:'#1F2937'}}>{m.fecha}</td>
+                        <td style={{padding:'9px 10px'}}>
+                          <span style={{padding:'2px 9px',background:b.bg,color:b.color,borderRadius:999,fontSize:10,fontWeight:700,letterSpacing:0.3}}>{b.text}</span>
+                        </td>
+                        <td style={{padding:'9px 10px',color:'#1F2937'}}>{m.concepto || '—'}</td>
+                        <td style={{padding:'9px 10px',textAlign:'right',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontWeight:700,color:b.color}}>{b.sign}${fmt(m.monto)}</td>
+                        <td style={{padding:'9px 10px',textAlign:'right',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',color:C.muted}}>${fmt(m.bloqueadoDespues)}</td>
+                        <td style={{textAlign:'center',padding:'4px 6px'}}>
+                          {!esConsulta && m.tipo !== 'inicial' && (
+                            <div style={{display:'flex',gap:4,justifyContent:'center'}}>
+                              <button onClick={() => onEditar(m)} title="Editar" style={{background:'transparent',border:`1px solid ${C.border}`,padding:'3px 6px',borderRadius:4,fontSize:10,cursor:'pointer',color:C.muted,fontFamily:'inherit'}}>✎</button>
+                              <button onClick={() => onBorrar(m.id)} title="Borrar" style={{background:'transparent',border:`1px solid #FCA5A5`,padding:'3px 6px',borderRadius:4,fontSize:10,cursor:'pointer',color:'#DC2626',fontFamily:'inherit'}}>🗑</button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
       </div>
     );
