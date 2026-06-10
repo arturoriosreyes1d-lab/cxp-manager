@@ -17,7 +17,9 @@
 
 import React, { useState, useEffect } from 'react';
 import CaribeCoolModule, { MIVUELO_LOGO } from './CaribeCoolModule.jsx';
+import PlanesPagoModule from './PlanesPagoModule.jsx';
 import { fetchBoletosCC } from './db_caribe_cool.js';
+import { fetchPlanesPago, fetchAbonosPorEmpresa, calcularRitmoSemanal } from './db.js';
 import { EMPRESAS } from './empresas.js';
 
 const C = {
@@ -93,6 +95,50 @@ const REPORTES_DISPONIBLES = [
   //   Component: AlgunComponente,
   //   calcularKpis: (data) => [...],
   // },
+  {
+    id: 'planes_pago',
+    label: 'Planes de pago',
+    subtitulo: 'CXP · PROVEEDORES',
+    descripcion:
+      'Acuerdos de pagos parciales con proveedores. Ritmo semanal, abonos programados y match con CxP.',
+    logo: null,
+    icon: '📅',
+    color: C.blue,
+    badge: 'NUEVO',
+    empresas: ['empresa_1', 'empresa_2'], // ambas empresas
+    Component: PlanesPagoModule,
+    // KPIs en vivo en la card de entrada (planes activos + ritmo semanal + atrasados)
+    calcularKpis: (data) => {
+      const { planes, abonos, hoyStr } = data || {};
+      if (!planes || planes.length === 0) {
+        return [
+          { label: 'Activos', value: '0', color: C.text },
+          { label: 'Ritmo semanal', value: '—', color: C.muted },
+          { label: 'Atrasados', value: '0', color: C.muted },
+        ];
+      }
+      const activos = planes.filter((p) => p.estado === 'activo');
+      const ritmo = calcularRitmoSemanal(activos);
+      const totSemUSD = ritmo.totales.USD;
+      const totSemMXN = ritmo.totales.MXN;
+      let ritmoStr = '—';
+      if (totSemUSD > 0) {
+        ritmoStr = `$${Math.round(totSemUSD).toLocaleString('en-US')} USD`;
+      } else if (totSemMXN > 0) {
+        ritmoStr = `$${Math.round(totSemMXN).toLocaleString('en-US')} MXN`;
+      }
+      // Atrasados
+      const atrasados = (abonos || []).filter((a) => {
+        if (a.estado === 'pagado' || a.estado === 'parcial') return false;
+        return a.fechaProgramada < hoyStr;
+      }).length;
+      return [
+        { label: 'Activos', value: String(activos.length), color: C.text },
+        { label: 'Ritmo semanal', value: ritmoStr, color: C.blue },
+        { label: 'Atrasados', value: String(atrasados), color: atrasados > 0 ? C.orange : C.muted },
+      ];
+    },
+  },
 ];
 
 // ─── Cards "Próximos" (roadmap) ─────────────────────────────────
@@ -122,6 +168,7 @@ const PROXIMOS = [
 export default function ReportesView({ empresaId, user, esConsulta = false }) {
   const [selectedReportId, setSelectedReportId] = useState(null);
   const [boletosCC, setBoletosCC] = useState([]);
+  const [planesData, setPlanesData] = useState({ planes: [], abonos: [], hoyStr: new Date().toISOString().split('T')[0] });
   const [loadingKpis, setLoadingKpis] = useState(true);
 
   // Nombre de la empresa para la migaja
@@ -135,10 +182,17 @@ export default function ReportesView({ empresaId, user, esConsulta = false }) {
 
   // Cargar datos para los mini-KPIs (solo si hay reportes que los usen)
   useEffect(() => {
+    if (!empresaId) {
+      setLoadingKpis(false);
+      return;
+    }
     const necesitaCaribeCool = reportesParaEmpresa.some(
       (r) => r.id === 'caribecool'
     );
-    if (!necesitaCaribeCool || !empresaId) {
+    const necesitaPlanes = reportesParaEmpresa.some(
+      (r) => r.id === 'planes_pago'
+    );
+    if (!necesitaCaribeCool && !necesitaPlanes) {
       setLoadingKpis(false);
       return;
     }
@@ -146,10 +200,18 @@ export default function ReportesView({ empresaId, user, esConsulta = false }) {
     (async () => {
       setLoadingKpis(true);
       try {
-        const bs = await fetchBoletosCC(empresaId);
-        if (!cancelled) setBoletosCC(bs);
+        const tasks = [];
+        if (necesitaCaribeCool) tasks.push(fetchBoletosCC(empresaId).then((bs) => { if (!cancelled) setBoletosCC(bs); }));
+        if (necesitaPlanes) {
+          tasks.push((async () => {
+            const planes = await fetchPlanesPago(empresaId);
+            const abonos = await fetchAbonosPorEmpresa(empresaId);
+            if (!cancelled) setPlanesData({ planes, abonos, hoyStr: new Date().toISOString().split('T')[0] });
+          })());
+        }
+        await Promise.all(tasks);
       } catch (e) {
-        console.error('Error cargando KPIs Caribe Cool:', e);
+        console.error('Error cargando KPIs:', e);
       } finally {
         if (!cancelled) setLoadingKpis(false);
       }
@@ -202,7 +264,7 @@ export default function ReportesView({ empresaId, user, esConsulta = false }) {
   }
 
   // Datos para los KPIs
-  const dataMap = { caribecool: boletosCC };
+  const dataMap = { caribecool: boletosCC, planes_pago: planesData };
 
   return (
     <div
@@ -410,9 +472,19 @@ function ReporteChipGrande({ reporte, onClick, data, loading }) {
           color: C.navy,
           marginBottom: 2,
           letterSpacing: '-0.01em',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
         }}
       >
         {reporte.label}
+        {reporte.badge && (
+          <span style={{
+            fontSize: 9, fontWeight: 700, padding: '2px 8px',
+            background: '#D1FAE5', color: '#065F46',
+            borderRadius: 999, letterSpacing: '0.06em',
+          }}>{reporte.badge}</span>
+        )}
       </div>
       <div
         style={{

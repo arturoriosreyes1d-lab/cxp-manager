@@ -1516,3 +1516,263 @@ export function calcularUtilizadoPrestamo(movimientos) {
   });
   return Math.max(0, utilizado); // no permitir negativos
 }
+
+
+// ═══════════════════════════════════════════════════════════════════
+// PLANES DE PAGO A PROVEEDORES
+// 3 tablas: planes_pago (cabecera) + plan_facturas (qué cubre) +
+//           plan_abonos (cada cuota).
+// Todas filtradas por empresa_id (separación TAS / Viajes Libero).
+// ═══════════════════════════════════════════════════════════════════
+
+// ─── PLANES (cabecera) ─────────────────────────────────────────────
+export async function fetchPlanesPago(empresaId, opciones = {}) {
+  const { estado } = opciones;
+  let q = supabase.from('planes_pago').select('*').eq('empresa_id', empresaId);
+  if (estado) q = q.eq('estado', estado);
+  q = q.order('created_at', { ascending: false });
+  const { data, error } = await q;
+  if (error) { console.error('fetchPlanesPago:', error); return []; }
+  return (data || []).map(rowToPlan);
+}
+
+export async function fetchPlanPagoById(planId) {
+  const { data, error } = await supabase
+    .from('planes_pago').select('*').eq('id', planId).single();
+  if (error) { console.error('fetchPlanPagoById:', error); return null; }
+  return data ? rowToPlan(data) : null;
+}
+
+export async function upsertPlanPago(plan, usuario) {
+  const row = {
+    empresa_id: plan.empresaId,
+    proveedor: plan.proveedor,
+    moneda: plan.moneda || 'MXN',
+    monto_total: +plan.montoTotal || 0,
+    frecuencia: plan.frecuencia,
+    dia_semana: plan.diaSemana ?? null,
+    dia_mes: plan.diaMes ?? null,
+    monto_abono: +plan.montoAbono || 0,
+    num_abonos: +plan.numAbonos || 0,
+    fecha_inicio: plan.fechaInicio,
+    fecha_liquidacion_estimada: plan.fechaLiquidacionEstimada || null,
+    estado: plan.estado || 'activo',
+    notas: plan.notas || null,
+    updated_by: usuario || 'desconocido',
+  };
+  const isUUID = plan.id && /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(plan.id);
+  if (isUUID) {
+    const { data, error } = await supabase.from('planes_pago').update(row).eq('id', plan.id).select().single();
+    if (error) { console.error('upsertPlanPago update:', error); return null; }
+    return data?.id;
+  } else {
+    row.created_by = usuario || 'desconocido';
+    const { data, error } = await supabase.from('planes_pago').insert(row).select().single();
+    if (error) { console.error('upsertPlanPago insert:', error); return null; }
+    return data?.id;
+  }
+}
+
+export async function deletePlanPago(id) {
+  // Cascada: borra facturas y abonos por FK ON DELETE CASCADE
+  const { error } = await supabase.from('planes_pago').delete().eq('id', id);
+  if (error) console.error('deletePlanPago:', error);
+}
+
+export async function cancelarPlanPago(id, usuario) {
+  // Soft cancel: marca como 'cancelado' pero conserva los datos
+  const { error } = await supabase.from('planes_pago')
+    .update({ estado: 'cancelado', updated_by: usuario || 'desconocido' })
+    .eq('id', id);
+  if (error) console.error('cancelarPlanPago:', error);
+}
+
+// ─── FACTURAS del plan ─────────────────────────────────────────────
+export async function fetchFacturasDePlan(planId) {
+  const { data, error } = await supabase
+    .from('plan_facturas').select('*').eq('plan_id', planId)
+    .order('created_at', { ascending: true });
+  if (error) { console.error('fetchFacturasDePlan:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id,
+    planId: r.plan_id,
+    empresaId: r.empresa_id,
+    invoiceId: r.invoice_id,
+    montoInicial: +r.monto_inicial || 0,
+    montoAplicado: +r.monto_aplicado || 0,
+  }));
+}
+
+export async function insertPlanFactura(pf, usuario) {
+  const row = {
+    plan_id: pf.planId,
+    empresa_id: pf.empresaId,
+    invoice_id: pf.invoiceId,
+    monto_inicial: +pf.montoInicial || 0,
+    monto_aplicado: +pf.montoAplicado || 0,
+    created_by: usuario || 'desconocido',
+    updated_by: usuario || 'desconocido',
+  };
+  const { data, error } = await supabase.from('plan_facturas').insert(row).select().single();
+  if (error) { console.error('insertPlanFactura:', error); return null; }
+  return data?.id;
+}
+
+export async function deletePlanFactura(id) {
+  const { error } = await supabase.from('plan_facturas').delete().eq('id', id);
+  if (error) console.error('deletePlanFactura:', error);
+}
+
+// ─── ABONOS (cuotas) ───────────────────────────────────────────────
+export async function fetchAbonosPorPlan(planId) {
+  const { data, error } = await supabase
+    .from('plan_abonos').select('*').eq('plan_id', planId)
+    .order('numero', { ascending: true });
+  if (error) { console.error('fetchAbonosPorPlan:', error); return []; }
+  return (data || []).map(rowToAbono);
+}
+
+export async function fetchAbonosPorEmpresa(empresaId, opciones = {}) {
+  // Para KPIs/popups: trae todos los abonos de planes activos de una empresa
+  const { desde, hasta, estados } = opciones;
+  let q = supabase.from('plan_abonos').select('*').eq('empresa_id', empresaId);
+  if (desde) q = q.gte('fecha_programada', desde);
+  if (hasta) q = q.lte('fecha_programada', hasta);
+  if (estados && estados.length) q = q.in('estado', estados);
+  q = q.order('fecha_programada', { ascending: true });
+  const { data, error } = await q;
+  if (error) { console.error('fetchAbonosPorEmpresa:', error); return []; }
+  return (data || []).map(rowToAbono);
+}
+
+export async function upsertAbono(abono, usuario) {
+  const row = {
+    plan_id: abono.planId,
+    empresa_id: abono.empresaId,
+    numero: abono.numero,
+    fecha_programada: abono.fechaProgramada,
+    monto_programado: +abono.montoProgramado || 0,
+    estado: abono.estado || 'pendiente',
+    pago_id: abono.pagoId || null,
+    factura_id_aplicada: abono.facturaIdAplicada || null,
+    fecha_pagado: abono.fechaPagado || null,
+    monto_pagado: abono.montoPagado != null ? +abono.montoPagado : null,
+    notas: abono.notas || null,
+    updated_by: usuario || 'desconocido',
+  };
+  const isUUID = abono.id && /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(abono.id);
+  if (isUUID) {
+    const { data, error } = await supabase.from('plan_abonos').update(row).eq('id', abono.id).select().single();
+    if (error) { console.error('upsertAbono update:', error); return null; }
+    return data?.id;
+  } else {
+    row.created_by = usuario || 'desconocido';
+    const { data, error } = await supabase.from('plan_abonos').insert(row).select().single();
+    if (error) { console.error('upsertAbono insert:', error); return null; }
+    return data?.id;
+  }
+}
+
+export async function deleteAbono(id) {
+  const { error } = await supabase.from('plan_abonos').delete().eq('id', id);
+  if (error) console.error('deleteAbono:', error);
+}
+
+export async function bulkInsertAbonos(abonos, usuario) {
+  // Insert masivo cuando se crea el plan (14 abonos de golpe)
+  const rows = abonos.map(a => ({
+    plan_id: a.planId,
+    empresa_id: a.empresaId,
+    numero: a.numero,
+    fecha_programada: a.fechaProgramada,
+    monto_programado: +a.montoProgramado || 0,
+    estado: a.estado || 'pendiente',
+    created_by: usuario || 'desconocido',
+    updated_by: usuario || 'desconocido',
+  }));
+  const { error } = await supabase.from('plan_abonos').insert(rows);
+  if (error) { console.error('bulkInsertAbonos:', error); return false; }
+  return true;
+}
+
+// ─── Helpers de mapeo ──────────────────────────────────────────────
+function rowToPlan(r) {
+  return {
+    id: r.id,
+    empresaId: r.empresa_id,
+    proveedor: r.proveedor || '',
+    moneda: r.moneda || 'MXN',
+    montoTotal: +r.monto_total || 0,
+    frecuencia: r.frecuencia,
+    diaSemana: r.dia_semana,
+    diaMes: r.dia_mes,
+    montoAbono: +r.monto_abono || 0,
+    numAbonos: +r.num_abonos || 0,
+    fechaInicio: r.fecha_inicio,
+    fechaLiquidacionEstimada: r.fecha_liquidacion_estimada,
+    estado: r.estado || 'activo',
+    notas: r.notas || '',
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+function rowToAbono(r) {
+  return {
+    id: r.id,
+    planId: r.plan_id,
+    empresaId: r.empresa_id,
+    numero: r.numero,
+    fechaProgramada: r.fecha_programada,
+    montoProgramado: +r.monto_programado || 0,
+    estado: r.estado,
+    pagoId: r.pago_id,
+    facturaIdAplicada: r.factura_id_aplicada,
+    fechaPagado: r.fecha_pagado,
+    montoPagado: r.monto_pagado != null ? +r.monto_pagado : null,
+    notas: r.notas || '',
+  };
+}
+
+// ─── Cálculo: ritmo semanal normalizado por moneda ─────────────────
+// Convierte la frecuencia a aporte semanal estándar:
+//   semanal    → monto_abono
+//   quincenal  → monto_abono / 2
+//   mensual    → monto_abono / 4.33
+//   personal.  → monto_total restante / semanas hasta liquidación
+// Devuelve un objeto {USD: total, MXN: total, EUR: total, detalle: [...]}
+export function calcularRitmoSemanal(planesActivos) {
+  const SEMANAS_POR_MES = 4.33;
+  const totales = { USD: 0, MXN: 0, EUR: 0 };
+  const detalle = [];
+
+  (planesActivos || []).forEach(plan => {
+    if (plan.estado !== 'activo') return;
+    let aporteSemanal = 0;
+    if (plan.frecuencia === 'semanal')         aporteSemanal = +plan.montoAbono || 0;
+    else if (plan.frecuencia === 'quincenal')  aporteSemanal = (+plan.montoAbono || 0) / 2;
+    else if (plan.frecuencia === 'mensual')    aporteSemanal = (+plan.montoAbono || 0) / SEMANAS_POR_MES;
+    else if (plan.frecuencia === 'personalizado') {
+      // Aproximación: monto restante dividido entre semanas hasta liquidación
+      if (plan.fechaLiquidacionEstimada) {
+        const hoy = new Date();
+        const liq = new Date(plan.fechaLiquidacionEstimada);
+        const dias = Math.max(7, Math.round((liq - hoy) / (1000 * 60 * 60 * 24)));
+        const semanas = Math.max(1, Math.round(dias / 7));
+        aporteSemanal = (+plan.montoTotal || 0) / semanas;
+      }
+    }
+    const moneda = plan.moneda || 'MXN';
+    if (totales[moneda] != null) totales[moneda] += aporteSemanal;
+    detalle.push({
+      planId: plan.id,
+      proveedor: plan.proveedor,
+      frecuencia: plan.frecuencia,
+      montoAbono: +plan.montoAbono || 0,
+      moneda,
+      aporteSemanal,
+    });
+  });
+
+  return { totales, detalle };
+}
