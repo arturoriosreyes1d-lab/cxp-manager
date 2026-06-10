@@ -50,7 +50,7 @@ const C = {
   white:  '#FFFFFF',
 };
 
-const MONO = 'ui-monospace, "SF Mono", Menlo, monospace';
+const MONO = '"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace';
 const INTER = '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 
 const DIAS_SEMANA = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
@@ -157,6 +157,18 @@ export default function PlanesPagoModule({ empresaId, user, esConsulta = false }
   const [showDetalle, setShowDetalle] = useState(null); // planId
   const [kpiAbierto, setKpiAbierto] = useState(null);   // 'activos' | 'comprometido' | 'ritmo' | 'proximo' | 'atrasados'
   const [alertaCerrada, setAlertaCerrada] = useState(false);
+  const [sortBy, setSortBy] = useState('proximo'); // 'proveedor', 'facturas', 'total', 'pagado', 'restante', 'pct', 'proximo'
+  const [sortDir, setSortDir] = useState('asc'); // 'asc' | 'desc'
+
+  // Helper para cambiar el orden: si vuelves a clickear la misma columna, invierte; si es otra, default asc
+  const toggleSort = (col) => {
+    if (sortBy === col) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(col);
+      setSortDir('asc');
+    }
+  };
 
   const hoyStr = today();
 
@@ -260,14 +272,35 @@ export default function PlanesPagoModule({ empresaId, user, esConsulta = false }
     return { count: items.length, porMoneda, items };
   }, [planesConCalculo, hoyStr]);
 
-  // Lista filtrada para la tabla
+  // Lista filtrada Y ordenada para la tabla
   const planesFiltrados = useMemo(() => {
-    if (filtroEstado === 'todos') return planesConCalculo;
-    if (filtroEstado === 'activos') return planesConCalculo.filter(p => p.estado === 'activo' && p.atrasados === 0 && p.pct < 75);
-    if (filtroEstado === 'atrasados') return planesConCalculo.filter(p => p.estado === 'activo' && p.atrasados > 0);
-    if (filtroEstado === 'casi') return planesConCalculo.filter(p => p.estado === 'activo' && p.pct >= 75);
-    return planesConCalculo;
-  }, [planesConCalculo, filtroEstado]);
+    let lista;
+    if (filtroEstado === 'todos') lista = planesConCalculo;
+    else if (filtroEstado === 'activos') lista = planesConCalculo.filter(p => p.estado === 'activo' && p.atrasados === 0 && p.pct < 75);
+    else if (filtroEstado === 'atrasados') lista = planesConCalculo.filter(p => p.estado === 'activo' && p.atrasados > 0);
+    else if (filtroEstado === 'casi') lista = planesConCalculo.filter(p => p.estado === 'activo' && p.pct >= 75);
+    else lista = planesConCalculo;
+
+    // Ordenar
+    const dir = sortDir === 'asc' ? 1 : -1;
+    const sorted = [...lista].sort((a, b) => {
+      let va, vb;
+      if (sortBy === 'proveedor') { va = (a.proveedor || '').toLowerCase(); vb = (b.proveedor || '').toLowerCase(); return va.localeCompare(vb) * dir; }
+      if (sortBy === 'facturas')  { va = (a.facturas || []).length; vb = (b.facturas || []).length; return (va - vb) * dir; }
+      if (sortBy === 'total')     { va = +a.montoTotal || 0; vb = +b.montoTotal || 0; return (va - vb) * dir; }
+      if (sortBy === 'pagado')    { va = +a.pagado || 0; vb = +b.pagado || 0; return (va - vb) * dir; }
+      if (sortBy === 'restante')  { va = +a.restante || 0; vb = +b.restante || 0; return (va - vb) * dir; }
+      if (sortBy === 'pct')       { va = +a.pct || 0; vb = +b.pct || 0; return (va - vb) * dir; }
+      if (sortBy === 'proximo')   {
+        // Los planes sin próximo van al final
+        va = a.proximo?.fechaProgramada || '9999-99-99';
+        vb = b.proximo?.fechaProgramada || '9999-99-99';
+        return va.localeCompare(vb) * dir;
+      }
+      return 0;
+    });
+    return sorted;
+  }, [planesConCalculo, filtroEstado, sortBy, sortDir]);
 
   const planSeleccionado = useMemo(() => {
     if (!showDetalle) return null;
@@ -321,7 +354,7 @@ export default function PlanesPagoModule({ empresaId, user, esConsulta = false }
           onClick={() => setKpiAbierto('comprometido')}
         />
         <KpiCard
-          label="Ritmo semanal"
+          label="Pago semanal"
           valueLine1={`$${fmt(kpis.ritmo.totales.USD)} USD`}
           subline={kpis.ritmo.totales.MXN > 0 ? `$${fmt(kpis.ritmo.totales.MXN)} MXN` : null}
           mono accent
@@ -378,7 +411,7 @@ export default function PlanesPagoModule({ empresaId, user, esConsulta = false }
                 style={{
                   background: filtroEstado === t.id ? '#fff' : 'transparent',
                   border: filtroEstado === t.id ? `1px solid ${C.borderStrong}` : '1px solid transparent',
-                  padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: filtroEstado === t.id ? 700 : 500,
+                  padding: '6px 14px', borderRadius: 6, fontSize: 13, fontWeight: filtroEstado === t.id ? 700 : 500,
                   color: filtroEstado === t.id ? C.text : C.muted, cursor: 'pointer', fontFamily: 'inherit',
                 }}
               >{t.label}</button>
@@ -397,13 +430,13 @@ export default function PlanesPagoModule({ empresaId, user, esConsulta = false }
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-                <Th>Proveedor · Config</Th>
-                <Th center>Fact.</Th>
-                <Th center>Total</Th>
-                <Th center>Pagado</Th>
-                <Th center>Restante</Th>
-                <Th center>Avance</Th>
-                <Th center>Próximo</Th>
+                <Th sortKey="proveedor" currentSort={sortBy} currentDir={sortDir} onSort={toggleSort}>Proveedor · Config</Th>
+                <Th center sortKey="facturas" currentSort={sortBy} currentDir={sortDir} onSort={toggleSort}>Fact.</Th>
+                <Th center sortKey="total" currentSort={sortBy} currentDir={sortDir} onSort={toggleSort}>Total</Th>
+                <Th center sortKey="pagado" currentSort={sortBy} currentDir={sortDir} onSort={toggleSort}>Pagado</Th>
+                <Th center sortKey="restante" currentSort={sortBy} currentDir={sortDir} onSort={toggleSort}>Restante</Th>
+                <Th center sortKey="pct" currentSort={sortBy} currentDir={sortDir} onSort={toggleSort}>Avance</Th>
+                <Th center sortKey="proximo" currentSort={sortBy} currentDir={sortDir} onSort={toggleSort}>Próximo</Th>
                 <Th center>Estado</Th>
                 <th style={{ width: 26 }}></th>
               </tr>
@@ -467,7 +500,7 @@ function KpiCard({ label, valueLine1, subline, mono, accent, warning, onClick })
       background: bg,
       border: `${accent ? '1.5' : '1'}px solid ${borderColor}`,
       borderRadius: 8,
-      padding: '12px 14px',
+      padding: '14px 16px',
       display: 'block',
       transition: 'transform 0.1s, box-shadow 0.15s',
     }}
@@ -475,29 +508,46 @@ function KpiCard({ label, valueLine1, subline, mono, accent, warning, onClick })
     onMouseLeave={(e) => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = ''; }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div style={{ fontSize: 10, color: labelColor, letterSpacing: 0.5, fontWeight: accent ? 700 : 600, textTransform: 'uppercase' }}>{label}</div>
-        <span style={{ fontSize: 10, color: labelColor, opacity: 0.7 }}>↗</span>
+        <div style={{ fontSize: 12, color: labelColor, letterSpacing: 0.5, fontWeight: accent ? 700 : 600, textTransform: 'uppercase' }}>{label}</div>
+        <span style={{ fontSize: 12, color: labelColor, opacity: 0.7 }}>↗</span>
       </div>
       <div style={{
-        fontSize: valueLine1.length > 12 ? 14 : 18,
-        fontWeight: 700, marginTop: 4,
+        fontSize: valueLine1.length > 12 ? 16 : 22,
+        fontWeight: 700, marginTop: 6,
         fontFamily: mono ? MONO : 'inherit',
         fontVariantNumeric: 'tabular-nums',
         color: warning ? C.warnText : (accent ? C.blueText : C.text),
       }}>{valueLine1}</div>
-      {subline && <div style={{ fontSize: 11, color: labelColor, marginTop: 1, fontFamily: mono ? MONO : 'inherit', fontVariantNumeric: 'tabular-nums' }}>{subline}</div>}
+      {subline && <div style={{ fontSize: 12, color: labelColor, marginTop: 2, fontFamily: mono ? MONO : 'inherit', fontVariantNumeric: 'tabular-nums' }}>{subline}</div>}
     </button>
   );
 }
 
-function Th({ children, right, center }) {
+function Th({ children, right, center, sortKey, currentSort, currentDir, onSort }) {
+  const isActive = sortKey && currentSort === sortKey;
+  const isClickable = !!sortKey;
   return (
-    <th style={{
-      textAlign: right ? 'right' : (center ? 'center' : 'left'),
-      padding: '10px 14px', fontWeight: 600,
-      color: C.muted, fontSize: 11, letterSpacing: 0.5,
-      textTransform: 'uppercase',
-    }}>{children}</th>
+    <th
+      onClick={isClickable ? () => onSort(sortKey) : undefined}
+      style={{
+        textAlign: right ? 'right' : (center ? 'center' : 'left'),
+        padding: '10px 14px', fontWeight: 600,
+        color: isActive ? C.text : C.muted, fontSize: 11, letterSpacing: 0.5,
+        textTransform: 'uppercase',
+        cursor: isClickable ? 'pointer' : 'default',
+        userSelect: 'none',
+        whiteSpace: 'nowrap',
+      }}>
+      {children}
+      {isActive && (
+        <span style={{ marginLeft: 4, fontSize: 10, color: C.blue }}>
+          {currentDir === 'asc' ? '↑' : '↓'}
+        </span>
+      )}
+      {isClickable && !isActive && (
+        <span style={{ marginLeft: 4, fontSize: 10, color: C.border, opacity: 0.6 }}>↕</span>
+      )}
+    </th>
   );
 }
 
@@ -1101,7 +1151,7 @@ function PopupRitmo({ ritmo, onClose }) {
   });
   return (
     <ModalShell onClose={onClose} maxWidth={680}>
-      <PopupHeader label="DESGLOSE" title="Ritmo semanal por plan" subtitle="Compromiso normalizado a base semanal" onClose={onClose}/>
+      <PopupHeader label="DESGLOSE" title="Pago semanal por plan" subtitle="Compromiso normalizado a base semanal" onClose={onClose}/>
       {['USD', 'MXN', 'EUR'].map(mon => {
         if (porMoneda[mon].length === 0) return null;
         return (
@@ -1136,38 +1186,220 @@ function PopupRitmo({ ritmo, onClose }) {
 }
 
 function PopupProximos({ planes, hoyStr, onClose, onAbrirPlan }) {
-  const proximos = [];
-  planes.forEach(p => {
-    if (p.estado !== 'activo') return;
-    p.abonos.forEach(a => {
-      if (a.estado === 'pagado' || a.estado === 'parcial') return;
-      if (a.fechaProgramada >= hoyStr) proximos.push({ plan: p, abono: a });
+  // Construir lista plana de todos los abonos pendientes desde hoy
+  const todosLosAbonos = useMemo(() => {
+    const arr = [];
+    planes.forEach(p => {
+      if (p.estado !== 'activo') return;
+      (p.abonos || []).forEach(a => {
+        if (a.estado === 'pagado' || a.estado === 'parcial') return;
+        if (a.fechaProgramada >= hoyStr) arr.push({ plan: p, abono: a });
+      });
     });
+    return arr;
+  }, [planes, hoyStr]);
+
+  // Mes inicial = mes de hoy
+  const [mesActual, setMesActual] = useState(() => {
+    const d = parseDate(hoyStr);
+    return { year: d.getFullYear(), month: d.getMonth() }; // month es 0-indexado
   });
-  proximos.sort((a, b) => a.abono.fechaProgramada.localeCompare(b.abono.fechaProgramada));
-  const primeros = proximos.slice(0, 10);
+  const [diaSeleccionado, setDiaSeleccionado] = useState(null); // string YYYY-MM-DD
+
+  // Agrupar abonos por fecha (YYYY-MM-DD)
+  const abonosPorFecha = useMemo(() => {
+    const map = {};
+    todosLosAbonos.forEach(it => {
+      const k = it.abono.fechaProgramada;
+      if (!map[k]) map[k] = [];
+      map[k].push(it);
+    });
+    return map;
+  }, [todosLosAbonos]);
+
+  // Calcular qué días mostrar (incluyendo días del mes anterior/siguiente para llenar la cuadrícula)
+  const diasDelCalendario = useMemo(() => {
+    const { year, month } = mesActual;
+    const primero = new Date(year, month, 1);
+    const diaSemanaInicio = (primero.getDay() + 6) % 7; // 0=Lun, 6=Dom
+    const inicio = new Date(year, month, 1 - diaSemanaInicio);
+    const arr = [];
+    for (let i = 0; i < 42; i++) { // 6 filas × 7 cols
+      const d = new Date(inicio);
+      d.setDate(inicio.getDate() + i);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      arr.push({
+        fecha: `${yyyy}-${mm}-${dd}`,
+        dia: d.getDate(),
+        esDelMes: d.getMonth() === month,
+        esHoy: `${yyyy}-${mm}-${dd}` === hoyStr,
+        esPasado: `${yyyy}-${mm}-${dd}` < hoyStr,
+      });
+    }
+    return arr;
+  }, [mesActual, hoyStr]);
+
+  const nombresMes = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+  const cambiarMes = (delta) => {
+    setDiaSeleccionado(null);
+    setMesActual(prev => {
+      const m = prev.month + delta;
+      if (m < 0) return { year: prev.year - 1, month: 11 };
+      if (m > 11) return { year: prev.year + 1, month: 0 };
+      return { year: prev.year, month: m };
+    });
+  };
+
+  // Totales del mes visible (por moneda)
+  const totalesMes = useMemo(() => {
+    const { year, month } = mesActual;
+    const totales = { USD: 0, MXN: 0, EUR: 0 };
+    let count = 0;
+    Object.entries(abonosPorFecha).forEach(([fecha, items]) => {
+      const d = parseDate(fecha);
+      if (d.getFullYear() !== year || d.getMonth() !== month) return;
+      items.forEach(it => {
+        const m = it.plan.moneda || 'MXN';
+        if (totales[m] != null) totales[m] += +it.abono.montoProgramado || 0;
+        count++;
+      });
+    });
+    return { totales, count };
+  }, [abonosPorFecha, mesActual]);
+
+  // Abonos del día seleccionado
+  const abonosDia = diaSeleccionado ? (abonosPorFecha[diaSeleccionado] || []) : [];
 
   return (
-    <ModalShell onClose={onClose} maxWidth={680}>
-      <PopupHeader label="DESGLOSE" title="Próximos abonos" subtitle={`Próximos ${primeros.length} pagos en orden cronológico`} onClose={onClose}/>
-      {primeros.length === 0 ? (
-        <div style={{ padding: 24, textAlign: 'center', color: C.muted, fontSize: 13 }}>Sin pagos próximos.</div>
-      ) : (
-        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
-          <tbody>
-            {primeros.map((it, i) => {
-              const dias = diasEntre(hoyStr, it.abono.fechaProgramada);
-              return (
-                <tr key={i} onClick={() => onAbrirPlan(it.plan.id)} style={{ borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}>
-                  <td style={{ padding: '8px 6px 8px 0', fontFamily: MONO, fontSize: 11, width: 90 }}>{fmtDateLabel(it.abono.fechaProgramada)}</td>
-                  <td style={{ padding: '8px 6px', color: C.muted, fontSize: 10, width: 60, textAlign: 'center' }}>{dias === 0 ? 'hoy' : `en ${dias}d`}</td>
-                  <td style={{ padding: '8px 6px', color: C.text }}>{it.plan.proveedor}</td>
-                  <td style={{ padding: '8px 0', textAlign: 'right', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>${fmt(it.abono.montoProgramado)} {it.plan.moneda}</td>
+    <ModalShell onClose={onClose} maxWidth={760}>
+      <PopupHeader label="DESGLOSE" title="Próximos abonos" subtitle="Vista calendario · click en un día con marca para ver detalle" onClose={onClose}/>
+
+      {/* Navegación de mes */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <button onClick={() => cambiarMes(-1)} style={{
+          background: '#fff', border: `1px solid ${C.border}`, color: C.text,
+          padding: '6px 12px', borderRadius: 6, fontSize: 13, fontWeight: 600,
+          cursor: 'pointer', fontFamily: 'inherit',
+        }}>← Anterior</button>
+        <div style={{ fontSize: 16, fontWeight: 700, color: C.navy }}>
+          {nombresMes[mesActual.month]} {mesActual.year}
+        </div>
+        <button onClick={() => cambiarMes(1)} style={{
+          background: '#fff', border: `1px solid ${C.border}`, color: C.text,
+          padding: '6px 12px', borderRadius: 6, fontSize: 13, fontWeight: 600,
+          cursor: 'pointer', fontFamily: 'inherit',
+        }}>Siguiente →</button>
+      </div>
+
+      {/* Resumen del mes */}
+      {totalesMes.count > 0 && (
+        <div style={{
+          background: C.blueSoft, border: `1px solid ${C.blue}`, borderRadius: 6,
+          padding: '8px 12px', marginBottom: 12, fontSize: 12, color: C.blueText,
+        }}>
+          <strong>{totalesMes.count}</strong> abono(s) este mes
+          {totalesMes.totales.USD > 0 && <> · <strong style={{ fontFamily: MONO }}>${fmt(totalesMes.totales.USD)} USD</strong></>}
+          {totalesMes.totales.MXN > 0 && <> · <strong style={{ fontFamily: MONO }}>${fmt(totalesMes.totales.MXN)} MXN</strong></>}
+          {totalesMes.totales.EUR > 0 && <> · <strong style={{ fontFamily: MONO }}>${fmt(totalesMes.totales.EUR)} EUR</strong></>}
+        </div>
+      )}
+
+      {/* Calendario */}
+      <div style={{ border: `1px solid ${C.border}`, borderRadius: 6, overflow: 'hidden' }}>
+        {/* Cabecera días de la semana */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', background: C.bgSoft, borderBottom: `1px solid ${C.border}` }}>
+          {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(d => (
+            <div key={d} style={{ padding: '8px 4px', textAlign: 'center', fontSize: 11, fontWeight: 700, color: C.muted, letterSpacing: 0.4 }}>{d}</div>
+          ))}
+        </div>
+
+        {/* Grid de días */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+          {diasDelCalendario.map((d, i) => {
+            const abonosDelDia = abonosPorFecha[d.fecha] || [];
+            const tieneAbonos = abonosDelDia.length > 0;
+            const totalDia = abonosDelDia.reduce((s, it) => s + (+it.abono.montoProgramado || 0), 0);
+            const monedaDia = abonosDelDia[0]?.plan?.moneda;
+            const esSeleccionado = d.fecha === diaSeleccionado;
+
+            return (
+              <button
+                key={i}
+                onClick={tieneAbonos ? () => setDiaSeleccionado(esSeleccionado ? null : d.fecha) : undefined}
+                disabled={!tieneAbonos}
+                style={{
+                  all: 'unset',
+                  cursor: tieneAbonos ? 'pointer' : 'default',
+                  minHeight: 64,
+                  padding: 6,
+                  borderRight: ((i + 1) % 7 !== 0) ? `1px solid ${C.border}` : 'none',
+                  borderBottom: i < 35 ? `1px solid ${C.border}` : 'none',
+                  background: esSeleccionado ? C.blueSoft : (tieneAbonos ? '#FFFEF7' : '#fff'),
+                  opacity: d.esDelMes ? 1 : 0.35,
+                  position: 'relative',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'flex-start',
+                  gap: 2,
+                }}
+              >
+                <div style={{
+                  fontSize: 12,
+                  fontWeight: d.esHoy ? 800 : 500,
+                  color: d.esHoy ? C.blue : (d.esPasado ? C.muted : C.text),
+                  background: d.esHoy ? C.blueSoft : 'transparent',
+                  padding: d.esHoy ? '1px 6px' : 0,
+                  borderRadius: d.esHoy ? 999 : 0,
+                  fontFamily: MONO,
+                }}>{d.dia}</div>
+                {tieneAbonos && (
+                  <>
+                    <div style={{
+                      fontSize: 10, fontWeight: 700,
+                      color: d.esPasado ? C.warnText : C.blueText,
+                      fontFamily: MONO, fontVariantNumeric: 'tabular-nums',
+                    }}>${fmt(totalDia)}</div>
+                    <div style={{
+                      fontSize: 9, color: C.muted,
+                    }}>
+                      {monedaDia}{abonosDelDia.length > 1 ? ` · ${abonosDelDia.length}` : ''}
+                    </div>
+                  </>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Detalle del día seleccionado */}
+      {diaSeleccionado && abonosDia.length > 0 && (
+        <div style={{ marginTop: 14, padding: 12, background: C.bgSoft, borderRadius: 6 }}>
+          <div style={{ fontSize: 11, color: C.muted, fontWeight: 700, letterSpacing: 0.4, marginBottom: 6 }}>
+            ABONOS DEL {fmtDateLabel(diaSeleccionado).toUpperCase()}
+          </div>
+          <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
+            <tbody>
+              {abonosDia.map((it, i) => (
+                <tr key={i} onClick={() => onAbrirPlan(it.plan.id)} style={{ borderBottom: i < abonosDia.length - 1 ? `1px solid ${C.border}` : 'none', cursor: 'pointer' }}>
+                  <td style={{ padding: '8px 0', color: C.text }}>{it.plan.proveedor}</td>
+                  <td style={{ padding: '8px 0', textAlign: 'right', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>
+                    ${fmt(it.abono.montoProgramado)} {it.plan.moneda}
+                  </td>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {totalesMes.count === 0 && (
+        <div style={{ marginTop: 12, padding: 24, textAlign: 'center', color: C.muted, fontSize: 13 }}>
+          Sin abonos programados en {nombresMes[mesActual.month]} {mesActual.year}.
+        </div>
       )}
     </ModalShell>
   );

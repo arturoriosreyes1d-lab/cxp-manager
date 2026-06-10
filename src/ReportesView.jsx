@@ -100,7 +100,7 @@ const REPORTES_DISPONIBLES = [
     label: 'Planes de pago',
     subtitulo: 'CXP · PROVEEDORES',
     descripcion:
-      'Acuerdos de pagos parciales con proveedores. Ritmo semanal, abonos programados y match con CxP.',
+      'Acuerdos de pagos parciales con proveedores. Pago semanal, abonos programados y match con CxP.',
     logo: null,
     icon: '📅',
     color: C.blue,
@@ -113,7 +113,7 @@ const REPORTES_DISPONIBLES = [
       if (!planes || planes.length === 0) {
         return [
           { label: 'Activos', value: '0', color: C.text },
-          { label: 'Ritmo semanal', value: '—', color: C.muted },
+          { label: 'Pago semanal', value: '—', color: C.muted },
           { label: 'Atrasados', value: '0', color: C.muted },
         ];
       }
@@ -134,7 +134,7 @@ const REPORTES_DISPONIBLES = [
       }).length;
       return [
         { label: 'Activos', value: String(activos.length), color: C.text },
-        { label: 'Ritmo semanal', value: ritmoStr, color: C.blue },
+        { label: 'Pago semanal', value: ritmoStr, color: C.blue },
         { label: 'Atrasados', value: String(atrasados), color: atrasados > 0 ? C.orange : C.muted },
       ];
     },
