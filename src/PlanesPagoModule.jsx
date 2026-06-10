@@ -150,6 +150,7 @@ function estadoCalculado(abono, hoyStr) {
 export default function PlanesPagoModule({ empresaId, user, esConsulta = false }) {
   const [planes, setPlanes] = useState([]);
   const [abonosPorPlan, setAbonosPorPlan] = useState({}); // {planId: [...]}
+  const [facturasPorPlan, setFacturasPorPlan] = useState({}); // {planId: [...]}
   const [loading, setLoading] = useState(true);
   const [filtroEstado, setFiltroEstado] = useState('todos');
   const [showNuevoPlan, setShowNuevoPlan] = useState(false);
@@ -163,11 +164,17 @@ export default function PlanesPagoModule({ empresaId, user, esConsulta = false }
     setLoading(true);
     const ps = await fetchPlanesPago(empresaId);
     setPlanes(ps);
-    // Cargar abonos de todos los planes en paralelo
-    const entries = await Promise.all(ps.map(async p => [p.id, await fetchAbonosPorPlan(p.id)]));
-    const map = {};
-    entries.forEach(([id, abonos]) => { map[id] = abonos; });
-    setAbonosPorPlan(map);
+    // Cargar abonos Y facturas de todos los planes en paralelo
+    const [abonosEntries, facturasEntries] = await Promise.all([
+      Promise.all(ps.map(async p => [p.id, await fetchAbonosPorPlan(p.id)])),
+      Promise.all(ps.map(async p => [p.id, await fetchFacturasDePlan(p.id)])),
+    ]);
+    const mapAbonos = {};
+    abonosEntries.forEach(([id, abonos]) => { mapAbonos[id] = abonos; });
+    setAbonosPorPlan(mapAbonos);
+    const mapFacturas = {};
+    facturasEntries.forEach(([id, facturas]) => { mapFacturas[id] = facturas; });
+    setFacturasPorPlan(mapFacturas);
     setLoading(false);
   }, [empresaId]);
 
@@ -179,6 +186,7 @@ export default function PlanesPagoModule({ empresaId, user, esConsulta = false }
   const planesConCalculo = useMemo(() => {
     return planes.map(p => {
       const abonos = abonosPorPlan[p.id] || [];
+      const facturas = facturasPorPlan[p.id] || [];
       const pagado = abonos
         .filter(a => a.estado === 'pagado' || a.estado === 'parcial')
         .reduce((sum, a) => sum + (+a.montoPagado || +a.montoProgramado || 0), 0);
@@ -190,9 +198,9 @@ export default function PlanesPagoModule({ empresaId, user, esConsulta = false }
         .sort((x, y) => x.fechaProgramada.localeCompare(y.fechaProgramada));
       const proximo = pendientes[0] || null;
       const atrasados = abonos.filter(a => estadoCalculado(a, hoyStr) === 'atrasado').length;
-      return { ...p, abonos, pagado, restante, pct, proximo, atrasados };
+      return { ...p, abonos, facturas, pagado, restante, pct, proximo, atrasados };
     });
-  }, [planes, abonosPorPlan, hoyStr]);
+  }, [planes, abonosPorPlan, facturasPorPlan, hoyStr]);
 
   // KPIs
   const kpis = useMemo(() => {
@@ -274,6 +282,7 @@ export default function PlanesPagoModule({ empresaId, user, esConsulta = false }
   return (
     <div style={{
       fontFamily: INTER,
+      fontSize: 14,
       WebkitFontSmoothing: 'antialiased',
       MozOsxFontSmoothing: 'grayscale',
       textRendering: 'optimizeLegibility',
@@ -385,16 +394,16 @@ export default function PlanesPagoModule({ empresaId, user, esConsulta = false }
             </div>
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${C.border}` }}>
                 <Th>Proveedor · Config</Th>
                 <Th center>Fact.</Th>
-                <Th right>Total</Th>
-                <Th right>Pagado</Th>
-                <Th right>Restante</Th>
-                <Th>Avance</Th>
-                <Th>Próximo</Th>
+                <Th center>Total</Th>
+                <Th center>Pagado</Th>
+                <Th center>Restante</Th>
+                <Th center>Avance</Th>
+                <Th center>Próximo</Th>
                 <Th center>Estado</Th>
                 <th style={{ width: 26 }}></th>
               </tr>
@@ -485,8 +494,8 @@ function Th({ children, right, center }) {
   return (
     <th style={{
       textAlign: right ? 'right' : (center ? 'center' : 'left'),
-      padding: '9px 14px', fontWeight: 600,
-      color: C.muted, fontSize: 10, letterSpacing: 0.5,
+      padding: '10px 14px', fontWeight: 600,
+      color: C.muted, fontSize: 11, letterSpacing: 0.5,
       textTransform: 'uppercase',
     }}>{children}</th>
   );
@@ -509,23 +518,23 @@ function PlanRow({ plan, hoyStr, onClick }) {
           {' · '}{plan.moneda}
         </div>
       </td>
-      <td style={{ textAlign: 'center', padding: '11px 8px' }}>—</td>
-      <td style={{ textAlign: 'right', padding: '11px 8px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums' }}>${fmt0(plan.montoTotal)}</td>
-      <td style={{ textAlign: 'right', padding: '11px 8px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: plan.pagado > 0 ? C.green : C.muted }}>${fmt0(plan.pagado)}</td>
-      <td style={{ textAlign: 'right', padding: '11px 8px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>${fmt0(plan.restante)}</td>
+      <td style={{ textAlign: 'center', padding: '11px 8px', fontWeight: 600 }}>{(plan.facturas || []).length || '—'}</td>
+      <td style={{ textAlign: 'center', padding: '11px 8px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums' }}>${fmt0(plan.montoTotal)}</td>
+      <td style={{ textAlign: 'center', padding: '11px 8px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: plan.pagado > 0 ? C.green : C.muted }}>${fmt0(plan.pagado)}</td>
+      <td style={{ textAlign: 'center', padding: '11px 8px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>${fmt0(plan.restante)}</td>
       <td style={{ padding: '11px 14px', minWidth: 140 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ flex: 1, height: 5, background: C.bgSoft, borderRadius: 999, overflow: 'hidden', minWidth: 50 }}>
             <div style={{ width: `${Math.min(100, plan.pct)}%`, height: '100%', background: barColor, transition: 'width 0.3s' }}/>
           </div>
-          <span style={{ fontSize: 11, color: isCasiListo ? C.green : (isAtrasado ? C.warnText : C.muted), fontVariantNumeric: 'tabular-nums', minWidth: 30, textAlign: 'right', fontWeight: isCasiListo ? 700 : 500 }}>{plan.pct}%</span>
+          <span style={{ fontSize: 12, color: isCasiListo ? C.green : (isAtrasado ? C.warnText : C.muted), fontVariantNumeric: 'tabular-nums', minWidth: 30, textAlign: 'right', fontWeight: isCasiListo ? 700 : 500 }}>{plan.pct}%</span>
         </div>
       </td>
-      <td style={{ padding: '11px 14px' }}>
+      <td style={{ padding: '11px 14px', textAlign: 'center' }}>
         {plan.proximo ? (
           <>
-            <div style={{ fontSize: 12, fontWeight: 500 }}>{fmtDateLabel(plan.proximo.fechaProgramada)}</div>
-            <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 500 }}>{fmtDateLabel(plan.proximo.fechaProgramada)}</div>
+            <div style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>
               {(() => {
                 const dias = diasEntre(hoyStr, plan.proximo.fechaProgramada);
                 if (dias < 0) return <span style={{ color: C.warnText }}>{Math.abs(dias)} días vencido</span>;
@@ -534,7 +543,7 @@ function PlanRow({ plan, hoyStr, onClick }) {
               })()}
             </div>
           </>
-        ) : <span style={{ fontSize: 11, color: C.muted }}>—</span>}
+        ) : <span style={{ fontSize: 12, color: C.muted }}>—</span>}
       </td>
       <td style={{ textAlign: 'center', padding: '11px 14px' }}>
         {plan.estado === 'liquidado' ? <Badge bg={C.greenSoft} color={C.greenText}>Liquidado</Badge> :
@@ -706,7 +715,7 @@ function NuevoPlanModal({ empresaId, user, planesExistentes, onClose, onCreated 
   };
 
   return (
-    <ModalShell onClose={onClose} maxWidth={520}>
+    <ModalShell onClose={onClose} maxWidth={680}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
         <div>
           <div style={{ fontSize: 10, color: C.muted, letterSpacing: 0.5, fontWeight: 700 }}>PASO {paso} DE 3</div>
@@ -923,7 +932,7 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
   };
 
   return (
-    <ModalShell onClose={onClose} maxWidth={780} maxHeight="88vh">
+    <ModalShell onClose={onClose} maxWidth={1180} maxHeight="88vh">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
         <div>
           <h3 style={{ fontSize: 17, fontWeight: 800, color: C.navy, margin: 0 }}>📋 {plan.proveedor}</h3>
@@ -964,16 +973,16 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
       </div>
 
       {/* Tabla de abonos */}
-      <div style={{ marginBottom: 8, fontSize: 10, color: C.muted, fontWeight: 700, letterSpacing: 0.4 }}>ABONOS PROGRAMADOS</div>
-      <div style={{ border: `1px solid ${C.border}`, borderRadius: 6, overflow: 'hidden', maxHeight: 320, overflowY: 'auto' }}>
-        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+      <div style={{ marginBottom: 8, fontSize: 11, color: C.muted, fontWeight: 700, letterSpacing: 0.4 }}>ABONOS PROGRAMADOS</div>
+      <div style={{ border: `1px solid ${C.border}`, borderRadius: 6, overflow: 'hidden', maxHeight: 380, overflowY: 'auto' }}>
+        <table style={{ width: '100%', fontSize: 14, borderCollapse: 'collapse' }}>
           <thead style={{ background: C.bgSoft, position: 'sticky', top: 0 }}>
             <tr>
-              <th style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 600, fontSize: 10, color: C.muted, letterSpacing: 0.4 }}>#</th>
-              <th style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 600, fontSize: 10, color: C.muted, letterSpacing: 0.4 }}>FECHA</th>
-              <th style={{ textAlign: 'right', padding: '8px 10px', fontWeight: 600, fontSize: 10, color: C.muted, letterSpacing: 0.4 }}>ABONO</th>
-              <th style={{ textAlign: 'right', padding: '8px 10px', fontWeight: 600, fontSize: 10, color: C.muted, letterSpacing: 0.4 }}>RESTANTE</th>
-              <th style={{ textAlign: 'center', padding: '8px 10px', fontWeight: 600, fontSize: 10, color: C.muted, letterSpacing: 0.4 }}>ESTADO</th>
+              <th style={{ textAlign: 'center', padding: '10px 10px', fontWeight: 600, fontSize: 11, color: C.muted, letterSpacing: 0.4 }}>#</th>
+              <th style={{ textAlign: 'center', padding: '10px 10px', fontWeight: 600, fontSize: 11, color: C.muted, letterSpacing: 0.4 }}>FECHA</th>
+              <th style={{ textAlign: 'center', padding: '10px 10px', fontWeight: 600, fontSize: 11, color: C.muted, letterSpacing: 0.4 }}>ABONO</th>
+              <th style={{ textAlign: 'center', padding: '10px 10px', fontWeight: 600, fontSize: 11, color: C.muted, letterSpacing: 0.4 }}>RESTANTE</th>
+              <th style={{ textAlign: 'center', padding: '10px 10px', fontWeight: 600, fontSize: 11, color: C.muted, letterSpacing: 0.4 }}>ESTADO</th>
             </tr>
           </thead>
           <tbody>
@@ -982,11 +991,11 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
               const isPagado = a.estado === 'pagado' || a.estado === 'parcial';
               return (
                 <tr key={a.id} style={{ borderTop: `1px solid ${C.border}` }}>
-                  <td style={{ padding: '7px 10px', color: C.muted }}>{a.numero}</td>
-                  <td style={{ padding: '7px 10px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums' }}>{fmtDateLabel(a.fechaProgramada)}</td>
-                  <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: MONO, fontVariantNumeric: 'tabular-nums' }}>${fmt(a.montoProgramado)}</td>
-                  <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: C.muted }}>${fmt0(a.restanteDespues)}</td>
-                  <td style={{ padding: '7px 10px', textAlign: 'center' }}>
+                  <td style={{ padding: '8px 10px', color: C.muted, textAlign: 'center' }}>{a.numero}</td>
+                  <td style={{ padding: '8px 10px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', textAlign: 'center' }}>{fmtDateLabel(a.fechaProgramada)}</td>
+                  <td style={{ padding: '8px 10px', textAlign: 'center', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 500 }}>${fmt(a.montoProgramado)}</td>
+                  <td style={{ padding: '8px 10px', textAlign: 'center', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: C.muted }}>${fmt0(a.restanteDespues)}</td>
+                  <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                     {isPagado ? <Badge bg={C.greenSoft} color={C.greenText}>✓ Pagado</Badge> :
                      estCalc === 'atrasado' ? <Badge bg={C.warnSoft} color={C.warnText}>Atrasado</Badge> :
                      <Badge bg={C.blueSoft} color={C.blueText}>Pendiente</Badge>}
@@ -1023,7 +1032,7 @@ function MiniKpi({ label, value, sub, color, accent }) {
 function PopupActivos({ planes, onClose, onAbrirPlan }) {
   const activos = planes.filter(p => p.estado === 'activo');
   return (
-    <ModalShell onClose={onClose} maxWidth={500}>
+    <ModalShell onClose={onClose} maxWidth={680}>
       <PopupHeader label="DESGLOSE" title="Planes activos" onClose={onClose}/>
       {activos.length === 0 ? (
         <div style={{ padding: 24, textAlign: 'center', color: C.muted, fontSize: 13 }}>Sin planes activos.</div>
@@ -1056,7 +1065,7 @@ function PopupComprometido({ planes, onClose, onAbrirPlan }) {
   activos.forEach(p => { if (grupos[p.moneda]) grupos[p.moneda].push(p); });
 
   return (
-    <ModalShell onClose={onClose} maxWidth={460}>
+    <ModalShell onClose={onClose} maxWidth={680}>
       <PopupHeader label="DESGLOSE" title="Comprometido por moneda" onClose={onClose}/>
       {['USD', 'MXN', 'EUR'].map(mon => {
         if (grupos[mon].length === 0) return null;
@@ -1091,7 +1100,7 @@ function PopupRitmo({ ritmo, onClose }) {
     if (porMoneda[d.moneda]) porMoneda[d.moneda].push(d);
   });
   return (
-    <ModalShell onClose={onClose} maxWidth={500}>
+    <ModalShell onClose={onClose} maxWidth={680}>
       <PopupHeader label="DESGLOSE" title="Ritmo semanal por plan" subtitle="Compromiso normalizado a base semanal" onClose={onClose}/>
       {['USD', 'MXN', 'EUR'].map(mon => {
         if (porMoneda[mon].length === 0) return null;
@@ -1139,7 +1148,7 @@ function PopupProximos({ planes, hoyStr, onClose, onAbrirPlan }) {
   const primeros = proximos.slice(0, 10);
 
   return (
-    <ModalShell onClose={onClose} maxWidth={520}>
+    <ModalShell onClose={onClose} maxWidth={680}>
       <PopupHeader label="DESGLOSE" title="Próximos abonos" subtitle={`Próximos ${primeros.length} pagos en orden cronológico`} onClose={onClose}/>
       {primeros.length === 0 ? (
         <div style={{ padding: 24, textAlign: 'center', color: C.muted, fontSize: 13 }}>Sin pagos próximos.</div>
@@ -1175,7 +1184,7 @@ function PopupAtrasados({ planes, hoyStr, onClose, onAbrirPlan }) {
   atrasados.sort((a, b) => a.abono.fechaProgramada.localeCompare(b.abono.fechaProgramada));
 
   return (
-    <ModalShell onClose={onClose} maxWidth={520}>
+    <ModalShell onClose={onClose} maxWidth={680}>
       <PopupHeader label="DESGLOSE" title="Abonos atrasados" subtitle={`${atrasados.length} pago(s) vencidos sin marcar`} onClose={onClose}/>
       {atrasados.length === 0 ? (
         <div style={{ padding: 24, textAlign: 'center', color: C.green, fontSize: 13 }}>🎉 Todo al día, sin atrasos.</div>

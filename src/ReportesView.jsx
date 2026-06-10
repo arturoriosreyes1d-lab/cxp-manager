@@ -233,7 +233,12 @@ export default function ReportesView({ empresaId, user, esConsulta = false }) {
     }
     const Component = reporte.Component;
     return (
-      <div>
+      <div style={{
+        fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
+        WebkitFontSmoothing: 'antialiased',
+        MozOsxFontSmoothing: 'grayscale',
+        textRendering: 'optimizeLegibility',
+      }}>
         <button
           onClick={() => setSelectedReportId(null)}
           style={{
