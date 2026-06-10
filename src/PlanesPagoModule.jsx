@@ -17,7 +17,8 @@
 // Match con CxP (banner al registrar pago) está en Fase B.
 // ═══════════════════════════════════════════════════════════════════
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import html2canvas from 'html2canvas';
 import {
   fetchInvoices,
   fetchPlanesPago, upsertPlanPago, deletePlanPago, cancelarPlanPago,
@@ -349,15 +350,30 @@ export default function PlanesPagoModule({ empresaId, user, esConsulta = false }
         />
         <KpiCard
           label="Comprometido"
-          valueLine1={`$${fmt(kpis.comprometido.USD)} USD`}
-          subline={kpis.comprometido.MXN > 0 ? `$${fmt(kpis.comprometido.MXN)} MXN` : null}
+          monedas={[
+            ...(kpis.comprometido.USD > 0 ? [`$${fmt(kpis.comprometido.USD)} USD`] : []),
+            ...(kpis.comprometido.MXN > 0 ? [`$${fmt(kpis.comprometido.MXN)} MXN`] : []),
+            ...(kpis.comprometido.EUR > 0 ? [`$${fmt(kpis.comprometido.EUR)} EUR`] : []),
+          ]}
+          valueLine1={
+            // Fallback: si no hay ninguna moneda, mostrar 0 USD
+            (kpis.comprometido.USD === 0 && kpis.comprometido.MXN === 0 && kpis.comprometido.EUR === 0)
+              ? `$0.00 USD` : ''
+          }
           mono
           onClick={() => setKpiAbierto('comprometido')}
         />
         <KpiCard
           label="Pago semanal"
-          valueLine1={`$${fmt(kpis.ritmo.totales.USD)} USD`}
-          subline={kpis.ritmo.totales.MXN > 0 ? `$${fmt(kpis.ritmo.totales.MXN)} MXN` : null}
+          monedas={[
+            ...(kpis.ritmo.totales.USD > 0 ? [`$${fmt(kpis.ritmo.totales.USD)} USD`] : []),
+            ...(kpis.ritmo.totales.MXN > 0 ? [`$${fmt(kpis.ritmo.totales.MXN)} MXN`] : []),
+            ...(kpis.ritmo.totales.EUR > 0 ? [`$${fmt(kpis.ritmo.totales.EUR)} EUR`] : []),
+          ]}
+          valueLine1={
+            (kpis.ritmo.totales.USD === 0 && kpis.ritmo.totales.MXN === 0 && kpis.ritmo.totales.EUR === 0)
+              ? `$0.00 USD` : ''
+          }
           mono accent
           onClick={() => setKpiAbierto('ritmo')}
         />
@@ -490,10 +506,16 @@ export default function PlanesPagoModule({ empresaId, user, esConsulta = false }
 // Sub-componentes
 // ═══════════════════════════════════════════════════════════════════
 
-function KpiCard({ label, valueLine1, subline, mono, accent, warning, onClick }) {
+function KpiCard({ label, valueLine1, subline, monedas, mono, accent, warning, onClick }) {
   const bg = accent ? C.blueSoft : (warning ? C.warnSoft : '#fff');
   const borderColor = accent ? C.blue : (warning ? C.warn : C.border);
   const labelColor = accent ? C.blueText : (warning ? C.warnText : C.muted);
+  // Si vienen múltiples monedas, decidir tamaño basado en cuántas hay
+  // (2 monedas → 18px, 3 → 16px, 1 sola → comportamiento normal valueLine1)
+  const tieneMonedas = Array.isArray(monedas) && monedas.length > 0;
+  const tamMoneda = tieneMonedas
+    ? (monedas.length >= 3 ? 14 : monedas.length === 2 ? 16 : 18)
+    : null;
   return (
     <button onClick={onClick} style={{
       all: 'unset',
@@ -512,14 +534,30 @@ function KpiCard({ label, valueLine1, subline, mono, accent, warning, onClick })
         <div style={{ fontSize: 12, color: labelColor, letterSpacing: 0.5, fontWeight: accent ? 700 : 600, textTransform: 'uppercase' }}>{label}</div>
         <span style={{ fontSize: 12, color: labelColor, opacity: 0.7 }}>↗</span>
       </div>
-      <div style={{
-        fontSize: valueLine1.length > 12 ? 16 : 22,
-        fontWeight: 700, marginTop: 6,
-        fontFamily: mono ? MONO : 'inherit',
-        fontVariantNumeric: 'tabular-nums',
-        color: warning ? C.warnText : (accent ? C.blueText : C.text),
-      }}>{valueLine1}</div>
-      {subline && <div style={{ fontSize: 12, color: labelColor, marginTop: 2, fontFamily: mono ? MONO : 'inherit', fontVariantNumeric: 'tabular-nums' }}>{subline}</div>}
+      {tieneMonedas ? (
+        <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {monedas.map((m, i) => (
+            <div key={i} style={{
+              fontSize: tamMoneda,
+              fontWeight: 700,
+              fontFamily: MONO,
+              fontVariantNumeric: 'tabular-nums',
+              color: warning ? C.warnText : (accent ? C.blueText : C.text),
+            }}>{m}</div>
+          ))}
+        </div>
+      ) : (
+        <>
+          <div style={{
+            fontSize: valueLine1.length > 12 ? 16 : 22,
+            fontWeight: 700, marginTop: 6,
+            fontFamily: mono ? MONO : 'inherit',
+            fontVariantNumeric: 'tabular-nums',
+            color: warning ? C.warnText : (accent ? C.blueText : C.text),
+          }}>{valueLine1}</div>
+          {subline && <div style={{ fontSize: 12, color: labelColor, marginTop: 2, fontFamily: mono ? MONO : 'inherit', fontVariantNumeric: 'tabular-nums' }}>{subline}</div>}
+        </>
+      )}
     </button>
   );
 }
@@ -968,13 +1006,62 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
   const [abonoMarcando, setAbonoMarcando] = useState(null);     // abono que se está marcando como pagado
   const [abonoEditFecha, setAbonoEditFecha] = useState(null);   // abono cuya fecha se está editando
   const [abonoDesmarcando, setAbonoDesmarcando] = useState(null); // abono que se está desmarcando (confirmar)
+  const [copiandoImagen, setCopiandoImagen] = useState(false);
+  const [modoCaptura, setModoCaptura] = useState(false);
+  const refCapturar = useRef(null);
+
+  const handleCopiarImagen = async () => {
+    if (!refCapturar.current || copiandoImagen) return;
+    setCopiandoImagen(true);
+    setModoCaptura(true);
+    // Esperar 1 frame para que React aplique modoCaptura antes de capturar
+    await new Promise(r => setTimeout(r, 50));
+    try {
+      const canvas = await html2canvas(refCapturar.current, {
+        scale: 2, backgroundColor: '#FFFFFF', logging: false, useCORS: true,
+      });
+      canvas.toBlob(async (blob) => {
+        if (!blob) { setCopiandoImagen(false); setModoCaptura(false); return; }
+        if (navigator.clipboard && window.ClipboardItem) {
+          try {
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+            alert('✅ Imagen copiada al portapapeles. Pégala con Ctrl+V en WhatsApp, Email o Teams.');
+            setCopiandoImagen(false);
+            setModoCaptura(false);
+            return;
+          } catch (e) { /* fallback abajo */ }
+        }
+        // Fallback: descargar archivo
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Plan_${(plan.proveedor || 'plan').replace(/[^a-zA-Z0-9]/g, '_')}.png`;
+        a.click();
+        URL.revokeObjectURL(url);
+        setCopiandoImagen(false);
+        setModoCaptura(false);
+      }, 'image/png', 1.0);
+    } catch (err) {
+      console.error('copiar imagen:', err);
+      alert('No se pudo generar la imagen. Intenta de nuevo.');
+      setCopiandoImagen(false);
+      setModoCaptura(false);
+    }
+  };
 
   // Recorrer abonos con saldo restante post-cada-uno
+  // El "Restante" muestra el plan de amortización proyectado:
+  //  - Para abonos PAGADOS/PARCIALES: descuenta el monto real pagado
+  //  - Para abonos PENDIENTES: descuenta el monto PROGRAMADO (proyección)
+  // Así el usuario ve cómo va bajando el saldo después de cada abono.
   const abonosConSaldo = useMemo(() => {
-    let pagAcum = 0;
+    let saldoAcum = +plan.montoTotal || 0;
     return (plan.abonos || []).map(a => {
-      if (a.estado === 'pagado' || a.estado === 'parcial') pagAcum += (+a.montoPagado || +a.montoProgramado || 0);
-      return { ...a, restanteDespues: Math.max(0, plan.montoTotal - pagAcum) };
+      const descuento = (a.estado === 'pagado' || a.estado === 'parcial')
+        ? (+a.montoPagado || +a.montoProgramado || 0)
+        : (+a.montoProgramado || 0);
+      saldoAcum = Math.max(0, saldoAcum - descuento);
+      return { ...a, restanteDespues: saldoAcum };
     });
   }, [plan]);
 
@@ -994,6 +1081,22 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
 
   return (
     <ModalShell onClose={onClose} maxWidth="94vw" maxHeight="92vh">
+      {/* Barra de acciones (FUERA del bloque capturable) */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginBottom: 10 }}>
+        <button onClick={handleCopiarImagen} disabled={copiandoImagen}
+          title="Copia la imagen del plan al portapapeles"
+          style={{ background: copiandoImagen ? '#9CA3AF' : C.navy, color: '#fff', border: 'none', padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: copiandoImagen ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
+          {copiandoImagen ? '⏳ Generando…' : '📸 Copiar imagen'}
+        </button>
+        {!esConsulta && plan.estado === 'activo' && (
+          <button onClick={() => setConfirmCancel(true)} title="Cancelar plan"
+            style={{ background: 'transparent', border: `1px solid ${C.border}`, color: C.redText, padding: '5px 9px', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>⛔ Cancelar plan</button>
+        )}
+        <button onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: 22, color: C.muted, cursor: 'pointer', padding: 0, lineHeight: 1, marginLeft: 4 }}>×</button>
+      </div>
+
+      {/* Contenido capturable */}
+      <div ref={refCapturar} style={{ background: '#fff', padding: '4px 0' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
         <div>
           <h3 style={{ fontSize: 17, fontWeight: 800, color: C.navy, margin: 0 }}>📋 {plan.proveedor}</h3>
@@ -1003,13 +1106,6 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
             {plan.frecuencia === 'mensual' && plan.diaMes && ` · día ${plan.diaMes}`}
             {' · iniciado '}{fmtDateFull(plan.fechaInicio)}
           </p>
-        </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          {!esConsulta && plan.estado === 'activo' && (
-            <button onClick={() => setConfirmCancel(true)} title="Cancelar plan"
-              style={{ background: 'transparent', border: `1px solid ${C.border}`, color: C.redText, padding: '5px 9px', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>⛔ Cancelar plan</button>
-          )}
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: 22, color: C.muted, cursor: 'pointer', padding: 0, lineHeight: 1 }}>×</button>
         </div>
       </div>
 
@@ -1044,7 +1140,7 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
               <th style={{ textAlign: 'center', padding: '10px 10px', fontWeight: 600, fontSize: 11, color: C.muted, letterSpacing: 0.4 }}>ABONO</th>
               <th style={{ textAlign: 'center', padding: '10px 10px', fontWeight: 600, fontSize: 11, color: C.muted, letterSpacing: 0.4 }}>RESTANTE</th>
               <th style={{ textAlign: 'center', padding: '10px 10px', fontWeight: 600, fontSize: 11, color: C.muted, letterSpacing: 0.4 }}>ESTADO</th>
-              {!esConsulta && (
+              {!esConsulta && !modoCaptura && (
                 <th style={{ textAlign: 'center', padding: '10px 10px', fontWeight: 600, fontSize: 11, color: C.muted, letterSpacing: 0.4, width: 180 }}>ACCIONES</th>
               )}
             </tr>
@@ -1060,7 +1156,7 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
                   <td style={{ padding: '8px 10px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', textAlign: 'center' }}>
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                       <span>{fmtDateLabel(a.fechaProgramada)}</span>
-                      {!esConsulta && esEditableFecha && (
+                      {!esConsulta && esEditableFecha && !modoCaptura && (
                         <button onClick={() => setAbonoEditFecha(a)} title="Editar fecha"
                           style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer', fontSize: 12, padding: 2, lineHeight: 1, fontFamily: 'inherit' }}>✎</button>
                       )}
@@ -1078,7 +1174,7 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
                      estCalc === 'atrasado' ? <Badge bg={C.warnSoft} color={C.warnText}>Atrasado</Badge> :
                      <Badge bg={C.blueSoft} color={C.blueText}>Pendiente</Badge>}
                   </td>
-                  {!esConsulta && (
+                  {!esConsulta && !modoCaptura && (
                     <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                       {isPagado ? (
                         <button onClick={() => setAbonoDesmarcando(a)} title="Desmarcar pago"
@@ -1095,6 +1191,7 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
           </tbody>
         </table>
       </div>
+      </div>{/* Fin del refCapturar */}
 
       <div style={{ marginTop: 12, fontSize: 11, color: C.muted, padding: '10px 12px', background: C.bgSoft, borderRadius: 6 }}>
         💡 Marca cada abono como pagado conforme se vayan liquidando. Cuando todos estén pagados el plan pasará automáticamente a estado <strong>liquidado</strong>.
