@@ -1186,6 +1186,22 @@ function PopupRitmo({ ritmo, onClose }) {
 }
 
 function PopupProximos({ planes, hoyStr, onClose, onAbrirPlan }) {
+  // Paleta morada para el calendario (estilo elegante)
+  const P = {
+    deep: '#6B21A8',         // morado oscuro (header)
+    deepDark: '#581C87',     // morado más oscuro para gradiente
+    primary: '#9333EA',      // morado vivo (botones, acentos)
+    light: '#F3E8FF',        // morado muy suave (cabecera días, hoy)
+    veryLight: '#FAF5FF',    // casi blanco con tinte morado (celdas)
+    border: '#E9D5FF',       // borde sutil entre celdas
+    text: '#3B0764',         // morado profundo para texto
+    textSoft: '#6B21A8',
+    abonoBg: '#FEF3C7',      // amarillo crema para celdas con abonos
+    abonoBgHover: '#FDE68A',
+    abonoText: '#92400E',
+    abonoTextStrong: '#B45309',
+  };
+
   // Construir lista plana de todos los abonos pendientes desde hoy
   const todosLosAbonos = useMemo(() => {
     const arr = [];
@@ -1218,10 +1234,11 @@ function PopupProximos({ planes, hoyStr, onClose, onAbrirPlan }) {
   }, [todosLosAbonos]);
 
   // Calcular qué días mostrar (incluyendo días del mes anterior/siguiente para llenar la cuadrícula)
+  // ATENCIÓN: la referencia usa Domingo como primer día. Mantenemos esa convención.
   const diasDelCalendario = useMemo(() => {
     const { year, month } = mesActual;
     const primero = new Date(year, month, 1);
-    const diaSemanaInicio = (primero.getDay() + 6) % 7; // 0=Lun, 6=Dom
+    const diaSemanaInicio = primero.getDay(); // 0=Dom, 1=Lun, ..., 6=Sáb
     const inicio = new Date(year, month, 1 - diaSemanaInicio);
     const arr = [];
     for (let i = 0; i < 42; i++) { // 6 filas × 7 cols
@@ -1236,6 +1253,7 @@ function PopupProximos({ planes, hoyStr, onClose, onAbrirPlan }) {
         esDelMes: d.getMonth() === month,
         esHoy: `${yyyy}-${mm}-${dd}` === hoyStr,
         esPasado: `${yyyy}-${mm}-${dd}` < hoyStr,
+        esDomingo: d.getDay() === 0,
       });
     }
     return arr;
@@ -1274,31 +1292,14 @@ function PopupProximos({ planes, hoyStr, onClose, onAbrirPlan }) {
   const abonosDia = diaSeleccionado ? (abonosPorFecha[diaSeleccionado] || []) : [];
 
   return (
-    <ModalShell onClose={onClose} maxWidth={760}>
+    <ModalShell onClose={onClose} maxWidth={980} maxHeight="92vh">
       <PopupHeader label="DESGLOSE" title="Próximos abonos" subtitle="Vista calendario · click en un día con marca para ver detalle" onClose={onClose}/>
-
-      {/* Navegación de mes */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <button onClick={() => cambiarMes(-1)} style={{
-          background: '#fff', border: `1px solid ${C.border}`, color: C.text,
-          padding: '6px 12px', borderRadius: 6, fontSize: 13, fontWeight: 600,
-          cursor: 'pointer', fontFamily: 'inherit',
-        }}>← Anterior</button>
-        <div style={{ fontSize: 16, fontWeight: 700, color: C.navy }}>
-          {nombresMes[mesActual.month]} {mesActual.year}
-        </div>
-        <button onClick={() => cambiarMes(1)} style={{
-          background: '#fff', border: `1px solid ${C.border}`, color: C.text,
-          padding: '6px 12px', borderRadius: 6, fontSize: 13, fontWeight: 600,
-          cursor: 'pointer', fontFamily: 'inherit',
-        }}>Siguiente →</button>
-      </div>
 
       {/* Resumen del mes */}
       {totalesMes.count > 0 && (
         <div style={{
-          background: C.blueSoft, border: `1px solid ${C.blue}`, borderRadius: 6,
-          padding: '8px 12px', marginBottom: 12, fontSize: 12, color: C.blueText,
+          background: P.light, border: `1px solid ${P.border}`, borderRadius: 8,
+          padding: '10px 14px', marginBottom: 14, fontSize: 13, color: P.text,
         }}>
           <strong>{totalesMes.count}</strong> abono(s) este mes
           {totalesMes.totales.USD > 0 && <> · <strong style={{ fontFamily: MONO }}>${fmt(totalesMes.totales.USD)} USD</strong></>}
@@ -1307,23 +1308,73 @@ function PopupProximos({ planes, hoyStr, onClose, onAbrirPlan }) {
         </div>
       )}
 
-      {/* Calendario */}
-      <div style={{ border: `1px solid ${C.border}`, borderRadius: 6, overflow: 'hidden' }}>
+      {/* Calendario completo */}
+      <div style={{ borderRadius: 12, overflow: 'hidden', boxShadow: '0 4px 12px rgba(107, 33, 168, 0.08)' }}>
+
+        {/* Header morado con gradiente y navegación */}
+        <div style={{
+          background: `linear-gradient(135deg, ${P.deepDark} 0%, ${P.deep} 50%, ${P.primary} 100%)`,
+          padding: '14px 18px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}>
+          <button onClick={() => cambiarMes(-1)} style={{
+            background: 'rgba(255,255,255,0.15)',
+            border: '1px solid rgba(255,255,255,0.25)',
+            color: '#fff',
+            width: 36, height: 36,
+            borderRadius: 8,
+            fontSize: 18, fontWeight: 700,
+            cursor: 'pointer', fontFamily: 'inherit',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }} aria-label="Mes anterior">‹</button>
+
+          <div style={{ fontSize: 18, fontWeight: 700, color: '#fff', letterSpacing: 0.3 }}>
+            {nombresMes[mesActual.month]} {mesActual.year}
+          </div>
+
+          <button onClick={() => cambiarMes(1)} style={{
+            background: 'rgba(255,255,255,0.15)',
+            border: '1px solid rgba(255,255,255,0.25)',
+            color: '#fff',
+            width: 36, height: 36,
+            borderRadius: 8,
+            fontSize: 18, fontWeight: 700,
+            cursor: 'pointer', fontFamily: 'inherit',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }} aria-label="Mes siguiente">›</button>
+        </div>
+
         {/* Cabecera días de la semana */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', background: C.bgSoft, borderBottom: `1px solid ${C.border}` }}>
-          {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(d => (
-            <div key={d} style={{ padding: '8px 4px', textAlign: 'center', fontSize: 11, fontWeight: 700, color: C.muted, letterSpacing: 0.4 }}>{d}</div>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(7, 1fr)',
+          background: P.light,
+          borderBottom: `1px solid ${P.border}`,
+        }}>
+          {['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map(d => (
+            <div key={d} style={{
+              padding: '12px 8px', textAlign: 'center',
+              fontSize: 12, fontWeight: 700, color: P.text,
+              letterSpacing: 0.6, textTransform: 'uppercase',
+            }}>{d}</div>
           ))}
         </div>
 
         {/* Grid de días */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', background: '#fff' }}>
           {diasDelCalendario.map((d, i) => {
             const abonosDelDia = abonosPorFecha[d.fecha] || [];
             const tieneAbonos = abonosDelDia.length > 0;
             const totalDia = abonosDelDia.reduce((s, it) => s + (+it.abono.montoProgramado || 0), 0);
             const monedaDia = abonosDelDia[0]?.plan?.moneda;
             const esSeleccionado = d.fecha === diaSeleccionado;
+
+            // Color de fondo de la celda
+            let bgCelda = P.veryLight;
+            if (tieneAbonos) bgCelda = P.abonoBg;
+            if (esSeleccionado) bgCelda = '#FDE68A';
 
             return (
               <button
@@ -1333,41 +1384,54 @@ function PopupProximos({ planes, hoyStr, onClose, onAbrirPlan }) {
                 style={{
                   all: 'unset',
                   cursor: tieneAbonos ? 'pointer' : 'default',
-                  minHeight: 64,
-                  padding: 6,
-                  borderRight: ((i + 1) % 7 !== 0) ? `1px solid ${C.border}` : 'none',
-                  borderBottom: i < 35 ? `1px solid ${C.border}` : 'none',
-                  background: esSeleccionado ? C.blueSoft : (tieneAbonos ? '#FFFEF7' : '#fff'),
-                  opacity: d.esDelMes ? 1 : 0.35,
+                  minHeight: 110,
+                  padding: '10px 12px',
+                  borderRight: ((i + 1) % 7 !== 0) ? `1px solid ${P.border}` : 'none',
+                  borderBottom: i < 35 ? `1px solid ${P.border}` : 'none',
+                  background: bgCelda,
+                  opacity: d.esDelMes ? 1 : 0.4,
                   position: 'relative',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'flex-start',
-                  gap: 2,
+                  gap: 4,
+                  transition: 'background 0.15s',
+                  boxSizing: 'border-box',
                 }}
               >
                 <div style={{
-                  fontSize: 12,
+                  fontSize: 14,
                   fontWeight: d.esHoy ? 800 : 500,
-                  color: d.esHoy ? C.blue : (d.esPasado ? C.muted : C.text),
-                  background: d.esHoy ? C.blueSoft : 'transparent',
-                  padding: d.esHoy ? '1px 6px' : 0,
+                  color: d.esHoy ? '#fff' : (d.esPasado ? '#94A3B8' : P.text),
+                  background: d.esHoy ? P.deep : 'transparent',
+                  padding: d.esHoy ? '3px 9px' : 0,
                   borderRadius: d.esHoy ? 999 : 0,
                   fontFamily: MONO,
+                  fontVariantNumeric: 'tabular-nums',
+                  minWidth: d.esHoy ? 26 : 'auto',
+                  textAlign: 'center',
                 }}>{d.dia}</div>
+
                 {tieneAbonos && (
-                  <>
+                  <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 2 }}>
                     <div style={{
-                      fontSize: 10, fontWeight: 700,
-                      color: d.esPasado ? C.warnText : C.blueText,
+                      fontSize: 13, fontWeight: 700,
+                      color: P.abonoTextStrong,
                       fontFamily: MONO, fontVariantNumeric: 'tabular-nums',
                     }}>${fmt(totalDia)}</div>
                     <div style={{
-                      fontSize: 9, color: C.muted,
+                      fontSize: 10, color: P.abonoText, fontWeight: 600,
+                      display: 'flex', alignItems: 'center', gap: 4,
                     }}>
-                      {monedaDia}{abonosDelDia.length > 1 ? ` · ${abonosDelDia.length}` : ''}
+                      <span>{monedaDia}</span>
+                      {abonosDelDia.length > 1 && (
+                        <span style={{
+                          background: P.abonoTextStrong, color: '#fff',
+                          borderRadius: 999, padding: '0 6px', fontSize: 9, fontWeight: 700,
+                        }}>{abonosDelDia.length} abonos</span>
+                      )}
                     </div>
-                  </>
+                  </div>
                 )}
               </button>
             );
@@ -1377,17 +1441,17 @@ function PopupProximos({ planes, hoyStr, onClose, onAbrirPlan }) {
 
       {/* Detalle del día seleccionado */}
       {diaSeleccionado && abonosDia.length > 0 && (
-        <div style={{ marginTop: 14, padding: 12, background: C.bgSoft, borderRadius: 6 }}>
-          <div style={{ fontSize: 11, color: C.muted, fontWeight: 700, letterSpacing: 0.4, marginBottom: 6 }}>
-            ABONOS DEL {fmtDateLabel(diaSeleccionado).toUpperCase()}
+        <div style={{ marginTop: 14, padding: 14, background: P.veryLight, border: `1px solid ${P.border}`, borderRadius: 8 }}>
+          <div style={{ fontSize: 11, color: P.textSoft, fontWeight: 700, letterSpacing: 0.4, marginBottom: 8, textTransform: 'uppercase' }}>
+            Abonos del {fmtDateLabel(diaSeleccionado)}
           </div>
           <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
             <tbody>
               {abonosDia.map((it, i) => (
-                <tr key={i} onClick={() => onAbrirPlan(it.plan.id)} style={{ borderBottom: i < abonosDia.length - 1 ? `1px solid ${C.border}` : 'none', cursor: 'pointer' }}>
-                  <td style={{ padding: '8px 0', color: C.text }}>{it.plan.proveedor}</td>
-                  <td style={{ padding: '8px 0', textAlign: 'right', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>
-                    ${fmt(it.abono.montoProgramado)} {it.plan.moneda}
+                <tr key={i} onClick={() => onAbrirPlan(it.plan.id)} style={{ borderBottom: i < abonosDia.length - 1 ? `1px solid ${P.border}` : 'none', cursor: 'pointer' }}>
+                  <td style={{ padding: '10px 0', color: P.text, fontWeight: 500 }}>{it.plan.proveedor}</td>
+                  <td style={{ padding: '10px 0', textAlign: 'right', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: P.text }}>
+                    ${fmt(it.abono.montoProgramado)} <span style={{ fontSize: 10, color: P.textSoft, fontWeight: 600 }}>{it.plan.moneda}</span>
                   </td>
                 </tr>
               ))}
