@@ -208,6 +208,7 @@ export default function CxpApp({ user, onLogout }) {
   const [payments, setPayments] = useState([]); // all payments from DB
   const [payModal, setPayModal] = useState(null); // {invoiceId, proveedor, folio, total, moneda}
   const [planMatchModal, setPlanMatchModal] = useState(null); // {planes, montoPago, invoiceId, fechaPago, ...}
+  const [planMatchQueue, setPlanMatchQueue] = useState([]); // cola pendiente cuando viene de bulk: array de {planes, montoPago, invoiceId, fechaPago, proveedor, folio, moneda}
   const [pagosFechaFrom, setPagosFechaFrom] = useState("");
   const [pagosFechaTo, setPagosFechaTo] = useState("");
   const fileRef = useRef();
@@ -519,23 +520,62 @@ export default function CxpApp({ user, onLogout }) {
   const applyBulkPayment = async (tipo, montoMode, montoFijo, fecha, notas) => {
     if(selectedIds.size === 0 || !fecha) return;
     const ids = [...selectedIds];
+    // Vamos recopilando los pagos realizados para luego verificar planes activos
+    const pagosRealizados = []; // {invoiceId, monto, inv}
     for(const id of ids) {
       let monto = 0;
+      let invRef = null;
       if(montoMode === "saldo") {
         // Pay each invoice's full remaining saldo
         let inv = null;
         ["MXN","USD","EUR"].forEach(c => { const f = invoices[c].find(i=>i.id===id); if(f) inv=f; });
         if(inv) {
+          invRef = inv;
           const paid = realizedPayments(id).reduce((s,p)=>s+p.monto,0);
           monto = (+inv.total||0) - paid;
         }
       } else {
         monto = +montoFijo;
+        // Encontrar la factura para tener datos del proveedor/folio
+        ["MXN","USD","EUR"].forEach(c => { const f = invoices[c].find(i=>i.id===id); if(f) invRef=f; });
       }
-      if(monto > 0) await addPayment(id, monto, fecha, notas, tipo);
+      if(monto > 0) {
+        await addPayment(id, monto, fecha, notas, tipo);
+        if (tipo === 'realizado' && invRef) {
+          pagosRealizados.push({ invoiceId: id, monto, inv: invRef });
+        }
+      }
     }
     setSelectedIds(new Set());
     setBulkPayModal(null);
+    // Después de procesar todos, verificar planes activos (solo para pagos REALIZADOS)
+    if (tipo === 'realizado' && pagosRealizados.length > 0) {
+      try {
+        const cola = [];
+        for (const pago of pagosRealizados) {
+          const planesActivos = await buscarPlanesActivosDeFactura(pago.invoiceId, empresaId);
+          if (planesActivos && planesActivos.length > 0) {
+            cola.push({
+              planes: planesActivos,
+              montoPago: pago.monto,
+              fechaPago: fecha,
+              invoiceId: pago.invoiceId,
+              proveedor: pago.inv.proveedor || '',
+              folio: pago.inv.folio || '',
+              moneda: pago.inv.moneda || 'MXN',
+            });
+          }
+        }
+        // Si hay matches: abrir el primer modal y dejar el resto en cola
+        if (cola.length > 0) {
+          const [primero, ...resto] = cola;
+          setPlanMatchModal(primero);
+          setPlanMatchQueue(resto);
+        }
+      } catch (err) {
+        console.error('Verificando planes activos en bulk:', err);
+      }
+    }
   };
 
   /* ── Grouped (supports dual grouping) ────────────────────────────────── */
@@ -9595,6 +9635,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                     const planesActivos = await buscarPlanesActivosDeFactura(payModal.invoiceId, empresaId);
                     if (planesActivos && planesActivos.length > 0) {
                       // Hay match potencial: abrir modal preguntando si aplicar al plan
+                      setPlanMatchQueue([]); // limpiar cola (es flujo individual)
                       setPlanMatchModal({
                         planes: planesActivos,
                         montoPago: m,
@@ -9654,8 +9695,20 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
       })()}
 
       {/* PlanMatchModal — pregunta si aplicar el pago a un abono del plan */}
-      {planMatchModal && (
-        <ModalShell title="Plan de pago activo" onClose={() => setPlanMatchModal(null)}>
+      {planMatchModal && (() => {
+        // Helper para avanzar a siguiente match si hay cola pendiente
+        const avanzarColaMatch = () => {
+          if (planMatchQueue.length > 0) {
+            const [siguiente, ...resto] = planMatchQueue;
+            setPlanMatchModal(siguiente);
+            setPlanMatchQueue(resto);
+          } else {
+            setPlanMatchModal(null);
+          }
+        };
+        const restantes = planMatchQueue.length;
+        return (
+        <ModalShell title={restantes > 0 ? `Plan de pago activo (${restantes + 1} factura${restantes > 0 ? 's' : ''} en plan)` : "Plan de pago activo"} onClose={() => { setPlanMatchModal(null); setPlanMatchQueue([]); }} wide>
           <div style={{padding: '4px 0 12px'}}>
             <div style={{
               display: 'flex', alignItems: 'flex-start', gap: 10,
@@ -9714,8 +9767,8 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                       <div style={{display: 'flex', justifyContent: 'flex-end', gap: 6}}>
                         <button
                           onClick={async () => {
-                            // No marcar — solo cierra
-                            setPlanMatchModal(null);
+                            // No marcar — avanzar a siguiente match si hay cola
+                            avanzarColaMatch();
                           }}
                           style={{...btnStyle, padding: '7px 14px', fontSize: 12, background: '#F1F5F9', color: C.text}}>
                           No, pago independiente
@@ -9731,7 +9784,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                                 notas: `Match automático desde CxP (factura ${planMatchModal.folio})`,
                                 estado,
                               }, user?.nombre);
-                              setPlanMatchModal(null);
+                              avanzarColaMatch();
                             } catch (err) {
                               console.error('Marcar abono desde CxP:', err);
                               alert('Error al marcar el abono. Revisa la consola.');
@@ -9752,7 +9805,8 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             </div>
           </div>
         </ModalShell>
-      )}
+        );
+      })()}
 
       {/* Bulk payment modal */}
       {bulkPayModal && (()=>{
