@@ -1096,21 +1096,41 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
       </div>
 
       {/* Contenido capturable */}
-      <div ref={refCapturar} style={{ background: '#fff', padding: '4px 0' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
-        <div>
-          <h3 style={{ fontSize: 17, fontWeight: 800, color: C.navy, margin: 0 }}>📋 {plan.proveedor}</h3>
-          <p style={{ fontSize: 12, color: C.muted, margin: '4px 0 0' }}>
+      <div ref={refCapturar} style={{
+        background: '#fff',
+        borderRadius: 12,
+        overflow: 'hidden',
+        boxShadow: modoCaptura ? '0 4px 12px rgba(15, 118, 110, 0.08)' : 'none',
+        maxWidth: modoCaptura ? 760 : '100%',
+        margin: modoCaptura ? '0 auto' : '0',
+      }}>
+      {/* Header gradiente teal */}
+      <div style={{
+        background: 'linear-gradient(135deg, #0F766E 0%, #0E7490 50%, #155E75 100%)',
+        padding: '22px 28px', color: '#fff',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+      }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 11, opacity: 0.85, letterSpacing: 1, fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>
+            Plan de pago
+          </div>
+          <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: -0.2, lineHeight: 1.2 }}>
+            {plan.proveedor}
+          </div>
+          <div style={{ fontSize: 12, opacity: 0.9, marginTop: 4 }}>
             Plan {plan.frecuencia}
             {(plan.frecuencia === 'semanal' || plan.frecuencia === 'quincenal') && plan.diaSemana && ` · ${DIAS_SEMANA_LARGOS[plan.diaSemana - 1]?.toLowerCase()}`}
             {plan.frecuencia === 'mensual' && plan.diaMes && ` · día ${plan.diaMes}`}
-            {' · iniciado '}{fmtDateFull(plan.fechaInicio)}
-          </p>
+          </div>
+        </div>
+        <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 16 }}>
+          <div style={{ fontSize: 10, opacity: 0.75, letterSpacing: 0.5, textTransform: 'uppercase' }}>Emitido</div>
+          <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>{fmtDateFull(today())}</div>
         </div>
       </div>
 
       {confirmCancel && (
-        <div style={{ background: C.redSoft, border: `1px solid ${C.red}`, borderRadius: 6, padding: 12, marginBottom: 12 }}>
+        <div style={{ background: C.redSoft, border: `1px solid ${C.red}`, borderRadius: 6, padding: 12, margin: 12 }}>
           <div style={{ fontSize: 13, color: C.redText, marginBottom: 8 }}>
             ¿Cancelar el plan? Los abonos pendientes quedarán archivados y el plan no aparecerá en vistas activas.
           </div>
@@ -1121,76 +1141,184 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
         </div>
       )}
 
-      {/* KPIs del plan */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 14 }}>
-        <MiniKpi label="Total" value={`$${fmt(plan.montoTotal)}`} sub={plan.moneda}/>
-        <MiniKpi label="Pagado" value={`$${fmt(plan.pagado)}`} sub={`${plan.pct}%`} color={C.green}/>
-        <MiniKpi label="Restante" value={`$${fmt(plan.restante)}`} sub={`${plan.abonos.filter(a => a.estado !== 'pagado').length} abonos`}/>
-        <MiniKpi label="Liquida" value={fmtDateFull(plan.fechaLiquidacionEstimada)} accent/>
+      {/* Banda de KPIs verde claro */}
+      <div style={{
+        background: '#F0FDFA', padding: '16px 28px',
+        borderBottom: '1px solid #CCFBF1',
+      }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 10, color: '#134E4A', letterSpacing: 0.5, fontWeight: 600, textTransform: 'uppercase' }}>Total</div>
+            <div style={{ fontFamily: MONO, fontSize: 17, fontWeight: 700, color: '#134E4A', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>${fmt(plan.montoTotal)}</div>
+            <div style={{ fontSize: 10, color: '#0F766E', marginTop: 1 }}>{plan.moneda}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: '#134E4A', letterSpacing: 0.5, fontWeight: 600, textTransform: 'uppercase' }}>Pagado</div>
+            <div style={{ fontFamily: MONO, fontSize: 17, fontWeight: 700, color: '#134E4A', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>${fmt(plan.pagado)}</div>
+            <div style={{ fontSize: 10, color: '#0F766E', marginTop: 1 }}>{plan.pct}% avance</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: '#134E4A', letterSpacing: 0.5, fontWeight: 600, textTransform: 'uppercase' }}>Restante</div>
+            <div style={{ fontFamily: MONO, fontSize: 17, fontWeight: 700, color: '#134E4A', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>${fmt(plan.restante)}</div>
+            <div style={{ fontSize: 10, color: '#0F766E', marginTop: 1 }}>{plan.abonos.filter(a => a.estado !== 'pagado' && a.estado !== 'parcial').length} abonos</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: '#134E4A', letterSpacing: 0.5, fontWeight: 600, textTransform: 'uppercase' }}>Liquida</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#134E4A', marginTop: 4 }}>{fmtDateFull(plan.fechaLiquidacionEstimada)}</div>
+            <div style={{ fontSize: 10, color: '#0F766E', marginTop: 1 }}>{plan.frecuencia === 'semanal' ? 'Viernes' : plan.frecuencia}</div>
+          </div>
+        </div>
       </div>
 
-      {/* Tabla de abonos */}
-      <div style={{ marginBottom: 8, fontSize: 11, color: C.muted, fontWeight: 700, letterSpacing: 0.4 }}>ABONOS PROGRAMADOS</div>
-      <div style={{ border: `1px solid ${C.border}`, borderRadius: 6, overflow: 'hidden', maxHeight: 420, overflowY: 'auto' }}>
-        <table style={{ width: '100%', fontSize: 14, borderCollapse: 'collapse' }}>
-          <thead style={{ background: C.bgSoft, position: 'sticky', top: 0 }}>
-            <tr>
-              <th style={{ textAlign: 'center', padding: '10px 10px', fontWeight: 600, fontSize: 11, color: C.muted, letterSpacing: 0.4 }}>#</th>
-              <th style={{ textAlign: 'center', padding: '10px 10px', fontWeight: 600, fontSize: 11, color: C.muted, letterSpacing: 0.4 }}>FECHA</th>
-              <th style={{ textAlign: 'center', padding: '10px 10px', fontWeight: 600, fontSize: 11, color: C.muted, letterSpacing: 0.4 }}>ABONO</th>
-              <th style={{ textAlign: 'center', padding: '10px 10px', fontWeight: 600, fontSize: 11, color: C.muted, letterSpacing: 0.4 }}>RESTANTE</th>
-              <th style={{ textAlign: 'center', padding: '10px 10px', fontWeight: 600, fontSize: 11, color: C.muted, letterSpacing: 0.4 }}>ESTADO</th>
-              {!esConsulta && !modoCaptura && (
-                <th style={{ textAlign: 'center', padding: '10px 10px', fontWeight: 600, fontSize: 11, color: C.muted, letterSpacing: 0.4, width: 180 }}>ACCIONES</th>
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {abonosConSaldo.map(a => {
-              const estCalc = estadoCalculado(a, today());
-              const isPagado = a.estado === 'pagado' || a.estado === 'parcial';
-              const esEditableFecha = !isPagado;
-              return (
-                <tr key={a.id} style={{ borderTop: `1px solid ${C.border}`, background: isPagado ? '#F9FFF9' : 'transparent' }}>
-                  <td style={{ padding: '8px 10px', color: C.muted, textAlign: 'center' }}>{a.numero}</td>
-                  <td style={{ padding: '8px 10px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', textAlign: 'center' }}>
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                      <span>{fmtDateLabel(a.fechaProgramada)}</span>
-                      {!esConsulta && esEditableFecha && !modoCaptura && (
-                        <button onClick={() => setAbonoEditFecha(a)} title="Editar fecha"
-                          style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer', fontSize: 12, padding: 2, lineHeight: 1, fontFamily: 'inherit' }}>✎</button>
-                      )}
-                    </div>
-                  </td>
-                  <td style={{ padding: '8px 10px', textAlign: 'center', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 500 }}>
-                    ${fmt(a.montoProgramado)}
-                    {isPagado && a.montoPagado != null && +a.montoPagado !== +a.montoProgramado && (
-                      <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>pagado ${fmt(a.montoPagado)}</div>
-                    )}
-                  </td>
-                  <td style={{ padding: '8px 10px', textAlign: 'center', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: C.muted }}>${fmt(a.restanteDespues)}</td>
-                  <td style={{ padding: '8px 10px', textAlign: 'center' }}>
-                    {isPagado ? <Badge bg={C.greenSoft} color={C.greenText}>✓ {a.estado === 'parcial' ? 'Parcial' : 'Pagado'}</Badge> :
-                     estCalc === 'atrasado' ? <Badge bg={C.warnSoft} color={C.warnText}>Atrasado</Badge> :
-                     <Badge bg={C.blueSoft} color={C.blueText}>Pendiente</Badge>}
-                  </td>
-                  {!esConsulta && !modoCaptura && (
-                    <td style={{ padding: '8px 10px', textAlign: 'center' }}>
-                      {isPagado ? (
-                        <button onClick={() => setAbonoDesmarcando(a)} title="Desmarcar pago"
-                          style={{ background: '#fff', border: `1px solid ${C.border}`, color: C.muted, padding: '4px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>↩ Desmarcar</button>
-                      ) : (
-                        <button onClick={() => setAbonoMarcando(a)} title="Marcar como pagado"
-                          style={{ background: C.green, border: 'none', color: '#fff', padding: '4px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>✓ Marcar pagado</button>
+      {/* Tabla de abonos — estilo estado de cuenta */}
+      <div style={{ padding: '18px 28px 4px' }}>
+        <div style={{ marginBottom: 10, fontSize: 11, color: '#64748B', fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+          Calendario de pagos
+        </div>
+        <div style={{
+          borderRadius: 6, overflow: 'hidden',
+          // En la app (no captura) mantenemos un scroll vertical si hay muchos abonos
+          maxHeight: modoCaptura ? 'none' : 420,
+          overflowY: modoCaptura ? 'visible' : 'auto',
+        }}>
+          <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
+            <thead style={modoCaptura ? {} : { position: 'sticky', top: 0, background: '#fff', zIndex: 1 }}>
+              <tr style={{ borderBottom: '2px solid #0F766E' }}>
+                <th style={{ textAlign: 'left', padding: '8px 6px', fontSize: 10, fontWeight: 700, color: '#0F766E', letterSpacing: 0.5, textTransform: 'uppercase', width: 40 }}>#</th>
+                <th style={{ textAlign: 'left', padding: '8px 6px', fontSize: 10, fontWeight: 700, color: '#0F766E', letterSpacing: 0.5, textTransform: 'uppercase' }}>Fecha</th>
+                <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, fontWeight: 700, color: '#0F766E', letterSpacing: 0.5, textTransform: 'uppercase' }}>Abono</th>
+                <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 10, fontWeight: 700, color: '#0F766E', letterSpacing: 0.5, textTransform: 'uppercase' }}>Saldo</th>
+                <th style={{ textAlign: 'center', padding: '8px 6px', fontSize: 10, fontWeight: 700, color: '#0F766E', letterSpacing: 0.5, textTransform: 'uppercase', width: 90 }}>Estado</th>
+                {!esConsulta && !modoCaptura && (
+                  <th style={{ textAlign: 'center', padding: '8px 6px', fontSize: 10, fontWeight: 700, color: '#0F766E', letterSpacing: 0.5, textTransform: 'uppercase', width: 180 }}>Acciones</th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {abonosConSaldo.map((a, idx) => {
+                const estCalc = estadoCalculado(a, today());
+                const isPagado = a.estado === 'pagado' || a.estado === 'parcial';
+                const esEditableFecha = !isPagado;
+                const isUltimo = idx === abonosConSaldo.length - 1;
+                // El destacado "Final" SOLO aparece en modo captura, según decisión del usuario
+                const esDestacadoFinal = modoCaptura && isUltimo;
+                // Fila alternada (solo cuando NO es destacada y NO es pagada)
+                const bgAlternado = idx % 2 === 1 ? '#F8FAFC' : '#FFFFFF';
+                const bgFila = esDestacadoFinal
+                  ? '#ECFEFF'
+                  : (isPagado ? '#F0FDF4' : bgAlternado);
+                const colorTexto = esDestacadoFinal ? '#155E75' : '#1E293B';
+                return (
+                  <tr key={a.id} style={{
+                    background: bgFila,
+                    borderBottom: '1px solid #F1F5F9',
+                    borderTop: esDestacadoFinal ? '1.5px solid #0E7490' : 'none',
+                  }}>
+                    <td style={{
+                      padding: esDestacadoFinal ? '9px 6px' : '7px 6px',
+                      color: esDestacadoFinal ? '#155E75' : '#64748B',
+                      fontFamily: MONO, fontWeight: esDestacadoFinal ? 700 : 400,
+                    }}>{String(a.numero).padStart(2, '0')}</td>
+                    <td style={{
+                      padding: esDestacadoFinal ? '9px 6px' : '7px 6px',
+                      fontFamily: MONO, color: colorTexto,
+                      fontWeight: esDestacadoFinal ? 700 : 400,
+                    }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <span>{fmtDateLabel(a.fechaProgramada)}</span>
+                        {!esConsulta && esEditableFecha && !modoCaptura && (
+                          <button onClick={() => setAbonoEditFecha(a)} title="Editar fecha"
+                            style={{ background: 'transparent', border: 'none', color: '#94A3B8', cursor: 'pointer', fontSize: 12, padding: 2, lineHeight: 1, fontFamily: 'inherit' }}>✎</button>
+                        )}
+                      </div>
+                    </td>
+                    <td style={{
+                      padding: esDestacadoFinal ? '9px 6px' : '7px 6px',
+                      textAlign: 'right',
+                      fontFamily: MONO, fontVariantNumeric: 'tabular-nums',
+                      fontWeight: esDestacadoFinal ? 700 : 600,
+                      color: colorTexto,
+                    }}>
+                      ${fmt(a.montoProgramado)}
+                      {isPagado && a.montoPagado != null && +a.montoPagado !== +a.montoProgramado && (
+                        <div style={{ fontSize: 9, color: '#64748B', marginTop: 2, fontWeight: 400 }}>pagado ${fmt(a.montoPagado)}</div>
                       )}
                     </td>
-                  )}
+                    <td style={{
+                      padding: esDestacadoFinal ? '9px 6px' : '7px 6px',
+                      textAlign: 'right',
+                      fontFamily: MONO, fontVariantNumeric: 'tabular-nums',
+                      color: esDestacadoFinal ? '#155E75' : '#475569',
+                      fontWeight: esDestacadoFinal ? 700 : 400,
+                    }}>${fmt(a.restanteDespues)}</td>
+                    <td style={{ padding: esDestacadoFinal ? '9px 6px' : '7px 6px', textAlign: 'center' }}>
+                      {esDestacadoFinal ? (
+                        <span style={{
+                          display: 'inline-block', padding: '3px 9px',
+                          background: '#0E7490', color: '#fff',
+                          borderRadius: 999, fontSize: 10, fontWeight: 700,
+                        }}>Final</span>
+                      ) : isPagado ? (
+                        <span style={{
+                          display: 'inline-block', padding: '2px 8px',
+                          background: '#DCFCE7', color: '#166534',
+                          borderRadius: 999, fontSize: 10, fontWeight: 600,
+                        }}>✓ {a.estado === 'parcial' ? 'Parcial' : 'Pagado'}</span>
+                      ) : estCalc === 'atrasado' ? (
+                        <span style={{
+                          display: 'inline-block', padding: '2px 8px',
+                          background: '#FEF3C7', color: '#92400E',
+                          borderRadius: 999, fontSize: 10, fontWeight: 600,
+                        }}>Atrasado</span>
+                      ) : (
+                        <span style={{
+                          display: 'inline-block', padding: '2px 8px',
+                          background: '#E0F2FE', color: '#075985',
+                          borderRadius: 999, fontSize: 10, fontWeight: 600,
+                        }}>Pendiente</span>
+                      )}
+                    </td>
+                    {!esConsulta && !modoCaptura && (
+                      <td style={{ padding: '7px 6px', textAlign: 'center' }}>
+                        {isPagado ? (
+                          <button onClick={() => setAbonoDesmarcando(a)} title="Desmarcar pago"
+                            style={{ background: '#fff', border: `1px solid ${C.border}`, color: C.muted, padding: '4px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>↩ Desmarcar</button>
+                        ) : (
+                          <button onClick={() => setAbonoMarcando(a)} title="Marcar como pagado"
+                            style={{ background: '#0F766E', border: 'none', color: '#fff', padding: '4px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>✓ Marcar pagado</button>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+            {modoCaptura && (
+              <tfoot>
+                <tr>
+                  <td colSpan={2} style={{ padding: '10px 6px 0', fontSize: 11, color: '#64748B', fontWeight: 600 }}>TOTAL</td>
+                  <td style={{ padding: '10px 6px 0', textAlign: 'right', fontFamily: MONO, fontWeight: 700, color: '#134E4A', fontSize: 14, fontVariantNumeric: 'tabular-nums' }}>${fmt(plan.montoTotal)}</td>
+                  <td colSpan={2}></td>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              </tfoot>
+            )}
+          </table>
+        </div>
       </div>
+
+      {/* Footer del estado de cuenta — solo en modo captura */}
+      {modoCaptura && (
+        <div style={{
+          background: '#F8FAFC', padding: '12px 28px',
+          borderTop: '1px solid #E2E8F0',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          fontSize: 10, color: '#94A3B8',
+        }}>
+          <div>Documento generado automáticamente — Plan de pago acordado entre las partes</div>
+          <div>{plan.abonos.length} abonos · {plan.moneda}</div>
+        </div>
+      )}
+
       </div>{/* Fin del refCapturar */}
 
       <div style={{ marginTop: 12, fontSize: 11, color: C.muted, padding: '10px 12px', background: C.bgSoft, borderRadius: 6 }}>
