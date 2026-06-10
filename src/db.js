@@ -1776,3 +1776,133 @@ export function calcularRitmoSemanal(planesActivos) {
 
   return { totales, detalle };
 }
+
+
+// ─── Marcar abono como pagado (con ajuste de factura aplicada) ──────
+// datosPago: { fechaPagado, montoPagado, facturaIdAplicada, notas, estado }
+// estado puede ser 'pagado' (monto completo) o 'parcial' (monto menor)
+// La factura aplicada del plan se suma el monto pagado a su monto_aplicado
+export async function marcarAbonoPagado(abonoId, datosPago, usuario) {
+  // 1. Obtener el abono actual para conocer su plan_id y empresa_id
+  const { data: abonoActual, error: errFetch } = await supabase
+    .from('plan_abonos').select('*').eq('id', abonoId).single();
+  if (errFetch || !abonoActual) {
+    console.error('marcarAbonoPagado: no se encontró el abono', errFetch);
+    return false;
+  }
+
+  // 2. Actualizar el abono
+  const updates = {
+    estado: datosPago.estado || 'pagado',
+    fecha_pagado: datosPago.fechaPagado || new Date().toISOString().split('T')[0],
+    monto_pagado: +datosPago.montoPagado || 0,
+    factura_id_aplicada: datosPago.facturaIdAplicada || null,
+    notas: datosPago.notas || abonoActual.notas || null,
+    updated_by: usuario || 'desconocido',
+  };
+  const { error: errUpd } = await supabase
+    .from('plan_abonos').update(updates).eq('id', abonoId);
+  if (errUpd) {
+    console.error('marcarAbonoPagado: error actualizando abono', errUpd);
+    return false;
+  }
+
+  // 3. Si hay factura aplicada, sumar el monto al monto_aplicado de plan_facturas
+  if (datosPago.facturaIdAplicada) {
+    const { data: pf, error: errPf } = await supabase
+      .from('plan_facturas')
+      .select('*')
+      .eq('plan_id', abonoActual.plan_id)
+      .eq('invoice_id', datosPago.facturaIdAplicada)
+      .single();
+    if (pf && !errPf) {
+      const nuevoAplicado = (+pf.monto_aplicado || 0) + (+datosPago.montoPagado || 0);
+      await supabase.from('plan_facturas')
+        .update({ monto_aplicado: nuevoAplicado, updated_by: usuario || 'desconocido' })
+        .eq('id', pf.id);
+    }
+  }
+
+  // 4. Si TODOS los abonos del plan ya están pagados, marcar el plan como liquidado
+  const { data: todosAbonos } = await supabase
+    .from('plan_abonos').select('estado').eq('plan_id', abonoActual.plan_id);
+  if (todosAbonos && todosAbonos.length > 0) {
+    const pendientes = todosAbonos.filter(a => a.estado !== 'pagado' && a.estado !== 'parcial').length;
+    if (pendientes === 0) {
+      await supabase.from('planes_pago')
+        .update({ estado: 'liquidado', updated_by: usuario || 'desconocido' })
+        .eq('id', abonoActual.plan_id);
+    }
+  }
+
+  return true;
+}
+
+// ─── Desmarcar pago (revertir abono a pendiente) ────────────────────
+export async function desmarcarAbonoPagado(abonoId, usuario) {
+  // 1. Obtener el abono actual para saber cuánto descontar de la factura
+  const { data: abonoActual, error: errFetch } = await supabase
+    .from('plan_abonos').select('*').eq('id', abonoId).single();
+  if (errFetch || !abonoActual) {
+    console.error('desmarcarAbonoPagado: no se encontró el abono', errFetch);
+    return false;
+  }
+
+  // 2. Si había factura aplicada, restar el monto del monto_aplicado
+  if (abonoActual.factura_id_aplicada && abonoActual.monto_pagado) {
+    const { data: pf } = await supabase
+      .from('plan_facturas')
+      .select('*')
+      .eq('plan_id', abonoActual.plan_id)
+      .eq('invoice_id', abonoActual.factura_id_aplicada)
+      .single();
+    if (pf) {
+      const nuevoAplicado = Math.max(0, (+pf.monto_aplicado || 0) - (+abonoActual.monto_pagado || 0));
+      await supabase.from('plan_facturas')
+        .update({ monto_aplicado: nuevoAplicado, updated_by: usuario || 'desconocido' })
+        .eq('id', pf.id);
+    }
+  }
+
+  // 3. Resetear el abono a pendiente
+  const updates = {
+    estado: 'pendiente',
+    fecha_pagado: null,
+    monto_pagado: null,
+    factura_id_aplicada: null,
+    pago_id: null,
+    updated_by: usuario || 'desconocido',
+  };
+  const { error } = await supabase.from('plan_abonos').update(updates).eq('id', abonoId);
+  if (error) {
+    console.error('desmarcarAbonoPagado: error', error);
+    return false;
+  }
+
+  // 4. Si el plan estaba liquidado, volverlo a activo
+  await supabase.from('planes_pago')
+    .update({ estado: 'activo', updated_by: usuario || 'desconocido' })
+    .eq('id', abonoActual.plan_id)
+    .eq('estado', 'liquidado');
+
+  return true;
+}
+
+// ─── Reagendar abonos siguientes (cuando editas fecha de uno) ───────
+// abonosOrdenados: array de abonos del plan (debe estar ordenado por numero asc)
+// idDesde: id del abono que cambió - se mueven todos los SIGUIENTES
+// deltaDias: cuántos días mover (positivo = adelante, negativo = atrás)
+export async function reagendarAbonosSiguientes(abonosOrdenados, idDesde, deltaDias, usuario) {
+  const idx = abonosOrdenados.findIndex(a => a.id === idDesde);
+  if (idx < 0) return false;
+  const siguientes = abonosOrdenados.slice(idx + 1).filter(a => a.estado === 'pendiente' || a.estado === 'atrasado');
+  for (const a of siguientes) {
+    const d = new Date(a.fechaProgramada + 'T12:00:00');
+    d.setDate(d.getDate() + deltaDias);
+    const nueva = d.toISOString().split('T')[0];
+    await supabase.from('plan_abonos')
+      .update({ fecha_programada: nueva, updated_by: usuario || 'desconocido' })
+      .eq('id', a.id);
+  }
+  return true;
+}

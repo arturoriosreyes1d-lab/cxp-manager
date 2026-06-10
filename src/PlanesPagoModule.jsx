@@ -23,6 +23,7 @@ import {
   fetchPlanesPago, upsertPlanPago, deletePlanPago, cancelarPlanPago,
   fetchFacturasDePlan, insertPlanFactura,
   fetchAbonosPorPlan, fetchAbonosPorEmpresa, upsertAbono, deleteAbono, bulkInsertAbonos,
+  marcarAbonoPagado, desmarcarAbonoPagado, reagendarAbonosSiguientes,
   calcularRitmoSemanal,
 } from './db.js';
 
@@ -964,6 +965,9 @@ function NuevoPlanModal({ empresaId, user, planesExistentes, onClose, onCreated 
 // ═══════════════════════════════════════════════════════════════════
 function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [abonoMarcando, setAbonoMarcando] = useState(null);     // abono que se está marcando como pagado
+  const [abonoEditFecha, setAbonoEditFecha] = useState(null);   // abono cuya fecha se está editando
+  const [abonoDesmarcando, setAbonoDesmarcando] = useState(null); // abono que se está desmarcando (confirmar)
 
   // Recorrer abonos con saldo restante post-cada-uno
   const abonosConSaldo = useMemo(() => {
@@ -979,6 +983,13 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
     setConfirmCancel(false);
     await onAccion();
     onClose();
+  };
+
+  const handleDesmarcar = async () => {
+    if (!abonoDesmarcando) return;
+    await desmarcarAbonoPagado(abonoDesmarcando.id, user?.nombre);
+    setAbonoDesmarcando(null);
+    await onAccion();
   };
 
   return (
@@ -1024,7 +1035,7 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
 
       {/* Tabla de abonos */}
       <div style={{ marginBottom: 8, fontSize: 11, color: C.muted, fontWeight: 700, letterSpacing: 0.4 }}>ABONOS PROGRAMADOS</div>
-      <div style={{ border: `1px solid ${C.border}`, borderRadius: 6, overflow: 'hidden', maxHeight: 380, overflowY: 'auto' }}>
+      <div style={{ border: `1px solid ${C.border}`, borderRadius: 6, overflow: 'hidden', maxHeight: 420, overflowY: 'auto' }}>
         <table style={{ width: '100%', fontSize: 14, borderCollapse: 'collapse' }}>
           <thead style={{ background: C.bgSoft, position: 'sticky', top: 0 }}>
             <tr>
@@ -1033,23 +1044,51 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
               <th style={{ textAlign: 'center', padding: '10px 10px', fontWeight: 600, fontSize: 11, color: C.muted, letterSpacing: 0.4 }}>ABONO</th>
               <th style={{ textAlign: 'center', padding: '10px 10px', fontWeight: 600, fontSize: 11, color: C.muted, letterSpacing: 0.4 }}>RESTANTE</th>
               <th style={{ textAlign: 'center', padding: '10px 10px', fontWeight: 600, fontSize: 11, color: C.muted, letterSpacing: 0.4 }}>ESTADO</th>
+              {!esConsulta && (
+                <th style={{ textAlign: 'center', padding: '10px 10px', fontWeight: 600, fontSize: 11, color: C.muted, letterSpacing: 0.4, width: 180 }}>ACCIONES</th>
+              )}
             </tr>
           </thead>
           <tbody>
             {abonosConSaldo.map(a => {
               const estCalc = estadoCalculado(a, today());
               const isPagado = a.estado === 'pagado' || a.estado === 'parcial';
+              const esEditableFecha = !isPagado;
               return (
-                <tr key={a.id} style={{ borderTop: `1px solid ${C.border}` }}>
+                <tr key={a.id} style={{ borderTop: `1px solid ${C.border}`, background: isPagado ? '#F9FFF9' : 'transparent' }}>
                   <td style={{ padding: '8px 10px', color: C.muted, textAlign: 'center' }}>{a.numero}</td>
-                  <td style={{ padding: '8px 10px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', textAlign: 'center' }}>{fmtDateLabel(a.fechaProgramada)}</td>
-                  <td style={{ padding: '8px 10px', textAlign: 'center', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 500 }}>${fmt(a.montoProgramado)}</td>
+                  <td style={{ padding: '8px 10px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', textAlign: 'center' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <span>{fmtDateLabel(a.fechaProgramada)}</span>
+                      {!esConsulta && esEditableFecha && (
+                        <button onClick={() => setAbonoEditFecha(a)} title="Editar fecha"
+                          style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer', fontSize: 12, padding: 2, lineHeight: 1, fontFamily: 'inherit' }}>✎</button>
+                      )}
+                    </div>
+                  </td>
+                  <td style={{ padding: '8px 10px', textAlign: 'center', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 500 }}>
+                    ${fmt(a.montoProgramado)}
+                    {isPagado && a.montoPagado != null && +a.montoPagado !== +a.montoProgramado && (
+                      <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>pagado ${fmt(a.montoPagado)}</div>
+                    )}
+                  </td>
                   <td style={{ padding: '8px 10px', textAlign: 'center', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: C.muted }}>${fmt(a.restanteDespues)}</td>
                   <td style={{ padding: '8px 10px', textAlign: 'center' }}>
-                    {isPagado ? <Badge bg={C.greenSoft} color={C.greenText}>✓ Pagado</Badge> :
+                    {isPagado ? <Badge bg={C.greenSoft} color={C.greenText}>✓ {a.estado === 'parcial' ? 'Parcial' : 'Pagado'}</Badge> :
                      estCalc === 'atrasado' ? <Badge bg={C.warnSoft} color={C.warnText}>Atrasado</Badge> :
                      <Badge bg={C.blueSoft} color={C.blueText}>Pendiente</Badge>}
                   </td>
+                  {!esConsulta && (
+                    <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                      {isPagado ? (
+                        <button onClick={() => setAbonoDesmarcando(a)} title="Desmarcar pago"
+                          style={{ background: '#fff', border: `1px solid ${C.border}`, color: C.muted, padding: '4px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>↩ Desmarcar</button>
+                      ) : (
+                        <button onClick={() => setAbonoMarcando(a)} title="Marcar como pagado"
+                          style={{ background: C.green, border: 'none', color: '#fff', padding: '4px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>✓ Marcar pagado</button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               );
             })}
@@ -1058,7 +1097,368 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
       </div>
 
       <div style={{ marginTop: 12, fontSize: 11, color: C.muted, padding: '10px 12px', background: C.bgSoft, borderRadius: 6 }}>
-        💡 El match automático con pagos de CxP estará disponible en la próxima actualización. Por ahora los abonos se marcan como pagados desde aquí (función próximamente).
+        💡 Marca cada abono como pagado conforme se vayan liquidando. Cuando todos estén pagados el plan pasará automáticamente a estado <strong>liquidado</strong>.
+      </div>
+
+      {/* Sub-modal: Marcar abono pagado */}
+      {abonoMarcando && (
+        <MarcarPagoModal
+          abono={abonoMarcando}
+          plan={plan}
+          user={user}
+          onClose={() => setAbonoMarcando(null)}
+          onDone={async () => { setAbonoMarcando(null); await onAccion(); }}
+        />
+      )}
+
+      {/* Sub-modal: Editar fecha de abono */}
+      {abonoEditFecha && (
+        <EditarFechaAbonoModal
+          abono={abonoEditFecha}
+          plan={plan}
+          user={user}
+          onClose={() => setAbonoEditFecha(null)}
+          onDone={async () => { setAbonoEditFecha(null); await onAccion(); }}
+        />
+      )}
+
+      {/* Sub-modal: Confirmar desmarcar pago */}
+      {abonoDesmarcando && (
+        <ModalShell onClose={() => setAbonoDesmarcando(null)} maxWidth={420}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, paddingBottom: 10, borderBottom: `1px solid ${C.border}` }}>
+            <h3 style={{ fontSize: 15, fontWeight: 800, color: C.navy, margin: 0 }}>↩ Desmarcar pago</h3>
+            <button onClick={() => setAbonoDesmarcando(null)} style={{ background: 'transparent', border: 'none', fontSize: 20, color: C.muted, cursor: 'pointer', padding: 0 }}>×</button>
+          </div>
+          <p style={{ fontSize: 13, color: C.text, marginTop: 0 }}>
+            ¿Confirmas desmarcar el abono #{abonoDesmarcando.numero} ({fmtDateLabel(abonoDesmarcando.fechaProgramada)}, ${fmt(abonoDesmarcando.montoProgramado)})?
+          </p>
+          <p style={{ fontSize: 12, color: C.muted }}>
+            El pago volverá a estado pendiente y se restará del monto aplicado a la factura correspondiente.
+          </p>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
+            <button onClick={() => setAbonoDesmarcando(null)} style={btnStyle()}>Cancelar</button>
+            <button onClick={handleDesmarcar} style={{ ...btnStyle('primary'), background: C.warn }}>Sí, desmarcar</button>
+          </div>
+        </ModalShell>
+      )}
+    </ModalShell>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SUB-MODAL: Marcar abono como pagado
+// ═══════════════════════════════════════════════════════════════════
+function MarcarPagoModal({ abono, plan, user, onClose, onDone }) {
+  const [fechaPagado, setFechaPagado] = useState(today());
+  const [montoPagado, setMontoPagado] = useState(String(abono.montoProgramado || ''));
+  const [facturaSel, setFacturaSel] = useState('');
+  const [notas, setNotas] = useState('');
+  const [ajusteOpcion, setAjusteOpcion] = useState(''); // 'reagendar', 'sumar', 'nota'
+  const [guardando, setGuardando] = useState(false);
+
+  // Facturas del plan con saldo restante > 0
+  const facturasDisponibles = useMemo(() => {
+    return (plan.facturas || []).map(f => {
+      const saldo = Math.max(0, (+f.montoInicial || 0) - (+f.montoAplicado || 0));
+      return { ...f, saldo };
+    }).filter(f => f.saldo > 0.01);
+  }, [plan]);
+
+  // Inicializar factura seleccionada con la más vieja (primera con saldo)
+  useEffect(() => {
+    if (!facturaSel && facturasDisponibles.length > 0) {
+      setFacturaSel(facturasDisponibles[0].invoiceId);
+    }
+  }, [facturasDisponibles, facturaSel]);
+
+  const monto = parseFloat(montoPagado) || 0;
+  const diferencia = monto - +abono.montoProgramado;
+  const hayDiferencia = Math.abs(diferencia) > 0.01;
+  const esMenor = diferencia < -0.01;
+  const esMayor = diferencia > 0.01;
+
+  const handleGuardar = async () => {
+    if (guardando) return;
+    if (monto <= 0) { alert('El monto pagado debe ser mayor a 0'); return; }
+    if (hayDiferencia && !ajusteOpcion) {
+      alert('Selecciona qué hacer con la diferencia');
+      return;
+    }
+    setGuardando(true);
+    try {
+      // Determinar estado: 'pagado' si monto >= programado, 'parcial' si menor
+      const estado = monto >= +abono.montoProgramado - 0.01 ? 'pagado' : 'parcial';
+
+      // 1. Marcar el abono actual
+      await marcarAbonoPagado(abono.id, {
+        fechaPagado,
+        montoPagado: monto,
+        facturaIdAplicada: facturaSel || null,
+        notas: notas || null,
+        estado,
+      }, user?.nombre);
+
+      // 2. Manejar la diferencia según opción
+      if (hayDiferencia && ajusteOpcion === 'reagendar') {
+        // Crear un nuevo abono al final del plan con la diferencia
+        const abonosOrdenados = [...plan.abonos].sort((a, b) => a.numero - b.numero);
+        const ultimo = abonosOrdenados[abonosOrdenados.length - 1];
+        // Calcular siguiente fecha (mismo intervalo desde el último)
+        let nuevaFecha;
+        if (plan.frecuencia === 'semanal') {
+          const d = new Date(ultimo.fechaProgramada + 'T12:00:00');
+          d.setDate(d.getDate() + 7);
+          nuevaFecha = d.toISOString().split('T')[0];
+        } else if (plan.frecuencia === 'quincenal') {
+          const d = new Date(ultimo.fechaProgramada + 'T12:00:00');
+          d.setDate(d.getDate() + 14);
+          nuevaFecha = d.toISOString().split('T')[0];
+        } else {
+          const d = new Date(ultimo.fechaProgramada + 'T12:00:00');
+          d.setMonth(d.getMonth() + 1);
+          nuevaFecha = d.toISOString().split('T')[0];
+        }
+        const diferenciaAbs = Math.abs(diferencia);
+        await upsertAbono({
+          planId: plan.id,
+          empresaId: plan.empresaId,
+          numero: ultimo.numero + 1,
+          fechaProgramada: nuevaFecha,
+          montoProgramado: diferenciaAbs,
+          estado: 'pendiente',
+          notas: esMenor ? `Diferencia del abono #${abono.numero} (faltante)` : `Excedente reagendado del abono #${abono.numero}`,
+        }, user?.nombre);
+      } else if (hayDiferencia && ajusteOpcion === 'sumar') {
+        // Sumar al próximo abono pendiente
+        const abonosOrdenados = [...plan.abonos].sort((a, b) => a.numero - b.numero);
+        const idx = abonosOrdenados.findIndex(a => a.id === abono.id);
+        const proximoPendiente = abonosOrdenados.slice(idx + 1).find(a => a.estado === 'pendiente' || a.estado === 'atrasado');
+        if (proximoPendiente) {
+          // Si faltó dinero (esMenor) → próximo paga más (suma)
+          // Si sobró dinero (esMayor) → próximo paga menos (resta)
+          const nuevoMonto = +proximoPendiente.montoProgramado + (esMenor ? Math.abs(diferencia) : -diferencia);
+          await upsertAbono({
+            ...proximoPendiente,
+            montoProgramado: Math.max(0, nuevoMonto),
+          }, user?.nombre);
+        }
+      } else if (hayDiferencia && ajusteOpcion === 'acortar' && esMayor) {
+        // Sobrepago: acortar el plan - eliminar el último abono pendiente
+        const abonosOrdenados = [...plan.abonos].sort((a, b) => b.numero - a.numero);
+        const ultimoPendiente = abonosOrdenados.find(a => a.estado === 'pendiente' || a.estado === 'atrasado');
+        if (ultimoPendiente) {
+          const restante = +ultimoPendiente.montoProgramado - diferencia;
+          if (restante > 0.01) {
+            await upsertAbono({ ...ultimoPendiente, montoProgramado: restante }, user?.nombre);
+          } else {
+            await deleteAbono(ultimoPendiente.id);
+          }
+        }
+      }
+      // 'nota' no requiere acción adicional, solo se guarda como informativo
+
+      await onDone();
+    } catch (err) {
+      console.error('marcarAbono:', err);
+      alert('Error al marcar el abono. Revisa la consola.');
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <ModalShell onClose={onClose} maxWidth={520}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
+        <div>
+          <h3 style={{ fontSize: 16, fontWeight: 800, color: C.navy, margin: 0 }}>✓ Marcar abono pagado</h3>
+          <p style={{ fontSize: 12, color: C.muted, margin: '4px 0 0' }}>
+            Abono #{abono.numero} · {fmtDateLabel(abono.fechaProgramada)} · programado ${fmt(abono.montoProgramado)} {plan.moneda}
+          </p>
+        </div>
+        <button onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: 20, color: C.muted, cursor: 'pointer', padding: 0 }}>×</button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+        <div>
+          <Label>Fecha real del pago</Label>
+          <input type="date" value={fechaPagado} onChange={e => setFechaPagado(e.target.value)} style={inputStyle()}/>
+        </div>
+        <div>
+          <Label>Monto pagado ({plan.moneda})</Label>
+          <input value={montoPagado} onChange={e => setMontoPagado(e.target.value.replace(/[^\d.]/g, ''))} style={{ ...inputStyle(), fontFamily: MONO }}/>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 10 }}>
+        <Label>Aplicar a factura</Label>
+        {facturasDisponibles.length === 0 ? (
+          <div style={{ padding: '8px 10px', background: C.bgSoft, borderRadius: 6, fontSize: 12, color: C.muted }}>
+            Todas las facturas del plan ya están aplicadas.
+          </div>
+        ) : (
+          <select value={facturaSel} onChange={e => setFacturaSel(e.target.value)} style={selectStyle()}>
+            {facturasDisponibles.map(f => (
+              <option key={f.id} value={f.invoiceId}>
+                {f.invoiceId.substring(0, 12)}… · saldo ${fmt(f.saldo)}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+
+      {/* Manejo de diferencia */}
+      {hayDiferencia && (
+        <div style={{
+          background: esMenor ? C.warnSoft : C.blueSoft,
+          border: `1px solid ${esMenor ? C.warn : C.blue}`,
+          borderRadius: 6, padding: '10px 12px', marginBottom: 10,
+        }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: esMenor ? C.warnText : C.blueText, marginBottom: 6 }}>
+            {esMenor
+              ? `⚠ Pagaste $${fmt(monto)}, falta $${fmt(Math.abs(diferencia))} del abono`
+              : `↑ Pagaste $${fmt(monto)}, sobran $${fmt(diferencia)} sobre el abono`}
+          </div>
+          <div style={{ fontSize: 11, color: esMenor ? C.warnText : C.blueText, marginBottom: 6 }}>¿Qué hacer con la diferencia?</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {esMenor ? (
+              <>
+                <RadioOpcion label="Reagendar el faltante en un abono extra al final del plan" value="reagendar" current={ajusteOpcion} onChange={setAjusteOpcion} />
+                <RadioOpcion label="Sumar el faltante al próximo abono" value="sumar" current={ajusteOpcion} onChange={setAjusteOpcion} />
+                <RadioOpcion label="Solo nota (no reajustar montos)" value="nota" current={ajusteOpcion} onChange={setAjusteOpcion} />
+              </>
+            ) : (
+              <>
+                <RadioOpcion label="Descontar el excedente del próximo abono" value="sumar" current={ajusteOpcion} onChange={setAjusteOpcion} />
+                <RadioOpcion label="Acortar el plan (eliminar último abono si alcanza)" value="acortar" current={ajusteOpcion} onChange={setAjusteOpcion} />
+                <RadioOpcion label="Solo nota (no reajustar montos)" value="nota" current={ajusteOpcion} onChange={setAjusteOpcion} />
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div style={{ marginBottom: 14 }}>
+        <Label>Notas (opcional)</Label>
+        <input value={notas} onChange={e => setNotas(e.target.value)} placeholder="Referencia bancaria, comentarios..." style={inputStyle()}/>
+      </div>
+
+      <ModalFooter
+        leftBtn={<button onClick={onClose} style={btnStyle()} disabled={guardando}>Cancelar</button>}
+        rightBtn={
+          <button onClick={handleGuardar} disabled={guardando || monto <= 0} style={btnStyle(monto > 0 && !guardando ? 'success' : 'disabled')}>
+            {guardando ? 'Guardando…' : '✓ Confirmar pago'}
+          </button>
+        }
+      />
+    </ModalShell>
+  );
+}
+
+function RadioOpcion({ label, value, current, onChange }) {
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: C.text }}>
+      <input type="radio" checked={current === value} onChange={() => onChange(value)} />
+      <span>{label}</span>
+    </label>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SUB-MODAL: Editar fecha de un abono
+// ═══════════════════════════════════════════════════════════════════
+function EditarFechaAbonoModal({ abono, plan, user, onClose, onDone }) {
+  const [nuevaFecha, setNuevaFecha] = useState(abono.fechaProgramada);
+  const [guardando, setGuardando] = useState(false);
+
+  // Abonos siguientes pendientes
+  const siguientesPendientes = useMemo(() => {
+    const ordenados = [...(plan.abonos || [])].sort((a, b) => a.numero - b.numero);
+    const idx = ordenados.findIndex(a => a.id === abono.id);
+    return ordenados.slice(idx + 1).filter(a => a.estado === 'pendiente' || a.estado === 'atrasado');
+  }, [plan, abono]);
+
+  const cambio = nuevaFecha !== abono.fechaProgramada;
+  const deltaDias = useMemo(() => {
+    if (!cambio) return 0;
+    const d1 = new Date(abono.fechaProgramada + 'T12:00:00');
+    const d2 = new Date(nuevaFecha + 'T12:00:00');
+    return Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
+  }, [nuevaFecha, abono.fechaProgramada, cambio]);
+
+  const handleConfirmar = async (recorrerSiguientes) => {
+    if (guardando || !cambio) return;
+    setGuardando(true);
+    try {
+      // 1. Actualizar el abono actual
+      await upsertAbono({ ...abono, fechaProgramada: nuevaFecha }, user?.nombre);
+      // 2. Si pidió recorrer, actualizar los siguientes
+      if (recorrerSiguientes && siguientesPendientes.length > 0) {
+        const ordenadosTodos = [...(plan.abonos || [])].sort((a, b) => a.numero - b.numero);
+        await reagendarAbonosSiguientes(ordenadosTodos, abono.id, deltaDias, user?.nombre);
+      }
+      await onDone();
+    } catch (err) {
+      console.error('editarFecha:', err);
+      alert('Error al editar la fecha. Revisa la consola.');
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <ModalShell onClose={onClose} maxWidth={480}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
+        <div>
+          <h3 style={{ fontSize: 16, fontWeight: 800, color: C.navy, margin: 0 }}>✎ Editar fecha del abono</h3>
+          <p style={{ fontSize: 12, color: C.muted, margin: '4px 0 0' }}>
+            Abono #{abono.numero} · ${fmt(abono.montoProgramado)} {plan.moneda}
+          </p>
+        </div>
+        <button onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: 20, color: C.muted, cursor: 'pointer', padding: 0 }}>×</button>
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <Label>Fecha actual</Label>
+        <div style={{ fontSize: 13, fontFamily: MONO, padding: '6px 10px', background: C.bgSoft, borderRadius: 6, color: C.muted }}>
+          {fmtDateLabel(abono.fechaProgramada)}
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <Label>Nueva fecha</Label>
+        <input type="date" value={nuevaFecha} onChange={e => setNuevaFecha(e.target.value)} style={inputStyle()}/>
+      </div>
+
+      {cambio && (
+        <div style={{
+          background: C.blueSoft, border: `1px solid ${C.blue}`, borderRadius: 6,
+          padding: '10px 12px', marginBottom: 14,
+        }}>
+          <div style={{ fontSize: 12, color: C.blueText, lineHeight: 1.5 }}>
+            <strong>Cambio:</strong> {deltaDias > 0 ? `+${deltaDias}` : deltaDias} día(s) — {fmtDateLabel(abono.fechaProgramada)} → <strong>{fmtDateLabel(nuevaFecha)}</strong>
+            {siguientesPendientes.length > 0 && (
+              <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${C.blue}` }}>
+                Hay <strong>{siguientesPendientes.length} abono(s) pendientes después de éste</strong>. ¿Quieres recorrerlos manteniendo el mismo intervalo?
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
+        <button onClick={onClose} style={btnStyle()} disabled={guardando}>Cancelar</button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {siguientesPendientes.length > 0 && cambio && (
+            <button onClick={() => handleConfirmar(false)} disabled={guardando} style={btnStyle()}>
+              Solo mover este
+            </button>
+          )}
+          <button onClick={() => handleConfirmar(siguientesPendientes.length > 0)}
+            disabled={!cambio || guardando}
+            style={btnStyle(cambio && !guardando ? 'primary' : 'disabled')}>
+            {guardando ? 'Guardando…' : siguientesPendientes.length > 0 && cambio ? 'Sí, recorrer todos' : 'Guardar'}
+          </button>
+        </div>
       </div>
     </ModalShell>
   );
