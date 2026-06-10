@@ -1082,7 +1082,7 @@ function MiniKpi({ label, value, sub, color, accent }) {
 function PopupActivos({ planes, onClose, onAbrirPlan }) {
   const activos = planes.filter(p => p.estado === 'activo');
   return (
-    <ModalShell onClose={onClose} maxWidth={680}>
+    <ModalShell onClose={onClose} maxWidth={920}>
       <PopupHeader label="DESGLOSE" title="Planes activos" onClose={onClose}/>
       {activos.length === 0 ? (
         <div style={{ padding: 24, textAlign: 'center', color: C.muted, fontSize: 13 }}>Sin planes activos.</div>
@@ -1115,7 +1115,7 @@ function PopupComprometido({ planes, onClose, onAbrirPlan }) {
   activos.forEach(p => { if (grupos[p.moneda]) grupos[p.moneda].push(p); });
 
   return (
-    <ModalShell onClose={onClose} maxWidth={680}>
+    <ModalShell onClose={onClose} maxWidth={920}>
       <PopupHeader label="DESGLOSE" title="Comprometido por moneda" onClose={onClose}/>
       {['USD', 'MXN', 'EUR'].map(mon => {
         if (grupos[mon].length === 0) return null;
@@ -1150,7 +1150,7 @@ function PopupRitmo({ ritmo, onClose }) {
     if (porMoneda[d.moneda]) porMoneda[d.moneda].push(d);
   });
   return (
-    <ModalShell onClose={onClose} maxWidth={680}>
+    <ModalShell onClose={onClose} maxWidth={920}>
       <PopupHeader label="DESGLOSE" title="Pago semanal por plan" subtitle="Compromiso normalizado a base semanal" onClose={onClose}/>
       {['USD', 'MXN', 'EUR'].map(mon => {
         if (porMoneda[mon].length === 0) return null;
@@ -1480,7 +1480,7 @@ function PopupAtrasados({ planes, hoyStr, onClose, onAbrirPlan }) {
   atrasados.sort((a, b) => a.abono.fechaProgramada.localeCompare(b.abono.fechaProgramada));
 
   return (
-    <ModalShell onClose={onClose} maxWidth={680}>
+    <ModalShell onClose={onClose} maxWidth={920}>
       <PopupHeader label="DESGLOSE" title="Abonos atrasados" subtitle={`${atrasados.length} pago(s) vencidos sin marcar`} onClose={onClose}/>
       {atrasados.length === 0 ? (
         <div style={{ padding: 24, textAlign: 'center', color: C.green, fontSize: 13 }}>🎉 Todo al día, sin atrasos.</div>
