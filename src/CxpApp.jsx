@@ -33,6 +33,7 @@ import {
   fetchPrestamos, upsertPrestamo, deletePrestamo,
   fetchPrestamoMovimientos, upsertPrestamoMovimiento, deletePrestamoMovimiento,
   calcularUtilizadoPrestamo,
+  buscarPlanesActivosDeFactura, marcarAbonoPagado,
 } from "./db.js";
 import CxcView from "./CxcView.jsx";
 import ReportesView from "./ReportesView.jsx";
@@ -206,6 +207,7 @@ export default function CxpApp({ user, onLogout }) {
   const [sortDir, setSortDir] = useState("asc");
   const [payments, setPayments] = useState([]); // all payments from DB
   const [payModal, setPayModal] = useState(null); // {invoiceId, proveedor, folio, total, moneda}
+  const [planMatchModal, setPlanMatchModal] = useState(null); // {planes, montoPago, invoiceId, fechaPago, ...}
   const [pagosFechaFrom, setPagosFechaFrom] = useState("");
   const [pagosFechaTo, setPagosFechaTo] = useState("");
   const fileRef = useRef();
@@ -9576,16 +9578,37 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                 <label style={{fontSize:11,fontWeight:600,color:C.muted,display:"block",marginBottom:4}}>Notas</label>
                 <input id={`pay-${tipo}-notas`} type="text" placeholder={tipo==='programado'?"Pago parcial, 50%…":"Transferencia, cheque…"} style={{...inputStyle,width:"100%"}}/>
               </div>
-              <button onClick={()=>{
+              <button onClick={async ()=>{
                 const m = +document.getElementById(`pay-${tipo}-monto`).value;
                 const f = document.getElementById(`pay-${tipo}-fecha`).value;
                 const n = document.getElementById(`pay-${tipo}-notas`).value;
                 const metodoEl = document.getElementById(`pay-${tipo}-metodo`);
                 const metodo = metodoEl ? metodoEl.value : 'banco';
                 if(!m||m<=0||!f) return;
-                addPayment(payModal.invoiceId, m, f, n, tipo, metodo);
+                // Guardar el pago primero
+                await addPayment(payModal.invoiceId, m, f, n, tipo, metodo);
                 document.getElementById(`pay-${tipo}-monto`).value="";
                 document.getElementById(`pay-${tipo}-notas`).value="";
+                // Solo para pagos REALIZADOS verificar si la factura está en algún plan activo
+                if (tipo === 'realizado') {
+                  try {
+                    const planesActivos = await buscarPlanesActivosDeFactura(payModal.invoiceId, empresaId);
+                    if (planesActivos && planesActivos.length > 0) {
+                      // Hay match potencial: abrir modal preguntando si aplicar al plan
+                      setPlanMatchModal({
+                        planes: planesActivos,
+                        montoPago: m,
+                        fechaPago: f,
+                        invoiceId: payModal.invoiceId,
+                        proveedor: payModal.proveedor,
+                        folio: payModal.folio,
+                        moneda: payModal.moneda,
+                      });
+                    }
+                  } catch (err) {
+                    console.error('Verificando planes activos:', err);
+                  }
+                }
               }} disabled={esConsulta} style={{...btnStyle,padding:"8px 20px",fontSize:13,background:tipo==='programado'?"#F57F17":C.blue,color:"#fff",opacity:esConsulta?0.4:1}}>+ Agregar</button>
             </div>
           </div>
@@ -9629,6 +9652,107 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         </ModalShell>
         );
       })()}
+
+      {/* PlanMatchModal — pregunta si aplicar el pago a un abono del plan */}
+      {planMatchModal && (
+        <ModalShell title="Plan de pago activo" onClose={() => setPlanMatchModal(null)}>
+          <div style={{padding: '4px 0 12px'}}>
+            <div style={{
+              display: 'flex', alignItems: 'flex-start', gap: 10,
+              background: '#DBEAFE', border: `1px solid #1565C0`, borderRadius: 8,
+              padding: '12px 14px', marginBottom: 14,
+            }}>
+              <div style={{fontSize: 22, lineHeight: 1}}>💡</div>
+              <div style={{flex: 1}}>
+                <div style={{fontSize: 13, fontWeight: 700, color: '#1E40AF', marginBottom: 4}}>
+                  Esta factura está en un plan de pago activo
+                </div>
+                <div style={{fontSize: 12, color: '#1E40AF', opacity: 0.9}}>
+                  Acabas de registrar un pago de <strong>${fmt(planMatchModal.montoPago)} {planMatchModal.moneda}</strong> a la factura <strong>{planMatchModal.folio}</strong>.
+                  ¿Quieres marcar también el abono del plan?
+                </div>
+              </div>
+            </div>
+
+            {planMatchModal.planes.map((item, idx) => {
+              const { plan, proximoAbono } = item;
+              const hayAbono = !!proximoAbono;
+              const monto = planMatchModal.montoPago;
+              const montoProgramado = hayAbono ? proximoAbono.montoProgramado : 0;
+              const diferencia = monto - montoProgramado;
+              const hayDif = Math.abs(diferencia) > 0.01;
+              const esMenor = diferencia < -0.01;
+
+              return (
+                <div key={idx} style={{
+                  border: `1px solid ${C.border}`, borderRadius: 8, padding: 14, marginBottom: 10,
+                }}>
+                  <div style={{fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 8}}>
+                    📋 {plan.proveedor}
+                  </div>
+                  {!hayAbono ? (
+                    <div style={{fontSize: 12, color: C.muted, padding: 8, background: '#F8FAFC', borderRadius: 6}}>
+                      Este plan no tiene abonos pendientes (puede estar al día). Acción no disponible.
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{fontSize: 12, color: C.muted, marginBottom: 10, lineHeight: 1.6}}>
+                        Próximo abono: <strong style={{color: C.text}}>#{proximoAbono.numero} · {proximoAbono.fechaProgramada} · ${fmt(montoProgramado)} {plan.moneda}</strong>
+                      </div>
+                      {hayDif && (
+                        <div style={{
+                          background: esMenor ? '#FEF3C7' : '#DBEAFE',
+                          border: `1px solid ${esMenor ? '#D97706' : '#1565C0'}`,
+                          borderRadius: 6, padding: '8px 10px', marginBottom: 10,
+                          fontSize: 11, color: esMenor ? '#92400E' : '#1E40AF',
+                        }}>
+                          {esMenor
+                            ? `⚠ Pagaste $${fmt(monto)}, ${fmt(Math.abs(diferencia))} menos que el abono ($${fmt(montoProgramado)}). El abono se marcará como PARCIAL.`
+                            : `↑ Pagaste $${fmt(monto)}, ${fmt(diferencia)} más que el abono. El abono se marcará como pagado completo y el excedente se considera adelanto.`}
+                        </div>
+                      )}
+                      <div style={{display: 'flex', justifyContent: 'flex-end', gap: 6}}>
+                        <button
+                          onClick={async () => {
+                            // No marcar — solo cierra
+                            setPlanMatchModal(null);
+                          }}
+                          style={{...btnStyle, padding: '7px 14px', fontSize: 12, background: '#F1F5F9', color: C.text}}>
+                          No, pago independiente
+                        </button>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const estado = monto >= montoProgramado - 0.01 ? 'pagado' : 'parcial';
+                              await marcarAbonoPagado(proximoAbono.id, {
+                                fechaPagado: planMatchModal.fechaPago,
+                                montoPagado: monto,
+                                facturaIdAplicada: String(planMatchModal.invoiceId),
+                                notas: `Match automático desde CxP (factura ${planMatchModal.folio})`,
+                                estado,
+                              }, user?.nombre);
+                              setPlanMatchModal(null);
+                            } catch (err) {
+                              console.error('Marcar abono desde CxP:', err);
+                              alert('Error al marcar el abono. Revisa la consola.');
+                            }
+                          }}
+                          style={{...btnStyle, padding: '7px 14px', fontSize: 12, background: C.ok, color: '#fff', border: 'none', fontWeight: 700}}>
+                          ✓ Sí, marcar abono
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+
+            <div style={{fontSize: 11, color: C.muted, paddingTop: 10, borderTop: `1px solid ${C.border}`, lineHeight: 1.5}}>
+              💡 El pago ya fue registrado en CxP. Esta acción solo enlaza también el abono del plan.
+            </div>
+          </div>
+        </ModalShell>
+      )}
 
       {/* Bulk payment modal */}
       {bulkPayModal && (()=>{

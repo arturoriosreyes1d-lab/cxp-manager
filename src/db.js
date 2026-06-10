@@ -1906,3 +1906,59 @@ export async function reagendarAbonosSiguientes(abonosOrdenados, idDesde, deltaD
   }
   return true;
 }
+
+
+// ─── Buscar planes activos que contengan una factura específica ─────
+// Devuelve array de { plan, planFactura, proximoAbono } con todos los planes
+// activos que tengan la factura. Normalmente debe ser 0 o 1, pero
+// si por alguna razón hay varios planes activos con la misma factura, los devuelve todos.
+export async function buscarPlanesActivosDeFactura(invoiceId, empresaId) {
+  // 1. Encontrar plan_facturas que tengan este invoice_id
+  const { data: pfs, error: errPf } = await supabase
+    .from('plan_facturas').select('*')
+    .eq('invoice_id', String(invoiceId))
+    .eq('empresa_id', empresaId);
+  if (errPf || !pfs || pfs.length === 0) return [];
+
+  // 2. Filtrar por planes activos
+  const planIds = [...new Set(pfs.map(pf => pf.plan_id))];
+  const { data: planes, error: errPl } = await supabase
+    .from('planes_pago').select('*').in('id', planIds).eq('estado', 'activo');
+  if (errPl || !planes || planes.length === 0) return [];
+
+  // 3. Para cada plan, traer su próximo abono pendiente
+  const resultado = [];
+  for (const planRow of planes) {
+    const plan = {
+      id: planRow.id,
+      empresaId: planRow.empresa_id,
+      proveedor: planRow.proveedor,
+      moneda: planRow.moneda,
+      montoTotal: +planRow.monto_total,
+      frecuencia: planRow.frecuencia,
+      diaSemana: planRow.dia_semana,
+      diaMes: planRow.dia_mes,
+      montoAbono: +planRow.monto_abono,
+      numAbonos: planRow.num_abonos,
+      fechaInicio: planRow.fecha_inicio,
+      fechaLiquidacionEstimada: planRow.fecha_liquidacion_estimada,
+      estado: planRow.estado,
+    };
+    const { data: abonos } = await supabase
+      .from('plan_abonos').select('*')
+      .eq('plan_id', planRow.id)
+      .in('estado', ['pendiente', 'atrasado'])
+      .order('numero', { ascending: true });
+    const proximoAbono = (abonos && abonos.length > 0) ? {
+      id: abonos[0].id,
+      planId: abonos[0].plan_id,
+      numero: abonos[0].numero,
+      fechaProgramada: abonos[0].fecha_programada,
+      montoProgramado: +abonos[0].monto_programado,
+      estado: abonos[0].estado,
+    } : null;
+    const pfDeEstePlan = pfs.find(p => p.plan_id === planRow.id);
+    resultado.push({ plan, planFactura: pfDeEstePlan, proximoAbono });
+  }
+  return resultado;
+}
