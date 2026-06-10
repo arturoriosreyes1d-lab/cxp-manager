@@ -315,15 +315,15 @@ export default function PlanesPagoModule({ empresaId, user, esConsulta = false }
         />
         <KpiCard
           label="Comprometido"
-          valueLine1={`$${fmt0(kpis.comprometido.USD)} USD`}
-          subline={kpis.comprometido.MXN > 0 ? `$${fmt0(kpis.comprometido.MXN)} MXN` : null}
+          valueLine1={`$${fmt(kpis.comprometido.USD)} USD`}
+          subline={kpis.comprometido.MXN > 0 ? `$${fmt(kpis.comprometido.MXN)} MXN` : null}
           mono
           onClick={() => setKpiAbierto('comprometido')}
         />
         <KpiCard
           label="Ritmo semanal"
-          valueLine1={`$${fmt0(kpis.ritmo.totales.USD)} USD`}
-          subline={kpis.ritmo.totales.MXN > 0 ? `$${fmt0(kpis.ritmo.totales.MXN)} MXN` : null}
+          valueLine1={`$${fmt(kpis.ritmo.totales.USD)} USD`}
+          subline={kpis.ritmo.totales.MXN > 0 ? `$${fmt(kpis.ritmo.totales.MXN)} MXN` : null}
           mono accent
           onClick={() => setKpiAbierto('ritmo')}
         />
@@ -335,8 +335,8 @@ export default function PlanesPagoModule({ empresaId, user, esConsulta = false }
         />
         <KpiCard
           label="Atrasados" valueLine1={String(kpis.atrasadosCount)}
-          subline={kpis.atrasadosMontoPorMoneda.USD > 0 ? `$${fmt0(kpis.atrasadosMontoPorMoneda.USD)} USD` :
-                   kpis.atrasadosMontoPorMoneda.MXN > 0 ? `$${fmt0(kpis.atrasadosMontoPorMoneda.MXN)} MXN` : null}
+          subline={kpis.atrasadosMontoPorMoneda.USD > 0 ? `$${fmt(kpis.atrasadosMontoPorMoneda.USD)} USD` :
+                   kpis.atrasadosMontoPorMoneda.MXN > 0 ? `$${fmt(kpis.atrasadosMontoPorMoneda.MXN)} MXN` : null}
           warning={kpis.atrasadosCount > 0}
           onClick={() => setKpiAbierto('atrasados')}
         />
@@ -351,9 +351,9 @@ export default function PlanesPagoModule({ empresaId, user, esConsulta = false }
         }}>
           <div style={{ fontSize: 13, color: C.warnText }}>
             <strong>Esta semana:</strong> vencen {alertaSemanal.count} abono(s){' '}
-            {alertaSemanal.porMoneda.USD > 0 && <>· <strong>${fmt0(alertaSemanal.porMoneda.USD)} USD</strong></>}
-            {alertaSemanal.porMoneda.MXN > 0 && <>· <strong>${fmt0(alertaSemanal.porMoneda.MXN)} MXN</strong></>}
-            {alertaSemanal.porMoneda.EUR > 0 && <>· <strong>${fmt0(alertaSemanal.porMoneda.EUR)} EUR</strong></>}
+            {alertaSemanal.porMoneda.USD > 0 && <>· <strong>${fmt(alertaSemanal.porMoneda.USD)} USD</strong></>}
+            {alertaSemanal.porMoneda.MXN > 0 && <>· <strong>${fmt(alertaSemanal.porMoneda.MXN)} MXN</strong></>}
+            {alertaSemanal.porMoneda.EUR > 0 && <>· <strong>${fmt(alertaSemanal.porMoneda.EUR)} EUR</strong></>}
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             <button onClick={() => setKpiAbierto('proximo')}
@@ -519,9 +519,9 @@ function PlanRow({ plan, hoyStr, onClick }) {
         </div>
       </td>
       <td style={{ textAlign: 'center', padding: '11px 8px', fontWeight: 600 }}>{(plan.facturas || []).length || '—'}</td>
-      <td style={{ textAlign: 'center', padding: '11px 8px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums' }}>${fmt0(plan.montoTotal)}</td>
-      <td style={{ textAlign: 'center', padding: '11px 8px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: plan.pagado > 0 ? C.green : C.muted }}>${fmt0(plan.pagado)}</td>
-      <td style={{ textAlign: 'center', padding: '11px 8px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>${fmt0(plan.restante)}</td>
+      <td style={{ textAlign: 'center', padding: '11px 8px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums' }}>${fmt(plan.montoTotal)}</td>
+      <td style={{ textAlign: 'center', padding: '11px 8px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: plan.pagado > 0 ? C.green : C.muted }}>${fmt(plan.pagado)}</td>
+      <td style={{ textAlign: 'center', padding: '11px 8px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>${fmt(plan.restante)}</td>
       <td style={{ padding: '11px 14px', minWidth: 140 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ flex: 1, height: 5, background: C.bgSoft, borderRadius: 999, overflow: 'hidden', minWidth: 50 }}>
@@ -539,7 +539,7 @@ function PlanRow({ plan, hoyStr, onClick }) {
                 const dias = diasEntre(hoyStr, plan.proximo.fechaProgramada);
                 if (dias < 0) return <span style={{ color: C.warnText }}>{Math.abs(dias)} días vencido</span>;
                 if (dias === 0) return 'hoy';
-                return `en ${dias} días · $${fmt0(plan.proximo.montoProgramado)}`;
+                return `en ${dias} días · $${fmt(plan.proximo.montoProgramado)}`;
               })()}
             </div>
           </>
@@ -754,9 +754,9 @@ function NuevoPlanModal({ empresaId, user, planesExistentes, onClose, onCreated 
                     <div style={{ fontSize: 13, fontWeight: sel ? 700 : 500, color: sel ? C.blueText : C.text }}>{p.proveedor}</div>
                     <div style={{ fontSize: 11, color: sel ? C.blueText : C.muted, opacity: 0.85, marginTop: 2 }}>
                       {p.facturas.length} facturas
-                      {p.totalPorMoneda.USD > 0 && ` · $${fmt0(p.totalPorMoneda.USD)} USD`}
-                      {p.totalPorMoneda.MXN > 0 && ` · $${fmt0(p.totalPorMoneda.MXN)} MXN`}
-                      {p.totalPorMoneda.EUR > 0 && ` · $${fmt0(p.totalPorMoneda.EUR)} EUR`}
+                      {p.totalPorMoneda.USD > 0 && ` · $${fmt(p.totalPorMoneda.USD)} USD`}
+                      {p.totalPorMoneda.MXN > 0 && ` · $${fmt(p.totalPorMoneda.MXN)} MXN`}
+                      {p.totalPorMoneda.EUR > 0 && ` · $${fmt(p.totalPorMoneda.EUR)} EUR`}
                     </div>
                   </button>
                 );
@@ -932,7 +932,7 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
   };
 
   return (
-    <ModalShell onClose={onClose} maxWidth={1180} maxHeight="88vh">
+    <ModalShell onClose={onClose} maxWidth="94vw" maxHeight="92vh">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
         <div>
           <h3 style={{ fontSize: 17, fontWeight: 800, color: C.navy, margin: 0 }}>📋 {plan.proveedor}</h3>
@@ -966,9 +966,9 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
 
       {/* KPIs del plan */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 14 }}>
-        <MiniKpi label="Total" value={`$${fmt0(plan.montoTotal)}`} sub={plan.moneda}/>
-        <MiniKpi label="Pagado" value={`$${fmt0(plan.pagado)}`} sub={`${plan.pct}%`} color={C.green}/>
-        <MiniKpi label="Restante" value={`$${fmt0(plan.restante)}`} sub={`${plan.abonos.filter(a => a.estado !== 'pagado').length} abonos`}/>
+        <MiniKpi label="Total" value={`$${fmt(plan.montoTotal)}`} sub={plan.moneda}/>
+        <MiniKpi label="Pagado" value={`$${fmt(plan.pagado)}`} sub={`${plan.pct}%`} color={C.green}/>
+        <MiniKpi label="Restante" value={`$${fmt(plan.restante)}`} sub={`${plan.abonos.filter(a => a.estado !== 'pagado').length} abonos`}/>
         <MiniKpi label="Liquida" value={fmtDateFull(plan.fechaLiquidacionEstimada)} accent/>
       </div>
 
@@ -994,7 +994,7 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
                   <td style={{ padding: '8px 10px', color: C.muted, textAlign: 'center' }}>{a.numero}</td>
                   <td style={{ padding: '8px 10px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', textAlign: 'center' }}>{fmtDateLabel(a.fechaProgramada)}</td>
                   <td style={{ padding: '8px 10px', textAlign: 'center', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 500 }}>${fmt(a.montoProgramado)}</td>
-                  <td style={{ padding: '8px 10px', textAlign: 'center', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: C.muted }}>${fmt0(a.restanteDespues)}</td>
+                  <td style={{ padding: '8px 10px', textAlign: 'center', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: C.muted }}>${fmt(a.restanteDespues)}</td>
                   <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                     {isPagado ? <Badge bg={C.greenSoft} color={C.greenText}>✓ Pagado</Badge> :
                      estCalc === 'atrasado' ? <Badge bg={C.warnSoft} color={C.warnText}>Atrasado</Badge> :
@@ -1043,7 +1043,7 @@ function PopupActivos({ planes, onClose, onAbrirPlan }) {
               style={{ all: 'unset', cursor: 'pointer', padding: '10px 12px', background: C.bgSoft, borderRadius: 6, border: `1px solid ${C.border}`, display: 'block' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: 13, fontWeight: 600 }}>{p.proveedor}</span>
-                <span style={{ fontSize: 11, color: C.muted, fontFamily: MONO, fontVariantNumeric: 'tabular-nums' }}>${fmt0(p.restante)} {p.moneda}</span>
+                <span style={{ fontSize: 11, color: C.muted, fontFamily: MONO, fontVariantNumeric: 'tabular-nums' }}>${fmt(p.restante)} {p.moneda}</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
                 <div style={{ flex: 1, height: 4, background: '#fff', borderRadius: 999, overflow: 'hidden' }}>
@@ -1078,12 +1078,12 @@ function PopupComprometido({ planes, onClose, onAbrirPlan }) {
                 {grupos[mon].map(p => (
                   <tr key={p.id} onClick={() => onAbrirPlan(p.id)} style={{ borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}>
                     <td style={{ padding: '6px 0', color: C.text }}>{p.proveedor}</td>
-                    <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: MONO, fontVariantNumeric: 'tabular-nums' }}>${fmt0(p.restante)}</td>
+                    <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: MONO, fontVariantNumeric: 'tabular-nums' }}>${fmt(p.restante)}</td>
                   </tr>
                 ))}
                 <tr style={{ background: C.blueSoft }}>
                   <td style={{ padding: '7px 6px', fontWeight: 700, color: C.blueText }}>Total {mon}</td>
-                  <td style={{ padding: '7px 0', textAlign: 'right', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: C.blueText }}>${fmt0(total)}</td>
+                  <td style={{ padding: '7px 0', textAlign: 'right', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: C.blueText }}>${fmt(total)}</td>
                 </tr>
               </tbody>
             </table>
@@ -1113,15 +1113,15 @@ function PopupRitmo({ ritmo, onClose }) {
                   <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
                     <td style={{ padding: '6px 0', color: C.text }}>{d.proveedor}</td>
                     <td style={{ padding: '6px 6px', color: C.muted, fontSize: 10, textAlign: 'center' }}>
-                      {d.frecuencia} · ${fmt0(d.montoAbono)}
+                      {d.frecuencia} · ${fmt(d.montoAbono)}
                     </td>
-                    <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: MONO, fontVariantNumeric: 'tabular-nums' }}>${fmt0(d.aporteSemanal)}</td>
+                    <td style={{ padding: '6px 0', textAlign: 'right', fontFamily: MONO, fontVariantNumeric: 'tabular-nums' }}>${fmt(d.aporteSemanal)}</td>
                   </tr>
                 ))}
                 <tr style={{ background: C.blueSoft }}>
                   <td style={{ padding: '7px 6px', fontWeight: 700, color: C.blueText }}>Total semanal {mon}</td>
                   <td></td>
-                  <td style={{ padding: '7px 0', textAlign: 'right', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: C.blueText }}>${fmt0(ritmo.totales[mon])}</td>
+                  <td style={{ padding: '7px 0', textAlign: 'right', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: C.blueText }}>${fmt(ritmo.totales[mon])}</td>
                 </tr>
               </tbody>
             </table>
@@ -1162,7 +1162,7 @@ function PopupProximos({ planes, hoyStr, onClose, onAbrirPlan }) {
                   <td style={{ padding: '8px 6px 8px 0', fontFamily: MONO, fontSize: 11, width: 90 }}>{fmtDateLabel(it.abono.fechaProgramada)}</td>
                   <td style={{ padding: '8px 6px', color: C.muted, fontSize: 10, width: 60, textAlign: 'center' }}>{dias === 0 ? 'hoy' : `en ${dias}d`}</td>
                   <td style={{ padding: '8px 6px', color: C.text }}>{it.plan.proveedor}</td>
-                  <td style={{ padding: '8px 0', textAlign: 'right', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>${fmt0(it.abono.montoProgramado)} {it.plan.moneda}</td>
+                  <td style={{ padding: '8px 0', textAlign: 'right', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>${fmt(it.abono.montoProgramado)} {it.plan.moneda}</td>
                 </tr>
               );
             })}
@@ -1198,7 +1198,7 @@ function PopupAtrasados({ planes, hoyStr, onClose, onAbrirPlan }) {
                   <td style={{ padding: '8px 6px 8px 0', fontFamily: MONO, fontSize: 11, width: 90, color: C.warnText }}>{fmtDateLabel(it.abono.fechaProgramada)}</td>
                   <td style={{ padding: '8px 6px', color: C.warnText, fontSize: 10, width: 80, textAlign: 'center', fontWeight: 700 }}>{dias}d vencido</td>
                   <td style={{ padding: '8px 6px', color: C.text }}>{it.plan.proveedor}</td>
-                  <td style={{ padding: '8px 0', textAlign: 'right', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: C.warnText }}>${fmt0(it.abono.montoProgramado)} {it.plan.moneda}</td>
+                  <td style={{ padding: '8px 0', textAlign: 'right', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: C.warnText }}>${fmt(it.abono.montoProgramado)} {it.plan.moneda}</td>
                 </tr>
               );
             })}

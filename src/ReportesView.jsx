@@ -123,9 +123,9 @@ const REPORTES_DISPONIBLES = [
       const totSemMXN = ritmo.totales.MXN;
       let ritmoStr = '—';
       if (totSemUSD > 0) {
-        ritmoStr = `$${Math.round(totSemUSD).toLocaleString('en-US')} USD`;
+        ritmoStr = `$${totSemUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`;
       } else if (totSemMXN > 0) {
-        ritmoStr = `$${Math.round(totSemMXN).toLocaleString('en-US')} MXN`;
+        ritmoStr = `$${totSemMXN.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN`;
       }
       // Atrasados
       const atrasados = (abonos || []).filter((a) => {
