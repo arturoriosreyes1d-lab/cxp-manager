@@ -708,7 +708,49 @@ function NuevoPlanModal({ empresaId, user, planesExistentes, onClose, onCreated 
   const [diaMes, setDiaMes] = useState(1);
   const [fechaInicio, setFechaInicio] = useState(today());
   const [montoAbono, setMontoAbono] = useState('');
+  // Paso 3 personalizado: array de {fechaProgramada, montoProgramado, concepto}
+  const [abonosPersonalizados, setAbonosPersonalizados] = useState([]);
   const [guardando, setGuardando] = useState(false);
+
+  // Helpers para editar abonos personalizados
+  const agregarAbonoPersonalizado = () => {
+    // Sugerir fecha: si hay abonos previos, +15 días desde el último; si no, fechaInicio
+    let nuevaFecha = fechaInicio;
+    if (abonosPersonalizados.length > 0) {
+      const ultimo = abonosPersonalizados[abonosPersonalizados.length - 1];
+      const d = new Date(ultimo.fechaProgramada + 'T12:00:00');
+      d.setDate(d.getDate() + 15);
+      nuevaFecha = d.toISOString().split('T')[0];
+    }
+    // Sugerir monto: lo que falta para alcanzar el total
+    const sumaActual = abonosPersonalizados.reduce((s, a) => s + (+a.montoProgramado || 0), 0);
+    const falta = Math.max(0, montoTotalSeleccionado - sumaActual);
+    setAbonosPersonalizados([...abonosPersonalizados, {
+      fechaProgramada: nuevaFecha,
+      montoProgramado: falta > 0 ? String(falta) : '',
+      concepto: '',
+    }]);
+  };
+  const eliminarAbonoPersonalizado = (idx) => {
+    setAbonosPersonalizados(abonosPersonalizados.filter((_, i) => i !== idx));
+  };
+  const editarAbonoPersonalizado = (idx, campo, valor) => {
+    setAbonosPersonalizados(abonosPersonalizados.map((a, i) => i === idx ? { ...a, [campo]: valor } : a));
+  };
+
+  // Suma de abonos personalizados (para validar)
+  const sumaPersonalizados = useMemo(() => {
+    return abonosPersonalizados.reduce((s, a) => s + (parseFloat(a.montoProgramado) || 0), 0);
+  }, [abonosPersonalizados]);
+  const diferenciaPersonalizados = useMemo(() => {
+    return montoTotalSeleccionado - sumaPersonalizados;
+  }, [montoTotalSeleccionado, sumaPersonalizados]);
+  const personalizadoValido = useMemo(() => {
+    if (abonosPersonalizados.length === 0) return false;
+    if (Math.abs(diferenciaPersonalizados) > 0.01) return false;
+    // Todas las filas deben tener fecha y monto > 0
+    return abonosPersonalizados.every(a => a.fechaProgramada && parseFloat(a.montoProgramado) > 0);
+  }, [abonosPersonalizados, diferenciaPersonalizados]);
 
   // Cargar facturas de la empresa al abrir modal
   useEffect(() => {
@@ -799,6 +841,21 @@ function NuevoPlanModal({ empresaId, user, planesExistentes, onClose, onCreated 
     if (guardando) return;
     setGuardando(true);
     try {
+      // Decidir el set final de abonos según el modo
+      const esPersonalizado = frecuencia === 'personalizado';
+      const abonosOrdenados = esPersonalizado
+        // Ordenamos por fecha y asignamos numero correlativo
+        ? [...abonosPersonalizados]
+            .map(a => ({ fechaProgramada: a.fechaProgramada, montoProgramado: parseFloat(a.montoProgramado), notas: a.concepto || null }))
+            .sort((a, b) => a.fechaProgramada.localeCompare(b.fechaProgramada))
+            .map((a, i) => ({ ...a, numero: i + 1 }))
+        : abonosPreview;
+      const numAbonos = abonosOrdenados.length;
+      const fechaInicioFinal = esPersonalizado ? abonosOrdenados[0]?.fechaProgramada : fechaInicio;
+      const fechaLiquidacionFinal = esPersonalizado ? abonosOrdenados[numAbonos - 1]?.fechaProgramada : fechaLiquidacionEstimada;
+      // Para personalizado, montoAbono no aplica realmente; guardamos el del primer abono como referencia
+      const montoAbonoFinal = esPersonalizado ? (abonosOrdenados[0]?.montoProgramado || 0) : parseFloat(montoAbono);
+
       const planId = await upsertPlanPago({
         empresaId,
         proveedor: proveedorSel.proveedor,
@@ -807,10 +864,10 @@ function NuevoPlanModal({ empresaId, user, planesExistentes, onClose, onCreated 
         frecuencia,
         diaSemana: (frecuencia === 'semanal' || frecuencia === 'quincenal') ? diaSemana : null,
         diaMes: frecuencia === 'mensual' ? diaMes : null,
-        montoAbono: parseFloat(montoAbono),
-        numAbonos: abonosPreview.length,
-        fechaInicio,
-        fechaLiquidacionEstimada,
+        montoAbono: montoAbonoFinal,
+        numAbonos,
+        fechaInicio: fechaInicioFinal,
+        fechaLiquidacionEstimada: fechaLiquidacionFinal,
         estado: 'activo',
       }, user?.nombre);
       if (!planId) throw new Error('No se pudo crear el plan');
@@ -825,12 +882,13 @@ function NuevoPlanModal({ empresaId, user, planesExistentes, onClose, onCreated 
       }
 
       // Bulk insert abonos
-      const abonosFinal = abonosPreview.map(a => ({
+      const abonosFinal = abonosOrdenados.map(a => ({
         planId, empresaId,
         numero: a.numero,
         fechaProgramada: a.fechaProgramada,
         montoProgramado: a.montoProgramado,
         estado: 'pendiente',
+        notas: a.notas || null,
       }));
       await bulkInsertAbonos(abonosFinal, user?.nombre);
 
@@ -974,60 +1032,176 @@ function NuevoPlanModal({ empresaId, user, planesExistentes, onClose, onCreated 
 
           <div style={{ marginBottom: 10 }}>
             <Label>Frecuencia</Label>
-            <select value={frecuencia} onChange={e => setFrecuencia(e.target.value)} style={selectStyle()}>
+            <select value={frecuencia} onChange={e => {
+              const nuevo = e.target.value;
+              setFrecuencia(nuevo);
+              // Si cambia A personalizado y la lista está vacía, sembrar con un abono inicial sugerido
+              if (nuevo === 'personalizado' && abonosPersonalizados.length === 0 && montoTotalSeleccionado > 0) {
+                setAbonosPersonalizados([{
+                  fechaProgramada: fechaInicio,
+                  montoProgramado: String(montoTotalSeleccionado),
+                  concepto: '',
+                }]);
+              }
+            }} style={selectStyle()}>
               <option value="semanal">Semanal</option>
               <option value="quincenal">Quincenal</option>
               <option value="mensual">Mensual</option>
+              <option value="personalizado">Personalizada (fechas y montos a tu gusto)</option>
             </select>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
-            {(frecuencia === 'semanal' || frecuencia === 'quincenal') && (
-              <div>
-                <Label>Día de la semana</Label>
-                <select value={diaSemana} onChange={e => setDiaSemana(+e.target.value)} style={selectStyle()}>
-                  {DIAS_SEMANA_LARGOS.map((d, i) => <option key={i} value={i + 1}>{d}</option>)}
-                </select>
+          {frecuencia !== 'personalizado' && (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                {(frecuencia === 'semanal' || frecuencia === 'quincenal') && (
+                  <div>
+                    <Label>Día de la semana</Label>
+                    <select value={diaSemana} onChange={e => setDiaSemana(+e.target.value)} style={selectStyle()}>
+                      {DIAS_SEMANA_LARGOS.map((d, i) => <option key={i} value={i + 1}>{d}</option>)}
+                    </select>
+                  </div>
+                )}
+                {frecuencia === 'mensual' && (
+                  <div>
+                    <Label>Día del mes</Label>
+                    <input type="number" min={1} max={31} value={diaMes} onChange={e => setDiaMes(+e.target.value)} style={inputStyle()}/>
+                  </div>
+                )}
+                <div>
+                  <Label>Inicio</Label>
+                  <input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} style={inputStyle()}/>
+                </div>
               </div>
-            )}
-            {frecuencia === 'mensual' && (
-              <div>
-                <Label>Día del mes</Label>
-                <input type="number" min={1} max={31} value={diaMes} onChange={e => setDiaMes(+e.target.value)} style={inputStyle()}/>
-              </div>
-            )}
-            <div>
-              <Label>Inicio</Label>
-              <input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} style={inputStyle()}/>
-            </div>
-          </div>
 
-          <div style={{ marginBottom: 12 }}>
-            <Label>Monto del abono</Label>
-            <input value={montoAbono} onChange={e => setMontoAbono(e.target.value.replace(/[^\d.]/g, ''))} placeholder="2000" style={{ ...inputStyle(), fontFamily: MONO }}/>
-            {parseFloat(montoAbono) > 0 && (
-              <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>${fmt(parseFloat(montoAbono))} {monedaPlan} por abono</div>
-            )}
-          </div>
-
-          {abonosPreview.length > 0 && (
-            <div style={{ background: C.blueSoft, border: `1px solid ${C.blue}`, borderRadius: 6, padding: '10px 12px', marginBottom: 12 }}>
-              <div style={{ fontSize: 10, color: C.blueText, letterSpacing: 0.4, fontWeight: 700, marginBottom: 4 }}>PREVIEW</div>
-              <div style={{ fontSize: 12, color: C.blueText }}>
-                <strong>{abonosPreview.length} abono(s)</strong> · primer pago <strong>{fmtDateLabel(abonosPreview[0].fechaProgramada)}</strong> · liquidación <strong>{fmtDateFull(fechaLiquidacionEstimada)}</strong>
+              <div style={{ marginBottom: 12 }}>
+                <Label>Monto del abono</Label>
+                <input value={montoAbono} onChange={e => setMontoAbono(e.target.value.replace(/[^\d.]/g, ''))} placeholder="2000" style={{ ...inputStyle(), fontFamily: MONO }}/>
+                {parseFloat(montoAbono) > 0 && (
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>${fmt(parseFloat(montoAbono))} {monedaPlan} por abono</div>
+                )}
               </div>
-              {abonosPreview.length > 1 && abonosPreview[abonosPreview.length - 1].montoProgramado !== abonosPreview[0].montoProgramado && (
-                <div style={{ fontSize: 11, color: C.blueText, opacity: 0.85, marginTop: 3 }}>
-                  {abonosPreview.length - 1} abonos de ${fmt(abonosPreview[0].montoProgramado)} + 1 último de ${fmt(abonosPreview[abonosPreview.length - 1].montoProgramado)}
+
+              {abonosPreview.length > 0 && (
+                <div style={{ background: C.blueSoft, border: `1px solid ${C.blue}`, borderRadius: 6, padding: '10px 12px', marginBottom: 12 }}>
+                  <div style={{ fontSize: 10, color: C.blueText, letterSpacing: 0.4, fontWeight: 700, marginBottom: 4 }}>PREVIEW</div>
+                  <div style={{ fontSize: 12, color: C.blueText }}>
+                    <strong>{abonosPreview.length} abono(s)</strong> · primer pago <strong>{fmtDateLabel(abonosPreview[0].fechaProgramada)}</strong> · liquidación <strong>{fmtDateFull(fechaLiquidacionEstimada)}</strong>
+                  </div>
+                  {abonosPreview.length > 1 && abonosPreview[abonosPreview.length - 1].montoProgramado !== abonosPreview[0].montoProgramado && (
+                    <div style={{ fontSize: 11, color: C.blueText, opacity: 0.85, marginTop: 3 }}>
+                      {abonosPreview.length - 1} abonos de ${fmt(abonosPreview[0].montoProgramado)} + 1 último de ${fmt(abonosPreview[abonosPreview.length - 1].montoProgramado)}
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
+            </>
+          )}
+
+          {frecuencia === 'personalizado' && (
+            <>
+              <div style={{ background: C.blueSoft, border: `1px solid ${C.blue}`, padding: '10px 12px', borderRadius: 6, marginBottom: 12, fontSize: 12, color: C.blueText }}>
+                💡 Define cada abono manualmente con su fecha, monto y concepto opcional. La suma debe coincidir con el total (${fmt(montoTotalSeleccionado)} {monedaPlan}).
+              </div>
+
+              <div style={{ background: '#fff', border: `1px solid ${C.border}`, borderRadius: 6, overflow: 'hidden', marginBottom: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '36px 1fr 130px 1fr 32px', padding: '8px 10px', background: C.bgSoft, borderBottom: `1px solid ${C.border}`, fontSize: 10, color: C.muted, fontWeight: 700, letterSpacing: 0.4, alignItems: 'center', gap: 6 }}>
+                  <div>#</div>
+                  <div>FECHA</div>
+                  <div style={{ textAlign: 'right' }}>MONTO {monedaPlan}</div>
+                  <div>CONCEPTO (OPCIONAL)</div>
+                  <div></div>
+                </div>
+
+                <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                  {abonosPersonalizados.length === 0 && (
+                    <div style={{ padding: 20, textAlign: 'center', color: C.muted, fontSize: 12 }}>
+                      Sin abonos. Click en "+ Agregar abono" abajo para empezar.
+                    </div>
+                  )}
+                  {abonosPersonalizados.map((ab, idx) => {
+                    const esExtra = (ab.concepto || '').toLowerCase().includes('extra');
+                    return (
+                      <div key={idx} style={{
+                        display: 'grid', gridTemplateColumns: '36px 1fr 130px 1fr 32px',
+                        padding: '6px 10px', alignItems: 'center', gap: 6,
+                        borderBottom: `1px solid ${C.bgSoft}`,
+                        background: esExtra ? '#FFFBEB' : 'transparent',
+                      }}>
+                        <div style={{ color: C.muted, fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{idx + 1}</div>
+                        <input type="date" value={ab.fechaProgramada}
+                          onChange={e => editarAbonoPersonalizado(idx, 'fechaProgramada', e.target.value)}
+                          style={{ fontSize: 12, padding: '4px 8px', border: `1px solid ${C.border}`, borderRadius: 4, fontFamily: 'inherit', boxSizing: 'border-box', width: '100%' }}/>
+                        <input value={ab.montoProgramado}
+                          onChange={e => editarAbonoPersonalizado(idx, 'montoProgramado', e.target.value.replace(/[^\d.]/g, ''))}
+                          placeholder="0.00"
+                          style={{ fontSize: 12, padding: '4px 8px', border: `1px solid ${C.border}`, borderRadius: 4, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit', boxSizing: 'border-box', width: '100%' }}/>
+                        <input value={ab.concepto}
+                          onChange={e => editarAbonoPersonalizado(idx, 'concepto', e.target.value)}
+                          placeholder="ej. extraordinario, liquidación..."
+                          style={{
+                            fontSize: 12, padding: '4px 8px',
+                            border: `1px solid ${esExtra ? '#FBBF24' : C.border}`,
+                            borderRadius: 4, fontFamily: 'inherit', boxSizing: 'border-box', width: '100%',
+                            background: esExtra ? '#FEF3C7' : '#fff',
+                            color: esExtra ? '#92400E' : C.text,
+                          }}/>
+                        <button onClick={() => eliminarAbonoPersonalizado(idx)}
+                          title="Eliminar este abono"
+                          style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer', fontSize: 14, padding: 2, fontFamily: 'inherit' }}>×</button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div style={{ padding: '8px 10px', borderTop: `1px solid ${C.bgSoft}` }}>
+                  <button onClick={agregarAbonoPersonalizado}
+                    style={{ background: 'transparent', border: `1px dashed ${C.blue}`, color: C.blue, padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', width: '100%', fontFamily: 'inherit' }}>+ Agregar abono</button>
+                </div>
+              </div>
+
+              {/* Indicador de suma vs total */}
+              {abonosPersonalizados.length > 0 && (() => {
+                const dif = diferenciaPersonalizados;
+                const ok = Math.abs(dif) < 0.01;
+                const bg = ok ? '#DCFCE7' : '#FEE2E2';
+                const border = ok ? '#16A34A' : '#DC2626';
+                const color = ok ? '#166534' : '#991B1B';
+                return (
+                  <div style={{
+                    background: bg, border: `1px solid ${border}`, padding: '10px 14px',
+                    borderRadius: 6, marginBottom: 12,
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  }}>
+                    <span style={{ fontSize: 12, color, fontWeight: 600 }}>
+                      {ok
+                        ? `✓ Suma de ${abonosPersonalizados.length} abono(s)`
+                        : (dif > 0
+                            ? `⚠ Falta $${fmt(dif)} ${monedaPlan} para alcanzar el total`
+                            : `⚠ Exceso de $${fmt(Math.abs(dif))} ${monedaPlan} sobre el total`)}
+                    </span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color, fontVariantNumeric: 'tabular-nums' }}>
+                      ${fmt(sumaPersonalizados)} / ${fmt(montoTotalSeleccionado)} {monedaPlan}
+                    </span>
+                  </div>
+                );
+              })()}
+            </>
           )}
 
           <ModalFooter
             leftBtn={<button onClick={() => setPaso(2)} style={btnStyle()} disabled={guardando}>← Atrás</button>}
             rightBtn={
-              <button onClick={handleCrear} disabled={!abonosPreview.length || guardando} style={btnStyle(abonosPreview.length > 0 && !guardando ? 'success' : 'disabled')}>
+              <button
+                onClick={handleCrear}
+                disabled={guardando || (frecuencia === 'personalizado' ? !personalizadoValido : !abonosPreview.length)}
+                style={btnStyle(
+                  guardando
+                    ? 'disabled'
+                    : (frecuencia === 'personalizado'
+                        ? (personalizadoValido ? 'success' : 'disabled')
+                        : (abonosPreview.length > 0 ? 'success' : 'disabled'))
+                )}>
                 {guardando ? 'Creando…' : '✓ Crear plan'}
               </button>
             }
@@ -1046,9 +1220,18 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
   const [abonoMarcando, setAbonoMarcando] = useState(null);     // abono que se está marcando como pagado
   const [abonoEditFecha, setAbonoEditFecha] = useState(null);   // abono cuya fecha se está editando
   const [abonoDesmarcando, setAbonoDesmarcando] = useState(null); // abono que se está desmarcando (confirmar)
+  const [abonoEliminando, setAbonoEliminando] = useState(null); // abono que se está eliminando (confirmar)
+  const [showAgregarAbono, setShowAgregarAbono] = useState(false); // modal para agregar nuevo abono
   const [copiandoImagen, setCopiandoImagen] = useState(false);
   const [modoCaptura, setModoCaptura] = useState(false);
   const refCapturar = useRef(null);
+
+  const handleEliminarAbono = async () => {
+    if (!abonoEliminando) return;
+    await deleteAbono(abonoEliminando.id);
+    setAbonoEliminando(null);
+    await onAccion();
+  };
 
   const handleCopiarImagen = async () => {
     if (!refCapturar.current || copiandoImagen) return;
@@ -1128,6 +1311,10 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
           style={{ background: copiandoImagen ? '#9CA3AF' : C.navy, color: '#fff', border: 'none', padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: copiandoImagen ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
           {copiandoImagen ? '⏳ Generando…' : '📸 Copiar imagen'}
         </button>
+        {!esConsulta && plan.estado === 'activo' && (
+          <button onClick={() => setShowAgregarAbono(true)} title="Agregar un abono nuevo (ej. abono extraordinario)"
+            style={{ background: '#0F766E', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>+ Agregar abono</button>
+        )}
         {!esConsulta && plan.estado === 'activo' && (
           <button onClick={() => setConfirmCancel(true)} title="Cancelar plan"
             style={{ background: 'transparent', border: `1px solid ${C.border}`, color: C.redText, padding: '5px 9px', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>⛔ Cancelar plan</button>
@@ -1242,11 +1429,14 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
                 const isUltimo = idx === abonosConSaldo.length - 1;
                 // El destacado "Final" SOLO aparece en modo captura, según decisión del usuario
                 const esDestacadoFinal = modoCaptura && isUltimo;
+                // Detectar abono extraordinario por la nota (concepto)
+                const notaLower = (a.notas || '').toLowerCase();
+                const esExtra = notaLower.includes('extra') || notaLower.includes('extraordinari');
                 // Fila alternada (solo cuando NO es destacada y NO es pagada)
                 const bgAlternado = idx % 2 === 1 ? '#F8FAFC' : '#FFFFFF';
                 const bgFila = esDestacadoFinal
                   ? '#ECFEFF'
-                  : (isPagado ? '#F0FDF4' : bgAlternado);
+                  : (esExtra && !isPagado ? '#FFFBEB' : (isPagado ? '#F0FDF4' : bgAlternado));
                 const colorTexto = esDestacadoFinal ? '#155E75' : '#1E293B';
                 return (
                   <tr key={a.id} style={{
@@ -1310,6 +1500,12 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
                           background: '#FEF3C7', color: '#92400E',
                           borderRadius: 999, fontSize: 10, fontWeight: 600,
                         }}>Atrasado</span>
+                      ) : esExtra ? (
+                        <span style={{
+                          display: 'inline-block', padding: '2px 8px',
+                          background: '#FEF3C7', color: '#92400E',
+                          borderRadius: 999, fontSize: 10, fontWeight: 700,
+                        }} title={a.notas}>⚡ Extra</span>
                       ) : (
                         <span style={{
                           display: 'inline-block', padding: '2px 8px',
@@ -1320,13 +1516,19 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
                     </td>
                     {!esConsulta && !modoCaptura && (
                       <td style={{ padding: '7px 6px', textAlign: 'center' }}>
-                        {isPagado ? (
-                          <button onClick={() => setAbonoDesmarcando(a)} title="Desmarcar pago"
-                            style={{ background: '#fff', border: `1px solid ${C.border}`, color: C.muted, padding: '4px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>↩ Desmarcar</button>
-                        ) : (
-                          <button onClick={() => setAbonoMarcando(a)} title="Marcar como pagado"
-                            style={{ background: '#0F766E', border: 'none', color: '#fff', padding: '4px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>✓ Marcar pagado</button>
-                        )}
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          {isPagado ? (
+                            <button onClick={() => setAbonoDesmarcando(a)} title="Desmarcar pago"
+                              style={{ background: '#fff', border: `1px solid ${C.border}`, color: C.muted, padding: '4px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>↩ Desmarcar</button>
+                          ) : (
+                            <button onClick={() => setAbonoMarcando(a)} title="Marcar como pagado"
+                              style={{ background: '#0F766E', border: 'none', color: '#fff', padding: '4px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>✓ Marcar pagado</button>
+                          )}
+                          {!isPagado && (
+                            <button onClick={() => setAbonoEliminando(a)} title="Eliminar este abono del plan"
+                              style={{ background: 'transparent', border: 'none', color: '#94A3B8', cursor: 'pointer', fontSize: 13, padding: 4, fontFamily: 'inherit', lineHeight: 1 }}>🗑</button>
+                          )}
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -1406,6 +1608,135 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
           </div>
         </ModalShell>
       )}
+
+      {/* Sub-modal: Confirmar eliminar abono */}
+      {abonoEliminando && (
+        <ModalShell onClose={() => setAbonoEliminando(null)} maxWidth={460}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, paddingBottom: 10, borderBottom: `1px solid ${C.border}` }}>
+            <h3 style={{ fontSize: 15, fontWeight: 800, color: C.navy, margin: 0 }}>🗑 Eliminar abono</h3>
+            <button onClick={() => setAbonoEliminando(null)} style={{ background: 'transparent', border: 'none', fontSize: 20, color: C.muted, cursor: 'pointer', padding: 0 }}>×</button>
+          </div>
+          <p style={{ fontSize: 13, color: C.text, marginTop: 0 }}>
+            ¿Confirmas eliminar el abono <strong>#{abonoEliminando.numero}</strong> ({fmtDateLabel(abonoEliminando.fechaProgramada)}, ${fmt(abonoEliminando.montoProgramado)} {plan.moneda})?
+          </p>
+          <div style={{ background: C.warnSoft, border: `1px solid ${C.warn}`, borderRadius: 6, padding: '8px 12px', marginTop: 10 }}>
+            <div style={{ fontSize: 11, color: C.warnText, lineHeight: 1.5 }}>
+              ⚠ El monto total del plan (${fmt(plan.montoTotal)}) NO cambia. Al eliminar este abono, los abonos restantes ya no sumarán el total. Para corregirlo después, edita o agrega otros abonos.
+            </div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
+            <button onClick={() => setAbonoEliminando(null)} style={btnStyle()}>Cancelar</button>
+            <button onClick={handleEliminarAbono} style={{ ...btnStyle('primary'), background: C.red }}>Sí, eliminar</button>
+          </div>
+        </ModalShell>
+      )}
+
+      {/* Sub-modal: Agregar nuevo abono al plan */}
+      {showAgregarAbono && (
+        <AgregarAbonoModal
+          plan={plan}
+          user={user}
+          onClose={() => setShowAgregarAbono(false)}
+          onDone={async () => { setShowAgregarAbono(false); await onAccion(); }}
+        />
+      )}
+    </ModalShell>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SUB-MODAL: Agregar nuevo abono al plan (después de creación)
+// ═══════════════════════════════════════════════════════════════════
+function AgregarAbonoModal({ plan, user, onClose, onDone }) {
+  // Sugerir fecha: +15 días desde el último abono pendiente
+  const fechaInicial = useMemo(() => {
+    const pendientes = (plan.abonos || []).filter(a => a.estado === 'pendiente' || a.estado === 'atrasado');
+    if (pendientes.length === 0) return today();
+    const ultima = pendientes[pendientes.length - 1].fechaProgramada;
+    const d = new Date(ultima + 'T12:00:00');
+    d.setDate(d.getDate() + 15);
+    return d.toISOString().split('T')[0];
+  }, [plan]);
+  const numeroSugerido = useMemo(() => {
+    const max = (plan.abonos || []).reduce((m, a) => Math.max(m, a.numero || 0), 0);
+    return max + 1;
+  }, [plan]);
+
+  const [fecha, setFecha] = useState(fechaInicial);
+  const [monto, setMonto] = useState('');
+  const [concepto, setConcepto] = useState('');
+  const [guardando, setGuardando] = useState(false);
+
+  const montoNum = parseFloat(monto) || 0;
+  const valido = !!fecha && montoNum > 0;
+
+  const handleGuardar = async () => {
+    if (!valido || guardando) return;
+    setGuardando(true);
+    try {
+      await upsertAbono({
+        planId: plan.id,
+        empresaId: plan.empresaId,
+        numero: numeroSugerido,
+        fechaProgramada: fecha,
+        montoProgramado: montoNum,
+        estado: 'pendiente',
+        notas: concepto || null,
+      }, user?.nombre);
+      await onDone();
+    } catch (err) {
+      console.error('agregarAbono:', err);
+      alert('Error al agregar el abono. Revisa la consola.');
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <ModalShell onClose={onClose} maxWidth={480}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
+        <div>
+          <h3 style={{ fontSize: 16, fontWeight: 800, color: C.navy, margin: 0 }}>+ Agregar abono al plan</h3>
+          <p style={{ fontSize: 12, color: C.muted, margin: '4px 0 0' }}>
+            Nuevo abono #{numeroSugerido} · {plan.proveedor}
+          </p>
+        </div>
+        <button onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: 20, color: C.muted, cursor: 'pointer', padding: 0 }}>×</button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+        <div>
+          <Label>Fecha programada</Label>
+          <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} style={inputStyle()}/>
+        </div>
+        <div>
+          <Label>Monto ({plan.moneda})</Label>
+          <input value={monto} onChange={e => setMonto(e.target.value.replace(/[^\d.]/g, ''))} placeholder="0.00" style={{ ...inputStyle(), fontVariantNumeric: 'tabular-nums' }}/>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <Label>Concepto (opcional)</Label>
+        <input value={concepto} onChange={e => setConcepto(e.target.value)} placeholder="ej. abono extraordinario, liquidación..." style={inputStyle()}/>
+        {(concepto || '').toLowerCase().match(/extra/) && (
+          <div style={{ fontSize: 11, color: '#92400E', marginTop: 4 }}>
+            ⚡ Este abono se marcará como <strong>Extra</strong> en la tabla.
+          </div>
+        )}
+      </div>
+
+      <div style={{ background: C.bgSoft, borderRadius: 6, padding: '8px 12px', marginBottom: 12, fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
+        💡 Este abono se agrega al plan sin modificar el monto total ni los otros abonos. Útil para agregar pagos extraordinarios fuera del calendario regular.
+      </div>
+
+      <ModalFooter
+        leftBtn={<button onClick={onClose} style={btnStyle()} disabled={guardando}>Cancelar</button>}
+        rightBtn={
+          <button onClick={handleGuardar} disabled={!valido || guardando} style={btnStyle(valido && !guardando ? 'success' : 'disabled')}>
+            {guardando ? 'Agregando…' : '+ Agregar abono'}
+          </button>
+        }
+      />
     </ModalShell>
   );
 }

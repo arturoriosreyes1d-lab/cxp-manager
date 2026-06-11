@@ -1687,6 +1687,7 @@ export async function bulkInsertAbonos(abonos, usuario) {
     fecha_programada: a.fechaProgramada,
     monto_programado: +a.montoProgramado || 0,
     estado: a.estado || 'pendiente',
+    notas: a.notas || null,
     created_by: usuario || 'desconocido',
     updated_by: usuario || 'desconocido',
   }));
