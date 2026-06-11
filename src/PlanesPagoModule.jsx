@@ -712,45 +712,7 @@ function NuevoPlanModal({ empresaId, user, planesExistentes, onClose, onCreated 
   const [abonosPersonalizados, setAbonosPersonalizados] = useState([]);
   const [guardando, setGuardando] = useState(false);
 
-  // Helpers para editar abonos personalizados
-  const agregarAbonoPersonalizado = () => {
-    // Sugerir fecha: si hay abonos previos, +15 días desde el último; si no, fechaInicio
-    let nuevaFecha = fechaInicio;
-    if (abonosPersonalizados.length > 0) {
-      const ultimo = abonosPersonalizados[abonosPersonalizados.length - 1];
-      const d = new Date(ultimo.fechaProgramada + 'T12:00:00');
-      d.setDate(d.getDate() + 15);
-      nuevaFecha = d.toISOString().split('T')[0];
-    }
-    // Sugerir monto: lo que falta para alcanzar el total
-    const sumaActual = abonosPersonalizados.reduce((s, a) => s + (+a.montoProgramado || 0), 0);
-    const falta = Math.max(0, montoTotalSeleccionado - sumaActual);
-    setAbonosPersonalizados([...abonosPersonalizados, {
-      fechaProgramada: nuevaFecha,
-      montoProgramado: falta > 0 ? String(falta) : '',
-      concepto: '',
-    }]);
-  };
-  const eliminarAbonoPersonalizado = (idx) => {
-    setAbonosPersonalizados(abonosPersonalizados.filter((_, i) => i !== idx));
-  };
-  const editarAbonoPersonalizado = (idx, campo, valor) => {
-    setAbonosPersonalizados(abonosPersonalizados.map((a, i) => i === idx ? { ...a, [campo]: valor } : a));
-  };
-
-  // Suma de abonos personalizados (para validar)
-  const sumaPersonalizados = useMemo(() => {
-    return abonosPersonalizados.reduce((s, a) => s + (parseFloat(a.montoProgramado) || 0), 0);
-  }, [abonosPersonalizados]);
-  const diferenciaPersonalizados = useMemo(() => {
-    return montoTotalSeleccionado - sumaPersonalizados;
-  }, [montoTotalSeleccionado, sumaPersonalizados]);
-  const personalizadoValido = useMemo(() => {
-    if (abonosPersonalizados.length === 0) return false;
-    if (Math.abs(diferenciaPersonalizados) > 0.01) return false;
-    // Todas las filas deben tener fecha y monto > 0
-    return abonosPersonalizados.every(a => a.fechaProgramada && parseFloat(a.montoProgramado) > 0);
-  }, [abonosPersonalizados, diferenciaPersonalizados]);
+  // Helpers para abonos personalizados — definidos abajo después de montoTotalSeleccionado
 
   // Cargar facturas de la empresa al abrir modal
   useEffect(() => {
@@ -816,6 +778,46 @@ function NuevoPlanModal({ empresaId, user, planesExistentes, onClose, onCreated 
 
   const monedaPlan = monedasSeleccionadas[0] || null;
   const monedaInvalida = monedasSeleccionadas.length > 1;
+
+  // Helpers para editar abonos personalizados (necesitan montoTotalSeleccionado disponible)
+  const agregarAbonoPersonalizado = () => {
+    // Sugerir fecha: si hay abonos previos, +15 días desde el último; si no, fechaInicio
+    let nuevaFecha = fechaInicio;
+    if (abonosPersonalizados.length > 0) {
+      const ultimo = abonosPersonalizados[abonosPersonalizados.length - 1];
+      const d = new Date(ultimo.fechaProgramada + 'T12:00:00');
+      d.setDate(d.getDate() + 15);
+      nuevaFecha = d.toISOString().split('T')[0];
+    }
+    // Sugerir monto: lo que falta para alcanzar el total
+    const sumaActual = abonosPersonalizados.reduce((s, a) => s + (+a.montoProgramado || 0), 0);
+    const falta = Math.max(0, montoTotalSeleccionado - sumaActual);
+    setAbonosPersonalizados([...abonosPersonalizados, {
+      fechaProgramada: nuevaFecha,
+      montoProgramado: falta > 0 ? String(falta) : '',
+      concepto: '',
+    }]);
+  };
+  const eliminarAbonoPersonalizado = (idx) => {
+    setAbonosPersonalizados(abonosPersonalizados.filter((_, i) => i !== idx));
+  };
+  const editarAbonoPersonalizado = (idx, campo, valor) => {
+    setAbonosPersonalizados(abonosPersonalizados.map((a, i) => i === idx ? { ...a, [campo]: valor } : a));
+  };
+
+  // Suma de abonos personalizados (para validar)
+  const sumaPersonalizados = useMemo(() => {
+    return abonosPersonalizados.reduce((s, a) => s + (parseFloat(a.montoProgramado) || 0), 0);
+  }, [abonosPersonalizados]);
+  const diferenciaPersonalizados = useMemo(() => {
+    return montoTotalSeleccionado - sumaPersonalizados;
+  }, [montoTotalSeleccionado, sumaPersonalizados]);
+  const personalizadoValido = useMemo(() => {
+    if (abonosPersonalizados.length === 0) return false;
+    if (Math.abs(diferenciaPersonalizados) > 0.01) return false;
+    // Todas las filas deben tener fecha y monto > 0
+    return abonosPersonalizados.every(a => a.fechaProgramada && parseFloat(a.montoProgramado) > 0);
+  }, [abonosPersonalizados, diferenciaPersonalizados]);
 
   // Preview de abonos
   const abonosPreview = useMemo(() => {
