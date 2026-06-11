@@ -52,7 +52,11 @@ const C = {
   white:  '#FFFFFF',
 };
 
-const MONO = '"JetBrains Mono", "Cascadia Mono", "Consolas", "SF Mono", "Menlo", ui-monospace, monospace';
+// MONO = fuente para números en la app — usa DM Sans (heredada del body) con tabular-nums
+// para alineación vertical bonita sin necesidad de fuente monospace
+const MONO = 'inherit';
+// MONO_FORMAL = JetBrains Mono para la imagen exportada estilo "estado de cuenta"
+const MONO_FORMAL = '"JetBrains Mono", "Cascadia Mono", "Consolas", "SF Mono", "Menlo", ui-monospace, monospace';
 const INTER = '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 
 const DIAS_SEMANA = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
@@ -523,20 +527,20 @@ function KpiCard({ label, valueLine1, subline, monedas, mono, accent, warning, o
       cursor: 'pointer',
       background: bg,
       border: `${accent ? '1.5' : '1'}px solid ${borderColor}`,
-      borderRadius: 8,
-      padding: '12px 14px',
+      borderRadius: 10,
+      padding: '16px 18px',
       display: 'block',
       transition: 'transform 0.1s, box-shadow 0.15s',
     }}
     onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.06)'; }}
     onMouseLeave={(e) => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = ''; }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: tieneMonedas ? 8 : 0 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: tieneMonedas ? 12 : 0 }}>
         <div style={{ fontSize: 12, color: labelColor, letterSpacing: 0.5, fontWeight: accent ? 700 : 600, textTransform: 'uppercase' }}>{label}</div>
         <span style={{ fontSize: 12, color: labelColor, opacity: 0.7 }}>↗</span>
       </div>
       {tieneMonedas ? (
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${colsGrid}, 1fr)`, gap: 6 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${colsGrid}, 1fr)`, gap: 10 }}>
           {monedas.map((m, i) => {
             // Mini-card con color por moneda (variante B medio)
             const codeColor = m.codigo === 'USD' ? '#065F46' : m.codigo === 'MXN' ? '#991B1B' : m.codigo === 'EUR' ? '#1E40AF' : C.muted;
@@ -545,21 +549,23 @@ function KpiCard({ label, valueLine1, subline, monedas, mono, accent, warning, o
               <div key={i} style={{
                 background: accent ? '#FFFFFF' : C.bgSoft,
                 border: `1px solid ${accent ? '#DBEAFE' : 'transparent'}`,
-                borderRadius: 6,
-                padding: '6px 8px',
+                borderRadius: 8,
+                padding: '10px 12px',
+                textAlign: 'center',
               }}>
                 <div style={{
-                  fontSize: 9, fontWeight: 700, letterSpacing: 0.4,
+                  fontSize: 10, fontWeight: 700, letterSpacing: 0.5,
                   color: codeColor, background: codeBg,
-                  display: 'inline-block', padding: '1px 5px', borderRadius: 3,
+                  display: 'inline-block', padding: '2px 8px', borderRadius: 4,
                 }}>{m.codigo}</div>
                 <div style={{
-                  fontSize: monedas.length >= 3 ? 12 : 14,
+                  fontSize: monedas.length >= 3 ? 14 : 18,
                   fontWeight: 700,
                   fontFamily: MONO,
                   fontVariantNumeric: 'tabular-nums',
                   color: miniValueColor,
-                  marginTop: 3,
+                  marginTop: 6,
+                  lineHeight: 1.1,
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -571,13 +577,14 @@ function KpiCard({ label, valueLine1, subline, monedas, mono, accent, warning, o
       ) : (
         <>
           <div style={{
-            fontSize: valueLine1.length > 12 ? 16 : 22,
-            fontWeight: 700, marginTop: 6,
+            fontSize: valueLine1.length > 12 ? 18 : 28,
+            fontWeight: 700, marginTop: 10,
             fontFamily: mono ? MONO : 'inherit',
             fontVariantNumeric: 'tabular-nums',
             color: warning ? C.warnText : (accent ? C.blueText : C.text),
+            lineHeight: 1.1,
           }}>{valueLine1}</div>
-          {subline && <div style={{ fontSize: 12, color: labelColor, marginTop: 2, fontFamily: mono ? MONO : 'inherit', fontVariantNumeric: 'tabular-nums' }}>{subline}</div>}
+          {subline && <div style={{ fontSize: 12, color: labelColor, marginTop: 4, fontFamily: mono ? MONO : 'inherit', fontVariantNumeric: 'tabular-nums' }}>{subline}</div>}
         </>
       )}
     </button>
@@ -1182,17 +1189,17 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
           <div>
             <div style={{ fontSize: 10, color: '#134E4A', letterSpacing: 0.5, fontWeight: 600, textTransform: 'uppercase' }}>Total</div>
-            <div style={{ fontFamily: MONO, fontSize: 17, fontWeight: 700, color: '#134E4A', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>${fmt(plan.montoTotal)}</div>
+            <div style={{ fontFamily: MONO_FORMAL, fontSize: 17, fontWeight: 700, color: '#134E4A', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>${fmt(plan.montoTotal)}</div>
             <div style={{ fontSize: 10, color: '#0F766E', marginTop: 1 }}>{plan.moneda}</div>
           </div>
           <div>
             <div style={{ fontSize: 10, color: '#134E4A', letterSpacing: 0.5, fontWeight: 600, textTransform: 'uppercase' }}>Pagado</div>
-            <div style={{ fontFamily: MONO, fontSize: 17, fontWeight: 700, color: '#134E4A', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>${fmt(plan.pagado)}</div>
+            <div style={{ fontFamily: MONO_FORMAL, fontSize: 17, fontWeight: 700, color: '#134E4A', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>${fmt(plan.pagado)}</div>
             <div style={{ fontSize: 10, color: '#0F766E', marginTop: 1 }}>{plan.pct}% avance</div>
           </div>
           <div>
             <div style={{ fontSize: 10, color: '#134E4A', letterSpacing: 0.5, fontWeight: 600, textTransform: 'uppercase' }}>Restante</div>
-            <div style={{ fontFamily: MONO, fontSize: 17, fontWeight: 700, color: '#134E4A', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>${fmt(plan.restante)}</div>
+            <div style={{ fontFamily: MONO_FORMAL, fontSize: 17, fontWeight: 700, color: '#134E4A', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>${fmt(plan.restante)}</div>
             <div style={{ fontSize: 10, color: '#0F766E', marginTop: 1 }}>{plan.abonos.filter(a => a.estado !== 'pagado' && a.estado !== 'parcial').length} abonos</div>
           </div>
           <div>
@@ -1250,11 +1257,11 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
                     <td style={{
                       padding: esDestacadoFinal ? '9px 6px' : '7px 6px',
                       color: esDestacadoFinal ? '#155E75' : '#64748B',
-                      fontFamily: MONO, fontWeight: esDestacadoFinal ? 700 : 400,
+                      fontFamily: MONO_FORMAL, fontWeight: esDestacadoFinal ? 700 : 400,
                     }}>{String(a.numero).padStart(2, '0')}</td>
                     <td style={{
                       padding: esDestacadoFinal ? '9px 6px' : '7px 6px',
-                      fontFamily: MONO, color: colorTexto,
+                      fontFamily: MONO_FORMAL, color: colorTexto,
                       fontWeight: esDestacadoFinal ? 700 : 400,
                     }}>
                       <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -1268,7 +1275,7 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
                     <td style={{
                       padding: esDestacadoFinal ? '9px 6px' : '7px 6px',
                       textAlign: 'right',
-                      fontFamily: MONO, fontVariantNumeric: 'tabular-nums',
+                      fontFamily: MONO_FORMAL, fontVariantNumeric: 'tabular-nums',
                       fontWeight: esDestacadoFinal ? 700 : 600,
                       color: colorTexto,
                     }}>
@@ -1280,7 +1287,7 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
                     <td style={{
                       padding: esDestacadoFinal ? '9px 6px' : '7px 6px',
                       textAlign: 'right',
-                      fontFamily: MONO, fontVariantNumeric: 'tabular-nums',
+                      fontFamily: MONO_FORMAL, fontVariantNumeric: 'tabular-nums',
                       color: esDestacadoFinal ? '#155E75' : '#475569',
                       fontWeight: esDestacadoFinal ? 700 : 400,
                     }}>${fmt(a.restanteDespues)}</td>
@@ -1330,7 +1337,7 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
               <tfoot>
                 <tr>
                   <td colSpan={2} style={{ padding: '10px 6px 0', fontSize: 11, color: '#64748B', fontWeight: 600 }}>TOTAL</td>
-                  <td style={{ padding: '10px 6px 0', textAlign: 'right', fontFamily: MONO, fontWeight: 700, color: '#134E4A', fontSize: 14, fontVariantNumeric: 'tabular-nums' }}>${fmt(plan.montoTotal)}</td>
+                  <td style={{ padding: '10px 6px 0', textAlign: 'right', fontFamily: MONO_FORMAL, fontWeight: 700, color: '#134E4A', fontSize: 14, fontVariantNumeric: 'tabular-nums' }}>${fmt(plan.montoTotal)}</td>
                   <td colSpan={2}></td>
                 </tr>
               </tfoot>
