@@ -288,6 +288,7 @@ export default function PlanesPagoModule({ empresaId, user, esConsulta = false }
     const sorted = [...lista].sort((a, b) => {
       let va, vb;
       if (sortBy === 'proveedor') { va = (a.proveedor || '').toLowerCase(); vb = (b.proveedor || '').toLowerCase(); return va.localeCompare(vb) * dir; }
+      if (sortBy === 'moneda')    { va = (a.moneda || '').toLowerCase(); vb = (b.moneda || '').toLowerCase(); return va.localeCompare(vb) * dir; }
       if (sortBy === 'facturas')  { va = (a.facturas || []).length; vb = (b.facturas || []).length; return (va - vb) * dir; }
       if (sortBy === 'total')     { va = +a.montoTotal || 0; vb = +b.montoTotal || 0; return (va - vb) * dir; }
       if (sortBy === 'pagado')    { va = +a.pagado || 0; vb = +b.pagado || 0; return (va - vb) * dir; }
@@ -351,9 +352,9 @@ export default function PlanesPagoModule({ empresaId, user, esConsulta = false }
         <KpiCard
           label="Comprometido"
           monedas={[
-            ...(kpis.comprometido.USD > 0 ? [`$${fmt(kpis.comprometido.USD)} USD`] : []),
-            ...(kpis.comprometido.MXN > 0 ? [`$${fmt(kpis.comprometido.MXN)} MXN`] : []),
-            ...(kpis.comprometido.EUR > 0 ? [`$${fmt(kpis.comprometido.EUR)} EUR`] : []),
+            ...(kpis.comprometido.USD > 0 ? [{ codigo: 'USD', monto: kpis.comprometido.USD }] : []),
+            ...(kpis.comprometido.MXN > 0 ? [{ codigo: 'MXN', monto: kpis.comprometido.MXN }] : []),
+            ...(kpis.comprometido.EUR > 0 ? [{ codigo: 'EUR', monto: kpis.comprometido.EUR }] : []),
           ]}
           valueLine1={
             // Fallback: si no hay ninguna moneda, mostrar 0 USD
@@ -366,9 +367,9 @@ export default function PlanesPagoModule({ empresaId, user, esConsulta = false }
         <KpiCard
           label="Pago semanal"
           monedas={[
-            ...(kpis.ritmo.totales.USD > 0 ? [`$${fmt(kpis.ritmo.totales.USD)} USD`] : []),
-            ...(kpis.ritmo.totales.MXN > 0 ? [`$${fmt(kpis.ritmo.totales.MXN)} MXN`] : []),
-            ...(kpis.ritmo.totales.EUR > 0 ? [`$${fmt(kpis.ritmo.totales.EUR)} EUR`] : []),
+            ...(kpis.ritmo.totales.USD > 0 ? [{ codigo: 'USD', monto: kpis.ritmo.totales.USD }] : []),
+            ...(kpis.ritmo.totales.MXN > 0 ? [{ codigo: 'MXN', monto: kpis.ritmo.totales.MXN }] : []),
+            ...(kpis.ritmo.totales.EUR > 0 ? [{ codigo: 'EUR', monto: kpis.ritmo.totales.EUR }] : []),
           ]}
           valueLine1={
             (kpis.ritmo.totales.USD === 0 && kpis.ritmo.totales.MXN === 0 && kpis.ritmo.totales.EUR === 0)
@@ -448,6 +449,7 @@ export default function PlanesPagoModule({ empresaId, user, esConsulta = false }
             <thead>
               <tr style={{ borderBottom: `1px solid ${C.border}` }}>
                 <Th sortKey="proveedor" currentSort={sortBy} currentDir={sortDir} onSort={toggleSort}>Proveedor · Config</Th>
+                <Th center sortKey="moneda" currentSort={sortBy} currentDir={sortDir} onSort={toggleSort}>Moneda</Th>
                 <Th center sortKey="facturas" currentSort={sortBy} currentDir={sortDir} onSort={toggleSort}>Fact.</Th>
                 <Th center sortKey="total" currentSort={sortBy} currentDir={sortDir} onSort={toggleSort}>Total</Th>
                 <Th center sortKey="pagado" currentSort={sortBy} currentDir={sortDir} onSort={toggleSort}>Pagado</Th>
@@ -510,12 +512,14 @@ function KpiCard({ label, valueLine1, subline, monedas, mono, accent, warning, o
   const bg = accent ? C.blueSoft : (warning ? C.warnSoft : '#fff');
   const borderColor = accent ? C.blue : (warning ? C.warn : C.border);
   const labelColor = accent ? C.blueText : (warning ? C.warnText : C.muted);
-  // Si vienen múltiples monedas, decidir tamaño basado en cuántas hay
-  // (2 monedas → 18px, 3 → 16px, 1 sola → comportamiento normal valueLine1)
   const tieneMonedas = Array.isArray(monedas) && monedas.length > 0;
-  const tamMoneda = tieneMonedas
-    ? (monedas.length >= 3 ? 14 : monedas.length === 2 ? 16 : 18)
-    : null;
+  // Para mini-cards: si hay 2 monedas usa grid 2 cols, si 3 usa grid 3 cols, si 1 usa formato simple
+  const colsGrid = tieneMonedas ? Math.min(monedas.length, 3) : 1;
+  // Color del fondo de la mini-card: si KPI es accent, fondo blanco con borde azul; si normal, fondo gris muy claro
+  const miniBg = accent ? '#FFFFFF' : C.bgSoft;
+  const miniBorder = accent ? '#DBEAFE' : 'transparent';
+  const miniLabelColor = accent ? C.blueText : C.muted;
+  const miniValueColor = accent ? '#1E40AF' : C.text;
   return (
     <button onClick={onClick} style={{
       all: 'unset',
@@ -523,27 +527,38 @@ function KpiCard({ label, valueLine1, subline, monedas, mono, accent, warning, o
       background: bg,
       border: `${accent ? '1.5' : '1'}px solid ${borderColor}`,
       borderRadius: 8,
-      padding: '14px 16px',
+      padding: '12px 14px',
       display: 'block',
       transition: 'transform 0.1s, box-shadow 0.15s',
     }}
     onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.06)'; }}
     onMouseLeave={(e) => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = ''; }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: tieneMonedas ? 8 : 0 }}>
         <div style={{ fontSize: 12, color: labelColor, letterSpacing: 0.5, fontWeight: accent ? 700 : 600, textTransform: 'uppercase' }}>{label}</div>
         <span style={{ fontSize: 12, color: labelColor, opacity: 0.7 }}>↗</span>
       </div>
       {tieneMonedas ? (
-        <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${colsGrid}, 1fr)`, gap: 8 }}>
           {monedas.map((m, i) => (
             <div key={i} style={{
-              fontSize: tamMoneda,
-              fontWeight: 700,
-              fontFamily: MONO,
-              fontVariantNumeric: 'tabular-nums',
-              color: warning ? C.warnText : (accent ? C.blueText : C.text),
-            }}>{m}</div>
+              background: miniBg,
+              border: `1px solid ${miniBorder}`,
+              borderRadius: 6,
+              padding: '6px 8px',
+            }}>
+              <div style={{
+                fontSize: 9, color: miniLabelColor, fontWeight: 700, letterSpacing: 0.4,
+              }}>{m.codigo}</div>
+              <div style={{
+                fontSize: monedas.length >= 3 ? 13 : 15,
+                fontWeight: 700,
+                fontFamily: MONO,
+                fontVariantNumeric: 'tabular-nums',
+                color: miniValueColor,
+                marginTop: 1,
+              }}>${fmt(m.monto)}</div>
+            </div>
           ))}
         </div>
       ) : (
@@ -595,6 +610,9 @@ function PlanRow({ plan, hoyStr, onClick }) {
   const isCasiListo = plan.pct >= 75 && plan.estado === 'activo';
   const barColor = isAtrasado ? C.warn : (isCasiListo ? C.green : C.blue);
   const bgFila = isAtrasado ? C.warnSoft : 'transparent';
+  // Color sutil del badge de moneda según código
+  const bgMoneda = plan.moneda === 'USD' ? '#ECFDF5' : plan.moneda === 'MXN' ? '#FEF2F2' : '#F0F9FF';
+  const colorMoneda = plan.moneda === 'USD' ? '#047857' : plan.moneda === 'MXN' ? '#B91C1C' : '#0369A1';
   return (
     <tr onClick={onClick} style={{ borderBottom: `1px solid ${C.border}`, cursor: 'pointer', background: bgFila }}>
       <td style={{ padding: '11px 14px' }}>
@@ -604,10 +622,16 @@ function PlanRow({ plan, hoyStr, onClick }) {
           {plan.frecuencia === 'quincenal' && plan.diaSemana && `Quincenal · ${DIAS_SEMANA_LARGOS[plan.diaSemana - 1]?.toLowerCase()}`}
           {plan.frecuencia === 'mensual' && plan.diaMes && `Mensual · día ${plan.diaMes}`}
           {plan.frecuencia === 'personalizado' && 'Personalizado'}
-          {' · '}{plan.moneda}
         </div>
       </td>
-      <td style={{ textAlign: 'center', padding: '11px 8px', fontWeight: 600 }}>{(plan.facturas || []).length || '—'}</td>
+      <td style={{ textAlign: 'center', padding: '11px 8px' }}>
+        <span style={{
+          display: 'inline-block', padding: '2px 8px', borderRadius: 4,
+          background: bgMoneda, color: colorMoneda,
+          fontSize: 11, fontWeight: 700, fontFamily: MONO, letterSpacing: 0.5,
+        }}>{plan.moneda}</span>
+      </td>
+      <td style={{ textAlign: 'center', padding: '11px 8px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{(plan.facturas || []).length || '—'}</td>
       <td style={{ textAlign: 'center', padding: '11px 8px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums' }}>${fmt(plan.montoTotal)}</td>
       <td style={{ textAlign: 'center', padding: '11px 8px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: plan.pagado > 0 ? C.green : C.muted }}>${fmt(plan.pagado)}</td>
       <td style={{ textAlign: 'center', padding: '11px 8px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>${fmt(plan.restante)}</td>
@@ -616,14 +640,14 @@ function PlanRow({ plan, hoyStr, onClick }) {
           <div style={{ flex: 1, height: 5, background: C.bgSoft, borderRadius: 999, overflow: 'hidden', minWidth: 50 }}>
             <div style={{ width: `${Math.min(100, plan.pct)}%`, height: '100%', background: barColor, transition: 'width 0.3s' }}/>
           </div>
-          <span style={{ fontSize: 12, color: isCasiListo ? C.green : (isAtrasado ? C.warnText : C.muted), fontVariantNumeric: 'tabular-nums', minWidth: 30, textAlign: 'right', fontWeight: isCasiListo ? 700 : 500 }}>{plan.pct}%</span>
+          <span style={{ fontSize: 12, color: isCasiListo ? C.green : (isAtrasado ? C.warnText : C.muted), fontFamily: MONO, fontVariantNumeric: 'tabular-nums', minWidth: 30, textAlign: 'right', fontWeight: isCasiListo ? 700 : 500 }}>{plan.pct}%</span>
         </div>
       </td>
       <td style={{ padding: '11px 14px', textAlign: 'center' }}>
         {plan.proximo ? (
           <>
-            <div style={{ fontSize: 13, fontWeight: 500 }}>{fmtDateLabel(plan.proximo.fechaProgramada)}</div>
-            <div style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 500, fontFamily: MONO, fontVariantNumeric: 'tabular-nums' }}>{fmtDateLabel(plan.proximo.fechaProgramada)}</div>
+            <div style={{ fontSize: 11, color: C.muted, marginTop: 1, fontFamily: MONO, fontVariantNumeric: 'tabular-nums' }}>
               {(() => {
                 const dias = diasEntre(hoyStr, plan.proximo.fechaProgramada);
                 if (dias < 0) return <span style={{ color: C.warnText }}>{Math.abs(dias)} días vencido</span>;
