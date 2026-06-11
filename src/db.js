@@ -1744,25 +1744,40 @@ function rowToAbono(r) {
 // Devuelve un objeto {USD: total, MXN: total, EUR: total, detalle: [...]}
 export function calcularRitmoSemanal(planesActivos) {
   const SEMANAS_POR_MES = 4.33;
+  const MS_POR_DIA = 1000 * 60 * 60 * 24;
   const totales = { USD: 0, MXN: 0, EUR: 0 };
   const detalle = [];
 
   (planesActivos || []).forEach(plan => {
     if (plan.estado !== 'activo') return;
     let aporteSemanal = 0;
-    if (plan.frecuencia === 'semanal')         aporteSemanal = +plan.montoAbono || 0;
-    else if (plan.frecuencia === 'quincenal')  aporteSemanal = (+plan.montoAbono || 0) / 2;
-    else if (plan.frecuencia === 'mensual')    aporteSemanal = (+plan.montoAbono || 0) / SEMANAS_POR_MES;
-    else if (plan.frecuencia === 'personalizado') {
-      // Aproximación: monto restante dividido entre semanas hasta liquidación
-      if (plan.fechaLiquidacionEstimada) {
-        const hoy = new Date();
-        const liq = new Date(plan.fechaLiquidacionEstimada);
-        const dias = Math.max(7, Math.round((liq - hoy) / (1000 * 60 * 60 * 24)));
-        const semanas = Math.max(1, Math.round(dias / 7));
-        aporteSemanal = (+plan.montoTotal || 0) / semanas;
+
+    if (plan.frecuencia === 'personalizado') {
+      // PERSONALIZADO: sumar TODOS los abonos pendientes y dividir entre las semanas reales
+      // que cubren (del primero al último).
+      const pendientes = (plan.abonos || []).filter(a => a.estado !== 'pagado' && a.estado !== 'parcial');
+      if (pendientes.length > 0) {
+        const sumaPendiente = pendientes.reduce((s, a) => s + (+a.montoProgramado || 0), 0);
+        if (pendientes.length === 1) {
+          // Caso borde: solo queda un abono. Lo prorrateamos en 1 semana.
+          aporteSemanal = sumaPendiente;
+        } else {
+          const ordenados = [...pendientes].sort((a, b) => a.fechaProgramada.localeCompare(b.fechaProgramada));
+          const fechaInicio = new Date(ordenados[0].fechaProgramada + 'T12:00:00');
+          const fechaFin = new Date(ordenados[ordenados.length - 1].fechaProgramada + 'T12:00:00');
+          const dias = Math.max(7, Math.round((fechaFin - fechaInicio) / MS_POR_DIA));
+          const semanas = Math.max(1, dias / 7);
+          aporteSemanal = sumaPendiente / semanas;
+        }
       }
+    } else if (plan.frecuencia === 'semanal') {
+      aporteSemanal = +plan.montoAbono || 0;
+    } else if (plan.frecuencia === 'quincenal') {
+      aporteSemanal = (+plan.montoAbono || 0) / 2;
+    } else if (plan.frecuencia === 'mensual') {
+      aporteSemanal = (+plan.montoAbono || 0) / SEMANAS_POR_MES;
     }
+
     const moneda = plan.moneda || 'MXN';
     if (totales[moneda] != null) totales[moneda] += aporteSemanal;
     detalle.push({
