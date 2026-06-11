@@ -52,7 +52,7 @@ const C = {
   white:  '#FFFFFF',
 };
 
-const MONO = '"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace';
+const MONO = '"JetBrains Mono", "Cascadia Mono", "Consolas", "SF Mono", "Menlo", ui-monospace, monospace';
 const INTER = '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 
 const DIAS_SEMANA = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
@@ -515,10 +515,7 @@ function KpiCard({ label, valueLine1, subline, monedas, mono, accent, warning, o
   const tieneMonedas = Array.isArray(monedas) && monedas.length > 0;
   // Para mini-cards: si hay 2 monedas usa grid 2 cols, si 3 usa grid 3 cols, si 1 usa formato simple
   const colsGrid = tieneMonedas ? Math.min(monedas.length, 3) : 1;
-  // Color del fondo de la mini-card: si KPI es accent, fondo blanco con borde azul; si normal, fondo gris muy claro
-  const miniBg = accent ? '#FFFFFF' : C.bgSoft;
-  const miniBorder = accent ? '#DBEAFE' : 'transparent';
-  const miniLabelColor = accent ? C.blueText : C.muted;
+  // Color del valor numérico dentro de cada mini-card (depende de si KPI es accent o no)
   const miniValueColor = accent ? '#1E40AF' : C.text;
   return (
     <button onClick={onClick} style={{
@@ -539,27 +536,37 @@ function KpiCard({ label, valueLine1, subline, monedas, mono, accent, warning, o
         <span style={{ fontSize: 12, color: labelColor, opacity: 0.7 }}>↗</span>
       </div>
       {tieneMonedas ? (
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${colsGrid}, 1fr)`, gap: 8 }}>
-          {monedas.map((m, i) => (
-            <div key={i} style={{
-              background: miniBg,
-              border: `1px solid ${miniBorder}`,
-              borderRadius: 6,
-              padding: '6px 8px',
-            }}>
-              <div style={{
-                fontSize: 9, color: miniLabelColor, fontWeight: 700, letterSpacing: 0.4,
-              }}>{m.codigo}</div>
-              <div style={{
-                fontSize: monedas.length >= 3 ? 13 : 15,
-                fontWeight: 700,
-                fontFamily: MONO,
-                fontVariantNumeric: 'tabular-nums',
-                color: miniValueColor,
-                marginTop: 1,
-              }}>${fmt(m.monto)}</div>
-            </div>
-          ))}
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${colsGrid}, 1fr)`, gap: 6 }}>
+          {monedas.map((m, i) => {
+            // Mini-card con color por moneda (variante B medio)
+            const codeColor = m.codigo === 'USD' ? '#065F46' : m.codigo === 'MXN' ? '#991B1B' : m.codigo === 'EUR' ? '#1E40AF' : C.muted;
+            const codeBg = m.codigo === 'USD' ? '#D1FAE5' : m.codigo === 'MXN' ? '#FEE2E2' : m.codigo === 'EUR' ? '#DBEAFE' : C.bgSoft;
+            return (
+              <div key={i} style={{
+                background: accent ? '#FFFFFF' : C.bgSoft,
+                border: `1px solid ${accent ? '#DBEAFE' : 'transparent'}`,
+                borderRadius: 6,
+                padding: '6px 8px',
+              }}>
+                <div style={{
+                  fontSize: 9, fontWeight: 700, letterSpacing: 0.4,
+                  color: codeColor, background: codeBg,
+                  display: 'inline-block', padding: '1px 5px', borderRadius: 3,
+                }}>{m.codigo}</div>
+                <div style={{
+                  fontSize: monedas.length >= 3 ? 12 : 14,
+                  fontWeight: 700,
+                  fontFamily: MONO,
+                  fontVariantNumeric: 'tabular-nums',
+                  color: miniValueColor,
+                  marginTop: 3,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}>${fmt(m.monto)}</div>
+              </div>
+            );
+          })}
         </div>
       ) : (
         <>
@@ -611,8 +618,10 @@ function PlanRow({ plan, hoyStr, onClick }) {
   const barColor = isAtrasado ? C.warn : (isCasiListo ? C.green : C.blue);
   const bgFila = isAtrasado ? C.warnSoft : 'transparent';
   // Color sutil del badge de moneda según código
-  const bgMoneda = plan.moneda === 'USD' ? '#ECFDF5' : plan.moneda === 'MXN' ? '#FEF2F2' : '#F0F9FF';
-  const colorMoneda = plan.moneda === 'USD' ? '#047857' : plan.moneda === 'MXN' ? '#B91C1C' : '#0369A1';
+  // Variante B (medio): fondos más saturados pero no agresivos
+  // USD: verde · MXN: rojo · EUR: azul
+  const bgMoneda = plan.moneda === 'USD' ? '#D1FAE5' : plan.moneda === 'MXN' ? '#FEE2E2' : '#DBEAFE';
+  const colorMoneda = plan.moneda === 'USD' ? '#065F46' : plan.moneda === 'MXN' ? '#991B1B' : '#1E40AF';
   return (
     <tr onClick={onClick} style={{ borderBottom: `1px solid ${C.border}`, cursor: 'pointer', background: bgFila }}>
       <td style={{ padding: '11px 14px' }}>
