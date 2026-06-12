@@ -1609,7 +1609,7 @@ export async function fetchInvoiceDetallesPorIds(invoiceIds) {
   if (!invoiceIds || invoiceIds.length === 0) return {};
   const { data, error } = await supabase
     .from('invoices')
-    .select('id, serie, folio, fecha, total, proveedor, moneda, vence, concepto, clasificacion')
+    .select('id, serie, folio, fecha, total, proveedor, moneda, vencimiento, concepto, clasificacion')
     .in('id', invoiceIds);
   if (error) { console.error('fetchInvoiceDetallesPorIds:', error); return {}; }
   // Devolver mapa { invoiceId: detalle }
@@ -1625,7 +1625,7 @@ export async function fetchInvoiceDetallesPorIds(invoiceIds) {
       total: +inv.total || 0,
       proveedor: inv.proveedor,
       moneda: inv.moneda,
-      vence: inv.vence,
+      vencimiento: inv.vencimiento,
       concepto: inv.concepto || '',
       clasificacion: inv.clasificacion || '',
     };
