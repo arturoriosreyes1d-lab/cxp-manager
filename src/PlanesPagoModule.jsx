@@ -27,6 +27,7 @@ import {
   marcarAbonoPagado, desmarcarAbonoPagado, reagendarAbonosSiguientes,
   calcularRitmoSemanal,
   fetchInvoiceDetallesPorIds,
+  proyectarAbono, fetchPaymentsDeAbonos,
 } from './db.js';
 
 // ─── Paleta y constantes ─────────────────────────────────────────
@@ -1224,10 +1225,22 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
   const [abonoEditFecha, setAbonoEditFecha] = useState(null);   // abono cuya fecha se está editando
   const [abonoDesmarcando, setAbonoDesmarcando] = useState(null); // abono que se está desmarcando (confirmar)
   const [abonoEliminando, setAbonoEliminando] = useState(null); // abono que se está eliminando (confirmar)
+  const [abonoProyectando, setAbonoProyectando] = useState(null); // abono que se está proyectando (sin marcar)
   const [showAgregarAbono, setShowAgregarAbono] = useState(false); // modal para agregar nuevo abono
   const [copiandoImagen, setCopiandoImagen] = useState(false);
   const [modoCaptura, setModoCaptura] = useState(false);
+  const [paymentsPorAbono, setPaymentsPorAbono] = useState({}); // mapa {abonoId: [payments]} para mostrar badge
   const refCapturar = useRef(null);
+
+  // Cargar los payments existentes para los abonos del plan (para el badge "PROYECTADO")
+  useEffect(() => {
+    (async () => {
+      const ids = (plan.abonos || []).map(a => a.id);
+      if (ids.length === 0) return;
+      const map = await fetchPaymentsDeAbonos(ids);
+      setPaymentsPorAbono(map || {});
+    })();
+  }, [plan.abonos]);
 
   const handleEliminarAbono = async () => {
     if (!abonoEliminando) return;
@@ -1516,6 +1529,17 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
                           borderRadius: 999, fontSize: 10, fontWeight: 600,
                         }}>Pendiente</span>
                       )}
+                      {/* Badge PROYECTADO: si el abono tiene payments en CxP y NO está pagado todavía */}
+                      {!isPagado && (paymentsPorAbono[a.id] || []).length > 0 && !modoCaptura && (
+                        <div style={{ marginTop: 3 }}>
+                          <span style={{
+                            display: 'inline-block', padding: '1px 6px',
+                            background: '#DBEAFE', color: '#1E40AF',
+                            borderRadius: 4, fontSize: 9, fontWeight: 700,
+                            letterSpacing: 0.3,
+                          }} title={`Programado en CxP: ${(paymentsPorAbono[a.id] || []).length} pago(s)`}>📅 PROYECTADO</span>
+                        </div>
+                      )}
                     </td>
                     {!esConsulta && !modoCaptura && (
                       <td style={{ padding: '7px 6px', textAlign: 'center' }}>
@@ -1524,8 +1548,25 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
                             <button onClick={() => setAbonoDesmarcando(a)} title="Desmarcar pago"
                               style={{ background: '#fff', border: `1px solid ${C.border}`, color: C.muted, padding: '4px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>↩ Desmarcar</button>
                           ) : (
-                            <button onClick={() => setAbonoMarcando(a)} title="Marcar como pagado"
-                              style={{ background: '#0F766E', border: 'none', color: '#fff', padding: '4px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>✓ Marcar pagado</button>
+                            <>
+                              <button onClick={() => setAbonoMarcando(a)} title="Marcar como pagado"
+                                style={{ background: '#0F766E', border: 'none', color: '#fff', padding: '4px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>✓ Marcar</button>
+                              {(() => {
+                                const yaProyectado = (paymentsPorAbono[a.id] || []).length > 0;
+                                return (
+                                  <button onClick={() => setAbonoProyectando(a)}
+                                    title={yaProyectado ? "Re-proyectar (actualiza el pago en CxP)" : "Programar pago en CxP sin marcar como pagado"}
+                                    style={{
+                                      background: yaProyectado ? '#DBEAFE' : '#fff',
+                                      border: `1px solid ${yaProyectado ? '#1E40AF' : '#DBEAFE'}`,
+                                      color: '#1E40AF',
+                                      padding: '4px 8px', borderRadius: 6, fontSize: 12,
+                                      cursor: 'pointer', fontFamily: 'inherit',
+                                      fontWeight: yaProyectado ? 700 : 600,
+                                    }}>📅</button>
+                                );
+                              })()}
+                            </>
                           )}
                           {!isPagado && (
                             <button onClick={() => setAbonoEliminando(a)} title="Eliminar este abono del plan"
@@ -1641,6 +1682,18 @@ function DetallePlanModal({ plan, user, esConsulta, onClose, onAccion }) {
           user={user}
           onClose={() => setShowAgregarAbono(false)}
           onDone={async () => { setShowAgregarAbono(false); await onAccion(); }}
+        />
+      )}
+
+      {/* Sub-modal: Proyectar abono (sin marcar pagado) */}
+      {abonoProyectando && (
+        <ProyectarAbonoModal
+          abono={abonoProyectando}
+          plan={plan}
+          user={user}
+          paymentsExistentes={paymentsPorAbono[abonoProyectando.id] || []}
+          onClose={() => setAbonoProyectando(null)}
+          onDone={async () => { setAbonoProyectando(null); await onAccion(); }}
         />
       )}
     </ModalShell>
@@ -2159,6 +2212,325 @@ function MarcarPagoModal({ abono, plan, user, onClose, onDone }) {
     </ModalShell>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// SUB-MODAL: Proyectar pago en CxP (SIN marcar pagado)
+// Versión simplificada: solo fecha + distribución entre facturas.
+// El abono sigue pendiente. Si ya había payments programados se reemplazan.
+// ═══════════════════════════════════════════════════════════════════
+function ProyectarAbonoModal({ abono, plan, user, paymentsExistentes, onClose, onDone }) {
+  const [fechaProgramada, setFechaProgramada] = useState(abono.fechaProgramada || today());
+  const [montoTotal, setMontoTotal] = useState(String(abono.montoProgramado || ''));
+  const [guardando, setGuardando] = useState(false);
+
+  // Detalles enriquecidos de facturas del plan
+  const [detallesFacturas, setDetallesFacturas] = useState({});
+  // Distribución del pago: { invoiceId: monto a aplicar }
+  const [distribucion, setDistribucion] = useState({});
+
+  // Cargar detalles de las facturas (folio, fecha, concepto)
+  useEffect(() => {
+    (async () => {
+      const ids = (plan.facturas || []).map(f => f.invoiceId);
+      if (ids.length === 0) return;
+      const mapa = await fetchInvoiceDetallesPorIds(ids);
+      setDetallesFacturas(mapa);
+    })();
+  }, [plan.facturas]);
+
+  // Facturas ordenadas por fecha
+  const facturasOrdenadas = useMemo(() => {
+    return (plan.facturas || []).map(f => {
+      const det = detallesFacturas[String(f.invoiceId)] || {};
+      const saldo = Math.max(0, (+f.montoInicial || 0) - (+f.montoAplicado || 0));
+      return {
+        ...f,
+        folioCompleto: det.folioCompleto || String(f.invoiceId).substring(0, 12),
+        concepto: det.concepto || '',
+        clasificacion: det.clasificacion || '',
+        fecha: det.fecha || null,
+        saldo,
+      };
+    }).sort((a, b) => {
+      if (!a.fecha && !b.fecha) return 0;
+      if (!a.fecha) return 1;
+      if (!b.fecha) return -1;
+      return a.fecha.localeCompare(b.fecha);
+    });
+  }, [plan.facturas, detallesFacturas]);
+
+  const monto = parseFloat(montoTotal) || 0;
+  const sumaDistribuida = useMemo(() => {
+    return Object.values(distribucion).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+  }, [distribucion]);
+  const restanteParaDistribuir = monto - sumaDistribuida;
+  const distribucionValida = Math.abs(restanteParaDistribuir) < 0.01 && sumaDistribuida > 0;
+
+  const autoDistribuir = () => {
+    const nuevo = {};
+    let restante = monto;
+    for (const f of facturasOrdenadas) {
+      if (f.saldo < 0.01) continue;
+      if (restante < 0.01) break;
+      const aplicar = Math.min(restante, f.saldo);
+      nuevo[f.invoiceId] = aplicar.toFixed(2);
+      restante -= aplicar;
+    }
+    setDistribucion(nuevo);
+  };
+
+  const limpiarDistribucion = () => setDistribucion({});
+
+  // Pre-poblar la distribución al abrir (con los payments existentes si los hay, o auto-distribuir)
+  useEffect(() => {
+    if (facturasOrdenadas.length === 0) return;
+    if (Object.keys(distribucion).length > 0) return;
+    if (monto <= 0) return;
+    // Si hay payments existentes (re-proyectar), pre-poblar con sus montos
+    if (paymentsExistentes && paymentsExistentes.length > 0) {
+      const nuevo = {};
+      for (const p of paymentsExistentes) {
+        nuevo[String(p.invoice_id)] = (+p.monto || 0).toFixed(2);
+      }
+      setDistribucion(nuevo);
+    } else {
+      autoDistribuir();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [facturasOrdenadas, monto]);
+
+  const editarDistribucion = (invoiceId, valor) => {
+    const limpio = valor.replace(/[^\d.]/g, '');
+    setDistribucion({ ...distribucion, [invoiceId]: limpio });
+  };
+
+  const handleGuardar = async () => {
+    if (guardando) return;
+    if (monto <= 0) { alert('El monto debe ser mayor a 0'); return; }
+    if (!distribucionValida) {
+      alert(`La distribución debe sumar exactamente $${fmt(monto)} (faltan/sobran $${fmt(Math.abs(restanteParaDistribuir))})`);
+      return;
+    }
+    setGuardando(true);
+    try {
+      const aplicaciones = Object.entries(distribucion)
+        .map(([invoiceId, montoStr]) => ({ invoiceId, monto: parseFloat(montoStr) || 0 }))
+        .filter(ap => ap.monto > 0);
+
+      const ok = await proyectarAbono(abono.id, {
+        fechaProgramada,
+        aplicaciones,
+        numeroAbono: abono.numero,
+        totalAbonos: (plan.abonos || []).length,
+        planProveedor: plan.proveedor,
+      }, user?.nombre);
+
+      if (!ok) {
+        alert('Error al proyectar el pago. Revisa la consola.');
+        return;
+      }
+      await onDone();
+    } catch (err) {
+      console.error('proyectarAbono:', err);
+      alert('Error al proyectar el pago. Revisa la consola.');
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const totalAbonos = (plan.abonos || []).length;
+  const yaProyectado = (paymentsExistentes || []).length > 0;
+
+  return (
+    <ModalShell onClose={onClose} maxWidth={880} maxHeight="92vh">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
+        <div>
+          <h3 style={{ fontSize: 16, fontWeight: 800, color: C.blueText, margin: 0 }}>📅 Proyectar pago en CxP</h3>
+          <p style={{ fontSize: 12, color: C.muted, margin: '4px 0 0' }}>
+            Abono #{abono.numero} de {totalAbonos} · {fmtDateLabel(abono.fechaProgramada)} · programado ${fmt(abono.montoProgramado)} {plan.moneda} · {plan.proveedor}
+          </p>
+        </div>
+        <button onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: 20, color: C.muted, cursor: 'pointer', padding: 0 }}>×</button>
+      </div>
+
+      <div style={{ background: C.blueSoft, border: `1px solid ${C.blue}`, borderRadius: 6, padding: '10px 12px', marginBottom: 12 }}>
+        <div style={{ fontSize: 12, color: C.blueText, lineHeight: 1.5 }}>
+          {yaProyectado ? (
+            <>
+              <strong>♻ Re-proyectar:</strong> Ya hay {paymentsExistentes.length} pago(s) programado(s) para este abono. Al confirmar se <strong>reemplazarán</strong> con la nueva distribución. El abono <strong>seguirá pendiente</strong>.
+            </>
+          ) : (
+            <>
+              <strong>ℹ Solo proyectar:</strong> Este abono <strong>seguirá pendiente</strong>. Se creará un pago "programado" en CxP para que se vea en Proyección. Cuando se realice el pago real, podrás marcarlo desde el botón "✓ Marcar".
+            </>
+          )}
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+        <div>
+          <Label>Fecha programada</Label>
+          <input type="date" value={fechaProgramada} onChange={e => setFechaProgramada(e.target.value)} style={inputStyle()}/>
+        </div>
+        <div>
+          <Label>Monto a programar ({plan.moneda})</Label>
+          <input value={montoTotal} onChange={e => {
+            setMontoTotal(e.target.value.replace(/[^\d.]/g, ''));
+            setDistribucion({});
+          }} style={{ ...inputStyle(), fontVariantNumeric: 'tabular-nums' }}/>
+        </div>
+      </div>
+
+      {/* Tabla de distribución a facturas (igual a la de MarcarPagoModal) */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+          <Label>Distribuir entre facturas del plan</Label>
+          <span style={{ fontSize: 10, color: C.muted }}>Ordenadas de la más antigua a la más reciente</span>
+        </div>
+        <div style={{ border: `1px solid ${C.border}`, borderRadius: 6, overflow: 'hidden' }}>
+          <div style={{
+            display: 'grid', gridTemplateColumns: '24px 1fr 1.4fr 90px 90px 100px 120px',
+            padding: '10px 12px', background: C.bgSoft, borderBottom: `1px solid ${C.border}`,
+            fontSize: 10, color: C.muted, fontWeight: 700, letterSpacing: 0.5, gap: 8,
+          }}>
+            <div></div>
+            <div>FOLIO · FECHA</div>
+            <div>CONCEPTO · CLASIF.</div>
+            <div style={{ textAlign: 'right' }}>TOTAL</div>
+            <div style={{ textAlign: 'right' }}>APLICADO</div>
+            <div style={{ textAlign: 'right' }}>SALDO</div>
+            <div style={{ textAlign: 'right' }}>PROGRAMAR</div>
+          </div>
+          <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+            {facturasOrdenadas.length === 0 && (
+              <div style={{ padding: 20, textAlign: 'center', color: C.muted, fontSize: 12 }}>Sin facturas en el plan.</div>
+            )}
+            {facturasOrdenadas.map(f => {
+              const aplicarAhora = parseFloat(distribucion[f.invoiceId] || 0) || 0;
+              const tieneSaldo = f.saldo > 0.01;
+              const seleccionado = aplicarAhora > 0;
+              return (
+                <div key={f.invoiceId} style={{
+                  display: 'grid', gridTemplateColumns: '24px 1fr 1.4fr 90px 90px 100px 120px',
+                  padding: '10px 12px', alignItems: 'center', gap: 8,
+                  borderBottom: `1px solid ${C.bgSoft}`,
+                  background: !tieneSaldo ? C.bgSoft : (seleccionado ? '#EFF6FF' : 'transparent'),
+                  opacity: tieneSaldo ? 1 : 0.6,
+                }}>
+                  <input type="checkbox" disabled={!tieneSaldo} checked={seleccionado}
+                    onChange={e => {
+                      if (e.target.checked) {
+                        const aAplicar = Math.min(f.saldo, Math.max(0, restanteParaDistribuir + aplicarAhora));
+                        editarDistribucion(f.invoiceId, aAplicar > 0 ? aAplicar.toFixed(2) : '');
+                      } else {
+                        const nuevo = { ...distribucion };
+                        delete nuevo[f.invoiceId];
+                        setDistribucion(nuevo);
+                      }
+                    }}
+                    style={{ cursor: tieneSaldo ? 'pointer' : 'not-allowed' }}/>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums' }}>{f.folioCompleto}</div>
+                    <div style={{ fontSize: 10, color: C.muted, fontVariantNumeric: 'tabular-nums' }}>
+                      {f.fecha ? fmtDateLabel(f.fecha) : '—'}
+                      {!tieneSaldo && ' · ya pagada'}
+                    </div>
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 12, color: f.concepto ? C.text : C.muted,
+                      fontStyle: f.concepto ? 'normal' : 'italic',
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    }} title={f.concepto || ''}>
+                      {f.concepto || '—'}
+                    </div>
+                    {f.clasificacion && (
+                      <div style={{ marginTop: 3 }}>
+                        <span style={{
+                          display: 'inline-block', background: '#EEF2FF', color: C.blue,
+                          padding: '2px 7px', borderRadius: 10, fontSize: 10, fontWeight: 600,
+                        }}>{f.clasificacion}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ textAlign: 'right', fontSize: 12, color: C.text, fontVariantNumeric: 'tabular-nums' }}>${fmt(f.montoInicial)}</div>
+                  <div style={{ textAlign: 'right', fontSize: 12, color: f.montoAplicado > 0 ? C.green : C.muted, fontVariantNumeric: 'tabular-nums' }}>${fmt(f.montoAplicado)}</div>
+                  <div style={{ textAlign: 'right', fontSize: 12, color: C.text, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>${fmt(f.saldo)}</div>
+                  <div style={{ textAlign: 'right' }}>
+                    {tieneSaldo ? (
+                      <input value={distribucion[f.invoiceId] || ''}
+                        onChange={e => editarDistribucion(f.invoiceId, e.target.value)}
+                        placeholder="0.00"
+                        style={{
+                          width: '100%',
+                          padding: '4px 8px',
+                          border: `${seleccionado ? '1.5' : '1'}px solid ${seleccionado ? C.blue : C.border}`,
+                          background: seleccionado ? '#EFF6FF' : '#fff',
+                          borderRadius: 4, fontSize: 12, textAlign: 'right',
+                          fontVariantNumeric: 'tabular-nums', boxSizing: 'border-box',
+                          fontFamily: 'inherit',
+                        }}/>
+                    ) : (
+                      <span style={{ fontSize: 11, color: C.muted, paddingRight: 6 }}>—</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {/* Footer indicador */}
+          {facturasOrdenadas.length > 0 && (() => {
+            const ok = distribucionValida;
+            const bg = ok ? '#DBEAFE' : (sumaDistribuida === 0 ? C.bgSoft : '#FEE2E2');
+            const borderTop = ok ? `1px solid ${C.blue}` : (sumaDistribuida === 0 ? `1px solid ${C.border}` : '1px solid #DC2626');
+            const color = ok ? C.blueText : (sumaDistribuida === 0 ? C.muted : '#991B1B');
+            return (
+              <div style={{
+                padding: '8px 10px', background: bg, borderTop,
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              }}>
+                <div style={{ fontSize: 11, color, fontWeight: 600 }}>
+                  {ok ? '✓ Total a programar' : (sumaDistribuida === 0
+                    ? 'Distribuye el monto entre las facturas para continuar'
+                    : (restanteParaDistribuir > 0 ? `⚠ Falta $${fmt(restanteParaDistribuir)}` : `⚠ Exceso $${fmt(Math.abs(restanteParaDistribuir))}`))}
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color, fontVariantNumeric: 'tabular-nums' }}>
+                  ${fmt(sumaDistribuida)} / ${fmt(monto)} {plan.moneda}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+        {facturasOrdenadas.length > 0 && (
+          <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>
+            <button onClick={autoDistribuir}
+              style={{ background: 'transparent', border: `1px dashed ${C.blue}`, color: C.blue, padding: '4px 10px', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+              ↺ Auto-distribuir
+            </button>
+            <button onClick={limpiarDistribucion}
+              style={{ background: 'transparent', border: `1px dashed ${C.muted}`, color: C.muted, padding: '4px 10px', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+              Limpiar todo
+            </button>
+          </div>
+        )}
+      </div>
+
+      <ModalFooter
+        leftBtn={<button onClick={onClose} style={btnStyle()} disabled={guardando}>Cancelar</button>}
+        rightBtn={
+          <button onClick={handleGuardar} disabled={guardando || !distribucionValida}
+            style={{
+              ...btnStyle(distribucionValida && !guardando ? 'primary' : 'disabled'),
+              background: distribucionValida && !guardando ? C.blue : undefined,
+            }}>
+            {guardando ? 'Guardando…' : (yaProyectado ? '♻ Re-proyectar' : '📅 Proyectar en CxP')}
+          </button>
+        }
+      />
+    </ModalShell>
+  );
+}
+
 
 function RadioOpcion({ label, value, current, onChange }) {
   return (

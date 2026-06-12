@@ -1884,13 +1884,23 @@ export async function marcarAbonoPagado(abonoId, datosPago, usuario) {
     }
   }
 
-  // 3b. Si pidió proyectar en CxP, crear payment(s) programado(s) — uno por cada factura aplicada
-  //     La nota incluye el conteo del plan: "Plan de pagos · Pago N de M"
+  // 3b. Si pidió proyectar en CxP, crear payment(s) — uno por cada factura aplicada
+  //     Si ya había payments programados (porque se proyectó antes), los actualizamos a 'pagado'
+  //     en vez de crear duplicados.
   if (datosPago.proyectarEnCxp && aplicaciones.length > 0) {
     const num = datosPago.numeroAbono || abonoActual.numero || '?';
     const tot = datosPago.totalAbonos || '?';
     const notaPlan = `Plan de pagos · Pago ${num} de ${tot}${datosPago.planProveedor ? ` (${datosPago.planProveedor})` : ''}`;
     const fechaProgramada = datosPago.fechaPagado || new Date().toISOString().split('T')[0];
+    // Buscar payments existentes con este plan_abono_id (creados por proyección previa)
+    const { data: paymentsExistentes } = await supabase
+      .from('payments').select('id').eq('plan_abono_id', abonoId);
+    // Si hay viejos, eliminarlos antes de re-crear (más simple que actualizar n→m)
+    if (paymentsExistentes && paymentsExistentes.length > 0) {
+      const idsViejos = paymentsExistentes.map(p => p.id);
+      await supabase.from('payments').delete().in('id', idsViejos);
+    }
+    // Crear los nuevos payments
     for (const ap of aplicaciones) {
       const paymentRow = {
         invoice_id: String(ap.invoiceId),
@@ -1898,16 +1908,15 @@ export async function marcarAbonoPagado(abonoId, datosPago, usuario) {
         monto: +ap.monto || 0,
         fecha_pago: fechaProgramada,
         notas: notaPlan,
-        tipo: 'programado',
+        tipo: 'realizado', // cuando se marca pagado, el payment también se considera realizado
         metodo_pago: 'banco',
-        plan_abono_id: abonoId, // referencia al abono que originó este payment (para detectar después que es de plan)
+        plan_abono_id: abonoId,
         created_by: usuario || 'desconocido',
         updated_by: usuario || 'desconocido',
       };
       const { error: errPay } = await supabase.from('payments').insert(paymentRow);
       if (errPay) {
-        console.error('marcarAbonoPagado: error creando payment proyectado', errPay);
-        // No fatal: si falla el insert del payment, no rompemos el resto
+        console.error('marcarAbonoPagado: error creando payment', errPay);
       }
     }
   }
@@ -1927,7 +1936,84 @@ export async function marcarAbonoPagado(abonoId, datosPago, usuario) {
   return true;
 }
 
-// ─── Desmarcar pago (revertir abono a pendiente) ────────────────────
+// ─── PROYECTAR ABONO (sin marcar pagado) ──────────────────────────────
+// Crea payments "programados" en CxP sin tocar el estado del abono.
+// El abono sigue pendiente. Si ya había payments con este plan_abono_id
+// (proyección previa), los elimina antes de crear los nuevos para evitar duplicados.
+// datosPago: { fechaProgramada, aplicaciones, numeroAbono, totalAbonos, planProveedor }
+export async function proyectarAbono(abonoId, datosPago, usuario) {
+  // 1. Obtener el abono
+  const { data: abonoActual, error: errFetch } = await supabase
+    .from('plan_abonos').select('*').eq('id', abonoId).single();
+  if (errFetch || !abonoActual) {
+    console.error('proyectarAbono: no se encontró el abono', errFetch);
+    return false;
+  }
+
+  const aplicaciones = Array.isArray(datosPago.aplicaciones)
+    ? datosPago.aplicaciones.filter(ap => ap.invoiceId && (+ap.monto || 0) > 0)
+    : [];
+  if (aplicaciones.length === 0) {
+    console.error('proyectarAbono: no hay aplicaciones válidas');
+    return false;
+  }
+
+  // 2. Eliminar payments previos (si los hay) para este abono
+  const { data: paymentsExistentes } = await supabase
+    .from('payments').select('id').eq('plan_abono_id', abonoId);
+  if (paymentsExistentes && paymentsExistentes.length > 0) {
+    const idsViejos = paymentsExistentes.map(p => p.id);
+    await supabase.from('payments').delete().in('id', idsViejos);
+  }
+
+  // 3. Crear los nuevos payments tipo 'programado'
+  const num = datosPago.numeroAbono || abonoActual.numero || '?';
+  const tot = datosPago.totalAbonos || '?';
+  const notaPlan = `Plan de pagos · Pago ${num} de ${tot}${datosPago.planProveedor ? ` (${datosPago.planProveedor})` : ''}`;
+  const fechaProgramada = datosPago.fechaProgramada || new Date().toISOString().split('T')[0];
+
+  for (const ap of aplicaciones) {
+    const paymentRow = {
+      invoice_id: String(ap.invoiceId),
+      empresa_id: abonoActual.empresa_id,
+      monto: +ap.monto || 0,
+      fecha_pago: fechaProgramada,
+      notas: notaPlan,
+      tipo: 'programado',
+      metodo_pago: 'banco',
+      plan_abono_id: abonoId,
+      created_by: usuario || 'desconocido',
+      updated_by: usuario || 'desconocido',
+    };
+    const { error: errPay } = await supabase.from('payments').insert(paymentRow);
+    if (errPay) {
+      console.error('proyectarAbono: error creando payment', errPay);
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// ─── Saber si un abono ya tiene payments proyectados en CxP ──────────
+// Devuelve array de { id, monto, fecha_pago, tipo, invoice_id } para los payments con ese plan_abono_id.
+// Útil para mostrar badge "PROYECTADO" en la tabla de abonos.
+export async function fetchPaymentsDeAbonos(abonoIds) {
+  if (!abonoIds || abonoIds.length === 0) return {};
+  const { data, error } = await supabase
+    .from('payments')
+    .select('id, plan_abono_id, monto, fecha_pago, tipo, invoice_id')
+    .in('plan_abono_id', abonoIds);
+  if (error) { console.error('fetchPaymentsDeAbonos:', error); return {}; }
+  // Agrupar por plan_abono_id
+  const map = {};
+  (data || []).forEach(p => {
+    if (!map[p.plan_abono_id]) map[p.plan_abono_id] = [];
+    map[p.plan_abono_id].push(p);
+  });
+  return map;
+}
+
 export async function desmarcarAbonoPagado(abonoId, usuario) {
   // 1. Obtener el abono actual para saber cuánto descontar de la factura
   const { data: abonoActual, error: errFetch } = await supabase
@@ -1973,6 +2059,9 @@ export async function desmarcarAbonoPagado(abonoId, usuario) {
     .update({ estado: 'activo', updated_by: usuario || 'desconocido' })
     .eq('id', abonoActual.plan_id)
     .eq('estado', 'liquidado');
+
+  // 5. Eliminar payments en CxP asociados a este abono (si los había)
+  await supabase.from('payments').delete().eq('plan_abono_id', abonoId);
 
   return true;
 }
