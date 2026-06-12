@@ -1777,7 +1777,9 @@ function MarcarPagoModal({ abono, plan, user, onClose, onDone }) {
       const saldo = Math.max(0, (+f.montoInicial || 0) - (+f.montoAplicado || 0));
       return {
         ...f,
-        folio: det.folio || String(f.invoiceId).substring(0, 12),
+        folioCompleto: det.folioCompleto || String(f.invoiceId).substring(0, 12),
+        concepto: det.concepto || '',
+        clasificacion: det.clasificacion || '',
         fecha: det.fecha || null,
         saldo,
       };
@@ -1931,7 +1933,7 @@ function MarcarPagoModal({ abono, plan, user, onClose, onDone }) {
   const totalAbonos = (plan.abonos || []).length;
 
   return (
-    <ModalShell onClose={onClose} maxWidth={760} maxHeight="92vh">
+    <ModalShell onClose={onClose} maxWidth={880} maxHeight="92vh">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
         <div>
           <h3 style={{ fontSize: 16, fontWeight: 800, color: C.navy, margin: 0 }}>✓ Marcar abono pagado</h3>
@@ -1965,12 +1967,13 @@ function MarcarPagoModal({ abono, plan, user, onClose, onDone }) {
         </div>
         <div style={{ border: `1px solid ${C.border}`, borderRadius: 6, overflow: 'hidden' }}>
           <div style={{
-            display: 'grid', gridTemplateColumns: '24px 1fr 90px 90px 100px 120px',
+            display: 'grid', gridTemplateColumns: '24px 1fr 1.4fr 80px 80px 90px 110px',
             padding: '8px 10px', background: C.bgSoft, borderBottom: `1px solid ${C.border}`,
             fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: 0.4, gap: 8,
           }}>
             <div></div>
             <div>FOLIO · FECHA</div>
+            <div>CONCEPTO · CLASIF.</div>
             <div style={{ textAlign: 'right' }}>TOTAL</div>
             <div style={{ textAlign: 'right' }}>APLICADO</div>
             <div style={{ textAlign: 'right' }}>SALDO</div>
@@ -1986,7 +1989,7 @@ function MarcarPagoModal({ abono, plan, user, onClose, onDone }) {
               const seleccionado = aplicarAhora > 0;
               return (
                 <div key={f.invoiceId} style={{
-                  display: 'grid', gridTemplateColumns: '24px 1fr 90px 90px 100px 120px',
+                  display: 'grid', gridTemplateColumns: '24px 1fr 1.4fr 80px 80px 90px 110px',
                   padding: '8px 10px', alignItems: 'center', gap: 8,
                   borderBottom: `1px solid ${C.bgSoft}`,
                   background: !tieneSaldo ? C.bgSoft : (seleccionado ? '#F0FDFA' : 'transparent'),
@@ -2007,15 +2010,32 @@ function MarcarPagoModal({ abono, plan, user, onClose, onDone }) {
                     }}
                     style={{ cursor: tieneSaldo ? 'pointer' : 'not-allowed' }}/>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.folio}</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.folioCompleto}</div>
                     <div style={{ fontSize: 10, color: C.muted }}>
                       {f.fecha ? fmtDateLabel(f.fecha) : '—'}
                       {!tieneSaldo && ' · ya pagada'}
                     </div>
                   </div>
-                  <div style={{ textAlign: 'right', fontSize: 12, color: C.text, fontVariantNumeric: 'tabular-nums' }}>${fmt(f.montoInicial)}</div>
-                  <div style={{ textAlign: 'right', fontSize: 12, color: f.montoAplicado > 0 ? C.green : C.muted, fontVariantNumeric: 'tabular-nums' }}>${fmt(f.montoAplicado)}</div>
-                  <div style={{ textAlign: 'right', fontSize: 12, color: C.text, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>${fmt(f.saldo)}</div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 11, color: f.concepto ? C.text : C.muted,
+                      fontStyle: f.concepto ? 'normal' : 'italic',
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    }} title={f.concepto || ''}>
+                      {f.concepto || '—'}
+                    </div>
+                    {f.clasificacion && (
+                      <div style={{ marginTop: 2 }}>
+                        <span style={{
+                          display: 'inline-block', background: '#EEF2FF', color: C.blue,
+                          padding: '1px 6px', borderRadius: 10, fontSize: 9, fontWeight: 600,
+                        }}>{f.clasificacion}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ textAlign: 'right', fontSize: 11, color: C.text, fontVariantNumeric: 'tabular-nums' }}>${fmt(f.montoInicial)}</div>
+                  <div style={{ textAlign: 'right', fontSize: 11, color: f.montoAplicado > 0 ? C.green : C.muted, fontVariantNumeric: 'tabular-nums' }}>${fmt(f.montoAplicado)}</div>
+                  <div style={{ textAlign: 'right', fontSize: 11, color: C.text, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>${fmt(f.saldo)}</div>
                   <div style={{ textAlign: 'right' }}>
                     {tieneSaldo ? (
                       <input value={distribucion[f.invoiceId] || ''}

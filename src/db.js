@@ -1603,13 +1603,13 @@ export async function fetchFacturasDePlan(planId) {
   }));
 }
 
-// Traer detalles (folio, fecha, etc.) de una lista de invoice IDs
-// Útil para mostrar las facturas de un plan con info legible
+// Traer detalles (folio, serie, concepto, clasificación, fecha, etc.) de una lista de invoice IDs
+// Útil para mostrar las facturas de un plan con info legible (como en CxP)
 export async function fetchInvoiceDetallesPorIds(invoiceIds) {
   if (!invoiceIds || invoiceIds.length === 0) return {};
   const { data, error } = await supabase
     .from('invoices')
-    .select('id, folio, fecha, total, proveedor, moneda, vence')
+    .select('id, serie, folio, fecha, total, proveedor, moneda, vence, concepto, clasificacion')
     .in('id', invoiceIds);
   if (error) { console.error('fetchInvoiceDetallesPorIds:', error); return {}; }
   // Devolver mapa { invoiceId: detalle }
@@ -1617,12 +1617,17 @@ export async function fetchInvoiceDetallesPorIds(invoiceIds) {
   (data || []).forEach(inv => {
     map[String(inv.id)] = {
       id: String(inv.id),
-      folio: inv.folio,
+      serie: inv.serie || '',
+      folio: inv.folio || '',
+      // folioCompleto: lo que ven los usuarios en CxP (ej. "OC410275")
+      folioCompleto: `${inv.serie || ''}${inv.folio || ''}` || String(inv.id).substring(0, 12),
       fecha: inv.fecha,
       total: +inv.total || 0,
       proveedor: inv.proveedor,
       moneda: inv.moneda,
       vence: inv.vence,
+      concepto: inv.concepto || '',
+      clasificacion: inv.clasificacion || '',
     };
   });
   return map;
