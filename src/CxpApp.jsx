@@ -34,6 +34,7 @@ import {
   fetchPrestamoMovimientos, upsertPrestamoMovimiento, deletePrestamoMovimiento,
   calcularUtilizadoPrestamo,
   buscarPlanesActivosDeFactura, marcarAbonoPagado,
+  fetchPagosDePlanEnDia,
 } from "./db.js";
 import CxcView from "./CxcView.jsx";
 import ReportesView from "./ReportesView.jsx";
@@ -183,6 +184,7 @@ export default function CxpApp({ user, onLogout }) {
   const [projFrom, setProjFrom] = useState("");
   const [projTo, setProjTo] = useState("");
   const [projDetail, setProjDetail] = useState(null);
+  const [projDetailPlanInfo, setProjDetailPlanInfo] = useState({}); // mapa { invoiceId: planInfo }
   const [proyeccionTab, setProyeccionTab] = useState("matriz"); // "matriz" | "reporte"
   const [supSearch, setSupSearch] = useState("");
   const [showDupes, setShowDupes] = useState(false);
@@ -255,6 +257,22 @@ export default function CxpApp({ user, onLogout }) {
   const [resumenFiltroMes, setResumenFiltroMes] = useState("");
   const [progSeriePopup, setProgSeriePopup] = useState(null); // key of serie to show popup
   const [vincularModal, setVincularModal] = useState(null); // {invoiceId, proveedor, folio, total, moneda}
+
+  // Cuando se abre el popup de detalle de proyección, buscar info de planes de pago
+  useEffect(() => {
+    if (!projDetail) { setProjDetailPlanInfo({}); return; }
+    (async () => {
+      try {
+        const ids = (projDetail.invoices || []).map(inv => String(inv.id));
+        if (ids.length === 0) return;
+        const info = await fetchPagosDePlanEnDia(empresaId, projDetail.fecha, ids);
+        setProjDetailPlanInfo(info || {});
+      } catch (err) {
+        console.error('fetchPagosDePlanEnDia:', err);
+        setProjDetailPlanInfo({});
+      }
+    })();
+  }, [projDetail, empresaId]);
 
   /* ── Load data from Supabase ────────────────────────────────────── */
   useEffect(() => {
@@ -9401,7 +9419,13 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
       )}
 
       {/* Projection detail modal */}
-      {projDetail && (
+      {projDetail && (() => {
+        // Resumen de planes en este día: ¿hay al menos un invoice con info de plan?
+        const planInfos = Object.values(projDetailPlanInfo || {});
+        const hayPlanes = planInfos.length > 0;
+        // Si hay un único plan, mostrar su info en el banner. Si hay varios, mostrar info general.
+        const planUnico = hayPlanes && planInfos.every(p => p.planId === planInfos[0].planId) ? planInfos[0] : null;
+        return (
         <ModalShell title={`Detalle — ${projDetail.proveedor}`} onClose={()=>setProjDetail(null)} extraWide>
           <div style={{marginBottom:16}}>
             <span style={{fontSize:14,color:C.muted}}>Fecha: </span>
@@ -9409,25 +9433,84 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             <span style={{marginLeft:16,fontSize:14,color:C.muted}}>Total: </span>
             <span style={{fontWeight:800,color:C.blue,fontSize:18}}>${fmt(projDetail.invoices.reduce((s,i)=>s+i.saldo,0))}</span>
           </div>
+
+          {/* Banner teal: este pago es parte de un plan */}
+          {hayPlanes && (
+            <div style={{
+              background: '#F0FDFA', border: '1px solid #CCFBF1',
+              borderRadius: 8, padding: '10px 14px', marginBottom: 14,
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {planUnico ? (
+                  <span style={{
+                    background: '#0F766E', color: '#fff',
+                    padding: '3px 10px', borderRadius: 999,
+                    fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+                  }}>📋 PLAN {planUnico.numeroAbono}/{planUnico.totalAbonos}</span>
+                ) : (
+                  <span style={{
+                    background: '#0F766E', color: '#fff',
+                    padding: '3px 10px', borderRadius: 999,
+                    fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+                  }}>📋 {planInfos.length} PAGOS DE PLAN</span>
+                )}
+                <div>
+                  {planUnico ? (
+                    <>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#134E4A' }}>
+                        Pago del plan {planUnico.planFrecuencia}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#0F766E' }}>
+                        Restante: <strong>${fmt(planUnico.planRestante)} {planUnico.planMoneda}</strong>
+                        {planUnico.fechaLiquidacion && ` · Liquida ${fmtDateLabel(planUnico.fechaLiquidacion)}`}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#134E4A' }}>
+                      Este día contiene pagos de varios planes
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead><tr style={{background:"#F8FAFC"}}>
-              {["Folio","Concepto","Clasificación","Fecha","Total","Pagado","Pago Programado","Importe Pendiente","Vencimiento","Moneda"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>{h}</th>)}
+              {(hayPlanes
+                ? ["Folio","Concepto","Clasificación","Fecha","Total","Pagado","Aplicado hoy","Importe Pendiente","Vencimiento","Moneda"]
+                : ["Folio","Concepto","Clasificación","Fecha","Total","Pagado","Pago Programado","Importe Pendiente","Vencimiento","Moneda"]
+              ).map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>{h}</th>)}
             </tr></thead>
             <tbody>
               {projDetail.invoices.map(inv=>{
-                // inv.saldo = monto programado a pagar en esta fecha
-                // Importe pendiente DESPUÉS de aplicar este pago = Total - Pagado previo - Pago programado
                 const pendienteDespues = Math.max(0, (+inv.total||0) - (+inv.montoPagado||0) - (+inv.saldo||0));
+                // Info de plan para esta factura específica
+                const planInfo = projDetailPlanInfo[String(inv.id)] || null;
+                const esPlanRow = !!planInfo;
                 return (
-                  <tr key={inv.id} style={{borderTop:`1px solid ${C.border}`}}>
+                  <tr key={inv.id} style={{ borderTop:`1px solid ${C.border}`, background: esPlanRow ? '#F0FDFA' : 'transparent' }}>
                     <td style={{padding:"10px 12px",fontWeight:600,whiteSpace:"nowrap"}}>{inv.serie}{inv.folio}</td>
                     <td style={{padding:"10px 12px",color:inv.concepto?C.text:C.muted,fontStyle:inv.concepto?"normal":"italic"}}>{inv.concepto||"—"}</td>
                     <td style={{padding:"10px 12px"}}><span style={{background:"#EEF2FF",color:C.blue,padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:600}}>{inv.clasificacion}</span></td>
                     <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>{inv.fecha}</td>
                     <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>${fmt(inv.total)}</td>
                     <td style={{padding:"10px 12px",color:C.ok,whiteSpace:"nowrap"}}>${fmt(inv.montoPagado)}</td>
-                    <td style={{padding:"10px 12px",fontWeight:700,color:C.warn,whiteSpace:"nowrap"}}>${fmt(inv.saldo)}</td>
+                    <td style={{
+                      padding:"10px 12px", fontWeight:700,
+                      color: esPlanRow ? '#0F766E' : C.warn,
+                      background: esPlanRow ? '#ECFDF5' : 'transparent',
+                      whiteSpace:"nowrap",
+                    }}>
+                      ${fmt(inv.saldo)}
+                      {esPlanRow && (
+                        <div style={{ fontSize: 9, fontWeight: 600, color: '#0F766E', marginTop: 2 }}>
+                          Plan {planInfo.numeroAbono}/{planInfo.totalAbonos}
+                        </div>
+                      )}
+                    </td>
                     <td style={{padding:"10px 12px",fontWeight:700,whiteSpace:"nowrap",color: pendienteDespues > 0 ? '#E65100' : C.muted}}>
                       {pendienteDespues > 0 ? `$${fmt(pendienteDespues)}` : '—'}
                     </td>
@@ -9439,8 +9522,29 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             </tbody>
           </table>
           </div>
+
+          {/* Footer con nota del plan si aplica */}
+          {hayPlanes && (
+            <div style={{
+              marginTop: 12, padding: '10px 14px',
+              background: C.cream, borderRadius: 6,
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              fontSize: 11, color: C.muted,
+            }}>
+              <div>
+                <strong>Nota:</strong> {planUnico ? planUnico.notaPlan : 'Varios pagos de planes en este día'}
+              </div>
+              <div>
+                <strong>Estado:</strong>{' '}
+                <span style={{ background: '#DCFCE7', color: '#166534', padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 600 }}>
+                  ✓ Programado
+                </span>
+              </div>
+            </div>
+          )}
         </ModalShell>
-      )}
+        );
+      })()}
 
       {/* Pagos detail modal — grouped by date */}
       {pagosDetail && (()=>{

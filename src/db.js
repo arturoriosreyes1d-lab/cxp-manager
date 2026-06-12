@@ -1603,6 +1603,31 @@ export async function fetchFacturasDePlan(planId) {
   }));
 }
 
+// Traer detalles (folio, fecha, etc.) de una lista de invoice IDs
+// Útil para mostrar las facturas de un plan con info legible
+export async function fetchInvoiceDetallesPorIds(invoiceIds) {
+  if (!invoiceIds || invoiceIds.length === 0) return {};
+  const { data, error } = await supabase
+    .from('invoices')
+    .select('id, folio, fecha, total, proveedor, moneda, vence')
+    .in('id', invoiceIds);
+  if (error) { console.error('fetchInvoiceDetallesPorIds:', error); return {}; }
+  // Devolver mapa { invoiceId: detalle }
+  const map = {};
+  (data || []).forEach(inv => {
+    map[String(inv.id)] = {
+      id: String(inv.id),
+      folio: inv.folio,
+      fecha: inv.fecha,
+      total: +inv.total || 0,
+      proveedor: inv.proveedor,
+      moneda: inv.moneda,
+      vence: inv.vence,
+    };
+  });
+  return map;
+}
+
 export async function insertPlanFactura(pf, usuario) {
   const row = {
     plan_id: pf.planId,
@@ -1798,6 +1823,11 @@ export function calcularRitmoSemanal(planesActivos) {
 // datosPago: { fechaPagado, montoPagado, facturaIdAplicada, notas, estado }
 // estado puede ser 'pagado' (monto completo) o 'parcial' (monto menor)
 // La factura aplicada del plan se suma el monto pagado a su monto_aplicado
+// datosPago puede contener:
+//   - aplicaciones: [{invoiceId, monto}] (nuevo, opcional) — para distribuir entre varias facturas
+//   - facturaIdAplicada + montoPagado (legacy, mantiene compatibilidad cuando es match con CxP)
+//   - proyectarEnCxp: bool — si true, crea payment programado en CxP
+//   - numeroAbono, totalAbonos, planProveedor — para construir la nota "Plan de pagos · Pago N de M"
 export async function marcarAbonoPagado(abonoId, datosPago, usuario) {
   // 1. Obtener el abono actual para conocer su plan_id y empresa_id
   const { data: abonoActual, error: errFetch } = await supabase
@@ -1807,12 +1837,22 @@ export async function marcarAbonoPagado(abonoId, datosPago, usuario) {
     return false;
   }
 
+  // Normalizar aplicaciones: si vienen como aplicaciones[], usar eso; si vienen como facturaIdAplicada legacy, convertir
+  const aplicaciones = Array.isArray(datosPago.aplicaciones) && datosPago.aplicaciones.length > 0
+    ? datosPago.aplicaciones.filter(ap => ap.invoiceId && (+ap.monto || 0) > 0)
+    : (datosPago.facturaIdAplicada && (+datosPago.montoPagado || 0) > 0
+        ? [{ invoiceId: datosPago.facturaIdAplicada, monto: +datosPago.montoPagado || 0 }]
+        : []);
+
+  // factura_id_aplicada del abono: si solo hay 1 aplicación, guardarla; si hay varias, dejar null
+  const facturaIdParaGuardar = aplicaciones.length === 1 ? aplicaciones[0].invoiceId : null;
+
   // 2. Actualizar el abono
   const updates = {
     estado: datosPago.estado || 'pagado',
     fecha_pagado: datosPago.fechaPagado || new Date().toISOString().split('T')[0],
     monto_pagado: +datosPago.montoPagado || 0,
-    factura_id_aplicada: datosPago.facturaIdAplicada || null,
+    factura_id_aplicada: facturaIdParaGuardar,
     notas: datosPago.notas || abonoActual.notas || null,
     updated_by: usuario || 'desconocido',
   };
@@ -1823,19 +1863,47 @@ export async function marcarAbonoPagado(abonoId, datosPago, usuario) {
     return false;
   }
 
-  // 3. Si hay factura aplicada, sumar el monto al monto_aplicado de plan_facturas
-  if (datosPago.facturaIdAplicada) {
+  // 3. Aplicar a las facturas del plan
+  for (const ap of aplicaciones) {
     const { data: pf, error: errPf } = await supabase
       .from('plan_facturas')
       .select('*')
       .eq('plan_id', abonoActual.plan_id)
-      .eq('invoice_id', datosPago.facturaIdAplicada)
+      .eq('invoice_id', ap.invoiceId)
       .single();
     if (pf && !errPf) {
-      const nuevoAplicado = (+pf.monto_aplicado || 0) + (+datosPago.montoPagado || 0);
+      const nuevoAplicado = (+pf.monto_aplicado || 0) + (+ap.monto || 0);
       await supabase.from('plan_facturas')
         .update({ monto_aplicado: nuevoAplicado, updated_by: usuario || 'desconocido' })
         .eq('id', pf.id);
+    }
+  }
+
+  // 3b. Si pidió proyectar en CxP, crear payment(s) programado(s) — uno por cada factura aplicada
+  //     La nota incluye el conteo del plan: "Plan de pagos · Pago N de M"
+  if (datosPago.proyectarEnCxp && aplicaciones.length > 0) {
+    const num = datosPago.numeroAbono || abonoActual.numero || '?';
+    const tot = datosPago.totalAbonos || '?';
+    const notaPlan = `Plan de pagos · Pago ${num} de ${tot}${datosPago.planProveedor ? ` (${datosPago.planProveedor})` : ''}`;
+    const fechaProgramada = datosPago.fechaPagado || new Date().toISOString().split('T')[0];
+    for (const ap of aplicaciones) {
+      const paymentRow = {
+        invoice_id: String(ap.invoiceId),
+        empresa_id: abonoActual.empresa_id,
+        monto: +ap.monto || 0,
+        fecha_pago: fechaProgramada,
+        notas: notaPlan,
+        tipo: 'programado',
+        metodo_pago: 'banco',
+        plan_abono_id: abonoId, // referencia al abono que originó este payment (para detectar después que es de plan)
+        created_by: usuario || 'desconocido',
+        updated_by: usuario || 'desconocido',
+      };
+      const { error: errPay } = await supabase.from('payments').insert(paymentRow);
+      if (errPay) {
+        console.error('marcarAbonoPagado: error creando payment proyectado', errPay);
+        // No fatal: si falla el insert del payment, no rompemos el resto
+      }
     }
   }
 
@@ -1975,6 +2043,88 @@ export async function buscarPlanesActivosDeFactura(invoiceId, empresaId) {
     } : null;
     const pfDeEstePlan = pfs.find(p => p.plan_id === planRow.id);
     resultado.push({ plan, planFactura: pfDeEstePlan, proximoAbono });
+  }
+  return resultado;
+}
+
+
+// ─── Buscar pagos de plan en un día/proveedor ────────────────────────
+// Dado un día (YYYY-MM-DD), una empresa y una lista de invoiceIds,
+// devuelve un mapa { invoiceId: { numeroAbono, totalAbonos, planId, proveedor, restantePlan, fechaLiquidacion } }
+// solo para aquellos invoices que tienen un payment de plan ese día.
+export async function fetchPagosDePlanEnDia(empresaId, fecha, invoiceIds) {
+  if (!invoiceIds || invoiceIds.length === 0) return {};
+  // 1. Buscar payments del día con plan_abono_id != null
+  const { data: pagos, error: errPagos } = await supabase
+    .from('payments')
+    .select('id, invoice_id, monto, fecha_pago, plan_abono_id, notas')
+    .eq('empresa_id', empresaId)
+    .eq('fecha_pago', fecha)
+    .not('plan_abono_id', 'is', null)
+    .in('invoice_id', invoiceIds.map(String));
+  if (errPagos || !pagos || pagos.length === 0) return {};
+
+  // 2. Para cada payment, traer el abono + plan
+  const abonoIds = [...new Set(pagos.map(p => p.plan_abono_id))];
+  const { data: abonos } = await supabase
+    .from('plan_abonos').select('*').in('id', abonoIds);
+  const abonosMap = {};
+  (abonos || []).forEach(a => { abonosMap[a.id] = a; });
+
+  const planIds = [...new Set((abonos || []).map(a => a.plan_id))];
+  const { data: planes } = await supabase
+    .from('planes_pago').select('*').in('id', planIds);
+  const planesMap = {};
+  (planes || []).forEach(p => { planesMap[p.id] = p; });
+
+  // 3. Para cada plan, traer la cantidad total de abonos
+  const totalAbonosPorPlan = {};
+  for (const planId of planIds) {
+    const { count } = await supabase
+      .from('plan_abonos').select('*', { count: 'exact', head: true }).eq('plan_id', planId);
+    totalAbonosPorPlan[planId] = count || 0;
+  }
+
+  // 4. Para cada plan, calcular el restante: total - sum(monto_pagado de abonos pagados/parciales)
+  const restantePorPlan = {};
+  for (const planId of planIds) {
+    const plan = planesMap[planId];
+    if (!plan) continue;
+    const { data: abonosPlan } = await supabase
+      .from('plan_abonos').select('estado, monto_pagado, monto_programado').eq('plan_id', planId);
+    const pagado = (abonosPlan || [])
+      .filter(a => a.estado === 'pagado' || a.estado === 'parcial')
+      .reduce((s, a) => s + (+a.monto_pagado || +a.monto_programado || 0), 0);
+    restantePorPlan[planId] = Math.max(0, (+plan.monto_total || 0) - pagado);
+  }
+
+  // 5. Construir el mapa de resultado
+  const resultado = {};
+  for (const p of pagos) {
+    const abono = abonosMap[p.plan_abono_id];
+    if (!abono) continue;
+    const plan = planesMap[abono.plan_id];
+    if (!plan) continue;
+    const invId = String(p.invoice_id);
+    // Si ya hay info de plan para este invoice (caso raro: varios payments mismo día), conservar el primero
+    if (resultado[invId]) {
+      resultado[invId].montoAplicadoHoy += (+p.monto || 0);
+      continue;
+    }
+    resultado[invId] = {
+      planId: plan.id,
+      planProveedor: plan.proveedor,
+      planFrecuencia: plan.frecuencia,
+      planRestante: restantePorPlan[plan.id] || 0,
+      planMoneda: plan.moneda,
+      fechaLiquidacion: plan.fecha_liquidacion_estimada,
+      abonoId: abono.id,
+      numeroAbono: abono.numero,
+      totalAbonos: totalAbonosPorPlan[plan.id] || 0,
+      estadoAbono: abono.estado,
+      montoAplicadoHoy: +p.monto || 0,
+      notaPlan: p.notas,
+    };
   }
   return resultado;
 }

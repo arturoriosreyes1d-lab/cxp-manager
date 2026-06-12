@@ -26,6 +26,7 @@ import {
   fetchAbonosPorPlan, fetchAbonosPorEmpresa, upsertAbono, deleteAbono, bulkInsertAbonos,
   marcarAbonoPagado, desmarcarAbonoPagado, reagendarAbonosSiguientes,
   calcularRitmoSemanal,
+  fetchInvoiceDetallesPorIds,
 } from './db.js';
 
 // ─── Paleta y constantes ─────────────────────────────────────────
@@ -1749,31 +1750,87 @@ function AgregarAbonoModal({ plan, user, onClose, onDone }) {
 function MarcarPagoModal({ abono, plan, user, onClose, onDone }) {
   const [fechaPagado, setFechaPagado] = useState(today());
   const [montoPagado, setMontoPagado] = useState(String(abono.montoProgramado || ''));
-  const [facturaSel, setFacturaSel] = useState('');
   const [notas, setNotas] = useState('');
   const [ajusteOpcion, setAjusteOpcion] = useState(''); // 'reagendar', 'sumar', 'nota'
+  const [proyectarEnCxp, setProyectarEnCxp] = useState(true); // default true según decisión
   const [guardando, setGuardando] = useState(false);
 
-  // Facturas del plan con saldo restante > 0
-  const facturasDisponibles = useMemo(() => {
-    return (plan.facturas || []).map(f => {
-      const saldo = Math.max(0, (+f.montoInicial || 0) - (+f.montoAplicado || 0));
-      return { ...f, saldo };
-    }).filter(f => f.saldo > 0.01);
-  }, [plan]);
+  // Detalles enriquecidos de las facturas del plan (con folio, fecha)
+  const [detallesFacturas, setDetallesFacturas] = useState({});
+  // Distribución del pago: { invoiceId: monto a aplicar }
+  const [distribucion, setDistribucion] = useState({});
 
-  // Inicializar factura seleccionada con la más vieja (primera con saldo)
+  // Cargar detalles de las facturas (folio, fecha)
   useEffect(() => {
-    if (!facturaSel && facturasDisponibles.length > 0) {
-      setFacturaSel(facturasDisponibles[0].invoiceId);
-    }
-  }, [facturasDisponibles, facturaSel]);
+    (async () => {
+      const ids = (plan.facturas || []).map(f => f.invoiceId);
+      if (ids.length === 0) return;
+      const mapa = await fetchInvoiceDetallesPorIds(ids);
+      setDetallesFacturas(mapa);
+    })();
+  }, [plan.facturas]);
+
+  // Facturas del plan, ordenadas por fecha (más antigua primero) con saldo calculado
+  const facturasOrdenadas = useMemo(() => {
+    return (plan.facturas || []).map(f => {
+      const det = detallesFacturas[String(f.invoiceId)] || {};
+      const saldo = Math.max(0, (+f.montoInicial || 0) - (+f.montoAplicado || 0));
+      return {
+        ...f,
+        folio: det.folio || String(f.invoiceId).substring(0, 12),
+        fecha: det.fecha || null,
+        saldo,
+      };
+    }).sort((a, b) => {
+      // Orden: por fecha ascendente; sin fecha al final
+      if (!a.fecha && !b.fecha) return 0;
+      if (!a.fecha) return 1;
+      if (!b.fecha) return -1;
+      return a.fecha.localeCompare(b.fecha);
+    });
+  }, [plan.facturas, detallesFacturas]);
 
   const monto = parseFloat(montoPagado) || 0;
   const diferencia = monto - +abono.montoProgramado;
   const hayDiferencia = Math.abs(diferencia) > 0.01;
   const esMenor = diferencia < -0.01;
   const esMayor = diferencia > 0.01;
+
+  // Suma de la distribución actual
+  const sumaDistribuida = useMemo(() => {
+    return Object.values(distribucion).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+  }, [distribucion]);
+  const restanteParaDistribuir = monto - sumaDistribuida;
+  const distribucionValida = Math.abs(restanteParaDistribuir) < 0.01 && sumaDistribuida > 0;
+
+  // Auto-distribuir: rellenar facturas más antiguas primero hasta consumir el monto
+  const autoDistribuir = () => {
+    const nuevo = {};
+    let restante = monto;
+    for (const f of facturasOrdenadas) {
+      if (f.saldo < 0.01) continue;
+      if (restante < 0.01) break;
+      const aplicar = Math.min(restante, f.saldo);
+      nuevo[f.invoiceId] = aplicar.toFixed(2);
+      restante -= aplicar;
+    }
+    setDistribucion(nuevo);
+  };
+
+  const limpiarDistribucion = () => setDistribucion({});
+
+  // Auto-distribuir al abrir si hay facturas y aún no se ha distribuido
+  useEffect(() => {
+    if (facturasOrdenadas.length > 0 && Object.keys(distribucion).length === 0 && monto > 0) {
+      autoDistribuir();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [facturasOrdenadas, monto]);
+
+  const editarDistribucion = (invoiceId, valor) => {
+    const limpio = valor.replace(/[^\d.]/g, '');
+    setDistribucion({ ...distribucion, [invoiceId]: limpio });
+  };
 
   const handleGuardar = async () => {
     if (guardando) return;
@@ -1782,26 +1839,38 @@ function MarcarPagoModal({ abono, plan, user, onClose, onDone }) {
       alert('Selecciona qué hacer con la diferencia');
       return;
     }
+    // Si hay facturas en el plan, exigir distribución válida
+    const hayFacturasConSaldo = facturasOrdenadas.some(f => f.saldo > 0.01);
+    if (hayFacturasConSaldo && !distribucionValida) {
+      alert(`La distribución debe sumar exactamente $${fmt(monto)} (faltan/sobran $${fmt(Math.abs(restanteParaDistribuir))})`);
+      return;
+    }
     setGuardando(true);
     try {
-      // Determinar estado: 'pagado' si monto >= programado, 'parcial' si menor
       const estado = monto >= +abono.montoProgramado - 0.01 ? 'pagado' : 'parcial';
 
-      // 1. Marcar el abono actual
+      // Construir array de aplicaciones
+      const aplicaciones = Object.entries(distribucion)
+        .map(([invoiceId, montoStr]) => ({ invoiceId, monto: parseFloat(montoStr) || 0 }))
+        .filter(ap => ap.monto > 0);
+
+      // 1. Marcar el abono con aplicaciones + opcionalmente proyectar
       await marcarAbonoPagado(abono.id, {
         fechaPagado,
         montoPagado: monto,
-        facturaIdAplicada: facturaSel || null,
+        aplicaciones,
         notas: notas || null,
         estado,
+        proyectarEnCxp,
+        numeroAbono: abono.numero,
+        totalAbonos: (plan.abonos || []).length,
+        planProveedor: plan.proveedor,
       }, user?.nombre);
 
-      // 2. Manejar la diferencia según opción
+      // 2. Manejar la diferencia según opción (mantengo lógica existente)
       if (hayDiferencia && ajusteOpcion === 'reagendar') {
-        // Crear un nuevo abono al final del plan con la diferencia
         const abonosOrdenados = [...plan.abonos].sort((a, b) => a.numero - b.numero);
         const ultimo = abonosOrdenados[abonosOrdenados.length - 1];
-        // Calcular siguiente fecha (mismo intervalo desde el último)
         let nuevaFecha;
         if (plan.frecuencia === 'semanal') {
           const d = new Date(ultimo.fechaProgramada + 'T12:00:00');
@@ -1827,13 +1896,10 @@ function MarcarPagoModal({ abono, plan, user, onClose, onDone }) {
           notas: esMenor ? `Diferencia del abono #${abono.numero} (faltante)` : `Excedente reagendado del abono #${abono.numero}`,
         }, user?.nombre);
       } else if (hayDiferencia && ajusteOpcion === 'sumar') {
-        // Sumar al próximo abono pendiente
         const abonosOrdenados = [...plan.abonos].sort((a, b) => a.numero - b.numero);
         const idx = abonosOrdenados.findIndex(a => a.id === abono.id);
         const proximoPendiente = abonosOrdenados.slice(idx + 1).find(a => a.estado === 'pendiente' || a.estado === 'atrasado');
         if (proximoPendiente) {
-          // Si faltó dinero (esMenor) → próximo paga más (suma)
-          // Si sobró dinero (esMayor) → próximo paga menos (resta)
           const nuevoMonto = +proximoPendiente.montoProgramado + (esMenor ? Math.abs(diferencia) : -diferencia);
           await upsertAbono({
             ...proximoPendiente,
@@ -1841,7 +1907,6 @@ function MarcarPagoModal({ abono, plan, user, onClose, onDone }) {
           }, user?.nombre);
         }
       } else if (hayDiferencia && ajusteOpcion === 'acortar' && esMayor) {
-        // Sobrepago: acortar el plan - eliminar el último abono pendiente
         const abonosOrdenados = [...plan.abonos].sort((a, b) => b.numero - a.numero);
         const ultimoPendiente = abonosOrdenados.find(a => a.estado === 'pendiente' || a.estado === 'atrasado');
         if (ultimoPendiente) {
@@ -1853,7 +1918,6 @@ function MarcarPagoModal({ abono, plan, user, onClose, onDone }) {
           }
         }
       }
-      // 'nota' no requiere acción adicional, solo se guarda como informativo
 
       await onDone();
     } catch (err) {
@@ -1864,43 +1928,150 @@ function MarcarPagoModal({ abono, plan, user, onClose, onDone }) {
     }
   };
 
+  const totalAbonos = (plan.abonos || []).length;
+
   return (
-    <ModalShell onClose={onClose} maxWidth={520}>
+    <ModalShell onClose={onClose} maxWidth={760} maxHeight="92vh">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
         <div>
           <h3 style={{ fontSize: 16, fontWeight: 800, color: C.navy, margin: 0 }}>✓ Marcar abono pagado</h3>
           <p style={{ fontSize: 12, color: C.muted, margin: '4px 0 0' }}>
-            Abono #{abono.numero} · {fmtDateLabel(abono.fechaProgramada)} · programado ${fmt(abono.montoProgramado)} {plan.moneda}
+            Abono #{abono.numero} de {totalAbonos} · {fmtDateLabel(abono.fechaProgramada)} · programado ${fmt(abono.montoProgramado)} {plan.moneda} · {plan.proveedor}
           </p>
         </div>
         <button onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: 20, color: C.muted, cursor: 'pointer', padding: 0 }}>×</button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
         <div>
           <Label>Fecha real del pago</Label>
           <input type="date" value={fechaPagado} onChange={e => setFechaPagado(e.target.value)} style={inputStyle()}/>
         </div>
         <div>
           <Label>Monto pagado ({plan.moneda})</Label>
-          <input value={montoPagado} onChange={e => setMontoPagado(e.target.value.replace(/[^\d.]/g, ''))} style={{ ...inputStyle(), fontFamily: MONO }}/>
+          <input value={montoPagado} onChange={e => {
+            setMontoPagado(e.target.value.replace(/[^\d.]/g, ''));
+            // Cuando cambia el monto, limpiamos la distribución para que se re-calcule
+            setDistribucion({});
+          }} style={{ ...inputStyle(), fontVariantNumeric: 'tabular-nums' }}/>
         </div>
       </div>
 
-      <div style={{ marginBottom: 10 }}>
-        <Label>Aplicar a factura</Label>
-        {facturasDisponibles.length === 0 ? (
-          <div style={{ padding: '8px 10px', background: C.bgSoft, borderRadius: 6, fontSize: 12, color: C.muted }}>
-            Todas las facturas del plan ya están aplicadas.
+      {/* Tabla de distribución a facturas */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+          <Label>Distribuir entre facturas del plan</Label>
+          <span style={{ fontSize: 10, color: C.muted }}>Ordenadas de la más antigua a la más reciente</span>
+        </div>
+        <div style={{ border: `1px solid ${C.border}`, borderRadius: 6, overflow: 'hidden' }}>
+          <div style={{
+            display: 'grid', gridTemplateColumns: '24px 1fr 90px 90px 100px 120px',
+            padding: '8px 10px', background: C.bgSoft, borderBottom: `1px solid ${C.border}`,
+            fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: 0.4, gap: 8,
+          }}>
+            <div></div>
+            <div>FOLIO · FECHA</div>
+            <div style={{ textAlign: 'right' }}>TOTAL</div>
+            <div style={{ textAlign: 'right' }}>APLICADO</div>
+            <div style={{ textAlign: 'right' }}>SALDO</div>
+            <div style={{ textAlign: 'right' }}>APLICAR AHORA</div>
           </div>
-        ) : (
-          <select value={facturaSel} onChange={e => setFacturaSel(e.target.value)} style={selectStyle()}>
-            {facturasDisponibles.map(f => (
-              <option key={f.id} value={f.invoiceId}>
-                {f.invoiceId.substring(0, 12)}… · saldo ${fmt(f.saldo)}
-              </option>
-            ))}
-          </select>
+          <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+            {facturasOrdenadas.length === 0 && (
+              <div style={{ padding: 20, textAlign: 'center', color: C.muted, fontSize: 12 }}>Sin facturas en el plan.</div>
+            )}
+            {facturasOrdenadas.map(f => {
+              const aplicarAhora = parseFloat(distribucion[f.invoiceId] || 0) || 0;
+              const tieneSaldo = f.saldo > 0.01;
+              const seleccionado = aplicarAhora > 0;
+              return (
+                <div key={f.invoiceId} style={{
+                  display: 'grid', gridTemplateColumns: '24px 1fr 90px 90px 100px 120px',
+                  padding: '8px 10px', alignItems: 'center', gap: 8,
+                  borderBottom: `1px solid ${C.bgSoft}`,
+                  background: !tieneSaldo ? C.bgSoft : (seleccionado ? '#F0FDFA' : 'transparent'),
+                  opacity: tieneSaldo ? 1 : 0.6,
+                }}>
+                  <input type="checkbox" disabled={!tieneSaldo} checked={seleccionado}
+                    onChange={e => {
+                      if (e.target.checked) {
+                        // Activar con todo el saldo o lo restante
+                        const aAplicar = Math.min(f.saldo, Math.max(0, restanteParaDistribuir + aplicarAhora));
+                        editarDistribucion(f.invoiceId, aAplicar > 0 ? aAplicar.toFixed(2) : '');
+                      } else {
+                        // Desactivar
+                        const nuevo = { ...distribucion };
+                        delete nuevo[f.invoiceId];
+                        setDistribucion(nuevo);
+                      }
+                    }}
+                    style={{ cursor: tieneSaldo ? 'pointer' : 'not-allowed' }}/>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.folio}</div>
+                    <div style={{ fontSize: 10, color: C.muted }}>
+                      {f.fecha ? fmtDateLabel(f.fecha) : '—'}
+                      {!tieneSaldo && ' · ya pagada'}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right', fontSize: 12, color: C.text, fontVariantNumeric: 'tabular-nums' }}>${fmt(f.montoInicial)}</div>
+                  <div style={{ textAlign: 'right', fontSize: 12, color: f.montoAplicado > 0 ? C.green : C.muted, fontVariantNumeric: 'tabular-nums' }}>${fmt(f.montoAplicado)}</div>
+                  <div style={{ textAlign: 'right', fontSize: 12, color: C.text, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>${fmt(f.saldo)}</div>
+                  <div style={{ textAlign: 'right' }}>
+                    {tieneSaldo ? (
+                      <input value={distribucion[f.invoiceId] || ''}
+                        onChange={e => editarDistribucion(f.invoiceId, e.target.value)}
+                        placeholder="0.00"
+                        style={{
+                          width: '100%',
+                          padding: '4px 8px',
+                          border: `${seleccionado ? '1.5' : '1'}px solid ${seleccionado ? '#0F766E' : C.border}`,
+                          background: seleccionado ? '#ECFDF5' : '#fff',
+                          borderRadius: 4, fontSize: 12, textAlign: 'right',
+                          fontVariantNumeric: 'tabular-nums', boxSizing: 'border-box',
+                          fontFamily: 'inherit',
+                        }}/>
+                    ) : (
+                      <span style={{ fontSize: 11, color: C.muted, paddingRight: 6 }}>—</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {/* Footer indicador */}
+          {facturasOrdenadas.length > 0 && (() => {
+            const ok = distribucionValida;
+            const bg = ok ? '#DCFCE7' : (sumaDistribuida === 0 ? C.bgSoft : '#FEE2E2');
+            const borderTop = ok ? '1px solid #16A34A' : (sumaDistribuida === 0 ? `1px solid ${C.border}` : '1px solid #DC2626');
+            const color = ok ? '#166534' : (sumaDistribuida === 0 ? C.muted : '#991B1B');
+            return (
+              <div style={{
+                padding: '8px 10px', background: bg, borderTop,
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              }}>
+                <div style={{ fontSize: 11, color, fontWeight: 600 }}>
+                  {ok ? '✓ Total distribuido' : (sumaDistribuida === 0
+                    ? 'Distribuye el monto entre las facturas para continuar'
+                    : (restanteParaDistribuir > 0 ? `⚠ Falta $${fmt(restanteParaDistribuir)}` : `⚠ Exceso $${fmt(Math.abs(restanteParaDistribuir))}`))}
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color, fontVariantNumeric: 'tabular-nums' }}>
+                  ${fmt(sumaDistribuida)} / ${fmt(monto)} {plan.moneda}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+        {facturasOrdenadas.length > 0 && (
+          <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>
+            <button onClick={autoDistribuir}
+              style={{ background: 'transparent', border: `1px dashed ${C.blue}`, color: C.blue, padding: '4px 10px', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+              ↺ Auto-distribuir (antiguas primero)
+            </button>
+            <button onClick={limpiarDistribucion}
+              style={{ background: 'transparent', border: `1px dashed ${C.muted}`, color: C.muted, padding: '4px 10px', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+              Limpiar todo
+            </button>
+          </div>
         )}
       </div>
 
@@ -1935,8 +2106,25 @@ function MarcarPagoModal({ abono, plan, user, onClose, onDone }) {
         </div>
       )}
 
+      {/* Proyectar en CxP */}
+      <div style={{
+        background: C.blueSoft, border: `1px solid ${C.blue}`, borderRadius: 8,
+        padding: '12px 14px', marginBottom: 12,
+      }}>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+          <input type="checkbox" checked={proyectarEnCxp} onChange={e => setProyectarEnCxp(e.target.checked)}
+            style={{ marginTop: 2, cursor: 'pointer', width: 16, height: 16 }}/>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.blueText }}>📅 Proyectar también en Proyección de Pagos</div>
+            <div style={{ fontSize: 11, color: C.blueText, marginTop: 4, lineHeight: 1.5 }}>
+              Crea un pago "programado" en CxP con la nota <strong>"Plan de pagos · Pago {abono.numero} de {totalAbonos}"</strong>. Tu compañera podrá verlo en el módulo de Proyección por día y mandar captura como comprobante.
+            </div>
+          </div>
+        </label>
+      </div>
+
       <div style={{ marginBottom: 14 }}>
-        <Label>Notas (opcional)</Label>
+        <Label>Notas adicionales (opcional)</Label>
         <input value={notas} onChange={e => setNotas(e.target.value)} placeholder="Referencia bancaria, comentarios..." style={inputStyle()}/>
       </div>
 
