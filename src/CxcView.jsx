@@ -1479,7 +1479,7 @@ export default function CxcView({
   };
 
   /* ── Ingreso row in table ─────────────────────────────────────── */
-  const IngresoRow = ({ing, idx}) => {
+  const IngresoRow = ({ing, idx, mostrarCliente = true}) => {
     const m = metrics[ing.id] || {};
     const catStyle = getCatStyle(ing.categoria);
     const sym = monedaSym(ing.moneda);
@@ -1511,8 +1511,10 @@ export default function CxcView({
               }} placeholder="—" style={{padding:"3px 7px",fontSize:12,border:`1px solid ${C.border}`,borderRadius:6,width:70,fontFamily:"inherit",background:"#FAFBFC"}}/>
           }
         </td>
-        {/* Cliente */}
-        <td style={{padding:"10px 10px",fontWeight:700,color:C.navy,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.cliente}</td>
+        {/* Cliente — solo en vista plana (cuando NO estamos ya agrupados por cliente) */}
+        {mostrarCliente && (
+          <td style={{padding:"10px 10px",fontWeight:700,color:C.navy,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ing.cliente}</td>
+        )}
         {/* Folio */}
         <td style={{padding:"10px 8px",fontSize:13,color:C.blue,fontWeight:600,whiteSpace:"nowrap"}}>{ing.folio||"—"}</td>
         {/* Concepto */}
@@ -3158,7 +3160,7 @@ export default function CxcView({
                             const va=a[col]??"", vb=b[col]??"";
                             if(["total","montoPagado","porCobrar"].includes(col)) return ((+va||0)-(+vb||0))*dir;
                             return String(va).localeCompare(String(vb))*dir;
-                          }).map((ing,idx) => <IngresoRow key={ing.id} ing={ing} idx={idx}/>)}
+                          }).map((ing,idx) => <IngresoRow key={ing.id} ing={ing} idx={idx} mostrarCliente={false}/>)}
                         </tbody>
                       </table>
                     </div>
