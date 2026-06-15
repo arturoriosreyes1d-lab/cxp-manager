@@ -1,5 +1,7 @@
 import React, { useState, useMemo, useRef } from "react";
 import * as XLSX from "xlsx";
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
 import ExportarReporteCxC from "./ExportarReporteCxC";
 import { exportarPendientesFacturar } from "./ExportPorFacturar";
 import {
@@ -154,6 +156,14 @@ export default function CxcView({
   const porFacturarRef = useRef();
   // Conciliación: { excelRows: [...], fileName: 'x.xlsx' } o null cuando está cerrado
   const [conciliacionData, setConciliacionData] = useState(null);
+
+  // Estado de cuenta del cliente (modal de exportación) — flow:
+  //   null               → cerrado
+  //   { cliente, paso: 'modo' }     → paso 1: elegir todas/vencidas/manual
+  //   { cliente, paso: 'manual', seleccion: Set<ingresoId> } → paso 2: selección manual
+  //   { cliente, paso: 'preview', ingresos: [...] }          → paso 3: vista previa + exportar
+  const [estadoCuentaModal, setEstadoCuentaModal] = useState(null);
+  const estadoCuentaRef = useRef(); // ref al div del reporte para capturar imagen/pdf
 
   /* ── Derived data ──────────────────────────────────────────── */
   const allInvoices = useMemo(() => [
@@ -3058,9 +3068,17 @@ export default function CxcView({
                             <span style={{fontSize:15,color:expanded?C.blue:C.muted,flexShrink:0,transition:"transform .2s",display:"inline-block",transform:expanded?"rotate(90deg)":"rotate(0deg)"}}>▶</span>
                             <div style={{minWidth:0}}>
                               <div style={{fontWeight:800,fontSize:14,color:C.navy,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{cliente}</div>
-                              <div style={{fontSize:11,color:C.blue,marginTop:1,cursor:"pointer",textDecoration:"underline",textDecorationStyle:"dotted"}}
-                                onClick={e=>{e.stopPropagation();setKpiModal({titulo:`${cliente} — Todas las facturas`,tipo:"_lista",moneda:null,ingresos:ings});}}>
-                                {ings.length} ingreso{ings.length!==1?"s":""}
+                              <div style={{display:"flex",alignItems:"center",gap:8,marginTop:2}}>
+                                <span style={{fontSize:11,color:C.blue,cursor:"pointer",textDecoration:"underline",textDecorationStyle:"dotted"}}
+                                  onClick={e=>{e.stopPropagation();setKpiModal({titulo:`${cliente} — Todas las facturas`,tipo:"_lista",moneda:null,ingresos:ings});}}>
+                                  {ings.length} ingreso{ings.length!==1?"s":""}
+                                </span>
+                                <span style={{color:"#CBD5E1"}}>·</span>
+                                <button onClick={e=>{e.stopPropagation();setEstadoCuentaModal({cliente,paso:"modo"});}}
+                                  title="Generar estado de cuenta para enviar al cliente"
+                                  style={{background:"#0F766E",border:"none",color:"#fff",padding:"3px 10px",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:4,whiteSpace:"nowrap"}}>
+                                  📧 Enviar estado de cuenta
+                                </button>
                               </div>
                             </div>
                           </>}
@@ -3181,9 +3199,17 @@ export default function CxcView({
                     <span style={{fontSize:16,color:expanded?C.blue:C.muted,transition:"transform .2s",display:"inline-block",transform:expanded?"rotate(90deg)":"rotate(0deg)"}}>▶</span>
                     <div>
                       <div style={{fontWeight:800,fontSize:15,color:C.navy}}>{cliente}</div>
-                      <div style={{fontSize:12,color:C.blue,marginTop:2,cursor:"pointer",textDecoration:"underline",textDecorationStyle:"dotted"}}
-                        onClick={e=>{e.stopPropagation();setKpiModal({titulo:`${cliente} — Todas las facturas`,tipo:"_lista",moneda:null,ingresos:ings});}}>
-                        {ings.length} ingreso{ings.length!==1?"s":""}
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginTop:2}}>
+                        <span style={{fontSize:12,color:C.blue,cursor:"pointer",textDecoration:"underline",textDecorationStyle:"dotted"}}
+                          onClick={e=>{e.stopPropagation();setKpiModal({titulo:`${cliente} — Todas las facturas`,tipo:"_lista",moneda:null,ingresos:ings});}}>
+                          {ings.length} ingreso{ings.length!==1?"s":""}
+                        </span>
+                        <span style={{color:"#CBD5E1"}}>·</span>
+                        <button onClick={e=>{e.stopPropagation();setEstadoCuentaModal({cliente,paso:"modo"});}}
+                          title="Generar estado de cuenta para enviar al cliente"
+                          style={{background:"#0F766E",border:"none",color:"#fff",padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:4,whiteSpace:"nowrap"}}>
+                          📧 Enviar estado de cuenta
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -3415,6 +3441,396 @@ export default function CxcView({
       {/* ── Modals ── */}
       {modalIngreso && <IngresoModal/>}
       {detailIngreso && <DetailModal/>}
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          MODAL: Estado de cuenta para el cliente (3 pasos)
+          ═══════════════════════════════════════════════════════════════════ */}
+      {estadoCuentaModal && (() => {
+        const cliente = estadoCuentaModal.cliente;
+        // Ingresos del cliente con saldo > 0 (que tienen porCobrar)
+        const ingsCliente = ingresos.filter(i =>
+          i.cliente === cliente &&
+          !i.oculta &&
+          (metrics[i.id]?.porCobrar || 0) > 0
+        );
+        const ingsVencidas = ingsCliente.filter(i => {
+          const d = diasDiff(i.fechaVencimiento);
+          return d !== null && d < 0;
+        });
+        const totalCliente = ingsCliente.reduce((s, i) => s + (metrics[i.id]?.porCobrar || 0), 0);
+        const totalVencido = ingsVencidas.reduce((s, i) => s + (metrics[i.id]?.porCobrar || 0), 0);
+        const promedioVencidos = ingsVencidas.length > 0
+          ? Math.round(ingsVencidas.reduce((s, i) => s + Math.abs(diasDiff(i.fechaVencimiento) || 0), 0) / ingsVencidas.length)
+          : 0;
+        const monedasCliente = [...new Set(ingsCliente.map(i => i.moneda || "MXN"))];
+        const monedaPrincipal = monedasCliente[0] || "MXN";
+        const symPrincipal = monedaSym(monedaPrincipal);
+
+        // ── PASO 1: elegir modo ──
+        if (estadoCuentaModal.paso === "modo") {
+          const seleccionarModo = (modo) => {
+            if (modo === "todas") {
+              setEstadoCuentaModal({ cliente, paso: "preview", ingresos: ingsCliente });
+            } else if (modo === "vencidas") {
+              setEstadoCuentaModal({ cliente, paso: "preview", ingresos: ingsVencidas });
+            } else if (modo === "manual") {
+              setEstadoCuentaModal({
+                cliente, paso: "manual",
+                seleccion: new Set(ingsVencidas.map(i => i.id)),
+              });
+            }
+          };
+          return (
+            <ModalShell title="📧 Estado de cuenta — Cliente" onClose={() => setEstadoCuentaModal(null)}>
+              <div style={{ marginBottom: 14, padding: "10px 14px", background: "#F8FAFC", borderRadius: 8, fontSize: 12, color: C.muted }}>
+                <strong style={{ color: C.navy }}>{cliente}</strong> · {ingsCliente.length} factura{ingsCliente.length !== 1 ? "s" : ""} pendiente{ingsCliente.length !== 1 ? "s" : ""} · {symPrincipal}{fmt(totalCliente)} {monedaPrincipal}
+                {monedasCliente.length > 1 && <div style={{ marginTop: 4, fontSize: 11 }}>⚠ Tiene facturas en varias monedas. Se mostrarán todas en el mismo reporte.</div>}
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, color: C.muted, fontWeight: 700, marginBottom: 10, letterSpacing: 0.5 }}>¿QUÉ FACTURAS INCLUIR?</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <button onClick={() => seleccionarModo("todas")}
+                    style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", border: `2px solid ${C.blue}`, background: "#EFF6FF", borderRadius: 8, cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
+                    <span style={{ fontSize: 20 }}>📋</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: C.navy }}>Todas las facturas por cobrar</div>
+                      <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{ingsCliente.length} factura{ingsCliente.length !== 1 ? "s" : ""} · Total {symPrincipal}{fmt(totalCliente)} {monedaPrincipal}</div>
+                    </div>
+                  </button>
+                  <button onClick={() => seleccionarModo("vencidas")}
+                    disabled={ingsVencidas.length === 0}
+                    style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", border: `1px solid ${ingsVencidas.length > 0 ? C.border : "#F1F5F9"}`, background: ingsVencidas.length > 0 ? "#fff" : "#F8FAFC", borderRadius: 8, cursor: ingsVencidas.length > 0 ? "pointer" : "not-allowed", textAlign: "left", opacity: ingsVencidas.length > 0 ? 1 : 0.6, fontFamily: "inherit" }}>
+                    <span style={{ fontSize: 20 }}>⚠</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: C.navy }}>Solo vencidas</div>
+                      <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+                        {ingsVencidas.length === 0
+                          ? "No hay facturas vencidas para este cliente"
+                          : `${ingsVencidas.length} vencida${ingsVencidas.length !== 1 ? "s" : ""} · ${symPrincipal}${fmt(totalVencido)} ${monedaPrincipal} · promedio ${promedioVencidos} días`}
+                      </div>
+                    </div>
+                  </button>
+                  <button onClick={() => seleccionarModo("manual")}
+                    style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", border: `1px solid ${C.border}`, background: "#fff", borderRadius: 8, cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
+                    <span style={{ fontSize: 20 }}>✓</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: C.navy }}>Seleccionar manualmente</div>
+                      <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Elige una por una con checkboxes</div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ background: "#F0FDFA", border: "1px solid #CCFBF1", padding: "10px 12px", borderRadius: 6, fontSize: 11, color: "#134E4A" }}>
+                💡 <strong>Tip:</strong> Después de elegir verás una vista previa del reporte antes de generarlo. Podrás exportarlo como <strong>imagen, PDF o Excel</strong>.
+              </div>
+            </ModalShell>
+          );
+        }
+
+        // ── PASO 2: selección manual ──
+        if (estadoCuentaModal.paso === "manual") {
+          const seleccion = estadoCuentaModal.seleccion;
+          const toggleSel = (id) => {
+            const nuevo = new Set(seleccion);
+            if (nuevo.has(id)) nuevo.delete(id);
+            else nuevo.add(id);
+            setEstadoCuentaModal({ ...estadoCuentaModal, seleccion: nuevo });
+          };
+          const seleccionarTodas = () => setEstadoCuentaModal({ ...estadoCuentaModal, seleccion: new Set(ingsCliente.map(i => i.id)) });
+          const seleccionarVencidas = () => setEstadoCuentaModal({ ...estadoCuentaModal, seleccion: new Set(ingsVencidas.map(i => i.id)) });
+          const limpiar = () => setEstadoCuentaModal({ ...estadoCuentaModal, seleccion: new Set() });
+
+          const seleccionadas = ingsCliente.filter(i => seleccion.has(i.id));
+          const totalSel = seleccionadas.reduce((s, i) => s + (metrics[i.id]?.porCobrar || 0), 0);
+          const continuar = () => setEstadoCuentaModal({ cliente, paso: "preview", ingresos: seleccionadas });
+
+          const ingsOrdenadas = [...ingsCliente].sort((a, b) =>
+            (a.fechaVencimiento || "").localeCompare(b.fechaVencimiento || "")
+          );
+
+          return (
+            <ModalShell title="Selecciona las facturas a incluir" onClose={() => setEstadoCuentaModal(null)} wide>
+              <div style={{ marginBottom: 12, padding: "8px 12px", background: "#F8FAFC", borderRadius: 6, fontSize: 12, color: C.muted }}>
+                <strong style={{ color: C.navy }}>{cliente}</strong>
+              </div>
+
+              <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                <button onClick={seleccionarTodas}
+                  style={{ background: "transparent", border: `1px dashed ${C.blue}`, color: C.blue, padding: "4px 10px", borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>✓ Todas</button>
+                <button onClick={seleccionarVencidas} disabled={ingsVencidas.length === 0}
+                  style={{ background: "transparent", border: `1px dashed ${ingsVencidas.length > 0 ? C.danger : C.muted}`, color: ingsVencidas.length > 0 ? C.danger : C.muted, padding: "4px 10px", borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: ingsVencidas.length > 0 ? "pointer" : "not-allowed", fontFamily: "inherit" }}>⚠ Solo vencidas</button>
+                <button onClick={limpiar}
+                  style={{ background: "transparent", border: `1px dashed ${C.muted}`, color: C.muted, padding: "4px 10px", borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Limpiar</button>
+              </div>
+
+              <div style={{ border: `1px solid ${C.border}`, borderRadius: 6, overflow: "hidden", marginBottom: 12 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "30px 110px 100px 100px 1fr 80px 110px", padding: "8px 10px", background: "#F8FAFC", borderBottom: `1px solid ${C.border}`, fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: 0.4, gap: 8 }}>
+                  <div></div>
+                  <div>FOLIO</div>
+                  <div>FECHA FACT.</div>
+                  <div>VENCIMIENTO</div>
+                  <div>CONCEPTO</div>
+                  <div style={{ textAlign: "center" }}>DÍAS</div>
+                  <div style={{ textAlign: "right" }}>MONTO</div>
+                </div>
+                <div style={{ maxHeight: 360, overflowY: "auto" }}>
+                  {ingsOrdenadas.map(ing => {
+                    const d = diasDiff(ing.fechaVencimiento);
+                    const vencida = d !== null && d < 0;
+                    const sel = seleccion.has(ing.id);
+                    const m = metrics[ing.id] || {};
+                    return (
+                      <div key={ing.id}
+                        onClick={() => toggleSel(ing.id)}
+                        style={{
+                          display: "grid", gridTemplateColumns: "30px 110px 100px 100px 1fr 80px 110px",
+                          padding: "8px 10px", alignItems: "center", gap: 8,
+                          borderBottom: `1px solid ${C.border}`,
+                          background: sel
+                            ? (vencida ? "#FEF2F2" : "#F0FDFA")
+                            : (vencida ? "#FEF2F2" : "transparent"),
+                          cursor: "pointer",
+                        }}>
+                        <input type="checkbox" checked={sel} onChange={()=>toggleSel(ing.id)}
+                          onClick={e => e.stopPropagation()}
+                          style={{ accentColor: vencida ? C.danger : C.blue, cursor: "pointer" }}/>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: C.blue, fontVariantNumeric: "tabular-nums" }}>{ing.folio || "—"}</div>
+                        <div style={{ fontSize: 11, fontVariantNumeric: "tabular-nums" }}>{ing.fecha || "—"}</div>
+                        <div style={{ fontSize: 11, fontVariantNumeric: "tabular-nums", color: vencida ? C.danger : C.text, fontWeight: vencida ? 600 : 400 }}>{ing.fechaVencimiento || "—"}</div>
+                        <div style={{ fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={ing.concepto}>{ing.concepto || "—"}</div>
+                        <div style={{ textAlign: "center" }}>
+                          {d === null ? <span style={{ color: C.muted, fontSize: 10 }}>—</span>
+                            : d < 0
+                              ? <span style={{ background: "#FEE2E2", color: "#991B1B", fontWeight: 800, fontSize: 10, padding: "2px 6px", borderRadius: 20 }}>{Math.abs(d)}d</span>
+                              : <span style={{ background: d<=7?"#FFF3E0":d<=30?"#FFFDE7":"#E8F5E9", color: d<=7?"#E65100":d<=30?"#F59E0B":C.ok, fontWeight: 800, fontSize: 10, padding: "2px 6px", borderRadius: 20 }}>{d}d</span>
+                          }
+                        </div>
+                        <div style={{ textAlign: "right", fontSize: 12, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{monedaSym(ing.moneda)}{fmt(m.porCobrar || 0)}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{ padding: "10px 12px", background: seleccionadas.length > 0 ? "#DBEAFE" : "#F8FAFC", borderTop: `1px solid ${seleccionadas.length > 0 ? C.blue : C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: seleccionadas.length > 0 ? "#1E40AF" : C.muted }}>{seleccionadas.length} factura{seleccionadas.length !== 1 ? "s" : ""} seleccionada{seleccionadas.length !== 1 ? "s" : ""}</div>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: seleccionadas.length > 0 ? "#1E40AF" : C.muted, fontVariantNumeric: "tabular-nums" }}>{symPrincipal}{fmt(totalSel)} {monedaPrincipal}</div>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
+                <button onClick={() => setEstadoCuentaModal({ cliente, paso: "modo" })}
+                  style={{ background: "#fff", border: `1px solid ${C.border}`, padding: "8px 16px", borderRadius: 6, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>← Atrás</button>
+                <button onClick={continuar} disabled={seleccionadas.length === 0}
+                  style={{ background: seleccionadas.length > 0 ? C.blue : "#CBD5E1", color: "#fff", border: "none", padding: "8px 18px", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: seleccionadas.length > 0 ? "pointer" : "not-allowed", fontFamily: "inherit" }}>Vista previa →</button>
+              </div>
+            </ModalShell>
+          );
+        }
+
+        // ── PASO 3: vista previa + exportar ──
+        if (estadoCuentaModal.paso === "preview") {
+          const ingsReporte = estadoCuentaModal.ingresos || [];
+          const ingsOrdenadasRep = [...ingsReporte].sort((a, b) => {
+            const da = diasDiff(a.fechaVencimiento);
+            const db = diasDiff(b.fechaVencimiento);
+            const aVenc = da !== null && da < 0;
+            const bVenc = db !== null && db < 0;
+            if (aVenc && !bVenc) return -1;
+            if (!aVenc && bVenc) return 1;
+            return (a.fechaVencimiento || "").localeCompare(b.fechaVencimiento || "");
+          });
+          const vencidasRep = ingsOrdenadasRep.filter(i => { const d = diasDiff(i.fechaVencimiento); return d !== null && d < 0; });
+          const totalVencidoRep = vencidasRep.reduce((s, i) => s + (metrics[i.id]?.porCobrar || 0), 0);
+          const promedioVencRep = vencidasRep.length > 0
+            ? Math.round(vencidasRep.reduce((s, i) => s + Math.abs(diasDiff(i.fechaVencimiento) || 0), 0) / vencidasRep.length)
+            : 0;
+          const totalReporte = ingsOrdenadasRep.reduce((s, i) => s + (metrics[i.id]?.porCobrar || 0), 0);
+          const fechaCorte = new Date().toLocaleDateString("es-MX", { day: "2-digit", month: "long", year: "numeric" });
+          const hayVencidas = vencidasRep.length > 0;
+          const filenameBase = `Estado_de_Cuenta_${cliente.replace(/[^a-z0-9]/gi, "_")}_${new Date().toISOString().slice(0, 10)}`;
+
+          const copiarImagen = async () => {
+            if (!estadoCuentaRef.current) return;
+            try {
+              const canvas = await html2canvas(estadoCuentaRef.current, { backgroundColor: "#fff", scale: 2 });
+              canvas.toBlob(async (blob) => {
+                try {
+                  await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+                  alert("✓ Imagen copiada al portapapeles. Pégala en WhatsApp o donde necesites.");
+                } catch (err) {
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url; a.download = `${filenameBase}.png`; a.click();
+                  URL.revokeObjectURL(url);
+                }
+              });
+            } catch (err) {
+              console.error("Error copiar imagen:", err);
+              alert("Error al generar imagen. Revisa la consola.");
+            }
+          };
+
+          const exportarPDF = async () => {
+            if (!estadoCuentaRef.current) return;
+            try {
+              const canvas = await html2canvas(estadoCuentaRef.current, { backgroundColor: "#fff", scale: 2 });
+              const imgData = canvas.toDataURL("image/png");
+              const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+              const pdfW = pdf.internal.pageSize.getWidth();
+              const pdfH = pdf.internal.pageSize.getHeight();
+              const imgW = pdfW - 20;
+              const imgH = (canvas.height * imgW) / canvas.width;
+              if (imgH < pdfH - 20) {
+                pdf.addImage(imgData, "PNG", 10, 10, imgW, imgH);
+              } else {
+                const scaleH = (pdfH - 20) / imgH;
+                pdf.addImage(imgData, "PNG", 10, 10, imgW * scaleH, imgH * scaleH);
+              }
+              pdf.save(`${filenameBase}.pdf`);
+            } catch (err) {
+              console.error("Error PDF:", err);
+              alert("Error al generar PDF. Revisa la consola.");
+            }
+          };
+
+          const exportarExcel = () => {
+            try {
+              const wb = XLSX.utils.book_new();
+              const resumen = [
+                ["ESTADO DE CUENTA"],
+                [cliente],
+                [`Fecha de corte: ${fechaCorte}`],
+                [],
+              ];
+              if (hayVencidas) {
+                resumen.push(
+                  ["RESUMEN DE VENCIMIENTOS"],
+                  ["Total vencido", `${monedaSym(monedaPrincipal)}${fmt(totalVencidoRep)} ${monedaPrincipal}`],
+                  ["Facturas vencidas", `${vencidasRep.length} de ${ingsOrdenadasRep.length} totales`],
+                  ["Promedio atraso", `${promedioVencRep} días`],
+                  [],
+                );
+              }
+              resumen.push(["FOLIO", "FECHA FACT.", "VENCIMIENTO", "CONCEPTO", "DÍAS VENC.", "MONTO"]);
+              ingsOrdenadasRep.forEach(ing => {
+                const d = diasDiff(ing.fechaVencimiento);
+                const dStr = d === null ? "—" : d < 0 ? `${Math.abs(d)}d vencido` : `${d}d por vencer`;
+                const m = metrics[ing.id] || {};
+                resumen.push([
+                  ing.folio || "—",
+                  ing.fecha || "—",
+                  ing.fechaVencimiento || "—",
+                  ing.concepto || "—",
+                  dStr,
+                  +(m.porCobrar || 0).toFixed(2),
+                ]);
+              });
+              resumen.push([]);
+              resumen.push(["TOTAL POR COBRAR", "", "", "", "", +totalReporte.toFixed(2)]);
+              const ws = XLSX.utils.aoa_to_sheet(resumen);
+              ws["!cols"] = [{ wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 40 }, { wch: 16 }, { wch: 14 }];
+              XLSX.utils.book_append_sheet(wb, ws, "Estado de Cuenta");
+              XLSX.writeFile(wb, `${filenameBase}.xlsx`);
+            } catch (err) {
+              console.error("Error Excel:", err);
+              alert("Error al generar Excel. Revisa la consola.");
+            }
+          };
+
+          return (
+            <ModalShell title="Vista previa del estado de cuenta" onClose={() => setEstadoCuentaModal(null)} extraWide>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, paddingBottom: 10, borderBottom: `1px solid ${C.border}` }}>
+                <button onClick={() => setEstadoCuentaModal({ cliente, paso: "modo" })}
+                  style={{ background: "transparent", border: `1px solid ${C.border}`, padding: "6px 12px", borderRadius: 6, fontSize: 12, cursor: "pointer", fontFamily: "inherit", color: C.muted }}>← Cambiar selección</button>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={copiarImagen}
+                    style={{ background: "#16A34A", color: "#fff", border: "none", padding: "8px 14px", borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>📸 Copiar imagen</button>
+                  <button onClick={exportarPDF}
+                    style={{ background: "#DC2626", color: "#fff", border: "none", padding: "8px 14px", borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>📄 PDF</button>
+                  <button onClick={exportarExcel}
+                    style={{ background: "#166534", color: "#fff", border: "none", padding: "8px 14px", borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>📊 Excel</button>
+                </div>
+              </div>
+
+              <div ref={estadoCuentaRef} style={{ background: "#fff", padding: 28, fontFamily: "'DM Sans','Segoe UI',sans-serif" }}>
+                <div style={{ textAlign: "center", paddingBottom: 14, borderBottom: `2px solid ${C.navy}`, marginBottom: 18 }}>
+                  <div style={{ fontSize: 11, color: C.muted, letterSpacing: 1.5, fontWeight: 700 }}>ESTADO DE CUENTA</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: C.navy, marginTop: 6 }}>{cliente}</div>
+                  <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>Fecha de corte: {fechaCorte}</div>
+                </div>
+
+                {hayVencidas && (
+                  <div style={{ background: "#FEF2F2", border: "1px solid #DC2626", borderRadius: 8, padding: "14px 18px", marginBottom: 18, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+                    <div>
+                      <div style={{ fontSize: 10, color: "#991B1B", fontWeight: 700, letterSpacing: 0.5 }}>TOTAL VENCIDO</div>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: "#DC2626", marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{monedaSym(monedaPrincipal)}{fmt(totalVencidoRep)}</div>
+                      <div style={{ fontSize: 10, color: "#991B1B", marginTop: 1 }}>{monedaPrincipal}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, color: "#991B1B", fontWeight: 700, letterSpacing: 0.5 }}>FACTURAS VENCIDAS</div>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: "#DC2626", marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{vencidasRep.length}</div>
+                      <div style={{ fontSize: 10, color: "#991B1B", marginTop: 1 }}>de {ingsOrdenadasRep.length} totales</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, color: "#991B1B", fontWeight: 700, letterSpacing: 0.5 }}>PROMEDIO ATRASO</div>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: "#DC2626", marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{promedioVencRep} días</div>
+                      <div style={{ fontSize: 10, color: "#991B1B", marginTop: 1 }}>vencidos</div>
+                    </div>
+                  </div>
+                )}
+
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginBottom: 16 }}>
+                  <thead>
+                    <tr style={{ background: C.navy, color: "#fff" }}>
+                      <th style={{ textAlign: "left", padding: "10px 12px", fontSize: 10, fontWeight: 700, letterSpacing: 0.5 }}>FOLIO</th>
+                      <th style={{ textAlign: "left", padding: "10px 12px", fontSize: 10, fontWeight: 700, letterSpacing: 0.5 }}>FECHA FACT.</th>
+                      <th style={{ textAlign: "left", padding: "10px 12px", fontSize: 10, fontWeight: 700, letterSpacing: 0.5 }}>VENCIMIENTO</th>
+                      <th style={{ textAlign: "left", padding: "10px 12px", fontSize: 10, fontWeight: 700, letterSpacing: 0.5 }}>CONCEPTO</th>
+                      <th style={{ textAlign: "center", padding: "10px 12px", fontSize: 10, fontWeight: 700, letterSpacing: 0.5 }}>DÍAS VENC.</th>
+                      <th style={{ textAlign: "right", padding: "10px 12px", fontSize: 10, fontWeight: 700, letterSpacing: 0.5 }}>MONTO</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ingsOrdenadasRep.map(ing => {
+                      const d = diasDiff(ing.fechaVencimiento);
+                      const vencida = d !== null && d < 0;
+                      const m = metrics[ing.id] || {};
+                      return (
+                        <tr key={ing.id} style={{ background: vencida ? "#FEF2F2" : "transparent", borderBottom: `1px solid ${vencida ? "#FEE2E2" : C.border}` }}>
+                          <td style={{ padding: "10px 12px", fontWeight: 700, color: vencida ? "#DC2626" : C.navy, fontVariantNumeric: "tabular-nums" }}>{ing.folio || "—"}</td>
+                          <td style={{ padding: "10px 12px", fontVariantNumeric: "tabular-nums" }}>{ing.fecha || "—"}</td>
+                          <td style={{ padding: "10px 12px", color: vencida ? "#DC2626" : C.text, fontWeight: vencida ? 700 : 400, fontVariantNumeric: "tabular-nums" }}>{ing.fechaVencimiento || "—"}</td>
+                          <td style={{ padding: "10px 12px" }}>{ing.concepto || "—"}</td>
+                          <td style={{ textAlign: "center", padding: "10px 12px" }}>
+                            {d === null ? <span style={{ color: C.muted, fontSize: 10 }}>—</span>
+                              : d < 0
+                                ? <span style={{ background: "#DC2626", color: "#fff", fontWeight: 800, fontSize: 10, padding: "3px 8px", borderRadius: 4 }}>{Math.abs(d)}d</span>
+                                : <span style={{ background: d<=7?"#FFF3E0":d<=30?"#FFFDE7":"#E8F5E9", color: d<=7?"#E65100":d<=30?"#F59E0B":C.ok, fontWeight: 800, fontSize: 10, padding: "3px 8px", borderRadius: 4 }}>{d}d por vencer</span>
+                            }
+                          </td>
+                          <td style={{ textAlign: "right", padding: "10px 12px", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{monedaSym(ing.moneda)}{fmt(m.porCobrar || 0)}</td>
+                        </tr>
+                      );
+                    })}
+                    <tr style={{ background: "#DBEAFE", borderTop: `2px solid ${C.navy}` }}>
+                      <td colSpan={5} style={{ padding: "14px 12px", fontWeight: 800, color: C.navy, fontSize: 13 }}>TOTAL POR COBRAR</td>
+                      <td style={{ textAlign: "right", padding: "14px 12px", fontWeight: 800, color: C.navy, fontSize: 16, fontVariantNumeric: "tabular-nums" }}>{monedaSym(monedaPrincipal)}{fmt(totalReporte)} {monedaPrincipal}</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <div style={{ background: "#F8FAFC", padding: "10px 14px", borderRadius: 6, fontSize: 10, color: C.muted, textAlign: "center", lineHeight: 1.5 }}>
+                  Por favor revise el estado de su cuenta. Para aclaraciones o concertar el pago contáctenos.<br/>
+                  <strong style={{ color: C.navy }}>TravelAirSolutions</strong> · Reporte generado el {fechaCorte}
+                </div>
+              </div>
+            </ModalShell>
+          );
+        }
+
+        return null;
+      })()}
 
       {/* Delete confirm */}
       {deleteConfirm && (
