@@ -3068,17 +3068,9 @@ export default function CxcView({
                             <span style={{fontSize:15,color:expanded?C.blue:C.muted,flexShrink:0,transition:"transform .2s",display:"inline-block",transform:expanded?"rotate(90deg)":"rotate(0deg)"}}>▶</span>
                             <div style={{minWidth:0}}>
                               <div style={{fontWeight:800,fontSize:14,color:C.navy,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{cliente}</div>
-                              <div style={{display:"flex",alignItems:"center",gap:8,marginTop:2}}>
-                                <span style={{fontSize:11,color:C.blue,cursor:"pointer",textDecoration:"underline",textDecorationStyle:"dotted"}}
-                                  onClick={e=>{e.stopPropagation();setKpiModal({titulo:`${cliente} — Todas las facturas`,tipo:"_lista",moneda:null,ingresos:ings});}}>
-                                  {ings.length} ingreso{ings.length!==1?"s":""}
-                                </span>
-                                <span style={{color:"#CBD5E1"}}>·</span>
-                                <button onClick={e=>{e.stopPropagation();setEstadoCuentaModal({cliente,paso:"modo"});}}
-                                  title="Generar estado de cuenta para enviar al cliente"
-                                  style={{background:"#0F766E",border:"none",color:"#fff",padding:"3px 10px",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:4,whiteSpace:"nowrap"}}>
-                                  📧 Enviar estado de cuenta
-                                </button>
+                              <div style={{fontSize:11,color:C.blue,marginTop:1,cursor:"pointer",textDecoration:"underline",textDecorationStyle:"dotted"}}
+                                onClick={e=>{e.stopPropagation();setKpiModal({titulo:`${cliente} — Todas las facturas`,tipo:"_lista",moneda:null,ingresos:ings});}}>
+                                {ings.length} ingreso{ings.length!==1?"s":""}
                               </div>
                             </div>
                           </>}
@@ -3124,7 +3116,16 @@ export default function CxcView({
                   })}
                   {/* Ingresos expandidos */}
                   {expanded && (
-                    <div style={{borderTop:`1px solid ${C.border}`,overflowX:"auto"}}>
+                    <div style={{borderTop:`1px solid ${C.border}`}}>
+                      {/* Barra de acciones cuando el cliente está expandido */}
+                      <div style={{padding:"10px 16px",background:"#F8FAFC",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"flex-end",alignItems:"center",gap:8}}>
+                        <button onClick={e=>{e.stopPropagation();setEstadoCuentaModal({cliente,paso:"modo"});}}
+                          title="Generar estado de cuenta para enviar al cliente"
+                          style={{background:"#0F766E",border:"none",color:"#fff",padding:"6px 14px",borderRadius:6,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:6}}>
+                          📧 Enviar estado de cuenta
+                        </button>
+                      </div>
+                      <div style={{overflowX:"auto"}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:14,minWidth:1200}}>
                         <thead>
                           <tr style={{background:C.navy}}>
@@ -3181,6 +3182,7 @@ export default function CxcView({
                           }).map((ing,idx) => <IngresoRow key={ing.id} ing={ing} idx={idx} mostrarCliente={false}/>)}
                         </tbody>
                       </table>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -3199,17 +3201,9 @@ export default function CxcView({
                     <span style={{fontSize:16,color:expanded?C.blue:C.muted,transition:"transform .2s",display:"inline-block",transform:expanded?"rotate(90deg)":"rotate(0deg)"}}>▶</span>
                     <div>
                       <div style={{fontWeight:800,fontSize:15,color:C.navy}}>{cliente}</div>
-                      <div style={{display:"flex",alignItems:"center",gap:8,marginTop:2}}>
-                        <span style={{fontSize:12,color:C.blue,cursor:"pointer",textDecoration:"underline",textDecorationStyle:"dotted"}}
-                          onClick={e=>{e.stopPropagation();setKpiModal({titulo:`${cliente} — Todas las facturas`,tipo:"_lista",moneda:null,ingresos:ings});}}>
-                          {ings.length} ingreso{ings.length!==1?"s":""}
-                        </span>
-                        <span style={{color:"#CBD5E1"}}>·</span>
-                        <button onClick={e=>{e.stopPropagation();setEstadoCuentaModal({cliente,paso:"modo"});}}
-                          title="Generar estado de cuenta para enviar al cliente"
-                          style={{background:"#0F766E",border:"none",color:"#fff",padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:4,whiteSpace:"nowrap"}}>
-                          📧 Enviar estado de cuenta
-                        </button>
+                      <div style={{fontSize:12,color:C.blue,marginTop:2,cursor:"pointer",textDecoration:"underline",textDecorationStyle:"dotted"}}
+                        onClick={e=>{e.stopPropagation();setKpiModal({titulo:`${cliente} — Todas las facturas`,tipo:"_lista",moneda:null,ingresos:ings});}}>
+                        {ings.length} ingreso{ings.length!==1?"s":""}
                       </div>
                     </div>
                   </div>
@@ -3244,7 +3238,16 @@ export default function CxcView({
 
                 {/* Ingresos expandidos */}
                 {expanded && (
-                  <div style={{borderTop:`1px solid ${C.border}`,overflowX:"auto"}}>
+                  <div style={{borderTop:`1px solid ${C.border}`}}>
+                    {/* Barra de acciones cuando el cliente está expandido */}
+                    <div style={{padding:"10px 16px",background:"#F8FAFC",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"flex-end",alignItems:"center",gap:8}}>
+                      <button onClick={e=>{e.stopPropagation();setEstadoCuentaModal({cliente,paso:"modo"});}}
+                        title="Generar estado de cuenta para enviar al cliente"
+                        style={{background:"#0F766E",border:"none",color:"#fff",padding:"6px 14px",borderRadius:6,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:6}}>
+                        📧 Enviar estado de cuenta
+                      </button>
+                    </div>
+                    <div style={{overflowX:"auto"}}>
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:1200}}>
                       <thead>
                         <tr style={{background:"#EEF2FF"}}>
@@ -3345,6 +3348,7 @@ export default function CxcView({
                         })}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 )}
               </div>
@@ -3707,7 +3711,7 @@ export default function CxcView({
                 resumen.push(
                   ["RESUMEN DE VENCIMIENTOS"],
                   ["Total vencido", `${monedaSym(monedaPrincipal)}${fmt(totalVencidoRep)} ${monedaPrincipal}`],
-                  ["Facturas vencidas", `${vencidasRep.length} de ${ingsOrdenadasRep.length} totales`],
+                  ["Facturas vencidas", `${vencidasRep.length}`],
                   ["Promedio atraso", `${promedioVencRep} días`],
                   [],
                 );
@@ -3753,77 +3757,98 @@ export default function CxcView({
                 </div>
               </div>
 
-              <div ref={estadoCuentaRef} style={{ background: "#fff", padding: 28, fontFamily: "'DM Sans','Segoe UI',sans-serif" }}>
-                <div style={{ textAlign: "center", paddingBottom: 14, borderBottom: `2px solid ${C.navy}`, marginBottom: 18 }}>
-                  <div style={{ fontSize: 11, color: C.muted, letterSpacing: 1.5, fontWeight: 700 }}>ESTADO DE CUENTA</div>
-                  <div style={{ fontSize: 22, fontWeight: 800, color: C.navy, marginTop: 6 }}>{cliente}</div>
-                  <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>Fecha de corte: {fechaCorte}</div>
-                </div>
+              {/* ═══ Reporte estilo Moderno Corporativo (header navy + KPIs + total destacado) ═══ */}
+              <div ref={estadoCuentaRef} style={{ background: "#fff", fontFamily: "'DM Sans','Segoe UI',sans-serif", border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
 
-                {hayVencidas && (
-                  <div style={{ background: "#FEF2F2", border: "1px solid #DC2626", borderRadius: 8, padding: "14px 18px", marginBottom: 18, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
-                    <div>
-                      <div style={{ fontSize: 10, color: "#991B1B", fontWeight: 700, letterSpacing: 0.5 }}>TOTAL VENCIDO</div>
-                      <div style={{ fontSize: 22, fontWeight: 800, color: "#DC2626", marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{monedaSym(monedaPrincipal)}{fmt(totalVencidoRep)}</div>
-                      <div style={{ fontSize: 10, color: "#991B1B", marginTop: 1 }}>{monedaPrincipal}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 10, color: "#991B1B", fontWeight: 700, letterSpacing: 0.5 }}>FACTURAS VENCIDAS</div>
-                      <div style={{ fontSize: 22, fontWeight: 800, color: "#DC2626", marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{vencidasRep.length}</div>
-                      <div style={{ fontSize: 10, color: "#991B1B", marginTop: 1 }}>de {ingsOrdenadasRep.length} totales</div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 10, color: "#991B1B", fontWeight: 700, letterSpacing: 0.5 }}>PROMEDIO ATRASO</div>
-                      <div style={{ fontSize: 22, fontWeight: 800, color: "#DC2626", marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{promedioVencRep} días</div>
-                      <div style={{ fontSize: 10, color: "#991B1B", marginTop: 1 }}>vencidos</div>
+                {/* Header navy con título + fecha */}
+                <div style={{ background: C.navy, color: "#fff", padding: "22px 28px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 10, opacity: 0.7, letterSpacing: 1.5, fontWeight: 700 }}>ESTADO DE CUENTA</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{cliente}</div>
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    <div style={{ fontSize: 10, opacity: 0.7, letterSpacing: 0.5, fontWeight: 700 }}>FECHA DE CORTE</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, marginTop: 2, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                      {(() => {
+                        const d = new Date();
+                        const mesesAbrev = ["ENE","FEB","MAR","ABR","MAY","JUN","JUL","AGO","SEP","OCT","NOV","DIC"];
+                        return `${String(d.getDate()).padStart(2,"0")} / ${mesesAbrev[d.getMonth()]} / ${d.getFullYear()}`;
+                      })()}
                     </div>
                   </div>
-                )}
-
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginBottom: 16 }}>
-                  <thead>
-                    <tr style={{ background: C.navy, color: "#fff" }}>
-                      <th style={{ textAlign: "left", padding: "10px 12px", fontSize: 10, fontWeight: 700, letterSpacing: 0.5 }}>FOLIO</th>
-                      <th style={{ textAlign: "left", padding: "10px 12px", fontSize: 10, fontWeight: 700, letterSpacing: 0.5 }}>FECHA FACT.</th>
-                      <th style={{ textAlign: "left", padding: "10px 12px", fontSize: 10, fontWeight: 700, letterSpacing: 0.5 }}>VENCIMIENTO</th>
-                      <th style={{ textAlign: "left", padding: "10px 12px", fontSize: 10, fontWeight: 700, letterSpacing: 0.5 }}>CONCEPTO</th>
-                      <th style={{ textAlign: "center", padding: "10px 12px", fontSize: 10, fontWeight: 700, letterSpacing: 0.5 }}>DÍAS VENC.</th>
-                      <th style={{ textAlign: "right", padding: "10px 12px", fontSize: 10, fontWeight: 700, letterSpacing: 0.5 }}>MONTO</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ingsOrdenadasRep.map(ing => {
-                      const d = diasDiff(ing.fechaVencimiento);
-                      const vencida = d !== null && d < 0;
-                      const m = metrics[ing.id] || {};
-                      return (
-                        <tr key={ing.id} style={{ background: vencida ? "#FEF2F2" : "transparent", borderBottom: `1px solid ${vencida ? "#FEE2E2" : C.border}` }}>
-                          <td style={{ padding: "10px 12px", fontWeight: 700, color: vencida ? "#DC2626" : C.navy, fontVariantNumeric: "tabular-nums" }}>{ing.folio || "—"}</td>
-                          <td style={{ padding: "10px 12px", fontVariantNumeric: "tabular-nums" }}>{ing.fecha || "—"}</td>
-                          <td style={{ padding: "10px 12px", color: vencida ? "#DC2626" : C.text, fontWeight: vencida ? 700 : 400, fontVariantNumeric: "tabular-nums" }}>{ing.fechaVencimiento || "—"}</td>
-                          <td style={{ padding: "10px 12px" }}>{ing.concepto || "—"}</td>
-                          <td style={{ textAlign: "center", padding: "10px 12px" }}>
-                            {d === null ? <span style={{ color: C.muted, fontSize: 10 }}>—</span>
-                              : d < 0
-                                ? <span style={{ background: "#DC2626", color: "#fff", fontWeight: 800, fontSize: 10, padding: "3px 8px", borderRadius: 4 }}>{Math.abs(d)}d</span>
-                                : <span style={{ background: d<=7?"#FFF3E0":d<=30?"#FFFDE7":"#E8F5E9", color: d<=7?"#E65100":d<=30?"#F59E0B":C.ok, fontWeight: 800, fontSize: 10, padding: "3px 8px", borderRadius: 4 }}>{d}d por vencer</span>
-                            }
-                          </td>
-                          <td style={{ textAlign: "right", padding: "10px 12px", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{monedaSym(ing.moneda)}{fmt(m.porCobrar || 0)}</td>
-                        </tr>
-                      );
-                    })}
-                    <tr style={{ background: "#DBEAFE", borderTop: `2px solid ${C.navy}` }}>
-                      <td colSpan={5} style={{ padding: "14px 12px", fontWeight: 800, color: C.navy, fontSize: 13 }}>TOTAL POR COBRAR</td>
-                      <td style={{ textAlign: "right", padding: "14px 12px", fontWeight: 800, color: C.navy, fontSize: 16, fontVariantNumeric: "tabular-nums" }}>{monedaSym(monedaPrincipal)}{fmt(totalReporte)} {monedaPrincipal}</td>
-                    </tr>
-                  </tbody>
-                </table>
-
-                <div style={{ background: "#F8FAFC", padding: "10px 14px", borderRadius: 6, fontSize: 10, color: C.muted, textAlign: "center", lineHeight: 1.5 }}>
-                  Por favor revise el estado de su cuenta. Para aclaraciones o concertar el pago contáctenos.<br/>
-                  <strong style={{ color: C.navy }}>TravelAirSolutions</strong> · Reporte generado el {fechaCorte}
                 </div>
+
+                <div style={{ padding: "22px 28px" }}>
+
+                  {/* Banner rojo limpio (solo si hay vencidas) — KPIs centrados, sin "de N totales", sin "vencidos" */}
+                  {hayVencidas && (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0, marginBottom: 22, border: "1px solid #F7C1C1", borderRadius: 8, overflow: "hidden" }}>
+                      <div style={{ background: "#FCEBEB", padding: 16, textAlign: "center", borderRight: "1px solid #F7C1C1" }}>
+                        <div style={{ fontSize: 10, color: "#791F1F", fontWeight: 700, letterSpacing: 0.5 }}>TOTAL VENCIDO</div>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: "#A32D2D", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{monedaSym(monedaPrincipal)}{fmt(totalVencidoRep)}</div>
+                        <div style={{ fontSize: 10, color: "#791F1F", marginTop: 2, opacity: 0.75 }}>{monedaPrincipal}</div>
+                      </div>
+                      <div style={{ background: "#FCEBEB", padding: 16, textAlign: "center", borderRight: "1px solid #F7C1C1" }}>
+                        <div style={{ fontSize: 10, color: "#791F1F", fontWeight: 700, letterSpacing: 0.5 }}>FACTURAS VENCIDAS</div>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: "#A32D2D", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{vencidasRep.length}</div>
+                      </div>
+                      <div style={{ background: "#FCEBEB", padding: 16, textAlign: "center" }}>
+                        <div style={{ fontSize: 10, color: "#791F1F", fontWeight: 700, letterSpacing: 0.5 }}>PROMEDIO ATRASO</div>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: "#A32D2D", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{promedioVencRep} días</div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tabla con border-left rojo en filas vencidas (acento lateral, no fondo) */}
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, tableLayout: "fixed" }}>
+                    <thead>
+                      <tr style={{ background: "#F8FAFC" }}>
+                        <th style={{ textAlign: "left", padding: "10px 12px", fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: 0.4, width: 110 }}>FOLIO</th>
+                        <th style={{ textAlign: "left", padding: "10px 12px", fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: 0.4, width: 90 }}>FECHA</th>
+                        <th style={{ textAlign: "left", padding: "10px 12px", fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: 0.4, width: 90 }}>VENCE</th>
+                        <th style={{ textAlign: "left", padding: "10px 12px", fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: 0.4 }}>CONCEPTO</th>
+                        <th style={{ textAlign: "center", padding: "10px 12px", fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: 0.4, width: 70 }}>DÍAS</th>
+                        <th style={{ textAlign: "right", padding: "10px 12px", fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: 0.4, width: 120 }}>MONTO</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ingsOrdenadasRep.map(ing => {
+                        const d = diasDiff(ing.fechaVencimiento);
+                        const vencida = d !== null && d < 0;
+                        const m = metrics[ing.id] || {};
+                        return (
+                          <tr key={ing.id} style={{ borderBottom: `1px solid ${C.border}`, borderLeft: vencida ? "3px solid #A32D2D" : "3px solid transparent" }}>
+                            <td style={{ padding: "12px", fontWeight: 700, color: C.text, fontVariantNumeric: "tabular-nums" }}>{ing.folio || "—"}</td>
+                            <td style={{ padding: "12px", fontVariantNumeric: "tabular-nums", color: C.text }}>{ing.fecha || "—"}</td>
+                            <td style={{ padding: "12px", color: vencida ? "#A32D2D" : C.text, fontWeight: vencida ? 700 : 400, fontVariantNumeric: "tabular-nums" }}>{ing.fechaVencimiento || "—"}</td>
+                            <td style={{ padding: "12px", color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ing.concepto}>{ing.concepto || "—"}</td>
+                            <td style={{ textAlign: "center", padding: "12px" }}>
+                              {d === null ? <span style={{ color: C.muted, fontSize: 10 }}>—</span>
+                                : d < 0
+                                  ? <span style={{ background: "#A32D2D", color: "#fff", fontWeight: 800, fontSize: 10, padding: "3px 8px", borderRadius: 6 }}>{Math.abs(d)}d</span>
+                                  : <span style={{ background: d<=7?"#FAEEDA":d<=30?"#FAEEDA":"#EAF3DE", color: d<=7?"#854F0B":d<=30?"#854F0B":"#27500A", fontWeight: 800, fontSize: 10, padding: "3px 8px", borderRadius: 6 }}>{d}d</span>
+                              }
+                            </td>
+                            <td style={{ textAlign: "right", padding: "12px", fontWeight: 700, color: C.text, fontVariantNumeric: "tabular-nums" }}>{monedaSym(ing.moneda)}{fmt(m.porCobrar || 0)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+
+                  {/* Total destacado en franja navy */}
+                  <div style={{ marginTop: 18, padding: "14px 18px", background: C.navy, borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ color: "#fff", fontWeight: 700, fontSize: 13, letterSpacing: 0.4 }}>TOTAL POR COBRAR</span>
+                    <span style={{ color: "#fff", fontWeight: 800, fontSize: 18, fontVariantNumeric: "tabular-nums" }}>{monedaSym(monedaPrincipal)}{fmt(totalReporte)} {monedaPrincipal}</span>
+                  </div>
+
+                </div>
+
+                {/* Footer minimalista (solo emisor, sin mensaje cortés) */}
+                <div style={{ background: "#F8FAFC", padding: "12px 28px", textAlign: "center", fontSize: 10, color: C.muted, borderTop: `1px solid ${C.border}` }}>
+                  <strong style={{ fontWeight: 700, color: C.navy }}>TravelAirSolutions</strong>
+                </div>
+
               </div>
             </ModalShell>
           );
