@@ -2222,3 +2222,45 @@ export async function fetchPagosDePlanEnDia(empresaId, fecha, invoiceIds) {
   }
   return resultado;
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// SALDOS PLATAFORMAS — datos compartidos entre VL y TAS
+// Tabla: saldos_plataformas
+// Columnas: plataforma, cliente, centro_costo, saldo, moneda, consultado_en
+// ═══════════════════════════════════════════════════════════════════
+
+// Obtiene la lectura más reciente de cada plataforma (1 por plataforma).
+// No filtra por empresa — todos los usuarios ven los mismos datos.
+// Devuelve array: [{plataforma, saldo, moneda, consultado_en, centro_costo}, ...]
+export async function fetchSaldosPlataformasUltimos() {
+  // Traemos TODO ordenado desc por fecha. Es histórico (2 por día por plataforma)
+  // así que aunque sea full scan no es enorme. Si crece, optimizamos con RPC.
+  const { data, error } = await supabase
+    .from('saldos_plataformas')
+    .select('plataforma, centro_costo, saldo, moneda, consultado_en')
+    .order('consultado_en', { ascending: false });
+  if (error) { console.error('fetchSaldosPlataformasUltimos:', error); return []; }
+
+  // Tomar el primero (más reciente) de cada plataforma
+  const vistos = new Set();
+  const ultimos = [];
+  for (const r of (data || [])) {
+    if (vistos.has(r.plataforma)) continue;
+    vistos.add(r.plataforma);
+    ultimos.push(r);
+  }
+  return ultimos;
+}
+
+// Obtiene el histórico completo de UNA plataforma (ordenado desc por fecha).
+// Para mostrar en el modal de detalle cuando se hace clic en la tarjeta.
+export async function fetchHistoricoSaldoPlataforma(plataforma) {
+  if (!plataforma) return [];
+  const { data, error } = await supabase
+    .from('saldos_plataformas')
+    .select('plataforma, centro_costo, saldo, moneda, consultado_en')
+    .eq('plataforma', plataforma)
+    .order('consultado_en', { ascending: false });
+  if (error) { console.error('fetchHistoricoSaldoPlataforma:', error); return []; }
+  return data || [];
+}

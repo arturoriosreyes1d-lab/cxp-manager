@@ -35,10 +35,12 @@ import {
   calcularUtilizadoPrestamo,
   buscarPlanesActivosDeFactura, marcarAbonoPagado,
   fetchPagosDePlanEnDia,
+  fetchSaldosPlataformasUltimos,
 } from "./db.js";
 import CxcView from "./CxcView.jsx";
 import ReportesView from "./ReportesView.jsx";
 import FlujoIngresos from "./FlujoIngresos.jsx";
+import SaldosPlataformasModule from "./SaldosPlataformasModule.jsx";
 import { EMPRESAS } from "./empresas.js";
 
 /* ── Palette ─────────────────────────────────────────────────────────────── */
@@ -149,6 +151,12 @@ export default function CxpApp({ user, onLogout }) {
   const esConsulta = user?.rol === 'consulta';
   const esSuperadmin = (user?.rol || '').toLowerCase() === 'superadmin';
   const [view, setView] = useState("dashboard");
+  // Sub-vista dentro del módulo "Saldos": null (selector) | "bancarios" | "plataformas"
+  const [saldosSubview, setSaldosSubview] = useState(null);
+  // Preview KPI para la card de Saldos Plataformas en el selector (cargado al entrar)
+  const [saldosPlataformasPreview, setSaldosPlataformasPreview] = useState({ loading: true, count: 0, ultimaLectura: null });
+  // Preview KPI para la card de Saldos Bancarios en el selector (totales por moneda, por empresa)
+  const [saldosBancariosPreview, setSaldosBancariosPreview] = useState({ loading: true, mxn: 0, usd: 0, eur: 0 });
   const [currency, setCurrency] = useState("MXN");
   const [suppliers, setSuppliers] = useState([]);
   const [invoices, setInvoices] = useState({MXN:[],USD:[],EUR:[]});
@@ -273,6 +281,42 @@ export default function CxpApp({ user, onLogout }) {
       }
     })();
   }, [projDetail, empresaId]);
+
+  // Preview de Saldos para las cards del selector
+  useEffect(() => {
+    if (view !== "saldos" || saldosSubview !== null) return;
+    (async () => {
+      // Plataformas — compartido entre VL y TAS
+      setSaldosPlataformasPreview({ loading: true, count: 0, ultimaLectura: null });
+      // Bancarios — depende de la empresa logueada
+      setSaldosBancariosPreview({ loading: true, mxn: 0, usd: 0, eur: 0 });
+      try {
+        const hoy = new Date().toISOString().slice(0, 10);
+        const [ultimos, totBancarios] = await Promise.all([
+          fetchSaldosPlataformasUltimos(),
+          fetchSaldosTotalesPorFecha(empresaId, hoy),
+        ]);
+        const fechas = ultimos.map(s => new Date(s.consultado_en).getTime()).filter(x => !isNaN(x));
+        const ultima = fechas.length > 0 ? new Date(Math.max(...fechas)).toISOString() : null;
+        setSaldosPlataformasPreview({ loading: false, count: ultimos.length, ultimaLectura: ultima });
+        setSaldosBancariosPreview({
+          loading: false,
+          mxn: totBancarios?.mxn || 0,
+          usd: totBancarios?.usd || 0,
+          eur: totBancarios?.eur || 0,
+        });
+      } catch (err) {
+        console.error('preview saldos:', err);
+        setSaldosPlataformasPreview({ loading: false, count: 0, ultimaLectura: null });
+        setSaldosBancariosPreview({ loading: false, mxn: 0, usd: 0, eur: 0 });
+      }
+    })();
+  }, [view, saldosSubview, empresaId]);
+
+  // Resetear sub-vista cuando se cambia de módulo
+  useEffect(() => {
+    if (view !== "saldos") setSaldosSubview(null);
+  }, [view]);
 
   /* ── Load data from Supabase ────────────────────────────────────── */
   useEffect(() => {
@@ -9207,7 +9251,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         <NavItem id="reporte" icon="📊" label="Reporte Diario"/>
         <NavItem id="importar" icon="📥" label="Importar"/>
         <NavItem id="proveedores" icon="🏢" label="Proveedores"/>
-        <NavItem id="saldos" icon="🏦" label="Saldos Bancarios"/>
+        <NavItem id="saldos" icon="🏦" label="Saldos"/>
         {empresaId === "empresa_2" && (
           <NavItem id="flujo_efectivo" icon="💧" label="Flujo de Efectivo"/>
         )}
@@ -9259,7 +9303,134 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         {view==="reporte" && <ReporteDiarioCxP />}
         {view==="importar" && renderImportar()}
         {view==="config" && renderConfig()}
-        {view==="saldos" && <SaldosBancarios />}
+        {view==="saldos" && saldosSubview === "bancarios" && (
+          <div>
+            <div style={{ marginBottom: 12 }}>
+              <div onClick={()=>setSaldosSubview(null)}
+                style={{ fontSize: 13, color: C.blue, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                ← Saldos
+              </div>
+            </div>
+            <SaldosBancarios />
+          </div>
+        )}
+        {view==="saldos" && saldosSubview === "plataformas" && (
+          <div>
+            {/* Header con breadcrumb */}
+            <div style={{ marginBottom: 16 }}>
+              <div onClick={()=>setSaldosSubview(null)}
+                style={{ fontSize: 13, color: C.blue, cursor: "pointer", marginBottom: 4, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                ← Saldos
+              </div>
+            </div>
+            <SaldosPlataformasModule/>
+          </div>
+        )}
+        {view==="saldos" && saldosSubview === null && (() => {
+          // Helper local "hace X" para el preview
+          const fmtHace = (iso) => {
+            if (!iso) return null;
+            const f = new Date(iso);
+            if (isNaN(f.getTime())) return null;
+            const diffMs = Date.now() - f.getTime();
+            const diffMin = Math.round(diffMs / 60000);
+            const diffH = Math.round(diffMs / 3600000);
+            const diffD = Math.round(diffMs / 86400000);
+            if (diffMin < 1) return "Hace un momento";
+            if (diffMin < 60) return `Hace ${diffMin} min`;
+            if (diffH < 24) return `Hace ${diffH} h`;
+            if (diffD < 7) return `Hace ${diffD} día${diffD === 1 ? "" : "s"}`;
+            return "Hace +7 días";
+          };
+          const previewP = saldosPlataformasPreview;
+          const previewB = saldosBancariosPreview;
+          return (
+            <div>
+              {/* Encabezado del módulo Saldos */}
+              <div style={{ marginBottom: 4, fontSize: 12, color: C.muted }}>{empresa.nombre}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+                <span style={{ fontSize: 22 }}>🏦</span>
+                <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: C.navy }}>Saldos</h1>
+              </div>
+              <p style={{ fontSize: 13, color: C.muted, margin: "0 0 24px" }}>Selecciona qué saldos quieres consultar.</p>
+
+              <div style={{ fontSize: 11, color: C.muted, letterSpacing: 0.6, fontWeight: 700, marginBottom: 12 }}>DISPONIBLES</div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 14, maxWidth: 900 }}>
+
+                {/* Card: Saldos Bancarios */}
+                <div onClick={()=>setSaldosSubview("bancarios")}
+                  onMouseEnter={e=>{e.currentTarget.style.borderColor="#CBD5E1";}}
+                  onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;}}
+                  style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, cursor: "pointer", background: "#fff", display: "flex", flexDirection: "column", transition: "border-color .15s" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+                    <div style={{ width: 40, height: 40, background: "#E6F1FB", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🏦</div>
+                    <span style={{ fontSize: 11, color: "#185FA5", fontWeight: 700 }}>Abrir →</span>
+                  </div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: C.navy, marginBottom: 2 }}>Saldos Bancarios</div>
+                  <div style={{ fontSize: 11, color: C.muted, letterSpacing: 0.5, marginBottom: 8 }}>BANAMEX · BAJÍO · SABADELL</div>
+                  <p style={{ fontSize: 12, color: C.muted, margin: "0 0 14px", lineHeight: 1.5 }}>Inicio y cierre de día, cuentas por banco, préstamos e inversión.</p>
+
+                  {/* KPIs por moneda (centrados, colores) */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, paddingTop: 12, borderTop: `1px solid ${C.border}`, marginTop: "auto" }}>
+                    <div style={{ textAlign: "center" }}>
+                      <div style={{ fontSize: 10, color: C.muted, letterSpacing: 0.4, fontWeight: 700 }}>MN</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: C.mxn, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
+                        {previewB.loading ? "…" : `$${fmt(previewB.mxn || 0)}`}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "center" }}>
+                      <div style={{ fontSize: 10, color: C.muted, letterSpacing: 0.4, fontWeight: 700 }}>USD</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: C.usd, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
+                        {previewB.loading ? "…" : `$${fmt(previewB.usd || 0)}`}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "center" }}>
+                      <div style={{ fontSize: 10, color: C.muted, letterSpacing: 0.4, fontWeight: 700 }}>EUR</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: C.eur, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
+                        {previewB.loading ? "…" : `€${fmt(previewB.eur || 0)}`}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 10, color: C.muted, marginTop: 8, textAlign: "center" }}>Total disponible · al cierre de hoy</div>
+                </div>
+
+                {/* Card: Saldos Plataformas */}
+                <div onClick={()=>setSaldosSubview("plataformas")}
+                  onMouseEnter={e=>{e.currentTarget.style.borderColor="#0F6E56";}}
+                  onMouseLeave={e=>{e.currentTarget.style.borderColor="#0F6E56";}}
+                  style={{ border: `2px solid #0F6E56`, borderRadius: 12, padding: 18, cursor: "pointer", background: "#fff", display: "flex", flexDirection: "column", transition: "border-color .15s" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+                    <div style={{ width: 40, height: 40, background: "#E1F5EE", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>💳</div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <span style={{ background: "#E1F5EE", color: "#0F6E56", fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 8 }}>Nuevo</span>
+                      <span style={{ fontSize: 11, color: "#185FA5", fontWeight: 700 }}>Abrir →</span>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: C.navy, marginBottom: 2 }}>Saldos Plataformas</div>
+                  <div style={{ fontSize: 11, color: C.muted, letterSpacing: 0.5, marginBottom: 8 }}>GASOMATIC · CARIBE COOL · VISAS · MERELY</div>
+                  <p style={{ fontSize: 12, color: C.muted, margin: "0 0 14px", lineHeight: 1.5 }}>Saldos disponibles en cada plataforma operativa, con histórico de lecturas.</p>
+
+                  <div style={{ display: "flex", gap: 16, paddingTop: 12, borderTop: `1px solid ${C.border}`, marginTop: "auto" }}>
+                    <div>
+                      <div style={{ fontSize: 10, color: C.muted, letterSpacing: 0.4, fontWeight: 700 }}>PLATAFORMAS</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#0F6E56", marginTop: 2 }}>
+                        {previewP.loading ? "…" : `${previewP.count} activa${previewP.count === 1 ? "" : "s"}`}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, color: C.muted, letterSpacing: 0.4, fontWeight: 700 }}>ÚLT. LECTURA</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#0F6E56", marginTop: 2 }}>
+                        {previewP.loading ? "…" : (fmtHace(previewP.ultimaLectura) || "—")}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          );
+        })()}
         {view==="flujo_efectivo" && empresaId === "empresa_2" && (
           <FlujoIngresos
             empresaId={empresaId}
