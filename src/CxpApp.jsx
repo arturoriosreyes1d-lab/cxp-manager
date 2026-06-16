@@ -9344,89 +9344,249 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           };
           const previewP = saldosPlataformasPreview;
           const previewB = saldosBancariosPreview;
+
+          // Fecha del día para el chip superior
+          const hoy = new Date();
+          const meses = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+          const fechaChip = `${hoy.getDate()} ${meses[hoy.getMonth()]} ${hoy.getFullYear()}`;
+
+          // Handler de click con ripple Material Design + delay 300ms antes de navegar
+          const handleCardClick = (e, subview, rippleColor) => {
+            const card = e.currentTarget;
+            const rect = card.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            // Crear elemento ripple
+            const ripple = document.createElement('span');
+            ripple.style.position = 'absolute';
+            ripple.style.left = (x - 10) + 'px';
+            ripple.style.top = (y - 10) + 'px';
+            ripple.style.width = '20px';
+            ripple.style.height = '20px';
+            ripple.style.borderRadius = '50%';
+            ripple.style.background = rippleColor;
+            ripple.style.pointerEvents = 'none';
+            ripple.style.transform = 'scale(0)';
+            ripple.style.opacity = '0.4';
+            ripple.style.animation = 'saldos-ripple 0.6s cubic-bezier(0.2, 0.8, 0.2, 1)';
+            ripple.style.zIndex = '2';
+            card.appendChild(ripple);
+            // Limpiar el ripple después y navegar
+            setTimeout(() => {
+              if (ripple.parentNode) ripple.parentNode.removeChild(ripple);
+              setSaldosSubview(subview);
+            }, 320);
+          };
+
           return (
             <div>
-              {/* Encabezado del módulo Saldos */}
-              <div style={{ marginBottom: 4, fontSize: 12, color: C.muted }}>{empresa.nombre}</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-                <span style={{ fontSize: 22 }}>🏦</span>
-                <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: C.navy }}>Saldos</h1>
-              </div>
-              <p style={{ fontSize: 13, color: C.muted, margin: "0 0 24px" }}>Selecciona qué saldos quieres consultar.</p>
+              {/* Estilos para animaciones (inyectados una sola vez por React) */}
+              <style>{`
+                @keyframes saldos-fadeUp {
+                  from { opacity: 0; transform: translateY(10px); }
+                  to   { opacity: 1; transform: translateY(0); }
+                }
+                @keyframes saldos-pulse {
+                  0%, 100% { opacity: 1; transform: scale(1); }
+                  50% { opacity: 0.5; transform: scale(1.2); }
+                }
+                @keyframes saldos-ripple {
+                  0%   { transform: scale(0); opacity: 0.45; }
+                  100% { transform: scale(40); opacity: 0; }
+                }
+                .saldos-card-anim {
+                  animation: saldos-fadeUp 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+                  transition: transform 0.2s ease, box-shadow 0.2s ease;
+                }
+                .saldos-card-anim:hover {
+                  transform: translateY(-3px);
+                  box-shadow: 0 10px 28px rgba(15,45,74,0.10) !important;
+                }
+                .saldos-card-anim:active { transform: translateY(-1px); }
+                .saldos-dot-pulse { animation: saldos-pulse 2s ease-in-out infinite; }
+              `}</style>
 
-              <div style={{ fontSize: 11, color: C.muted, letterSpacing: 0.6, fontWeight: 700, marginBottom: 12 }}>DISPONIBLES</div>
+              {/* Contenedor con fondo de halos sutiles */}
+              <div style={{
+                background: "radial-gradient(ellipse at 0% 0%, rgba(21, 101, 192, 0.06), transparent 50%), radial-gradient(ellipse at 100% 100%, rgba(15, 110, 86, 0.05), transparent 55%), #FAFBFC",
+                border: `1px solid ${C.border}`,
+                borderRadius: 16,
+                padding: "36px 32px",
+                position: "relative",
+                overflow: "hidden",
+                minHeight: 480,
+              }}>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 14, maxWidth: 900 }}>
-
-                {/* Card: Saldos Bancarios */}
-                <div onClick={()=>setSaldosSubview("bancarios")}
-                  onMouseEnter={e=>{e.currentTarget.style.borderColor="#CBD5E1";}}
-                  onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;}}
-                  style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, cursor: "pointer", background: "#fff", display: "flex", flexDirection: "column", transition: "border-color .15s" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
-                    <div style={{ width: 40, height: 40, background: "#E6F1FB", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🏦</div>
-                    <span style={{ fontSize: 11, color: "#185FA5", fontWeight: 700 }}>Abrir →</span>
+                {/* Header del módulo */}
+                <div style={{ marginBottom: 28 }}>
+                  <div style={{
+                    display: "inline-flex", alignItems: "center", gap: 8,
+                    background: "#fff", border: `1px solid ${C.border}`,
+                    padding: "5px 12px", borderRadius: 99,
+                    fontSize: 11, color: C.muted, marginBottom: 12, fontWeight: 600,
+                  }}>
+                    <span className="saldos-dot-pulse" style={{ width: 6, height: 6, borderRadius: "50%", background: "#0F6E56" }}/>
+                    {empresa.nombre} · {fechaChip}
                   </div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: C.navy, marginBottom: 2 }}>Saldos Bancarios</div>
-                  <div style={{ fontSize: 11, color: C.muted, letterSpacing: 0.5, marginBottom: 8 }}>BANAMEX · BAJÍO · SABADELL</div>
-                  <p style={{ fontSize: 12, color: C.muted, margin: "0 0 14px", lineHeight: 1.5 }}>Inicio y cierre de día, cuentas por banco, préstamos e inversión.</p>
-
-                  {/* KPIs por moneda (centrados, colores) */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, paddingTop: 12, borderTop: `1px solid ${C.border}`, marginTop: "auto" }}>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ fontSize: 10, color: C.muted, letterSpacing: 0.4, fontWeight: 700 }}>MN</div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: C.mxn, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
-                        {previewB.loading ? "…" : `$${fmt(previewB.mxn || 0)}`}
-                      </div>
-                    </div>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ fontSize: 10, color: C.muted, letterSpacing: 0.4, fontWeight: 700 }}>USD</div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: C.usd, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
-                        {previewB.loading ? "…" : `$${fmt(previewB.usd || 0)}`}
-                      </div>
-                    </div>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ fontSize: 10, color: C.muted, letterSpacing: 0.4, fontWeight: 700 }}>EUR</div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: C.eur, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
-                        {previewB.loading ? "…" : `€${fmt(previewB.eur || 0)}`}
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{ fontSize: 10, color: C.muted, marginTop: 8, textAlign: "center" }}>Total disponible · al cierre de hoy</div>
+                  <h1 style={{
+                    fontSize: 36, fontWeight: 800, margin: 0, color: C.navy,
+                    lineHeight: 1, letterSpacing: "-0.8px",
+                  }}>Saldos</h1>
+                  <p style={{ fontSize: 15, color: C.muted, margin: "8px 0 0", maxWidth: 580, lineHeight: 1.5 }}>
+                    Tu vista unificada de saldos bancarios y plataformas operativas en un solo lugar.
+                  </p>
                 </div>
 
-                {/* Card: Saldos Plataformas */}
-                <div onClick={()=>setSaldosSubview("plataformas")}
-                  onMouseEnter={e=>{e.currentTarget.style.borderColor="#0F6E56";}}
-                  onMouseLeave={e=>{e.currentTarget.style.borderColor="#0F6E56";}}
-                  style={{ border: `2px solid #0F6E56`, borderRadius: 12, padding: 18, cursor: "pointer", background: "#fff", display: "flex", flexDirection: "column", transition: "border-color .15s" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
-                    <div style={{ width: 40, height: 40, background: "#E1F5EE", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>💳</div>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <span style={{ background: "#E1F5EE", color: "#0F6E56", fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 8 }}>Nuevo</span>
-                      <span style={{ fontSize: 11, color: "#185FA5", fontWeight: 700 }}>Abrir →</span>
-                    </div>
-                  </div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: C.navy, marginBottom: 2 }}>Saldos Plataformas</div>
-                  <div style={{ fontSize: 11, color: C.muted, letterSpacing: 0.5, marginBottom: 8 }}>GASOMATIC · CARIBE COOL · VISAS · MERELY</div>
-                  <p style={{ fontSize: 12, color: C.muted, margin: "0 0 14px", lineHeight: 1.5 }}>Saldos disponibles en cada plataforma operativa, con histórico de lecturas.</p>
-
-                  <div style={{ display: "flex", gap: 16, paddingTop: 12, borderTop: `1px solid ${C.border}`, marginTop: "auto" }}>
-                    <div>
-                      <div style={{ fontSize: 10, color: C.muted, letterSpacing: 0.4, fontWeight: 700 }}>PLATAFORMAS</div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "#0F6E56", marginTop: 2 }}>
-                        {previewP.loading ? "…" : `${previewP.count} activa${previewP.count === 1 ? "" : "s"}`}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 10, color: C.muted, letterSpacing: 0.4, fontWeight: 700 }}>ÚLT. LECTURA</div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "#0F6E56", marginTop: 2 }}>
-                        {previewP.loading ? "…" : (fmtHace(previewP.ultimaLectura) || "—")}
-                      </div>
-                    </div>
-                  </div>
+                {/* Label de sección */}
+                <div style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  marginBottom: 14,
+                }}>
+                  <div style={{ fontSize: 11, color: C.muted, letterSpacing: 0.6, fontWeight: 700 }}>2 MÓDULOS DISPONIBLES</div>
                 </div>
 
+                {/* Grid de cards premium */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 16, maxWidth: 1000 }}>
+
+                  {/* ─── Card: Saldos Bancarios ─── */}
+                  <div className="saldos-card-anim"
+                    style={{
+                      background: "#fff", borderRadius: 14, cursor: "pointer",
+                      border: `1px solid ${C.border}`,
+                      minHeight: 280, display: "flex", flexDirection: "column",
+                      overflow: "hidden", position: "relative",
+                      boxShadow: "0 1px 3px rgba(15,45,74,0.04)",
+                      animationDelay: "0.05s",
+                    }}
+                    onClick={(e)=>handleCardClick(e, "bancarios", "#1565C0")}>
+
+                    {/* Header navy con icono */}
+                    <div style={{
+                      background: C.navy, padding: "22px 26px",
+                      position: "relative", overflow: "hidden",
+                    }}>
+                      <div style={{
+                        position: "absolute", top: -30, right: -30,
+                        width: 120, height: 120, borderRadius: "50%",
+                        background: "rgba(255,255,255,0.05)",
+                      }}/>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", position: "relative" }}>
+                        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                          <div style={{
+                            width: 42, height: 42,
+                            background: "rgba(255,255,255,0.15)", borderRadius: 8,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 22,
+                          }}>🏦</div>
+                          <div>
+                            <div style={{ fontSize: 17, fontWeight: 700, color: "#fff" }}>Saldos Bancarios</div>
+                            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.7)", letterSpacing: 0.5, marginTop: 2 }}>BANAMEX · BAJÍO · SABADELL</div>
+                          </div>
+                        </div>
+                        <span style={{ fontSize: 12, color: "rgba(255,255,255,0.85)", fontWeight: 600 }}>Abrir →</span>
+                      </div>
+                    </div>
+
+                    {/* Body con descripción + KPIs */}
+                    <div style={{ padding: "22px 26px", flex: 1, display: "flex", flexDirection: "column" }}>
+                      <p style={{ fontSize: 13, color: C.muted, margin: "0 0 18px", lineHeight: 1.5 }}>
+                        Inicio y cierre de día, cuentas por banco, préstamos e inversión.
+                      </p>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: "auto" }}>
+                        <div style={{ textAlign: "center", background: "#E6F1FB", padding: "12px 8px", borderRadius: 8 }}>
+                          <div style={{ fontSize: 10, color: "#0C447C", letterSpacing: 0.4, fontWeight: 700 }}>MN</div>
+                          <div style={{ fontSize: 17, fontWeight: 700, color: "#0C447C", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
+                            {previewB.loading ? "…" : `$${fmt(previewB.mxn || 0)}`}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "center", background: "#E1F5EE", padding: "12px 8px", borderRadius: 8 }}>
+                          <div style={{ fontSize: 10, color: "#085041", letterSpacing: 0.4, fontWeight: 700 }}>USD</div>
+                          <div style={{ fontSize: 17, fontWeight: 700, color: "#085041", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
+                            {previewB.loading ? "…" : `$${fmt(previewB.usd || 0)}`}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "center", background: "#EEEDFE", padding: "12px 8px", borderRadius: 8 }}>
+                          <div style={{ fontSize: 10, color: "#26215C", letterSpacing: 0.4, fontWeight: 700 }}>EUR</div>
+                          <div style={{ fontSize: 17, fontWeight: 700, color: "#26215C", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
+                            {previewB.loading ? "…" : `€${fmt(previewB.eur || 0)}`}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 10, color: C.muted, marginTop: 10, textAlign: "center" }}>Total disponible · al cierre de hoy</div>
+                    </div>
+                  </div>
+
+                  {/* ─── Card: Saldos Plataformas ─── */}
+                  <div className="saldos-card-anim"
+                    style={{
+                      background: "#fff", borderRadius: 14, cursor: "pointer",
+                      border: `1px solid ${C.border}`,
+                      minHeight: 280, display: "flex", flexDirection: "column",
+                      overflow: "hidden", position: "relative",
+                      boxShadow: "0 1px 3px rgba(15,45,74,0.04)",
+                      animationDelay: "0.15s",
+                    }}
+                    onClick={(e)=>handleCardClick(e, "plataformas", "#0F6E56")}>
+
+                    {/* Header teal con icono */}
+                    <div style={{
+                      background: "#0F6E56", padding: "22px 26px",
+                      position: "relative", overflow: "hidden",
+                    }}>
+                      <div style={{
+                        position: "absolute", top: -30, right: -30,
+                        width: 120, height: 120, borderRadius: "50%",
+                        background: "rgba(255,255,255,0.05)",
+                      }}/>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", position: "relative" }}>
+                        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                          <div style={{
+                            width: 42, height: 42,
+                            background: "rgba(255,255,255,0.15)", borderRadius: 8,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 22,
+                          }}>💳</div>
+                          <div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <div style={{ fontSize: 17, fontWeight: 700, color: "#fff" }}>Saldos Plataformas</div>
+                              <span style={{
+                                background: "rgba(255,255,255,0.2)", color: "#fff",
+                                fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
+                              }}>Nuevo</span>
+                            </div>
+                            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.7)", letterSpacing: 0.5, marginTop: 2 }}>GASOMATIC · CARIBE COOL · VISAS · MERELY</div>
+                          </div>
+                        </div>
+                        <span style={{ fontSize: 12, color: "rgba(255,255,255,0.85)", fontWeight: 600 }}>Abrir →</span>
+                      </div>
+                    </div>
+
+                    {/* Body con descripción + KPIs */}
+                    <div style={{ padding: "22px 26px", flex: 1, display: "flex", flexDirection: "column" }}>
+                      <p style={{ fontSize: 13, color: C.muted, margin: "0 0 18px", lineHeight: 1.5 }}>
+                        Saldos disponibles en cada plataforma operativa, con histórico de lecturas.
+                      </p>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: "auto" }}>
+                        <div style={{ textAlign: "center", background: "#E1F5EE", padding: "12px 8px", borderRadius: 8 }}>
+                          <div style={{ fontSize: 10, color: "#085041", letterSpacing: 0.4, fontWeight: 700 }}>PLATAFORMAS</div>
+                          <div style={{ fontSize: 17, fontWeight: 700, color: "#085041", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
+                            {previewP.loading ? "…" : `${previewP.count} activa${previewP.count === 1 ? "" : "s"}`}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "center", background: "#E1F5EE", padding: "12px 8px", borderRadius: 8 }}>
+                          <div style={{ fontSize: 10, color: "#085041", letterSpacing: 0.4, fontWeight: 700 }}>ÚLT. LECTURA</div>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 4 }}>
+                            <span className="saldos-dot-pulse" style={{ width: 6, height: 6, borderRadius: "50%", background: "#1D9E75" }}/>
+                            <span style={{ fontSize: 17, fontWeight: 700, color: "#085041" }}>
+                              {previewP.loading ? "…" : (fmtHace(previewP.ultimaLectura) || "—")}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
               </div>
             </div>
           );
