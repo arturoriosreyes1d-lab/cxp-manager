@@ -1,15 +1,16 @@
 // ═══════════════════════════════════════════════════════════════════
-// SaldosPlataformasModule — Tablero de saldos en plataformas operativas
+// SaldosPlataformasModule — Tablero Saldos Plataformas (Opción B sobria)
 // ═══════════════════════════════════════════════════════════════════
 //
 // Vive bajo el módulo "Saldos" (junto a Saldos Bancarios).
-// Muestra el saldo más reciente de cada plataforma operativa:
-// Gasomatic, Caribe Cool, Visas Cubanas, Merely Tours.
+// Muestra el saldo más reciente de cada plataforma operativa.
 //
-// Datos vienen de la tabla `saldos_plataformas` en Supabase.
-// COMPARTIDO entre VL y TAS — no se filtra por empresa.
+// Layout: grid 2×2 con cards XL (~200px), franja vertical de color
+//   a la izquierda como acento sobrio (look bancario).
+// Orden FIJO: Gasomatic → Caribe Cool → Merely Tours → Visas Cubanas
 //
-// Al hacer clic en una tarjeta se abre un modal con el histórico.
+// Datos: tabla `saldos_plataformas` en Supabase.
+// COMPARTIDO entre VL y TAS — sin filtro por empresa.
 // ═══════════════════════════════════════════════════════════════════
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -18,7 +19,7 @@ import {
   fetchHistoricoSaldoPlataforma,
 } from './db.js';
 
-// ─── Paleta (igual que el resto de la app) ──────────────────────
+// ─── Paleta ─────────────────────────────────────────────────────
 const C = {
   navy:    '#0F2D4A',
   blue:    '#1565C0',
@@ -37,8 +38,80 @@ const C = {
   white:   '#FFFFFF',
 };
 
-// ─── Helpers ────────────────────────────────────────────────────
+// ─── Orden fijo de plataformas + configuración por cada una ────
+// Si nuevas plataformas aparecen en BD que no están aquí, van al final.
+const PLATAFORMAS_CONFIG = [
+  {
+    key: 'gasomatic',
+    nombre: 'Gasomatic',
+    franja: '#0F6E56',            // verde teal (Caribe Cool palette)
+    bgIcon: '#E1F5EE',            // verde claro
+    iconColorFallback: '#0F6E56',
+    iconFallback: 'gas-station',
+    logo: '/logos/plataformas/gasomatic.png',
+  },
+  {
+    key: 'caribe',
+    nombre: 'Caribe Cool',
+    franja: '#993C1D',            // coral oscuro
+    bgIcon: '#FAECE7',            // coral muy claro
+    iconColorFallback: '#993C1D',
+    iconFallback: 'snowflake',
+    logo: '/logos/plataformas/caribe-cool.png',
+  },
+  {
+    key: 'merely',
+    nombre: 'Merely Tours',
+    franja: '#993556',            // rosa oscuro
+    bgIcon: '#FBEAF0',            // rosa muy claro
+    iconColorFallback: '#993556',
+    iconFallback: 'beach',
+    logo: null,                   // pendiente
+  },
+  {
+    key: 'visa',
+    nombre: 'Visas Cubanas',
+    franja: '#3C3489',            // morado
+    bgIcon: '#EEEDFE',            // morado muy claro
+    iconColorFallback: '#3C3489',
+    iconFallback: 'id-badge-2',
+    logo: null,                   // pendiente
+  },
+];
 
+// Devuelve la config de la plataforma según el nombre (matcheo case-insensitive parcial)
+function getPlataformaConfig(nombre) {
+  const slug = (nombre || '').toLowerCase();
+  for (const cfg of PLATAFORMAS_CONFIG) {
+    if (slug.includes(cfg.key)) return cfg;
+  }
+  // Default si no hace match
+  return {
+    key: 'other', nombre,
+    franja: C.muted, bgIcon: C.bgSoft,
+    iconColorFallback: C.muted, iconFallback: 'building',
+    logo: null,
+  };
+}
+
+// Orden fijo: prepara la lista de saldos respetando el orden de PLATAFORMAS_CONFIG
+function ordenarPorConfig(saldos) {
+  const indexed = saldos.map(s => ({
+    saldo: s,
+    config: getPlataformaConfig(s.plataforma),
+  }));
+  const orden = PLATAFORMAS_CONFIG.map(c => c.key);
+  return indexed.sort((a, b) => {
+    const ia = orden.indexOf(a.config.key);
+    const ib = orden.indexOf(b.config.key);
+    if (ia === -1 && ib === -1) return 0;
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    return ia - ib;
+  });
+}
+
+// ─── Helpers de formato ─────────────────────────────────────────
 const fmt = n => {
   if (n === null || n === undefined || isNaN(n)) return '—';
   return new Intl.NumberFormat('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(+n);
@@ -62,8 +135,6 @@ const monedaColor = m => {
   return { bg: C.blueSoft, color: C.blueText }; // MXN / MN
 };
 
-// "Hace X" en español. Devuelve 'Hace un momento', 'Hace 5 min', 'Hace 2 h', 'Hace 3 d'.
-// Si la fecha es de hace más de 7 días, devuelve solo fecha absoluta.
 function fmtHace(consultadoEn) {
   if (!consultadoEn) return '—';
   const ahora = new Date();
@@ -73,15 +144,13 @@ function fmtHace(consultadoEn) {
   const diffMin = Math.round(diffMs / 60000);
   const diffH = Math.round(diffMs / 3600000);
   const diffD = Math.round(diffMs / 86400000);
-
   if (diffMin < 1) return 'Hace un momento';
   if (diffMin < 60) return `Hace ${diffMin} min`;
-  if (diffH < 24) return `Hace ${diffH} h${diffH === 1 ? '' : ''}`;
+  if (diffH < 24) return `Hace ${diffH} h`;
   if (diffD < 7) return `Hace ${diffD} día${diffD === 1 ? '' : 's'}`;
-  return null; // forzar fecha absoluta
+  return null;
 }
 
-// Fecha absoluta corta: "16/06/26 09:17"
 function fmtFechaCorta(consultadoEn) {
   if (!consultadoEn) return '—';
   const f = new Date(consultadoEn);
@@ -94,7 +163,6 @@ function fmtFechaCorta(consultadoEn) {
   return `${dd}/${mm}/${aa} ${hh}:${mi}`;
 }
 
-// Fecha + hora descriptiva: "Hoy 09:17", "Ayer 18:45", "Lun 09:12"
 function fmtFechaRelativa(consultadoEn) {
   if (!consultadoEn) return '—';
   const f = new Date(consultadoEn);
@@ -103,15 +171,11 @@ function fmtFechaRelativa(consultadoEn) {
   const hh = String(f.getHours()).padStart(2, '0');
   const mi = String(f.getMinutes()).padStart(2, '0');
   const hora = `${hh}:${mi}`;
-
-  // Misma fecha?
   const mismosDias = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
   if (mismosDias(ahora, f)) return `Hoy ${hora}`;
   const ayer = new Date(ahora); ayer.setDate(ayer.getDate() - 1);
   if (mismosDias(ayer, f)) return `Ayer ${hora}`;
-  // Hace menos de 7 días: nombre día
-  const diffMs = ahora - f;
-  const diffD = Math.round(diffMs / 86400000);
+  const diffD = Math.round((ahora - f) / 86400000);
   if (diffD < 7) {
     const dias = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
     return `${dias[f.getDay()]} ${hora}`;
@@ -124,6 +188,28 @@ const TI = ({ name, size = 18, color, style = {} }) => (
   <i className={`ti ti-${name}`} aria-hidden="true"
      style={{ fontSize: size, color: color || 'inherit', lineHeight: 1, ...style }}/>
 );
+
+// ─── Logo o ícono fallback ─────────────────────────────────────
+function LogoCaja({ config, size = 44 }) {
+  return (
+    <div style={{
+      width: size, height: size,
+      background: config.logo ? '#fff' : config.bgIcon,
+      border: config.logo ? `1px solid ${C.border}` : 'none',
+      borderRadius: 8,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      flexShrink: 0, overflow: 'hidden',
+      padding: config.logo ? 5 : 0,
+    }}>
+      {config.logo ? (
+        <img src={config.logo} alt={config.nombre}
+          style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}/>
+      ) : (
+        <TI name={config.iconFallback} size={Math.round(size * 0.55)} color={config.iconColorFallback}/>
+      )}
+    </div>
+  );
+}
 
 // ─── ModalShell reutilizable ────────────────────────────────────
 function ModalShell({ children, onClose, maxWidth = 560 }) {
@@ -144,7 +230,7 @@ function ModalShell({ children, onClose, maxWidth = 560 }) {
 export default function SaldosPlataformasModule() {
   const [loading, setLoading] = useState(true);
   const [saldos, setSaldos] = useState([]);
-  const [plataformaSel, setPlataformaSel] = useState(null); // {plataforma, moneda} para abrir histórico
+  const [plataformaSel, setPlataformaSel] = useState(null);
 
   const cargar = async () => {
     setLoading(true);
@@ -155,7 +241,10 @@ export default function SaldosPlataformasModule() {
 
   useEffect(() => { cargar(); }, []);
 
-  // Última lectura general (la más reciente de todas las plataformas)
+  // Ordenar respetando PLATAFORMAS_CONFIG
+  const saldosOrdenados = useMemo(() => ordenarPorConfig(saldos), [saldos]);
+
+  // Última lectura general
   const ultimaLecturaGeneral = useMemo(() => {
     if (saldos.length === 0) return null;
     const fechas = saldos.map(s => new Date(s.consultado_en).getTime()).filter(x => !isNaN(x));
@@ -164,22 +253,46 @@ export default function SaldosPlataformasModule() {
   }, [saldos]);
 
   return (
-    <div style={{ padding: '0', fontFamily: 'inherit' }}>
+    <div style={{ fontFamily: 'inherit' }}>
+      {/* Animaciones */}
+      <style>{`
+        @keyframes saldosp-fadeUp {
+          from { opacity: 0; transform: translateY(10px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes saldosp-pulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.55; transform: scale(1.25); }
+        }
+        .saldosp-card-anim {
+          animation: saldosp-fadeUp 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+          transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.15s ease;
+        }
+        .saldosp-card-anim:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 10px 28px rgba(15,45,74,0.10) !important;
+          border-color: #CBD5E1 !important;
+        }
+        .saldosp-card-anim:active { transform: translateY(-1px); }
+        .saldosp-dot-pulse { animation: saldosp-pulse 2s ease-in-out infinite; }
+      `}</style>
 
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22, flexWrap: 'wrap', gap: 12 }}>
+      {/* Header de la sub-vista */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <TI name="cloud-data-connection" size={20} color={C.text}/>
-            <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: C.text }}>Saldos Plataformas</h2>
+            <TI name="cloud-data-connection" size={22} color={C.text}/>
+            <h2 style={{ fontSize: 24, fontWeight: 800, margin: 0, color: C.navy, letterSpacing: '-0.4px' }}>Saldos Plataformas</h2>
           </div>
-          <p style={{ fontSize: 12, color: C.muted, margin: '4px 0 0' }}>
-            {loading
-              ? 'Cargando…'
-              : ultimaLecturaGeneral
-                ? `Última actualización general: ${fmtHace(ultimaLecturaGeneral) || fmtFechaCorta(ultimaLecturaGeneral)}`
-                : 'Sin lecturas disponibles'}
-          </p>
+          {!loading && ultimaLecturaGeneral && (
+            <p style={{ fontSize: 12, color: C.muted, margin: '6px 0 0', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="saldosp-dot-pulse" style={{ width: 6, height: 6, borderRadius: '50%', background: '#1D9E75', display: 'inline-block' }}/>
+              Última actualización general: {fmtHace(ultimaLecturaGeneral) || fmtFechaCorta(ultimaLecturaGeneral)}
+            </p>
+          )}
+          {loading && (
+            <p style={{ fontSize: 12, color: C.muted, margin: '6px 0 0' }}>Cargando…</p>
+          )}
         </div>
         <button onClick={cargar}
           style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', fontSize: 13, color: C.text, border: `1px solid ${C.border}`, background: C.white, borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -190,18 +303,22 @@ export default function SaldosPlataformasModule() {
 
       {/* Estado vacío */}
       {!loading && saldos.length === 0 && (
-        <div style={{ padding: 40, textAlign: 'center', background: C.bgSoft, border: `1px solid ${C.border}`, borderRadius: 12, color: C.muted, fontSize: 13 }}>
-          <TI name="cloud-off" size={32} color={C.muted}/>
+        <div style={{ padding: 48, textAlign: 'center', background: C.bgSoft, border: `1px solid ${C.border}`, borderRadius: 12, color: C.muted, fontSize: 13 }}>
+          <TI name="cloud-off" size={36} color={C.muted}/>
           <div style={{ marginTop: 12 }}>No hay saldos de plataformas registrados aún.</div>
         </div>
       )}
 
-      {/* Grid de tarjetas */}
+      {/* Grid de tarjetas: 2 columnas en pantalla amplia, 1 en angosta */}
       {!loading && saldos.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
-          {saldos.map(s => (
-            <TarjetaPlataforma key={s.plataforma} saldo={s}
-              onClick={() => setPlataformaSel({ plataforma: s.plataforma, moneda: s.moneda })}/>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))', gap: 16 }}>
+          {saldosOrdenados.map((item, i) => (
+            <TarjetaPlataforma
+              key={item.saldo.plataforma}
+              saldo={item.saldo}
+              config={item.config}
+              index={i}
+              onClick={() => setPlataformaSel({ plataforma: item.saldo.plataforma, moneda: item.saldo.moneda, config: item.config })}/>
           ))}
         </div>
       )}
@@ -219,6 +336,7 @@ export default function SaldosPlataformasModule() {
         <HistoricoModal
           plataforma={plataformaSel.plataforma}
           moneda={plataformaSel.moneda}
+          config={plataformaSel.config}
           onClose={() => setPlataformaSel(null)}/>
       )}
     </div>
@@ -226,83 +344,65 @@ export default function SaldosPlataformasModule() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Tarjeta individual de plataforma
+// Tarjeta individual de plataforma — estilo Opción B sobria
 // ═══════════════════════════════════════════════════════════════════
-function TarjetaPlataforma({ saldo, onClick }) {
-  const { plataforma, saldo: monto, moneda, consultado_en } = saldo;
+function TarjetaPlataforma({ saldo, config, index, onClick }) {
+  const { saldo: monto, moneda, consultado_en } = saldo;
   const chip = monedaColor(moneda);
   const hace = fmtHace(consultado_en);
   const esVisas = moneda === 'VISAS';
 
   return (
-    <div onClick={onClick}
+    <div className="saldosp-card-anim"
+      onClick={onClick}
       style={{
-        border: `1px solid ${C.border}`,
-        borderRadius: 12,
-        padding: 18,
         background: C.white,
+        borderRadius: 14,
+        border: `1px solid ${C.border}`,
+        minHeight: 200,
         cursor: 'pointer',
-        transition: 'border-color .15s, transform .1s',
-        fontFamily: 'inherit',
-      }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = '#CBD5E1'; }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; }}>
+        display: 'grid',
+        gridTemplateColumns: '6px 1fr',
+        overflow: 'hidden',
+        boxShadow: '0 1px 3px rgba(15,45,74,0.04)',
+        animationDelay: `${index * 0.06}s`,
+      }}>
 
-      {/* Header de la tarjeta: logo + nombre · chip moneda */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', minWidth: 0 }}>
-          <LogoPlataforma plataforma={plataforma}/>
-          <div style={{ fontSize: 15, fontWeight: 700, color: C.text, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{plataforma}</div>
+      {/* Franja vertical de color */}
+      <div style={{ background: config.franja }}/>
+
+      {/* Contenido */}
+      <div style={{ padding: '22px 26px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+
+        {/* Header de la card: logo + nombre · chip moneda */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+          <div style={{ display: 'flex', gap: 14, alignItems: 'center', minWidth: 0 }}>
+            <LogoCaja config={config} size={48}/>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 17, fontWeight: 700, color: C.text, lineHeight: 1.2 }}>{config.nombre}</div>
+              <div style={{ fontSize: 10, color: C.muted, letterSpacing: 0.5, marginTop: 3, fontWeight: 600 }}>PLATAFORMA</div>
+            </div>
+          </div>
+          <span style={{ background: chip.bg, color: chip.color, fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 8, letterSpacing: 0.3, flexShrink: 0 }}>
+            {moneda}
+          </span>
         </div>
-        <span style={{ background: chip.bg, color: chip.color, fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 8, letterSpacing: 0.3, flexShrink: 0 }}>
-          {moneda}
-        </span>
+
+        {/* Saldo grande */}
+        <div>
+          <div style={{ fontSize: 32, fontWeight: 800, color: C.text, lineHeight: 1, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.6px' }}>
+            {esVisas
+              ? <>{fmtEntero(monto)} <span style={{ fontSize: 15, fontWeight: 500, color: C.muted, letterSpacing: 0 }}>disponibles</span></>
+              : `${monedaSym(moneda)}${fmt(monto)}`}
+          </div>
+
+          {/* Última lectura */}
+          <div style={{ fontSize: 11, color: C.muted, display: 'flex', alignItems: 'center', gap: 6, marginTop: 14 }}>
+            <TI name="clock" size={13}/>
+            <span>{hace ? `${hace} · ${fmtFechaCorta(consultado_en)}` : fmtFechaCorta(consultado_en)}</span>
+          </div>
+        </div>
       </div>
-
-      {/* Saldo */}
-      <div style={{ fontSize: 26, fontWeight: 700, color: C.text, lineHeight: 1, marginBottom: 4, fontVariantNumeric: 'tabular-nums' }}>
-        {esVisas
-          ? <>{fmtEntero(monto)} <span style={{ fontSize: 14, fontWeight: 500, color: C.muted }}>disponibles</span></>
-          : `${monedaSym(moneda)}${fmt(monto)}`}
-      </div>
-
-      {/* Última lectura */}
-      <div style={{ fontSize: 11, color: C.muted, display: 'flex', alignItems: 'center', gap: 6, marginTop: 10 }}>
-        <TI name="clock" size={12}/>
-        <span>{hace ? `${hace} · ${fmtFechaCorta(consultado_en)}` : fmtFechaCorta(consultado_en)}</span>
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// Logo de plataforma — placeholder mientras subes las imágenes reales
-// Cuando tengas los logos, reemplaza este componente para que devuelva
-// <img src={`/logos/${slug}.png`} ... />
-// ═══════════════════════════════════════════════════════════════════
-function LogoPlataforma({ plataforma }) {
-  // Mapeo plataforma → estilo placeholder (color de fondo según plataforma)
-  // Esto es solo visual mientras llegan los logos reales
-  const slug = (plataforma || '').toLowerCase();
-  const config = slug.includes('gasomatic')
-    ? { bg: C.greenSoft, icon: 'gas-station', color: C.green }
-    : slug.includes('caribe')
-      ? { bg: '#FAECE7', icon: 'snowflake', color: '#993C1D' }
-      : slug.includes('visa')
-        ? { bg: C.purpleSoft, icon: 'id-badge-2', color: C.purple }
-        : slug.includes('merely')
-          ? { bg: '#FBEAF0', icon: 'beach', color: '#993556' }
-          : { bg: C.bgSoft, icon: 'building', color: C.muted };
-
-  return (
-    <div style={{
-      width: 44, height: 44,
-      background: config.bg,
-      borderRadius: 8,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      flexShrink: 0,
-    }}>
-      <TI name={config.icon} size={22} color={config.color}/>
     </div>
   );
 }
@@ -310,10 +410,10 @@ function LogoPlataforma({ plataforma }) {
 // ═══════════════════════════════════════════════════════════════════
 // Modal de histórico
 // ═══════════════════════════════════════════════════════════════════
-function HistoricoModal({ plataforma, moneda, onClose }) {
+function HistoricoModal({ plataforma, moneda, config, onClose }) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState([]);
-  const [filtro, setFiltro] = useState('7'); // '7' | '30' | 'todo'
+  const [filtro, setFiltro] = useState('7');
 
   useEffect(() => {
     (async () => {
@@ -324,7 +424,6 @@ function HistoricoModal({ plataforma, moneda, onClose }) {
     })();
   }, [plataforma]);
 
-  // Filtrar por rango
   const dataFiltrada = useMemo(() => {
     if (filtro === 'todo') return data;
     const dias = filtro === '7' ? 7 : 30;
@@ -333,10 +432,9 @@ function HistoricoModal({ plataforma, moneda, onClose }) {
     return data.filter(r => new Date(r.consultado_en) >= limite);
   }, [data, filtro]);
 
-  // Calcular variaciones
   const dataConVariacion = useMemo(() => {
     return dataFiltrada.map((r, i) => {
-      const siguiente = dataFiltrada[i + 1]; // siguiente = anterior cronológicamente (ya viene desc)
+      const siguiente = dataFiltrada[i + 1];
       const variacion = siguiente ? (+r.saldo || 0) - (+siguiente.saldo || 0) : null;
       return { ...r, variacion };
     });
@@ -344,25 +442,12 @@ function HistoricoModal({ plataforma, moneda, onClose }) {
 
   const esVisas = moneda === 'VISAS';
   const chip = monedaColor(moneda);
-  const slug = (plataforma || '').toLowerCase();
-  const config = slug.includes('gasomatic')
-    ? { bg: C.greenSoft, icon: 'gas-station', color: C.green }
-    : slug.includes('caribe')
-      ? { bg: '#FAECE7', icon: 'snowflake', color: '#993C1D' }
-      : slug.includes('visa')
-        ? { bg: C.purpleSoft, icon: 'id-badge-2', color: C.purple }
-        : slug.includes('merely')
-          ? { bg: '#FBEAF0', icon: 'beach', color: '#993556' }
-          : { bg: C.bgSoft, icon: 'building', color: C.muted };
 
   return (
     <ModalShell onClose={onClose} maxWidth={620}>
-      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', paddingBottom: 14, borderBottom: `1px solid ${C.border}`, marginBottom: 16 }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <div style={{ width: 36, height: 36, background: config.bg, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <TI name={config.icon} size={18} color={config.color}/>
-          </div>
+          <LogoCaja config={config} size={40}/>
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{plataforma} · histórico</div>
             <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
@@ -376,7 +461,6 @@ function HistoricoModal({ plataforma, moneda, onClose }) {
         </button>
       </div>
 
-      {/* Filtros */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
         {[
           { id: '7', label: '7 días' },
@@ -397,7 +481,6 @@ function HistoricoModal({ plataforma, moneda, onClose }) {
         ))}
       </div>
 
-      {/* Tabla */}
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: C.muted, fontSize: 13 }}>Cargando histórico…</div>
       ) : dataConVariacion.length === 0 ? (
