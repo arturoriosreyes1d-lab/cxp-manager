@@ -13,7 +13,7 @@
 // COMPARTIDO entre VL y TAS — sin filtro por empresa.
 // ═══════════════════════════════════════════════════════════════════
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   fetchSaldosPlataformasUltimos,
   fetchHistoricoSaldoPlataforma,
@@ -231,15 +231,57 @@ export default function SaldosPlataformasModule() {
   const [loading, setLoading] = useState(true);
   const [saldos, setSaldos] = useState([]);
   const [plataformaSel, setPlataformaSel] = useState(null);
+  const [actualizando, setActualizando] = useState(false);
+  const intervaloRef = useRef(null);
 
-  const cargar = async () => {
-    setLoading(true);
+  const cargar = async (silencioso = false) => {
+    if (!silencioso) setLoading(true);
     const ultimos = await fetchSaldosPlataformasUltimos();
     setSaldos(ultimos);
-    setLoading(false);
+    if (!silencioso) setLoading(false);
+  };
+
+  // Dispara el workflow de GitHub Actions y luego re-lee Supabase cada 15s durante 3 min
+  const refrescar = async () => {
+    if (actualizando) return;
+    setActualizando(true);
+    try {
+      const r = await fetch('/api/refrescar-saldos', { method: 'POST' });
+      if (!r.ok) {
+        setActualizando(false);
+        alert('No se pudo disparar la actualización. Intenta de nuevo.');
+        return;
+      }
+    } catch (err) {
+      console.error('refrescar:', err);
+      setActualizando(false);
+      alert('No se pudo disparar la actualización. Revisa tu conexión.');
+      return;
+    }
+
+    // Re-leer Supabase cada 15 segundos durante 3 minutos (silenciosamente, sin parpadear "Cargando…")
+    const inicio = Date.now();
+    intervaloRef.current = setInterval(async () => {
+      await cargar(true);
+      if (Date.now() - inicio > 180000) { // 3 minutos
+        clearInterval(intervaloRef.current);
+        intervaloRef.current = null;
+        setActualizando(false);
+      }
+    }, 15000);
   };
 
   useEffect(() => { cargar(); }, []);
+
+  // Limpiar intervalo al desmontar el componente
+  useEffect(() => {
+    return () => {
+      if (intervaloRef.current) {
+        clearInterval(intervaloRef.current);
+        intervaloRef.current = null;
+      }
+    };
+  }, []);
 
   // Ordenar respetando PLATAFORMAS_CONFIG
   const saldosOrdenados = useMemo(() => ordenarPorConfig(saldos), [saldos]);
@@ -263,6 +305,10 @@ export default function SaldosPlataformasModule() {
         @keyframes saldosp-pulse {
           0%, 100% { opacity: 1; transform: scale(1); }
           50% { opacity: 0.55; transform: scale(1.25); }
+        }
+        @keyframes saldosp-spin {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(360deg); }
         }
         .saldosp-card-anim {
           animation: saldosp-fadeUp 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
@@ -294,10 +340,21 @@ export default function SaldosPlataformasModule() {
             <p style={{ fontSize: 12, color: C.muted, margin: '6px 0 0' }}>Cargando…</p>
           )}
         </div>
-        <button onClick={cargar}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', fontSize: 13, color: C.text, border: `1px solid ${C.border}`, background: C.white, borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit' }}>
-          <TI name="refresh" size={14}/>
-          Refrescar
+        <button onClick={refrescar} disabled={actualizando}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '8px 14px', fontSize: 13,
+            color: actualizando ? C.muted : C.text,
+            border: `1px solid ${C.border}`,
+            background: actualizando ? C.bgSoft : C.white,
+            borderRadius: 8,
+            cursor: actualizando ? 'not-allowed' : 'pointer',
+            fontFamily: 'inherit',
+            opacity: actualizando ? 0.7 : 1,
+            transition: 'opacity .15s, background .15s',
+          }}>
+          <TI name="refresh" size={14} style={actualizando ? { animation: 'saldosp-spin 1.2s linear infinite', display: 'inline-block' } : {}}/>
+          {actualizando ? 'Actualizando… (~2 min)' : 'Refrescar'}
         </button>
       </div>
 
