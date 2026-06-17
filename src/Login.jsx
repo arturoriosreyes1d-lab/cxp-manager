@@ -44,7 +44,7 @@ export default function Login({ onLogin }) {
     <div style={{
       minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
       background: `linear-gradient(135deg, ${C.navy} 0%, #1a3a5c 50%, ${C.blue} 100%)`,
-      fontFamily: "'DM Sans','Segoe UI',sans-serif",
+      fontFamily: "'Inter','Segoe UI',sans-serif",
     }}>
       <div style={{
         background: C.surface, borderRadius: 24, padding: 48, width: "100%", maxWidth: 420,

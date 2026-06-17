@@ -3758,7 +3758,7 @@ export default function CxcView({
               </div>
 
               {/* ═══ Reporte estilo Moderno Corporativo (header navy + KPIs + total destacado) ═══ */}
-              <div ref={estadoCuentaRef} style={{ background: "#fff", fontFamily: "'DM Sans','Segoe UI',sans-serif", border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+              <div ref={estadoCuentaRef} style={{ background: "#fff", fontFamily: "'Inter','Segoe UI',sans-serif", border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
 
                 {/* Header navy con título + fecha */}
                 <div style={{ background: C.navy, color: "#fff", padding: "22px 28px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>

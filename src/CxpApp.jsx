@@ -9205,7 +9205,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
      LAYOUT
      ═══════════════════════════════════════════════════════════════════════ */
   if(loading) return (
-    <div style={{display:"flex",height:"100vh",alignItems:"center",justifyContent:"center",fontFamily:"'DM Sans','Segoe UI',sans-serif",background:C.cream}}>
+    <div style={{display:"flex",height:"100vh",alignItems:"center",justifyContent:"center",fontFamily:"'Inter','Segoe UI',sans-serif",background:C.cream}}>
       <div style={{textAlign:"center"}}>
         <div style={{fontSize:56,marginBottom:16}}>✈️</div>
         <div style={{fontSize:20,fontWeight:800,color:C.navy,marginBottom:8}}>Viajes Libero</div>
@@ -9215,7 +9215,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
   );
 
   return (
-    <div style={{display:"flex",height:"100vh",fontFamily:"'DM Sans','Segoe UI',sans-serif",background:C.cream,color:C.text,overflow:"hidden"}}>
+    <div style={{display:"flex",height:"100vh",fontFamily:"'Inter','Segoe UI',sans-serif",background:C.cream,color:C.text,overflow:"hidden"}}>
       {/* Sidebar */}
       <aside style={{width:220,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",padding:"24px 12px",flexShrink:0}}>
         <div style={{padding:"0 8px 16px",borderBottom:`1px solid ${C.border}`,marginBottom:12}}>

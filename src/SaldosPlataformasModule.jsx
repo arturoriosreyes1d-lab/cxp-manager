@@ -311,7 +311,7 @@ export default function SaldosPlataformasModule() {
 
       {/* Grid de tarjetas: 2 columnas en pantalla amplia, 1 en angosta */}
       {!loading && saldos.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           {saldosOrdenados.map((item, i) => (
             <TarjetaPlataforma
               key={item.saldo.plataforma}
@@ -359,7 +359,7 @@ function TarjetaPlataforma({ saldo, config, index, onClick }) {
         background: C.white,
         borderRadius: 14,
         border: `1px solid ${C.border}`,
-        minHeight: 200,
+        minHeight: 220,
         cursor: 'pointer',
         display: 'grid',
         gridTemplateColumns: '6px 1fr',
@@ -372,14 +372,14 @@ function TarjetaPlataforma({ saldo, config, index, onClick }) {
       <div style={{ background: config.franja }}/>
 
       {/* Contenido */}
-      <div style={{ padding: '22px 26px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+      <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
 
         {/* Header de la card: logo + nombre · chip moneda */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
           <div style={{ display: 'flex', gap: 14, alignItems: 'center', minWidth: 0 }}>
-            <LogoCaja config={config} size={48}/>
+            <LogoCaja config={config} size={52}/>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 17, fontWeight: 700, color: C.text, lineHeight: 1.2 }}>{config.nombre}</div>
+              <div style={{ fontSize: 19, fontWeight: 700, color: C.text, lineHeight: 1.2 }}>{config.nombre}</div>
               <div style={{ fontSize: 10, color: C.muted, letterSpacing: 0.5, marginTop: 3, fontWeight: 600 }}>PLATAFORMA</div>
             </div>
           </div>
@@ -390,14 +390,14 @@ function TarjetaPlataforma({ saldo, config, index, onClick }) {
 
         {/* Saldo grande */}
         <div>
-          <div style={{ fontSize: 32, fontWeight: 800, color: C.text, lineHeight: 1, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.6px' }}>
+          <div style={{ fontSize: 36, fontWeight: 800, color: C.text, lineHeight: 1, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.6px' }}>
             {esVisas
-              ? <>{fmtEntero(monto)} <span style={{ fontSize: 15, fontWeight: 500, color: C.muted, letterSpacing: 0 }}>disponibles</span></>
+              ? <>{fmtEntero(monto)} <span style={{ fontSize: 17, fontWeight: 500, color: C.muted, letterSpacing: 0 }}>disponibles</span></>
               : `${monedaSym(moneda)}${fmt(monto)}`}
           </div>
 
           {/* Última lectura */}
-          <div style={{ fontSize: 11, color: C.muted, display: 'flex', alignItems: 'center', gap: 6, marginTop: 14 }}>
+          <div style={{ fontSize: 11, color: C.muted, display: 'flex', alignItems: 'center', gap: 6, marginTop: 16 }}>
             <TI name="clock" size={13}/>
             <span>{hace ? `${hace} · ${fmtFechaCorta(consultado_en)}` : fmtFechaCorta(consultado_en)}</span>
           </div>
