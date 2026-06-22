@@ -17,10 +17,10 @@ import { useState } from "react";
 import { supabase } from "./supabase.js";
 
 const C = {
-  navy: "#142855",
-  coral: "#E76F51",
+  navy: "#0A1F4F",
+  coral: "#B83410",
   border: "#E2E8F0",
-  muted: "#64748B",
+  muted: "#475569",
   text: "#1A2332",
   danger: "#E53935",
 };
@@ -275,7 +275,7 @@ export default function Login({ onLogin }) {
       {/* ═══════════════════════════════════════════════════════════ */}
       <div style={{
         position: "absolute", inset: 0,
-        clipPath: "polygon(100% 0, 100% 100%, 0 100%, 5% 90%, 12% 80%, 20% 70%, 28% 60%, 36% 50%, 44% 40%, 52% 32%, 60% 24%, 68% 17%, 75% 11%, 82% 6%, 89% 3%, 95% 1%, 100% 0)",
+        clipPath: "polygon(100% 0, 100% 100%, 0 100%, 12% 100%, 22% 96%, 32% 90%, 42% 82%, 52% 72%, 62% 60%, 72% 48%, 80% 36%, 86% 25%, 92% 15%, 96% 8%, 100% 0)",
       }}>
         {/* Cielo intenso con 13 paradas */}
         <div style={{
@@ -549,43 +549,43 @@ export default function Login({ onLogin }) {
 
           {/* Branding bi-empresa */}
           <div style={{ textAlign: "center", marginBottom: 28 }}>
-            <div style={{ display: "inline-flex", gap: 6, marginBottom: 14 }}>
+            <div style={{ display: "inline-flex", gap: 8, marginBottom: 16 }}>
               <div style={{
-                width: 44, height: 44,
+                width: 48, height: 48,
                 background: "linear-gradient(135deg, #142855, #4A6FA5)",
                 borderRadius: 10,
                 display: "flex", alignItems: "center", justifyContent: "center",
                 boxShadow: "0 4px 12px rgba(20,40,85,0.3)",
               }}>
-                <i className="ti ti-plane" style={{ fontSize: 22, color: "#fff" }}/>
+                <i className="ti ti-plane" style={{ fontSize: 24, color: "#fff" }}/>
               </div>
               <div style={{
-                width: 44, height: 44,
+                width: 48, height: 48,
                 background: "linear-gradient(135deg, #E76F51, #2A9D8F)",
                 borderRadius: 10,
                 display: "flex", alignItems: "center", justifyContent: "center",
                 boxShadow: "0 4px 12px rgba(231,111,81,0.25)",
               }}>
-                <i className="ti ti-palmtree" style={{ fontSize: 22, color: "#fff" }}/>
+                <i className="ti ti-palmtree" style={{ fontSize: 24, color: "#fff" }}/>
               </div>
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginTop: 6 }}>
-              <div style={{ fontSize: 19, fontWeight: 800, color: C.navy, letterSpacing: "-0.4px", lineHeight: 1.1, textAlign: "right" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginTop: 8 }}>
+              <div style={{ fontSize: 22, fontWeight: 800, color: C.navy, letterSpacing: "-0.5px", lineHeight: 1.05, textAlign: "right" }}>
                 TravelAir<br/>
-                <span style={{ fontWeight: 500, fontSize: 13, color: C.muted }}>Solutions</span>
+                <span style={{ fontWeight: 600, fontSize: 14, color: C.muted }}>Solutions</span>
               </div>
               <div style={{
-                width: 1, height: 36,
-                background: "linear-gradient(180deg, transparent, #E2E8F0, transparent)",
+                width: 1, height: 42,
+                background: "linear-gradient(180deg, transparent, #CBD5E1, transparent)",
               }}/>
-              <div style={{ fontSize: 19, fontWeight: 800, color: C.coral, letterSpacing: "-0.4px", lineHeight: 1.1, textAlign: "left" }}>
+              <div style={{ fontSize: 22, fontWeight: 800, color: C.coral, letterSpacing: "-0.5px", lineHeight: 1.05, textAlign: "left" }}>
                 Viajes<br/>
-                <span style={{ fontWeight: 500, fontSize: 13, color: C.muted }}>Libero</span>
+                <span style={{ fontWeight: 600, fontSize: 14, color: C.muted }}>Libero</span>
               </div>
             </div>
 
-            <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 14, paddingTop: 14, borderTop: "0.5px solid #F1F5F9" }}>
+            <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 16, paddingTop: 16, borderTop: "0.5px solid #F1F5F9" }}>
               Sistema de Cuentas por Pagar
             </div>
           </div>
