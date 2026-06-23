@@ -43,25 +43,29 @@ export default function ReportesCxCView({
 }) {
 
   // KPIs para la card de Factoraje
+  // IMPORTANTE: usamos metrics[id].porCobrar (calculado correctamente por la app),
+  // NO ing.monto - ing.montoPagado (que estaba mal porque montoPagado no se usa así).
   const kpisFactoraje = useMemo(() => {
     const conSaldo = ingresos.filter(i => {
-      if (i.oculta) return false; // mismo criterio que la app: facturas ocultas se excluyen
-      const saldo = (+i.monto||0) - (+i.montoPagado||0);
+      if (i.oculta) return false;
+      const saldo = (metrics?.[i.id]?.porCobrar) || 0;
       return saldo > 0;
     });
-    const totalMXN = conSaldo.filter(i => (i.moneda||'MXN')==='MXN').reduce((s,i)=> s + ((+i.monto||0) - (+i.montoPagado||0)), 0);
+    const totalMXN = conSaldo
+      .filter(i => (i.moneda||'MXN')==='MXN')
+      .reduce((s,i)=> s + (metrics?.[i.id]?.porCobrar || 0), 0);
     // vencido (usando fecha hoy)
     const hoy = new Date(); hoy.setHours(0,0,0,0);
     const vencidoMXN = conSaldo
       .filter(i => (i.moneda||'MXN')==='MXN' && i.fechaVencimiento)
       .filter(i => new Date(i.fechaVencimiento+'T12:00:00') < hoy)
-      .reduce((s,i)=> s + ((+i.monto||0) - (+i.montoPagado||0)), 0);
+      .reduce((s,i)=> s + (metrics?.[i.id]?.porCobrar || 0), 0);
     return {
       numFacturas: conSaldo.length,
       totalMXN,
       vencidoMXN,
     };
-  }, [ingresos]);
+  }, [ingresos, metrics]);
 
   // KPIs para card de Reporte CxC clásico
   const kpisReporteClasico = useMemo(() => {

@@ -1973,6 +1973,7 @@ export default function CxcView({
       <FactorajeModule
         onBack={()=>setVistaActual("reportes")}
         ingresos={ingresos}
+        metrics={metrics}
         empresaId={empresaId}
         usuario={"admin"}
         diasDiff={diasDiff}

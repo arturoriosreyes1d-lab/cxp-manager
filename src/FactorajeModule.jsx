@@ -65,7 +65,7 @@ const monedaSym = (m) => m==='EUR'?'€':'$';
 // ═════════════════════════════════════════════════════════════════
 //
 // Conceptos:
-//   total          = saldo total de la cartera (monto - montoPagado)
+//   total          = saldo pendiente de cobro de la cartera (calculado por metrics.porCobrar)
 //   anticipo       = total * (pctAnticipo/100)
 //   retencion      = total * (pctRetencion/100)
 //   comision       = total * (pctComision/100)        (apertura, una vez)
@@ -117,20 +117,22 @@ function variantes(params) {
 // ═════════════════════════════════════════════════════════════════
 // COMPONENTE PRINCIPAL
 // ═════════════════════════════════════════════════════════════════
-export default function FactorajeModule({ onBack, ingresos = [], empresaId, usuario, diasDiff }) {
+export default function FactorajeModule({ onBack, ingresos = [], metrics = {}, empresaId, usuario, diasDiff }) {
 
   // ─── Filtrar facturas con saldo pendiente > 0 (excluyendo ocultas) ───
+  // IMPORTANTE: usamos metrics[id].porCobrar (calculado correctamente por la app),
+  // NO ing.monto - ing.montoPagado.
   const facturasConSaldo = useMemo(() => {
     return ingresos
       .filter(i => !i.oculta)
       .map(i => {
         const total = +i.monto || 0;
-        const pagado = +i.montoPagado || 0;
-        const saldo = Math.max(0, total - pagado);
-        return { ...i, saldo };
+        const saldo = (metrics?.[i.id]?.porCobrar) || 0;
+        const pagado = total - saldo;
+        return { ...i, saldo, _pagadoCalc: pagado };
       })
       .filter(i => i.saldo > 0);
-  }, [ingresos]);
+  }, [ingresos, metrics]);
 
   // ─── Selección de facturas (default: todas) ────────────────
   const [seleccion, setSeleccion] = useState(new Set());
@@ -1049,7 +1051,7 @@ async function generarExcelFactoraje({ facturas, seleccionPorMoneda, params, esc
         dc: f.diasCredito || 0,
         dv: d,
         total: +f.monto || 0,
-        cobrado: +f.montoPagado || 0,
+        cobrado: +f._pagadoCalc || 0,
         saldo: f.saldo,
         estatus,
       });
