@@ -512,14 +512,14 @@ export default function FactorajeModule({ onBack, ingresos = [], metrics = {}, p
                   </div>
 
                   {/* CARD SIN FACTORAJE */}
-                  <div style={{background:'linear-gradient(135deg, rgba(252, 211, 77, 0.15), rgba(252, 211, 77, 0.04))',border:'1.5px solid rgba(252, 211, 77, 0.4)',borderRadius:14,padding:'18px 20px'}}>
-                    <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'rgba(252, 211, 77, 0.18)',padding:'4px 10px',borderRadius:99,marginBottom:10}}>
-                      <span style={{width:8,height:8,borderRadius:'50%',background:'#FCD34D'}}/>
-                      <span style={{fontSize:9,fontWeight:700,letterSpacing:0.5,color:'#FCD34D'}}>SIN FACTORAJE · ESPERANDO</span>
+                  <div style={{background:'linear-gradient(135deg, rgba(167, 139, 250, 0.18), rgba(167, 139, 250, 0.05))',border:'1.5px solid rgba(167, 139, 250, 0.4)',borderRadius:14,padding:'18px 20px'}}>
+                    <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'rgba(167, 139, 250, 0.2)',padding:'4px 10px',borderRadius:99,marginBottom:10}}>
+                      <span style={{width:8,height:8,borderRadius:'50%',background:'#A78BFA'}}/>
+                      <span style={{fontSize:9,fontWeight:700,letterSpacing:0.5,color:'#C4B5FD'}}>SIN FACTORAJE · ESPERANDO</span>
                     </div>
                     <div style={{fontSize:11,opacity:0.75,marginBottom:4,fontWeight:600}}>Cuando tu cliente pague (~{params.plazoDias||'?'} días)</div>
-                    <div style={{fontSize:34,fontWeight:800,color:'#FCD34D',fontVariantNumeric:'tabular-nums',letterSpacing:'-0.7px',lineHeight:1,marginBottom:10}}>{sym}{fmt(r.total)}</div>
-                    <div style={{fontSize:11,opacity:0.65,lineHeight:1.5,paddingTop:10,borderTop:'1px solid rgba(252, 211, 77, 0.2)'}}>
+                    <div style={{fontSize:34,fontWeight:800,color:'#C4B5FD',fontVariantNumeric:'tabular-nums',letterSpacing:'-0.7px',lineHeight:1,marginBottom:10}}>{sym}{fmt(r.total)}</div>
+                    <div style={{fontSize:11,opacity:0.65,lineHeight:1.5,paddingTop:10,borderTop:'1px solid rgba(167, 139, 250, 0.2)'}}>
                       El <strong>100% facturado</strong> tal cual, sin descuentos. Pero tienes que esperar a que cobren.
                     </div>
                   </div>
@@ -803,28 +803,11 @@ function FlujoProyectado({ ingresos, escenario, diasDiff }) {
   // Encontrar la cobranza más grande (para destacarla con ⭐)
   const idxMasGrande = cobranzas.reduce((maxI, c, i, arr) => c.total > arr[maxI].total ? i : maxI, 0);
 
-  // Tamaño de punto proporcional al monto (entre 12 y 22 px)
-  const sizePunto = (monto) => {
-    const pct = monto / maxMonto;
-    return Math.max(12, Math.min(22, 12 + pct * 10));
-  };
-
   // Función para formatear "Dentro de X días" o "Mañana" o "Hoy"
   const fmtDiasRest = (d) => {
     if (d === 0) return 'Hoy';
     if (d === 1) return 'Mañana';
     return `Dentro de ${d} días`;
-  };
-
-  // Formatear cliente principal (top 1 con "+N" si hay más)
-  const fmtClientePrincipal = (clientesMap, totalCount) => {
-    const arr = Array.from(clientesMap.entries()).sort((a,b) => b[1] - a[1]);
-    if (arr.length === 0) return '';
-    const top = arr[0][0];
-    // Mostrar abreviado
-    const topShort = top.length > 16 ? top.slice(0, 14)+'…' : top;
-    const restCount = totalCount - 1;
-    return restCount > 0 ? `${topShort} +${restCount}` : topShort;
   };
 
   // Total general en el periodo
@@ -874,14 +857,12 @@ function FlujoProyectado({ ingresos, escenario, diasDiff }) {
             {/* HOY (anticipo) — solo si hay anticipo */}
             {tieneAnticipo && (
               <TimelineNodo
-                tipo="hoy"
                 chipLabel="⚡ HOY"
                 chipColor={`linear-gradient(135deg, #10B981, #34D399)`}
                 chipShadow="0 4px 12px rgba(16, 185, 129, 0.35)"
                 importe={anticipoHoy}
-                puntoSize={22}
-                puntoColor={`linear-gradient(135deg, #10B981, #34D399)`}
-                puntoHaloColor="#10B981"
+                barColor={`linear-gradient(135deg, #10B981, #34D399)`}
+                alturaBarra={18}
                 fechaTexto={fmtFecha(hoy.toISOString().slice(0,10))}
                 subtexto="Anticipo factoraje"
                 destacado
@@ -891,23 +872,21 @@ function FlujoProyectado({ ingresos, escenario, diasDiff }) {
             {/* Cobranzas */}
             {cobranzas.map((c, i) => {
               const esGrande = i === idxMasGrande && cobranzas.length > 1;
-              const tamPunto = sizePunto(c.total);
+              // Altura de la barra proporcional al monto (entre 10 y 22 px)
+              const pct = c.total / maxMonto;
+              const altura = esGrande ? 18 : Math.max(10, Math.min(22, 10 + pct * 12));
               return (
                 <TimelineNodo
                   key={c.fechaStr}
-                  tipo="cobranza"
                   chipLabel={esGrande ? `⭐ ${fmtDiasRest(c.diasRestantes)}` : fmtDiasRest(c.diasRestantes)}
                   chipColor={esGrande ? `linear-gradient(135deg, #F59E0B, #FCD34D)` : '#F0F4F8'}
                   chipTextColor={esGrande ? '#fff' : '#475569'}
                   chipShadow={esGrande ? '0 4px 12px rgba(245, 158, 11, 0.35)' : 'none'}
                   importe={c.total}
-                  puntoSize={esGrande ? 22 : tamPunto}
-                  puntoColor={esGrande ? `linear-gradient(135deg, #F59E0B, #FCD34D)` : '#FCD34D'}
-                  puntoHaloColor={esGrande ? '#F59E0B' : '#FCD34D'}
-                  puntoHaloDoble={esGrande}
+                  barColor={esGrande ? `linear-gradient(135deg, #F59E0B, #FCD34D)` : '#FCD34D'}
+                  alturaBarra={altura}
                   fechaTexto={fmtFecha(c.fechaStr)}
                   subtexto={`${c.count} factura${c.count!==1?'s':''}`}
-                  subtexto2={fmtClientePrincipal(c.clientes, c.count)}
                   destacado={esGrande}
                 />
               );
@@ -916,20 +895,7 @@ function FlujoProyectado({ ingresos, escenario, diasDiff }) {
           </div>
 
           {/* ─── Línea base horizontal (al fondo) ─── */}
-          <div style={{
-            position:'absolute',
-            left: `calc((100% / ${totalPuntos}) / 2 + 20px)`,
-            right: `calc((100% / ${totalPuntos}) / 2 + 20px)`,
-            top: '50%',
-            transform: 'translateY(-2px)',
-            height: 3,
-            background: tieneAnticipo
-              ? `linear-gradient(90deg, #10B981 0%, #10B981 ${Math.max(8, 100/totalPuntos)}%, #FCD34D ${Math.max(20, 100/totalPuntos * 1.5)}%, #FCD34D 100%)`
-              : `#FCD34D`,
-            borderRadius: 2,
-            zIndex: 1,
-            opacity: 0.4,
-          }}/>
+          {/* Las barras rectangulares actúan como la "línea de tiempo" visualmente */}
         </div>
       </div>
 
@@ -965,65 +931,65 @@ function FlujoProyectado({ ingresos, escenario, diasDiff }) {
 }
 
 // ─── Subcomponente: nodo individual del timeline ───
-function TimelineNodo({ chipLabel, chipColor, chipTextColor='#fff', chipShadow, importe, puntoSize=14, puntoColor, puntoHaloColor, puntoHaloDoble, fechaTexto, subtexto, subtexto2, destacado }) {
+function TimelineNodo({ chipLabel, chipColor, chipTextColor='#fff', chipShadow, importe, barColor, fechaTexto, subtexto, destacado, alturaBarra }) {
   return (
-    <div style={{position:'relative',display:'flex',flexDirection:'column',alignItems:'center',padding:'4px 8px 4px'}}>
-      {/* Chip "Dentro de X días" */}
+    <div style={{position:'relative',display:'flex',flexDirection:'column',alignItems:'center',padding:'4px 6px'}}>
+      {/* Chip "Dentro de X días" — MÁS GRANDE */}
       <div style={{
         background: chipColor,
         color: chipTextColor,
-        fontSize: 10,
-        fontWeight: 700,
-        letterSpacing: 0.4,
-        padding: '5px 12px',
+        fontSize: destacado ? 13 : 12,
+        fontWeight: 800,
+        letterSpacing: 0.3,
+        padding: destacado ? '8px 16px' : '7px 14px',
         borderRadius: 99,
         textTransform: chipLabel.includes('⚡')||chipLabel.includes('⭐') ? 'uppercase' : 'none',
         boxShadow: chipShadow,
-        marginBottom: 14,
+        marginBottom: 16,
         whiteSpace: 'nowrap',
+        textAlign: 'center',
       }}>{chipLabel}</div>
 
-      {/* Importe centro */}
+      {/* Importe centro — MÁS GRANDE */}
       <div style={{
-        fontSize: destacado ? 22 : 18,
+        fontSize: destacado ? 30 : 26,
         fontWeight: 800,
         color: '#0F2D4A',
         fontVariantNumeric: 'tabular-nums',
-        letterSpacing: '-0.4px',
+        letterSpacing: '-0.6px',
         lineHeight: 1,
-        marginBottom: destacado ? 18 : 22,
+        marginBottom: 18,
+        whiteSpace: 'nowrap',
       }}>${fmtCompact(importe)}</div>
 
-      {/* Punto en la línea */}
-      <div style={{position:'relative',zIndex:2,marginBottom:14}}>
-        <div style={{
-          width: puntoSize,
-          height: puntoSize,
-          borderRadius: '50%',
-          background: puntoColor,
-          border: puntoHaloDoble ? undefined : '4px solid #fff',
-          boxShadow: puntoHaloDoble
-            ? `0 0 0 5px #fff, 0 0 0 6px ${puntoHaloColor}, 0 6px 20px ${puntoHaloColor}66`
-            : `0 0 0 2px ${puntoHaloColor}, 0 4px 12px ${puntoHaloColor}66`,
-          position: 'relative',
-        }}>
-          {puntoHaloDoble && (
-            <div style={{position:'absolute',inset:0,borderRadius:'50%',background:'radial-gradient(circle, rgba(255,255,255,0.5) 0%, transparent 60%)'}}/>
-          )}
-        </div>
+      {/* BARRA RECTANGULAR (en lugar de punto circular) */}
+      <div style={{
+        position: 'relative',
+        zIndex: 2,
+        width: '70%',
+        minWidth: 80,
+        height: alturaBarra || 14,
+        background: barColor,
+        borderRadius: 4,
+        boxShadow: destacado
+          ? `0 0 0 2px #fff, 0 4px 16px ${barColor.includes('linear-gradient') ? 'rgba(245, 158, 11, 0.5)' : barColor+'66'}`
+          : `0 0 0 2px #fff, 0 3px 10px ${barColor.includes('linear-gradient') ? 'rgba(252, 211, 77, 0.4)' : barColor+'55'}`,
+        marginBottom: 16,
+      }}>
+        {destacado && (
+          <div style={{
+            position:'absolute',inset:0,borderRadius:4,
+            background:'linear-gradient(180deg, rgba(255,255,255,0.3) 0%, transparent 50%)',
+          }}/>
+        )}
       </div>
 
       {/* Fecha real */}
-      <div style={{fontSize:11,fontWeight:700,color:'#1A2332',textAlign:'center',whiteSpace:'nowrap'}}>{fechaTexto}</div>
+      <div style={{fontSize:12,fontWeight:700,color:'#1A2332',textAlign:'center',whiteSpace:'nowrap'}}>{fechaTexto}</div>
 
-      {/* Subtexto (cantidad de facturas) */}
+      {/* Subtexto (solo # facturas — sin cliente) */}
       {subtexto && (
-        <div style={{fontSize:10,color:C.muted,marginTop:3,textAlign:'center',whiteSpace:'nowrap'}}>{subtexto}</div>
-      )}
-
-      {/* Subtexto 2 (cliente principal) */}
-      {subtexto2 && (
-        <div style={{fontSize:10,color:destacado?'#8C6B1A':C.muted,marginTop:1,textAlign:'center',whiteSpace:'nowrap',fontWeight:destacado?700:400}}>{subtexto2}</div>
+        <div style={{fontSize:11,color:C.muted,marginTop:4,textAlign:'center',whiteSpace:'nowrap',fontWeight:600}}>{subtexto}</div>
       )}
     </div>
   );
