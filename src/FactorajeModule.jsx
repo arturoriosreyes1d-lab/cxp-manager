@@ -439,13 +439,24 @@ export default function FactorajeModule({ onBack, ingresos = [], metrics = {}, p
 
         {/* Parámetros */}
         <Block step={2} label="Parámetros (mete los valores que te dé el factorante)" anim noMargin>
+          {/* Advertencia cuando todos los parámetros están en 0 */}
+          {(params.tasaAnual === 0 && params.pctAnticipo === 0 && params.plazoDias === 0 && params.pctComision === 0 && params.pctRetencion === 0) && (
+            <div style={{marginBottom:14,padding:'10px 14px',background:'rgba(245,158,11,0.08)',borderLeft:`3px solid #F59E0B`,borderRadius:'0 6px 6px 0',fontSize:11.5,color:'#92400E',lineHeight:1.5}}>
+              ⚠️ <strong>Mete los valores que te dé el factorante.</strong> Cada parámetro tiene un ícono <strong style={{background:'#E0E7FF',color:'#4338CA',padding:'1px 5px',borderRadius:99,fontSize:9}}>ⓘ</strong> al lado: pasa el mouse para ver qué significa.
+            </div>
+          )}
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
-            <ParamInput label="Tasa anual" unit="%" value={params.tasaAnual} onChange={v=>setParam('tasaAnual',v)}/>
-            <ParamInput label="% Anticipo" unit="%" value={params.pctAnticipo} onChange={v=>setParam('pctAnticipo',v)}/>
-            <ParamInput label="Plazo promedio" unit="días" value={params.plazoDias} onChange={v=>setParam('plazoDias',v)} step="1"/>
-            <ParamInput label="Comisión apertura" unit="%" value={params.pctComision} onChange={v=>setParam('pctComision',v)}/>
+            <ParamInput label="Tasa anual" unit="%" value={params.tasaAnual} onChange={v=>setParam('tasaAnual',v)}
+              help="Es el 'interés' que cobra el factorante por adelantarte el dinero, en términos anuales. Se prorratea según los días reales que dure el factoraje. Típico en México: 12%–18% anual."/>
+            <ParamInput label="% Anticipo" unit="%" value={params.pctAnticipo} onChange={v=>setParam('pctAnticipo',v)}
+              help="De cada $100 de factura, qué porcentaje te depositan HOY. Los factorantes rara vez dan el 100%, normalmente entre 70% y 90% — el resto te lo dan cuando tu cliente paga."/>
+            <ParamInput label="Plazo promedio" unit="días" value={params.plazoDias} onChange={v=>setParam('plazoDias',v)} step="1"
+              help="Cuántos días en promedio tarda tu cliente en pagarte. Se usa para calcular los intereses (que son proporcionales al tiempo). Ej: 30, 45 o 60 días."/>
+            <ParamInput label="Comisión apertura" unit="%" value={params.pctComision} onChange={v=>setParam('pctComision',v)}
+              help="Cargo único que cobra el factorante por gestionar el contrato. Se descuenta de tu anticipo de una sola vez. Típico: 0.5%–2% del total facturado."/>
             <div style={{gridColumn:'1 / -1'}}>
-              <ParamInput label="% Retención (garantía)" unit="%" value={params.pctRetencion} onChange={v=>setParam('pctRetencion',v)}/>
+              <ParamInput label="% Retención (garantía)" unit="%" value={params.pctRetencion} onChange={v=>setParam('pctRetencion',v)}
+                help="Parte que el factorante guarda como respaldo por si tu cliente no paga o paga incompleto. Es tu dinero — te lo devuelven cuando se cobra la factura. Típico: 0%–10%."/>
             </div>
           </div>
         </Block>
@@ -457,47 +468,92 @@ export default function FactorajeModule({ onBack, ingresos = [], metrics = {}, p
             Resultado en vivo (Esperado)
           </div>
 
-          {/* Resultado por moneda */}
+          {/* Resultado por moneda — Timeline visual */}
           {['MXN','USD','EUR'].map(m => {
             const r = seleccionPorMoneda[m];
             if (r.total === 0) return null;
             const e = esp[m];
             const sym = monedaSym(m);
+            const sinParams = params.tasaAnual===0 && params.pctAnticipo===0 && params.plazoDias===0 && params.pctComision===0 && params.pctRetencion===0;
             return (
-              <div key={m} style={{marginBottom:16,paddingBottom:16,borderBottom:'1px solid rgba(255,255,255,0.15)'}}>
-                <div style={{fontSize:11,fontWeight:700,opacity:0.65,marginBottom:14,letterSpacing:0.8,textTransform:'uppercase'}}>{m}</div>
-
-                {/* Layout 2 columnas para números GRANDES */}
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:18,marginBottom:14}}>
-                  <div>
-                    <div style={{fontSize:10,opacity:0.65,marginBottom:5,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase'}}>Recibes HOY</div>
-                    <div style={{fontSize:28,fontWeight:800,color:C.greenSoft,fontVariantNumeric:'tabular-nums',letterSpacing:'-0.6px',lineHeight:1.1}}>{sym}{fmt(e.recibesHoy)}</div>
-                  </div>
-                  <div>
-                    <div style={{fontSize:10,opacity:0.65,marginBottom:5,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase'}}>Costo total</div>
-                    <div style={{fontSize:22,fontWeight:800,color:C.redLight,fontVariantNumeric:'tabular-nums',letterSpacing:'-0.5px',lineHeight:1.1}}>-{sym}{fmt(e.costoTotal)}</div>
-                  </div>
+              <div key={m} style={{marginBottom:18,paddingBottom:18,borderBottom:'1px solid rgba(255,255,255,0.15)'}}>
+                <div style={{fontSize:11,fontWeight:700,opacity:0.65,marginBottom:14,letterSpacing:0.8,textTransform:'uppercase'}}>
+                  {m} · Sobre {sym}{fmt(r.total)} de cartera
                 </div>
 
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:18,paddingBottom:14,borderBottom:'1px solid rgba(255,255,255,0.18)'}}>
-                  <div>
-                    <div style={{fontSize:10,opacity:0.65,marginBottom:5,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase'}}>Recibes después</div>
-                    <div style={{fontSize:22,fontWeight:700,fontVariantNumeric:'tabular-nums',letterSpacing:'-0.5px',lineHeight:1.1}}>{sym}{fmt(e.recibesDespues)}</div>
+                {/* ─── Mensaje cuando no hay parámetros ─── */}
+                {sinParams ? (
+                  <div style={{padding:'30px 16px',textAlign:'center',background:'rgba(255,255,255,0.04)',borderRadius:10,border:'1px dashed rgba(255,255,255,0.15)'}}>
+                    <div style={{fontSize:24,opacity:0.5,marginBottom:8}}>👈</div>
+                    <div style={{fontSize:13,fontWeight:700,opacity:0.85}}>Llena los parámetros del factorante</div>
+                    <div style={{fontSize:11,opacity:0.55,marginTop:6,lineHeight:1.5}}>Cuando metas los valores (tasa, anticipo, plazo…) aquí aparecerá<br/>cuánto recibes HOY y cuánto recibirás DESPUÉS</div>
                   </div>
-                  <div>
-                    <div style={{fontSize:10,opacity:0.65,marginBottom:5,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase'}}>Costo liquidez</div>
-                    <div style={{fontSize:22,fontWeight:700,color:'#FCD34D',fontVariantNumeric:'tabular-nums',letterSpacing:'-0.5px',lineHeight:1.1}}>{e.costoLiquidezPct.toFixed(2)}%</div>
-                  </div>
-                </div>
+                ) : (
+                  <>
+                    {/* ─── Timeline horizontal HOY → DESPUÉS ─── */}
+                    <div style={{display:'grid',gridTemplateColumns:'1fr auto 1fr',gap:14,alignItems:'stretch',marginBottom:16}}>
 
-                {/* NETO GIGANTE a la derecha */}
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',paddingTop:14}}>
-                  <div>
-                    <div style={{fontSize:12,opacity:0.75,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase'}}>Neto total</div>
-                    <div style={{fontSize:11,opacity:0.5,marginTop:3}}>vs cobrar tú solo: {sym}{fmt(r.total)}</div>
-                  </div>
-                  <div style={{fontSize:36,fontWeight:800,fontVariantNumeric:'tabular-nums',letterSpacing:'-0.8px',lineHeight:1}}>{sym}{fmt(e.netoTotal)}</div>
-                </div>
+                      {/* CARD HOY */}
+                      <div style={{background:'rgba(74, 222, 128, 0.12)',border:'1px solid rgba(74, 222, 128, 0.3)',borderRadius:12,padding:'16px 18px'}}>
+                        <div style={{fontSize:10,opacity:0.75,fontWeight:700,letterSpacing:0.6,marginBottom:6,display:'flex',alignItems:'center',gap:6}}>
+                          <span style={{width:8,height:8,borderRadius:'50%',background:C.greenSoft,boxShadow:`0 0 8px ${C.greenSoft}`}}/>
+                          HOY · DÍA 0
+                        </div>
+                        <div style={{fontSize:30,fontWeight:800,color:C.greenSoft,fontVariantNumeric:'tabular-nums',letterSpacing:'-0.6px',lineHeight:1.1}}>
+                          {e.recibesHoy < 0 ? '-' : ''}{sym}{fmt(Math.abs(e.recibesHoy))}
+                        </div>
+                        <div style={{fontSize:11,opacity:0.7,marginTop:8,lineHeight:1.45}}>
+                          {e.recibesHoy >= 0 ? (
+                            <>Te depositan el <strong>{params.pctAnticipo}% de anticipo</strong> menos comisión, intereses y retención</>
+                          ) : (
+                            <span style={{color:C.redLight}}>⚠️ Cargos mayores que el anticipo. Revisa los parámetros.</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Flecha intermedia */}
+                      <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'0 6px',opacity:0.45}}>
+                        <div style={{fontSize:11}}>⏱</div>
+                        <div style={{fontSize:9,marginTop:4,textAlign:'center',whiteSpace:'nowrap'}}>{params.plazoDias||'?'} días<br/>plazo</div>
+                        <div style={{fontSize:20,marginTop:4}}>→</div>
+                      </div>
+
+                      {/* CARD DESPUÉS */}
+                      <div style={{background:'rgba(252, 211, 77, 0.1)',border:'1px solid rgba(252, 211, 77, 0.3)',borderRadius:12,padding:'16px 18px'}}>
+                        <div style={{fontSize:10,opacity:0.75,fontWeight:700,letterSpacing:0.6,marginBottom:6,display:'flex',alignItems:'center',gap:6}}>
+                          <span style={{width:8,height:8,borderRadius:'50%',background:'#FCD34D'}}/>
+                          CUANDO PAGUE EL CLIENTE
+                        </div>
+                        <div style={{fontSize:30,fontWeight:800,color:'#FCD34D',fontVariantNumeric:'tabular-nums',letterSpacing:'-0.6px',lineHeight:1.1}}>
+                          {sym}{fmt(e.recibesDespues)}
+                        </div>
+                        <div style={{fontSize:11,opacity:0.7,marginTop:8,lineHeight:1.45}}>
+                          El <strong>{(100-params.pctAnticipo).toFixed(0)}% restante + retención</strong> devuelta, sin más descuentos
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Banner de costo */}
+                    <div style={{background:'rgba(252, 165, 165, 0.08)',borderLeft:`3px solid ${C.redLight}`,padding:'10px 14px',borderRadius:'0 8px 8px 0',marginBottom:14,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                      <div>
+                        <div style={{fontSize:10,opacity:0.75,fontWeight:700,letterSpacing:0.5}}>💸 LO QUE TE COBRA EL FACTORANTE</div>
+                        <div style={{fontSize:10,opacity:0.55,marginTop:3}}>Comisión apertura ({params.pctComision}%) + Intereses ({params.tasaAnual}% × {params.plazoDias}d)</div>
+                      </div>
+                      <div style={{fontSize:20,fontWeight:800,color:C.redLight,fontVariantNumeric:'tabular-nums'}}>-{sym}{fmt(e.costoTotal)}</div>
+                    </div>
+
+                    {/* NETO TOTAL */}
+                    <div style={{background:'rgba(255, 255, 255, 0.05)',border:'2px solid rgba(255, 255, 255, 0.2)',borderRadius:12,padding:'16px 18px',display:'flex',justifyContent:'space-between',alignItems:'flex-end'}}>
+                      <div>
+                        <div style={{fontSize:13,opacity:0.85,fontWeight:700,letterSpacing:0.5}}>NETO TOTAL · Lo que tendrás al final</div>
+                        <div style={{fontSize:11,opacity:0.55,marginTop:4}}>
+                          vs <strong>{sym}{fmt(r.total)}</strong> si esperaras tú solo · <strong style={{color:'#FCD34D'}}>Costo liquidez: {e.costoLiquidezPct.toFixed(2)}%</strong>
+                        </div>
+                      </div>
+                      <div style={{fontSize:36,fontWeight:800,fontVariantNumeric:'tabular-nums',letterSpacing:'-0.8px',lineHeight:1}}>{sym}{fmt(e.netoTotal)}</div>
+                    </div>
+                  </>
+                )}
               </div>
             );
           })}
@@ -625,10 +681,49 @@ function Block({ step, label, children, anim, noMargin }) {
 }
 
 // Input numérico para los parámetros
-function ParamInput({ label, unit, value, onChange, step='0.01' }) {
+function ParamInput({ label, unit, value, onChange, step='0.01', help }) {
+  const [showHelp, setShowHelp] = useState(false);
   return (
     <div>
-      <div style={{fontSize:10,color:C.muted,marginBottom:5,fontWeight:700,textTransform:'uppercase',letterSpacing:0.4}}>{label}</div>
+      <div style={{fontSize:10,color:C.muted,marginBottom:5,fontWeight:700,textTransform:'uppercase',letterSpacing:0.4,display:'flex',alignItems:'center',gap:6}}>
+        <span>{label}</span>
+        {help && (
+          <span
+            onMouseEnter={()=>setShowHelp(true)}
+            onMouseLeave={()=>setShowHelp(false)}
+            onClick={()=>setShowHelp(v=>!v)}
+            style={{
+              display:'inline-flex',alignItems:'center',justifyContent:'center',
+              width:14,height:14,borderRadius:'50%',
+              background:'#E0E7FF',color:'#4338CA',
+              fontSize:10,fontWeight:700,cursor:'help',
+              userSelect:'none',position:'relative',
+            }}
+          >
+            ⓘ
+            {showHelp && (
+              <span style={{
+                position:'absolute',top:'calc(100% + 8px)',left:0,
+                background:'#1A2332',color:'#fff',
+                padding:'10px 14px',borderRadius:8,
+                fontSize:11,fontWeight:500,
+                width:280,textTransform:'none',letterSpacing:0,
+                lineHeight:1.55,
+                boxShadow:'0 8px 24px rgba(0,0,0,0.25)',
+                zIndex:50,
+                pointerEvents:'none',
+              }}>
+                {help}
+                <span style={{
+                  position:'absolute',top:-5,left:5,
+                  width:10,height:10,background:'#1A2332',
+                  transform:'rotate(45deg)',
+                }}/>
+              </span>
+            )}
+          </span>
+        )}
+      </div>
       <div style={{background:C.bgSoft,border:`1px solid ${C.border}`,padding:'10px 14px',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
         <input
           type="number"
