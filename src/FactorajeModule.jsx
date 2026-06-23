@@ -469,80 +469,87 @@ export default function FactorajeModule({ onBack, ingresos = [], metrics = {}, p
             Resultado en vivo (Esperado)
           </div>
 
-          {/* Resultado por moneda — Timeline visual (siempre visible) */}
+          {/* Resultado por moneda — Comparativa HOY vs SIN factoraje */}
           {['MXN','USD','EUR'].map(m => {
             const r = seleccionPorMoneda[m];
             if (r.total === 0) return null;
             const e = esp[m];
             const sym = monedaSym(m);
+            const tieneRetencion = params.pctRetencion > 0;
             return (
               <div key={m} style={{marginBottom:18,paddingBottom:18,borderBottom:'1px solid rgba(255,255,255,0.15)'}}>
                 <div style={{fontSize:11,fontWeight:700,opacity:0.65,marginBottom:14,letterSpacing:0.8,textTransform:'uppercase'}}>
-                  {m} · Sobre {sym}{fmt(r.total)} de cartera
+                  {m} · Cartera {sym}{fmt(r.total)}
                 </div>
 
-                {/* ─── Timeline horizontal HOY → DESPUÉS (siempre visible) ─── */}
+                {/* ─── Comparativa lado a lado: HOY con factoraje vs SIN factoraje ─── */}
                 <div style={{display:'grid',gridTemplateColumns:'1fr auto 1fr',gap:14,alignItems:'stretch',marginBottom:16}}>
 
-                  {/* CARD HOY */}
-                  <div style={{background:'rgba(74, 222, 128, 0.12)',border:'1px solid rgba(74, 222, 128, 0.3)',borderRadius:12,padding:'16px 18px'}}>
-                    <div style={{fontSize:10,opacity:0.75,fontWeight:700,letterSpacing:0.6,marginBottom:6,display:'flex',alignItems:'center',gap:6}}>
+                  {/* CARD CON FACTORAJE · HOY */}
+                  <div style={{background:'linear-gradient(135deg, rgba(74, 222, 128, 0.18), rgba(74, 222, 128, 0.06))',border:'1.5px solid rgba(74, 222, 128, 0.4)',borderRadius:14,padding:'18px 20px'}}>
+                    <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'rgba(74, 222, 128, 0.18)',padding:'4px 10px',borderRadius:99,marginBottom:10}}>
                       <span style={{width:8,height:8,borderRadius:'50%',background:C.greenSoft,boxShadow:`0 0 8px ${C.greenSoft}`}}/>
-                      HOY · DÍA 0
+                      <span style={{fontSize:9,fontWeight:700,letterSpacing:0.5,color:C.greenSoft}}>CON FACTORAJE · HOY</span>
                     </div>
-                    <div style={{fontSize:30,fontWeight:800,color:C.greenSoft,fontVariantNumeric:'tabular-nums',letterSpacing:'-0.6px',lineHeight:1.1}}>
+                    <div style={{fontSize:11,opacity:0.75,marginBottom:4,fontWeight:600}}>A tu cuenta en 1-2 días hábiles</div>
+                    <div style={{fontSize:34,fontWeight:800,color:C.greenSoft,fontVariantNumeric:'tabular-nums',letterSpacing:'-0.7px',lineHeight:1,marginBottom:10}}>
                       {e.recibesHoy < 0 ? '-' : ''}{sym}{fmt(Math.abs(e.recibesHoy))}
                     </div>
-                    <div style={{fontSize:11,opacity:0.7,marginTop:8,lineHeight:1.45}}>
+                    <div style={{fontSize:11,opacity:0.65,lineHeight:1.5,paddingTop:10,borderTop:'1px solid rgba(74, 222, 128, 0.2)'}}>
                       {e.recibesHoy >= 0 ? (
-                        <>Te depositan el <strong>{params.pctAnticipo}% de anticipo</strong> menos comisión, intereses y retención</>
+                        <>El <strong>{params.pctAnticipo}% de anticipo</strong> de tu cartera, menos comisión {tieneRetencion ? 'y' : 'y los'} intereses por adelantar el dinero{tieneRetencion ? ' y la retención de garantía.' : '.'}</>
                       ) : (
                         <span style={{color:C.redLight}}>⚠️ Cargos mayores que el anticipo. Revisa los parámetros.</span>
                       )}
                     </div>
                   </div>
 
-                  {/* Flecha intermedia */}
-                  <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'0 6px',opacity:0.45}}>
-                    <div style={{fontSize:11}}>⏱</div>
-                    <div style={{fontSize:9,marginTop:4,textAlign:'center',whiteSpace:'nowrap'}}>{params.plazoDias||'?'} días<br/>plazo</div>
-                    <div style={{fontSize:20,marginTop:4}}>→</div>
+                  {/* Separador VS */}
+                  <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'0 4px'}}>
+                    <div style={{fontSize:10,opacity:0.5,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,marginBottom:4}}>VS</div>
+                    <div style={{width:32,height:32,borderRadius:'50%',background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.15)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,opacity:0.6}}>⇄</div>
+                    <div style={{fontSize:9,opacity:0.5,marginTop:6,textAlign:'center',whiteSpace:'nowrap'}}>~{params.plazoDias||'?'} días<br/>de diferencia</div>
                   </div>
 
-                  {/* CARD DESPUÉS */}
-                  <div style={{background:'rgba(252, 211, 77, 0.1)',border:'1px solid rgba(252, 211, 77, 0.3)',borderRadius:12,padding:'16px 18px'}}>
-                    <div style={{fontSize:10,opacity:0.75,fontWeight:700,letterSpacing:0.6,marginBottom:6,display:'flex',alignItems:'center',gap:6}}>
+                  {/* CARD SIN FACTORAJE */}
+                  <div style={{background:'linear-gradient(135deg, rgba(252, 211, 77, 0.15), rgba(252, 211, 77, 0.04))',border:'1.5px solid rgba(252, 211, 77, 0.4)',borderRadius:14,padding:'18px 20px'}}>
+                    <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'rgba(252, 211, 77, 0.18)',padding:'4px 10px',borderRadius:99,marginBottom:10}}>
                       <span style={{width:8,height:8,borderRadius:'50%',background:'#FCD34D'}}/>
-                      CUANDO PAGUE EL CLIENTE
+                      <span style={{fontSize:9,fontWeight:700,letterSpacing:0.5,color:'#FCD34D'}}>SIN FACTORAJE · ESPERANDO</span>
                     </div>
-                    <div style={{fontSize:30,fontWeight:800,color:'#FCD34D',fontVariantNumeric:'tabular-nums',letterSpacing:'-0.6px',lineHeight:1.1}}>
-                      {sym}{fmt(e.recibesDespues)}
-                    </div>
-                    <div style={{fontSize:11,opacity:0.7,marginTop:8,lineHeight:1.45}}>
-                      El <strong>{(100-params.pctAnticipo).toFixed(0)}% restante + retención</strong> devuelta, sin más descuentos
+                    <div style={{fontSize:11,opacity:0.75,marginBottom:4,fontWeight:600}}>Cuando tu cliente pague (~{params.plazoDias||'?'} días)</div>
+                    <div style={{fontSize:34,fontWeight:800,color:'#FCD34D',fontVariantNumeric:'tabular-nums',letterSpacing:'-0.7px',lineHeight:1,marginBottom:10}}>{sym}{fmt(r.total)}</div>
+                    <div style={{fontSize:11,opacity:0.65,lineHeight:1.5,paddingTop:10,borderTop:'1px solid rgba(252, 211, 77, 0.2)'}}>
+                      El <strong>100% facturado</strong> tal cual, sin descuentos. Pero tienes que esperar a que cobren.
                     </div>
                   </div>
                 </div>
 
-                {/* Banner de costo */}
-                <div style={{background:'rgba(252, 165, 165, 0.08)',borderLeft:`3px solid ${C.redLight}`,padding:'10px 14px',borderRadius:'0 8px 8px 0',marginBottom:14,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                {/* ─── Banner: el costo del factoraje (la diferencia) ─── */}
+                <div style={{background:'rgba(252, 165, 165, 0.08)',borderLeft:`3px solid ${C.redLight}`,padding:'14px 18px',borderRadius:'0 10px 10px 0',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                   <div>
-                    <div style={{fontSize:10,opacity:0.75,fontWeight:700,letterSpacing:0.5}}>💸 LO QUE TE COBRA EL FACTORANTE</div>
-                    <div style={{fontSize:10,opacity:0.55,marginTop:3}}>Comisión apertura ({params.pctComision}%) + Intereses ({params.tasaAnual}% × {params.plazoDias}d)</div>
-                  </div>
-                  <div style={{fontSize:20,fontWeight:800,color:C.redLight,fontVariantNumeric:'tabular-nums'}}>-{sym}{fmt(e.costoTotal)}</div>
-                </div>
-
-                {/* NETO TOTAL */}
-                <div style={{background:'rgba(255, 255, 255, 0.05)',border:'2px solid rgba(255, 255, 255, 0.2)',borderRadius:12,padding:'16px 18px',display:'flex',justifyContent:'space-between',alignItems:'flex-end'}}>
-                  <div>
-                    <div style={{fontSize:13,opacity:0.85,fontWeight:700,letterSpacing:0.5}}>NETO TOTAL · Lo que tendrás al final</div>
-                    <div style={{fontSize:11,opacity:0.55,marginTop:4}}>
-                      vs <strong>{sym}{fmt(r.total)}</strong> si esperaras tú solo · <strong style={{color:'#FCD34D'}}>Costo liquidez: {e.costoLiquidezPct.toFixed(2)}%</strong>
+                    <div style={{fontSize:11,opacity:0.85,fontWeight:700,letterSpacing:0.5,marginBottom:4}}>💸 EL COSTO DE TENER EL DINERO HOY</div>
+                    <div style={{fontSize:11,opacity:0.6,lineHeight:1.5}}>
+                      Comisión apertura ({params.pctComision}%) + Intereses ({params.tasaAnual}% × {params.plazoDias}d)<br/>
+                      Equivale a <strong style={{color:'#FCD34D'}}>{e.costoLiquidezPct.toFixed(2)}% del total facturado</strong>
                     </div>
                   </div>
-                  <div style={{fontSize:36,fontWeight:800,fontVariantNumeric:'tabular-nums',letterSpacing:'-0.8px',lineHeight:1}}>{sym}{fmt(e.netoTotal)}</div>
+                  <div style={{textAlign:'right'}}>
+                    <div style={{fontSize:9,opacity:0.55,fontWeight:700,letterSpacing:0.5}}>DIFERENCIA</div>
+                    <div style={{fontSize:26,fontWeight:800,color:C.redLight,fontVariantNumeric:'tabular-nums',letterSpacing:'-0.6px',lineHeight:1}}>-{sym}{fmt(e.costoTotal)}</div>
+                  </div>
                 </div>
+
+                {/* ─── Nota de retención (solo si retención > 0) ─── */}
+                {tieneRetencion && (
+                  <div style={{marginTop:10,padding:'10px 14px',background:'rgba(94, 45, 143, 0.08)',borderLeft:`3px solid ${C.purple}`,borderRadius:'0 8px 8px 0',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <div>
+                      <div style={{fontSize:10,opacity:0.85,fontWeight:700,letterSpacing:0.5}}>🔒 RETENCIÓN DE GARANTÍA ({params.pctRetencion}%)</div>
+                      <div style={{fontSize:10,opacity:0.6,marginTop:3,lineHeight:1.4}}>El factorante guarda este monto como respaldo. Te lo devuelve cuando tu cliente paga.</div>
+                    </div>
+                    <div style={{fontSize:16,fontWeight:800,color:'#C9B7E0',fontVariantNumeric:'tabular-nums'}}>{sym}{fmt(e.retencion)}</div>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -565,7 +572,7 @@ export default function FactorajeModule({ onBack, ingresos = [], metrics = {}, p
       </Block>
 
       {/* ─── BLOQUE 5 — Flujo proyectado ───────────────────── */}
-      <Block step={5} label="Flujo proyectado · próximas 8 semanas" anim>
+      <Block step={5} label="Flujo proyectado · Cuándo llega cada peso" anim>
         <FlujoProyectado
           ingresos={facturasConSaldo.filter(f=>seleccion.has(f.id))}
           escenario={esp}
@@ -760,63 +767,280 @@ function Escenario({ nombre, sub, color, data, seleccionPorMoneda, activo }) {
 
 // Gráfica de flujo proyectado (próximas 8 semanas)
 function FlujoProyectado({ ingresos, escenario, diasDiff }) {
-  // Agrupar el "recibesDespues" por semana según fechaVencimiento
-  // El anticipo se recibe hoy (semana 0)
   const hoy = new Date(); hoy.setHours(0,0,0,0);
-  const semanas = useMemo(() => {
-    const buckets = Array.from({length:9},(_,i)=>({semana:i, label:i===0?'Hoy':`Sem ${i}`, anticipo:0, cobranza:0 }));
-    // Anticipo recibido hoy
-    buckets[0].anticipo = (escenario.MXN?.recibesHoy || 0); // Se grafica solo MXN para simplificar
-    // Cobranza esperada por semana según vencimiento
-    ingresos.forEach(f => {
-      if ((f.moneda||'MXN') !== 'MXN') return;
-      const vToCheck = f.fechaVencimiento ? new Date(f.fechaVencimiento+'T12:00:00') : null;
-      if (!vToCheck) return;
-      const diffDays = Math.ceil((vToCheck - hoy)/(1000*60*60*24));
-      if (diffDays < 0) return; // ya vencida, no la modelamos en la gráfica de próximas 8
-      const semana = Math.min(8, Math.ceil(diffDays/7));
-      buckets[semana].cobranza += f.saldo;
-    });
-    return buckets;
-  }, [ingresos, escenario]);
 
-  const maxVal = Math.max(1, ...semanas.map(s => Math.max(s.anticipo, s.cobranza)));
+  // ─── Agrupar facturas por fecha de vencimiento (mismo día = un solo punto) ───
+  const cobranzas = useMemo(() => {
+    const buckets = new Map(); // key=fechaISO, value={fecha, diasRestantes, total, count, clientes:Map}
+    ingresos.forEach(f => {
+      if ((f.moneda||'MXN') !== 'MXN') return; // graficamos solo MXN
+      const fechaStr = f.fechaVencimiento;
+      if (!fechaStr) return;
+      const fecha = new Date(fechaStr+'T12:00:00');
+      const diasRestantes = Math.ceil((fecha - hoy)/(1000*60*60*24));
+      if (diasRestantes < 0) return; // ya vencida
+
+      const key = fechaStr;
+      if (!buckets.has(key)) {
+        buckets.set(key, { fecha, fechaStr, diasRestantes, total:0, count:0, clientes:new Map() });
+      }
+      const b = buckets.get(key);
+      b.total += f.saldo;
+      b.count++;
+      const cli = f.cliente || '—';
+      b.clientes.set(cli, (b.clientes.get(cli) || 0) + f.saldo);
+    });
+    // Ordenar por fecha ascendente
+    return Array.from(buckets.values()).sort((a,b) => a.fecha - b.fecha);
+  }, [ingresos]);
+
+  // Anticipo (hoy)
+  const anticipoHoy = escenario.MXN?.recibesHoy || 0;
+
+  // Encontrar el monto máximo para escalar tamaño de puntos
+  const maxMonto = Math.max(anticipoHoy, ...cobranzas.map(c => c.total), 1);
+
+  // Encontrar la cobranza más grande (para destacarla con ⭐)
+  const idxMasGrande = cobranzas.reduce((maxI, c, i, arr) => c.total > arr[maxI].total ? i : maxI, 0);
+
+  // Tamaño de punto proporcional al monto (entre 12 y 22 px)
+  const sizePunto = (monto) => {
+    const pct = monto / maxMonto;
+    return Math.max(12, Math.min(22, 12 + pct * 10));
+  };
+
+  // Función para formatear "Dentro de X días" o "Mañana" o "Hoy"
+  const fmtDiasRest = (d) => {
+    if (d === 0) return 'Hoy';
+    if (d === 1) return 'Mañana';
+    return `Dentro de ${d} días`;
+  };
+
+  // Formatear cliente principal (top 1 con "+N" si hay más)
+  const fmtClientePrincipal = (clientesMap, totalCount) => {
+    const arr = Array.from(clientesMap.entries()).sort((a,b) => b[1] - a[1]);
+    if (arr.length === 0) return '';
+    const top = arr[0][0];
+    // Mostrar abreviado
+    const topShort = top.length > 16 ? top.slice(0, 14)+'…' : top;
+    const restCount = totalCount - 1;
+    return restCount > 0 ? `${topShort} +${restCount}` : topShort;
+  };
+
+  // Total general en el periodo
+  const totalProyectado = cobranzas.reduce((s,c) => s+c.total, 0);
+  const primeraCobranza = cobranzas[0];
+  const picoCobranza = cobranzas[idxMasGrande];
+  const ultimaCobranza = cobranzas[cobranzas.length-1];
+
+  // Hay puntos? incluyendo anticipo
+  const tieneAnticipo = anticipoHoy > 0;
+  const totalPuntos = (tieneAnticipo ? 1 : 0) + cobranzas.length;
+
+  if (totalPuntos === 0) {
+    return (
+      <div style={{padding:'40px 20px',textAlign:'center',color:C.muted,fontSize:13}}>
+        <div style={{fontSize:32,opacity:0.4,marginBottom:8}}>📅</div>
+        No hay cobranzas proyectadas con la selección actual.
+      </div>
+    );
+  }
 
   return (
     <div>
-      <div style={{display:'flex',alignItems:'end',gap:8,height:140,padding:'12px 0'}}>
-        {semanas.map(s => {
-          const isAnticipo = s.semana === 0 && s.anticipo > 0;
-          const val = isAnticipo ? s.anticipo : s.cobranza;
-          const h = val > 0 ? Math.max(5, (val/maxVal)*100) : 5;
-          const empty = val === 0;
-          return (
-            <div key={s.semana} style={{flex:1,borderRadius:'6px 6px 0 0',height:`${h}%`,
-              background: empty ? '#F1F5F9' : (isAnticipo ? `linear-gradient(180deg, ${C.greenSoft}, ${C.green})` : `linear-gradient(180deg, ${C.amberLight}, ${C.amber})`),
-              display:'flex',alignItems:'end',justifyContent:'center',
-              color: empty ? 'transparent' : (isAnticipo ? '#fff' : '#5A4A1A'),
-              fontSize:10,padding:'6px 3px',fontWeight:700,textAlign:'center'}}>
-              {!empty && (
-                <span>{s.label}<br/>${fmtCompact(val)}</span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <div style={{display:'flex',justifyContent:'space-between',fontSize:9,color:C.muted,marginTop:4,paddingLeft:8,paddingRight:8}}>
-        {semanas.map(s => <span key={s.semana}>{s.label}</span>)}
-      </div>
-      <div style={{display:'flex',gap:16,paddingTop:12,marginTop:8,borderTop:`1px solid #F1F5F9`,fontSize:11,color:'#475569'}}>
-        <div style={{display:'flex',alignItems:'center',gap:6}}>
-          <span style={{width:12,height:12,background:`linear-gradient(180deg, ${C.greenSoft}, ${C.green})`,borderRadius:2}}/>
-          Anticipo del factorante (hoy)
+      <style>{`
+        /* Scroll horizontal en mobile o cuando hay muchos puntos */
+        .flujo-scroll {
+          overflow-x: auto;
+          overflow-y: hidden;
+          padding-bottom: 8px;
+        }
+        .flujo-scroll::-webkit-scrollbar { height: 6px; }
+        .flujo-scroll::-webkit-scrollbar-track { background: #F1F5F9; border-radius: 99px; }
+        .flujo-scroll::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 99px; }
+        .flujo-scroll::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+        @keyframes flujo-pulse {
+          0%, 100% { box-shadow: 0 0 0 5px #fff, 0 0 0 6px #10B981, 0 6px 20px rgba(16, 185, 129, 0.4); }
+          50% { box-shadow: 0 0 0 5px #fff, 0 0 0 8px #10B981, 0 6px 24px rgba(16, 185, 129, 0.6); }
+        }
+      `}</style>
+
+      {/* ─── Container del timeline con scroll horizontal ─── */}
+      <div className="flujo-scroll">
+        <div style={{position:'relative',padding:'8px 20px 8px',minWidth: totalPuntos > 6 ? `${totalPuntos * 160}px` : '100%'}}>
+          {/* Grid de columnas dinámicas */}
+          <div style={{display:'grid',gridTemplateColumns:`repeat(${totalPuntos}, minmax(140px, 1fr))`,gap:0,position:'relative',minHeight:220,alignItems:'start'}}>
+
+            {/* HOY (anticipo) — solo si hay anticipo */}
+            {tieneAnticipo && (
+              <TimelineNodo
+                tipo="hoy"
+                chipLabel="⚡ HOY"
+                chipColor={`linear-gradient(135deg, #10B981, #34D399)`}
+                chipShadow="0 4px 12px rgba(16, 185, 129, 0.35)"
+                importe={anticipoHoy}
+                puntoSize={22}
+                puntoColor={`linear-gradient(135deg, #10B981, #34D399)`}
+                puntoHaloColor="#10B981"
+                fechaTexto={fmtFecha(hoy.toISOString().slice(0,10))}
+                subtexto="Anticipo factoraje"
+                destacado
+              />
+            )}
+
+            {/* Cobranzas */}
+            {cobranzas.map((c, i) => {
+              const esGrande = i === idxMasGrande && cobranzas.length > 1;
+              const tamPunto = sizePunto(c.total);
+              return (
+                <TimelineNodo
+                  key={c.fechaStr}
+                  tipo="cobranza"
+                  chipLabel={esGrande ? `⭐ ${fmtDiasRest(c.diasRestantes)}` : fmtDiasRest(c.diasRestantes)}
+                  chipColor={esGrande ? `linear-gradient(135deg, #F59E0B, #FCD34D)` : '#F0F4F8'}
+                  chipTextColor={esGrande ? '#fff' : '#475569'}
+                  chipShadow={esGrande ? '0 4px 12px rgba(245, 158, 11, 0.35)' : 'none'}
+                  importe={c.total}
+                  puntoSize={esGrande ? 22 : tamPunto}
+                  puntoColor={esGrande ? `linear-gradient(135deg, #F59E0B, #FCD34D)` : '#FCD34D'}
+                  puntoHaloColor={esGrande ? '#F59E0B' : '#FCD34D'}
+                  puntoHaloDoble={esGrande}
+                  fechaTexto={fmtFecha(c.fechaStr)}
+                  subtexto={`${c.count} factura${c.count!==1?'s':''}`}
+                  subtexto2={fmtClientePrincipal(c.clientes, c.count)}
+                  destacado={esGrande}
+                />
+              );
+            })}
+
+          </div>
+
+          {/* ─── Línea base horizontal (al fondo) ─── */}
+          <div style={{
+            position:'absolute',
+            left: `calc((100% / ${totalPuntos}) / 2 + 20px)`,
+            right: `calc((100% / ${totalPuntos}) / 2 + 20px)`,
+            top: '50%',
+            transform: 'translateY(-2px)',
+            height: 3,
+            background: tieneAnticipo
+              ? `linear-gradient(90deg, #10B981 0%, #10B981 ${Math.max(8, 100/totalPuntos)}%, #FCD34D ${Math.max(20, 100/totalPuntos * 1.5)}%, #FCD34D 100%)`
+              : `#FCD34D`,
+            borderRadius: 2,
+            zIndex: 1,
+            opacity: 0.4,
+          }}/>
         </div>
-        <div style={{display:'flex',alignItems:'center',gap:6}}>
-          <span style={{width:12,height:12,background:`linear-gradient(180deg, ${C.amberLight}, ${C.amber})`,borderRadius:2}}/>
-          Cobranza esperada por semana
-        </div>
-        <div style={{marginLeft:'auto',fontSize:10,color:C.muted}}>(Sólo cartera MXN graficada — facturas que vencen +8 semanas se agrupan en Sem 8)</div>
       </div>
+
+      {/* ─── KPIs ejecutivos abajo ─── */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,paddingTop:20,marginTop:8,borderTop:`1px solid #F1F5F9`}}>
+        <KpiCard
+          color="#10B981"
+          label="PRIMERA COBRANZA"
+          valor={primeraCobranza ? (primeraCobranza.diasRestantes === 0 ? 'Hoy' : primeraCobranza.diasRestantes === 1 ? 'Mañana' : `${primeraCobranza.diasRestantes} días`) : '—'}
+          sub={primeraCobranza ? `${fmtFecha(primeraCobranza.fechaStr)} · $${fmtCompact(primeraCobranza.total)}` : 'Sin cobranzas'}
+        />
+        <KpiCard
+          color="#F59E0B"
+          label="PICO DE COBRANZA"
+          valor={picoCobranza ? fmtFecha(picoCobranza.fechaStr) : '—'}
+          sub={picoCobranza ? `$${fmtCompact(picoCobranza.total)} en un día` : 'Sin cobranzas'}
+        />
+        <KpiCard
+          color={C.purple}
+          label="ÚLTIMA COBRANZA"
+          valor={ultimaCobranza ? `${ultimaCobranza.diasRestantes} días` : '—'}
+          sub={ultimaCobranza ? `${fmtFecha(ultimaCobranza.fechaStr)} · $${fmtCompact(ultimaCobranza.total)}` : 'Sin cobranzas'}
+        />
+      </div>
+
+      {/* Total */}
+      <div style={{marginTop:10,padding:'10px 14px',background:'rgba(94, 45, 143, 0.04)',borderRadius:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <span style={{fontSize:11,color:C.muted,fontWeight:600}}>Total proyectado en el periodo (MXN)</span>
+        <span style={{fontSize:14,fontWeight:800,color:C.text,fontVariantNumeric:'tabular-nums'}}>${fmt(totalProyectado)}</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Subcomponente: nodo individual del timeline ───
+function TimelineNodo({ chipLabel, chipColor, chipTextColor='#fff', chipShadow, importe, puntoSize=14, puntoColor, puntoHaloColor, puntoHaloDoble, fechaTexto, subtexto, subtexto2, destacado }) {
+  return (
+    <div style={{position:'relative',display:'flex',flexDirection:'column',alignItems:'center',padding:'4px 8px 4px'}}>
+      {/* Chip "Dentro de X días" */}
+      <div style={{
+        background: chipColor,
+        color: chipTextColor,
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: 0.4,
+        padding: '5px 12px',
+        borderRadius: 99,
+        textTransform: chipLabel.includes('⚡')||chipLabel.includes('⭐') ? 'uppercase' : 'none',
+        boxShadow: chipShadow,
+        marginBottom: 14,
+        whiteSpace: 'nowrap',
+      }}>{chipLabel}</div>
+
+      {/* Importe centro */}
+      <div style={{
+        fontSize: destacado ? 22 : 18,
+        fontWeight: 800,
+        color: '#0F2D4A',
+        fontVariantNumeric: 'tabular-nums',
+        letterSpacing: '-0.4px',
+        lineHeight: 1,
+        marginBottom: destacado ? 18 : 22,
+      }}>${fmtCompact(importe)}</div>
+
+      {/* Punto en la línea */}
+      <div style={{position:'relative',zIndex:2,marginBottom:14}}>
+        <div style={{
+          width: puntoSize,
+          height: puntoSize,
+          borderRadius: '50%',
+          background: puntoColor,
+          border: puntoHaloDoble ? undefined : '4px solid #fff',
+          boxShadow: puntoHaloDoble
+            ? `0 0 0 5px #fff, 0 0 0 6px ${puntoHaloColor}, 0 6px 20px ${puntoHaloColor}66`
+            : `0 0 0 2px ${puntoHaloColor}, 0 4px 12px ${puntoHaloColor}66`,
+          position: 'relative',
+        }}>
+          {puntoHaloDoble && (
+            <div style={{position:'absolute',inset:0,borderRadius:'50%',background:'radial-gradient(circle, rgba(255,255,255,0.5) 0%, transparent 60%)'}}/>
+          )}
+        </div>
+      </div>
+
+      {/* Fecha real */}
+      <div style={{fontSize:11,fontWeight:700,color:'#1A2332',textAlign:'center',whiteSpace:'nowrap'}}>{fechaTexto}</div>
+
+      {/* Subtexto (cantidad de facturas) */}
+      {subtexto && (
+        <div style={{fontSize:10,color:C.muted,marginTop:3,textAlign:'center',whiteSpace:'nowrap'}}>{subtexto}</div>
+      )}
+
+      {/* Subtexto 2 (cliente principal) */}
+      {subtexto2 && (
+        <div style={{fontSize:10,color:destacado?'#8C6B1A':C.muted,marginTop:1,textAlign:'center',whiteSpace:'nowrap',fontWeight:destacado?700:400}}>{subtexto2}</div>
+      )}
+    </div>
+  );
+}
+
+// ─── Subcomponente: KPI card ───
+function KpiCard({ color, label, valor, sub }) {
+  return (
+    <div style={{
+      background: `linear-gradient(135deg, ${color}0D, ${color}03)`,
+      borderLeft: `3px solid ${color}`,
+      borderRadius: '0 8px 8px 0',
+      padding: '12px 14px',
+    }}>
+      <div style={{fontSize:9,color:C.muted,fontWeight:700,textTransform:'uppercase',letterSpacing:0.4}}>{label}</div>
+      <div style={{fontSize:18,fontWeight:800,color:C.navy,marginTop:4,fontVariantNumeric:'tabular-nums',letterSpacing:'-0.3px'}}>{valor}</div>
+      <div style={{fontSize:10,color:C.muted,marginTop:2}}>{sub}</div>
     </div>
   );
 }
