@@ -1965,6 +1965,7 @@ export default function CxcView({
         ingresos={ingresos}
         kpis={kpis}
         metrics={metrics}
+        porFacturar={porFacturar}
       />
     );
   }
@@ -1974,6 +1975,7 @@ export default function CxcView({
         onBack={()=>setVistaActual("reportes")}
         ingresos={ingresos}
         metrics={metrics}
+        porFacturar={porFacturar}
         empresaId={empresaId}
         usuario={"admin"}
         diasDiff={diasDiff}

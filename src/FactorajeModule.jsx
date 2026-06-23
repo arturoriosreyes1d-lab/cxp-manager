@@ -117,7 +117,7 @@ function variantes(params) {
 // ═════════════════════════════════════════════════════════════════
 // COMPONENTE PRINCIPAL
 // ═════════════════════════════════════════════════════════════════
-export default function FactorajeModule({ onBack, ingresos = [], metrics = {}, empresaId, usuario, diasDiff }) {
+export default function FactorajeModule({ onBack, ingresos = [], metrics = {}, porFacturar = [], empresaId, usuario, diasDiff }) {
 
   // ─── Filtrar facturas con saldo pendiente > 0 (excluyendo ocultas) ───
   // IMPORTANTE: usamos metrics[id].porCobrar (calculado correctamente por la app),
@@ -134,6 +134,45 @@ export default function FactorajeModule({ onBack, ingresos = [], metrics = {}, e
       .filter(i => i.saldo > 0);
   }, [ingresos, metrics]);
 
+  // ─── Por Facturar (registros sin CFDI emitido) ──────────────
+  // Estructura: { id, cliente, importe, moneda, concepto, folio, destino, fecha, ... }
+  const porFacturarLimpio = useMemo(() => {
+    return (porFacturar || [])
+      .filter(p => +p.importe > 0)
+      .map(p => ({
+        id: `pf_${p.id || Math.random().toString(36).slice(2,8)}`,
+        cliente: p.cliente || '',
+        folio: p.folio || '(por facturar)',
+        concepto: p.concepto || p.descripcion || '',
+        moneda: p.moneda || 'MXN',
+        monto: +p.importe || 0,
+        saldo: +p.importe || 0,
+        _pagadoCalc: 0,
+        fechaVencimiento: p.fechaVencimiento || p.fecha || null,
+        fechaContable: p.fechaContable || p.fecha || null,
+        notas: '(sin UUID - por facturar)',
+        segmento: p.segmento || p.destino || '',
+        categoria: p.categoria || p.destino || '',
+        diasCredito: p.diasCredito || 0,
+        _esPorFacturar: true,
+      }));
+  }, [porFacturar]);
+
+  // Estado: ¿incluir Por Facturar?
+  const [incluirPorFacturar, setIncluirPorFacturar] = useState(false);
+
+  // Totales del Por Facturar por moneda
+  const porFacturarTotales = useMemo(() => {
+    const r = { MXN: 0, USD: 0, EUR: 0, count: 0 };
+    porFacturarLimpio.forEach(p => {
+      const m = p.moneda || 'MXN';
+      if (!r[m]) r[m] = 0;
+      r[m] += p.saldo;
+      r.count++;
+    });
+    return r;
+  }, [porFacturarLimpio]);
+
   // ─── Selección de facturas (default: todas) ────────────────
   const [seleccion, setSeleccion] = useState(new Set());
   const [selectorOpen, setSelectorOpen] = useState(false);
@@ -143,7 +182,8 @@ export default function FactorajeModule({ onBack, ingresos = [], metrics = {}, e
     setSeleccion(new Set(facturasConSaldo.map(f => f.id)));
   }, [facturasConSaldo.length]);
 
-  // Facturas seleccionadas (con saldo) agrupadas por moneda
+  // Facturas seleccionadas (con saldo) agrupadas por moneda.
+  // Si incluirPorFacturar=true, sumamos también el Por Facturar al total.
   const seleccionPorMoneda = useMemo(() => {
     const r = { MXN: { facturas:[], total:0 }, USD: { facturas:[], total:0 }, EUR: { facturas:[], total:0 } };
     facturasConSaldo.forEach(f => {
@@ -153,8 +193,17 @@ export default function FactorajeModule({ onBack, ingresos = [], metrics = {}, e
       r[m].facturas.push(f);
       r[m].total += f.saldo;
     });
+    // Sumar Por Facturar si está habilitado
+    if (incluirPorFacturar) {
+      porFacturarLimpio.forEach(p => {
+        const m = p.moneda || 'MXN';
+        if (!r[m]) r[m] = { facturas:[], total:0 };
+        r[m].facturas.push(p);
+        r[m].total += p.saldo;
+      });
+    }
     return r;
-  }, [facturasConSaldo, seleccion]);
+  }, [facturasConSaldo, seleccion, incluirPorFacturar, porFacturarLimpio]);
 
   // ─── Parámetros (todos arrancan en 0) ──────────────────────
   const [params, setParams] = useState({
@@ -335,7 +384,36 @@ export default function FactorajeModule({ onBack, ingresos = [], metrics = {}, e
               </div>
             );
           })}
-          {facturasConSaldo.length === 0 && (
+
+          {/* ─── Chip Por Facturar (siempre visible si hay) con toggle ─── */}
+          {porFacturarLimpio.length > 0 && (
+            <label style={{
+              background: incluirPorFacturar ? 'linear-gradient(135deg, #F0E6FB, #FCE7F3)' : '#F9FAFB',
+              padding:'9px 14px',borderRadius:8,fontSize:12,
+              color: incluirPorFacturar ? C.purple : C.muted,
+              display:'inline-flex',alignItems:'center',gap:10,
+              border:`1px solid ${incluirPorFacturar ? '#C9B7E0' : C.border}`,
+              cursor:'pointer',
+              transition:'all .2s',
+            }}>
+              <input
+                type="checkbox"
+                checked={incluirPorFacturar}
+                onChange={e=>setIncluirPorFacturar(e.target.checked)}
+                style={{cursor:'pointer',accentColor:C.purple,width:14,height:14}}
+              />
+              <span style={{fontWeight:700,color: incluirPorFacturar ? C.purple : C.muted}}>📄 Incluir Por Facturar</span>
+              <span style={{opacity:0.5}}>·</span>
+              <span>
+                <strong>{porFacturarTotales.count} registro{porFacturarTotales.count!==1?'s':''}</strong>
+                {porFacturarTotales.MXN > 0 && <> · <strong>${fmt(porFacturarTotales.MXN)} MXN</strong></>}
+                {porFacturarTotales.USD > 0 && <> · <strong>${fmt(porFacturarTotales.USD)} USD</strong></>}
+                {porFacturarTotales.EUR > 0 && <> · <strong>€{fmt(porFacturarTotales.EUR)} EUR</strong></>}
+              </span>
+            </label>
+          )}
+
+          {facturasConSaldo.length === 0 && porFacturarLimpio.length === 0 && (
             <div style={{color:C.muted,fontSize:13,fontStyle:'italic'}}>
               No hay facturas con saldo pendiente para factorizar.
             </div>
@@ -347,6 +425,13 @@ export default function FactorajeModule({ onBack, ingresos = [], metrics = {}, e
             </button>
           )}
         </div>
+
+        {/* Aviso si Por Facturar está incluido */}
+        {incluirPorFacturar && porFacturarLimpio.length > 0 && (
+          <div style={{marginTop:12,padding:'10px 14px',background:'rgba(245,158,11,0.08)',borderLeft:`3px solid #F59E0B`,borderRadius:'0 6px 6px 0',fontSize:11.5,color:'#92400E',lineHeight:1.5}}>
+            ⚠️ <strong>Nota:</strong> "Por Facturar" son ingresos sin CFDI emitido todavía. Si los incluyes, asegúrate de poder emitirlos antes de cerrar el factoraje. Algunos factorantes requieren UUID fiscal para liberar el anticipo.
+          </div>
+        )}
       </Block>
 
       {/* ─── BLOQUE 2 + 3 — Parámetros + Resultado ─────────── */}
@@ -366,8 +451,8 @@ export default function FactorajeModule({ onBack, ingresos = [], metrics = {}, e
         </Block>
 
         {/* Resultado en vivo */}
-        <div className="fact-anim" style={{background:`linear-gradient(135deg, ${C.navy} 0%, #1F4F7A 100%)`,color:'#fff',borderRadius:14,padding:20}}>
-          <div style={{fontSize:10,fontWeight:700,opacity:0.85,textTransform:'uppercase',letterSpacing:0.6,marginBottom:12,display:'flex',alignItems:'center',gap:8}}>
+        <div className="fact-anim" style={{background:`linear-gradient(135deg, ${C.navy} 0%, #1F4F7A 100%)`,color:'#fff',borderRadius:14,padding:22}}>
+          <div style={{fontSize:10,fontWeight:700,opacity:0.85,textTransform:'uppercase',letterSpacing:0.6,marginBottom:16,display:'flex',alignItems:'center',gap:8}}>
             <span style={{width:20,height:20,borderRadius:'50%',background:'rgba(255,255,255,0.2)',color:'#fff',fontSize:10,fontWeight:700,display:'inline-flex',alignItems:'center',justifyContent:'center'}}>3</span>
             Resultado en vivo (Esperado)
           </div>
@@ -377,34 +462,48 @@ export default function FactorajeModule({ onBack, ingresos = [], metrics = {}, e
             const r = seleccionPorMoneda[m];
             if (r.total === 0) return null;
             const e = esp[m];
+            const sym = monedaSym(m);
             return (
-              <div key={m} style={{marginBottom:14,paddingBottom:14,borderBottom:'1px solid rgba(255,255,255,0.15)'}}>
-                <div style={{fontSize:11,fontWeight:700,opacity:0.7,marginBottom:8,letterSpacing:0.5}}>{m}</div>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'4px 0'}}>
-                  <span style={{fontSize:12,opacity:0.85}}>Recibes HOY</span>
-                  <span style={{fontSize:18,fontWeight:800,color:C.greenSoft,fontVariantNumeric:'tabular-nums',letterSpacing:'-0.3px'}}>{monedaSym(m)}{fmt(e.recibesHoy)}</span>
+              <div key={m} style={{marginBottom:16,paddingBottom:16,borderBottom:'1px solid rgba(255,255,255,0.15)'}}>
+                <div style={{fontSize:11,fontWeight:700,opacity:0.65,marginBottom:14,letterSpacing:0.8,textTransform:'uppercase'}}>{m}</div>
+
+                {/* Layout 2 columnas para números GRANDES */}
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:18,marginBottom:14}}>
+                  <div>
+                    <div style={{fontSize:10,opacity:0.65,marginBottom:5,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase'}}>Recibes HOY</div>
+                    <div style={{fontSize:28,fontWeight:800,color:C.greenSoft,fontVariantNumeric:'tabular-nums',letterSpacing:'-0.6px',lineHeight:1.1}}>{sym}{fmt(e.recibesHoy)}</div>
+                  </div>
+                  <div>
+                    <div style={{fontSize:10,opacity:0.65,marginBottom:5,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase'}}>Costo total</div>
+                    <div style={{fontSize:22,fontWeight:800,color:C.redLight,fontVariantNumeric:'tabular-nums',letterSpacing:'-0.5px',lineHeight:1.1}}>-{sym}{fmt(e.costoTotal)}</div>
+                  </div>
                 </div>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'4px 0'}}>
-                  <span style={{fontSize:12,opacity:0.85}}>Costo (com + int)</span>
-                  <span style={{fontSize:14,fontWeight:700,color:C.redLight,fontVariantNumeric:'tabular-nums'}}>-{monedaSym(m)}{fmt(e.costoTotal)}</span>
+
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:18,paddingBottom:14,borderBottom:'1px solid rgba(255,255,255,0.18)'}}>
+                  <div>
+                    <div style={{fontSize:10,opacity:0.65,marginBottom:5,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase'}}>Recibes después</div>
+                    <div style={{fontSize:22,fontWeight:700,fontVariantNumeric:'tabular-nums',letterSpacing:'-0.5px',lineHeight:1.1}}>{sym}{fmt(e.recibesDespues)}</div>
+                  </div>
+                  <div>
+                    <div style={{fontSize:10,opacity:0.65,marginBottom:5,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase'}}>Costo liquidez</div>
+                    <div style={{fontSize:22,fontWeight:700,color:'#FCD34D',fontVariantNumeric:'tabular-nums',letterSpacing:'-0.5px',lineHeight:1.1}}>{e.costoLiquidezPct.toFixed(2)}%</div>
+                  </div>
                 </div>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'4px 0'}}>
-                  <span style={{fontSize:12,opacity:0.85}}>Recibes después</span>
-                  <span style={{fontSize:14,fontWeight:700,fontVariantNumeric:'tabular-nums'}}>{monedaSym(m)}{fmt(e.recibesDespues)}</span>
-                </div>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'8px 0 0',marginTop:6,borderTop:'1px solid rgba(255,255,255,0.25)'}}>
-                  <span style={{fontSize:13,fontWeight:700}}>NETO</span>
-                  <span style={{fontSize:20,fontWeight:800,fontVariantNumeric:'tabular-nums',letterSpacing:'-0.4px'}}>{monedaSym(m)}{fmt(e.netoTotal)}</span>
-                </div>
-                <div style={{fontSize:10,opacity:0.6,marginTop:4}}>
-                  vs cobrar tú solo: {monedaSym(m)}{fmt(r.total)} · Costo liquidez: {e.costoLiquidezPct.toFixed(2)}%
+
+                {/* NETO GIGANTE a la derecha */}
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',paddingTop:14}}>
+                  <div>
+                    <div style={{fontSize:12,opacity:0.75,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase'}}>Neto total</div>
+                    <div style={{fontSize:11,opacity:0.5,marginTop:3}}>vs cobrar tú solo: {sym}{fmt(r.total)}</div>
+                  </div>
+                  <div style={{fontSize:36,fontWeight:800,fontVariantNumeric:'tabular-nums',letterSpacing:'-0.8px',lineHeight:1}}>{sym}{fmt(e.netoTotal)}</div>
                 </div>
               </div>
             );
           })}
 
           {seleccionPorMoneda.MXN.total===0 && seleccionPorMoneda.USD.total===0 && seleccionPorMoneda.EUR.total===0 && (
-            <div style={{padding:'20px 0',textAlign:'center',opacity:0.5,fontSize:12}}>
+            <div style={{padding:'30px 0',textAlign:'center',opacity:0.5,fontSize:13}}>
               Selecciona facturas para ver el resultado
             </div>
           )}
@@ -639,85 +738,298 @@ function SelectorFacturasModal({ facturas, seleccion, setSeleccion, onClose, dia
   const [filtro, setFiltro] = useState('');
   const [tmpSel, setTmpSel] = useState(new Set(seleccion));
 
-  const filtered = useMemo(() => {
-    if (!filtro.trim()) return facturas;
-    const q = filtro.trim().toLowerCase();
-    return facturas.filter(f =>
-      (f.cliente||'').toLowerCase().includes(q) ||
-      (f.folio||'').toLowerCase().includes(q) ||
-      (f.concepto||'').toLowerCase().includes(q)
-    );
-  }, [filtro, facturas]);
+  // Vista: 'cliente' (agrupado, default) | 'lista' (plana como antes)
+  const [vista, setVista] = useState('cliente');
 
+  // Filtro rápido: 'todas' | 'vencidas' | 'pv15' | 'pvMas15' | 'cliente'
+  const [filtroRapido, setFiltroRapido] = useState('todas');
+  const [filtroCliente, setFiltroCliente] = useState('');
+
+  // Clientes expandidos (set de nombres en vista cliente)
+  const [expandidos, setExpandidos] = useState(new Set());
+
+  // ─── Filtrar facturas según búsqueda y filtros rápidos ────────
+  const filtered = useMemo(() => {
+    let arr = facturas;
+    if (filtro.trim()) {
+      const q = filtro.trim().toLowerCase();
+      arr = arr.filter(f =>
+        (f.cliente||'').toLowerCase().includes(q) ||
+        (f.folio||'').toLowerCase().includes(q) ||
+        (f.concepto||'').toLowerCase().includes(q)
+      );
+    }
+    if (filtroRapido === 'vencidas') {
+      arr = arr.filter(f => { const d = diasDiff?.(f.fechaVencimiento); return d !== null && d !== undefined && d < 0; });
+    } else if (filtroRapido === 'pv15') {
+      arr = arr.filter(f => { const d = diasDiff?.(f.fechaVencimiento); return d !== null && d !== undefined && d >= 0 && d <= 15; });
+    } else if (filtroRapido === 'pvMas15') {
+      arr = arr.filter(f => { const d = diasDiff?.(f.fechaVencimiento); return d !== null && d !== undefined && d > 15; });
+    }
+    if (filtroCliente) {
+      arr = arr.filter(f => f.cliente === filtroCliente);
+    }
+    return arr;
+  }, [filtro, facturas, filtroRapido, filtroCliente, diasDiff]);
+
+  // ─── Conteos para los chips de filtros rápidos ────────
+  const conteos = useMemo(() => {
+    const c = { todas: facturas.length, vencidas: 0, pv15: 0, pvMas15: 0 };
+    facturas.forEach(f => {
+      const d = diasDiff?.(f.fechaVencimiento);
+      if (d === null || d === undefined) return;
+      if (d < 0) c.vencidas++;
+      else if (d <= 15) c.pv15++;
+      else c.pvMas15++;
+    });
+    return c;
+  }, [facturas, diasDiff]);
+
+  // Lista única de clientes para el dropdown
+  const clientesUnicos = useMemo(() => {
+    return [...new Set(facturas.map(f => f.cliente))].filter(Boolean).sort();
+  }, [facturas]);
+
+  // ─── Agrupar facturas filtradas por cliente ────────
+  const grupos = useMemo(() => {
+    const map = new Map();
+    filtered.forEach(f => {
+      const k = f.cliente || '(sin cliente)';
+      if (!map.has(k)) map.set(k, { cliente:k, facturas:[], total:0, totalMoneda:{} });
+      const g = map.get(k);
+      g.facturas.push(f);
+      g.total += f.saldo;
+      const m = f.moneda || 'MXN';
+      g.totalMoneda[m] = (g.totalMoneda[m] || 0) + f.saldo;
+    });
+    return Array.from(map.values()).sort((a,b) => b.total - a.total);
+  }, [filtered]);
+
+  // ─── Estado de selección por cliente (todas/algunas/ninguna) ────────
+  const estadoSeleccionCliente = (cliente) => {
+    const g = grupos.find(gg => gg.cliente === cliente);
+    if (!g) return 'ninguna';
+    const seleccionadas = g.facturas.filter(f => tmpSel.has(f.id)).length;
+    if (seleccionadas === 0) return 'ninguna';
+    if (seleccionadas === g.facturas.length) return 'todas';
+    return 'parcial';
+  };
+
+  // ─── Acciones ────────
   const toggle = (id) => {
     const ns = new Set(tmpSel);
     if (ns.has(id)) ns.delete(id); else ns.add(id);
     setTmpSel(ns);
   };
-  const toggleTodos = () => {
-    if (tmpSel.size === filtered.length) setTmpSel(new Set());
-    else setTmpSel(new Set(filtered.map(f=>f.id)));
+
+  const toggleCliente = (cliente) => {
+    const g = grupos.find(gg => gg.cliente === cliente);
+    if (!g) return;
+    const ns = new Set(tmpSel);
+    const estado = estadoSeleccionCliente(cliente);
+    if (estado === 'todas') {
+      g.facturas.forEach(f => ns.delete(f.id));
+    } else {
+      g.facturas.forEach(f => ns.add(f.id));
+    }
+    setTmpSel(ns);
+  };
+
+  const toggleExpansion = (cliente) => {
+    const ns = new Set(expandidos);
+    if (ns.has(cliente)) ns.delete(cliente); else ns.add(cliente);
+    setExpandidos(ns);
+  };
+
+  const seleccionarTodasFiltradas = () => {
+    const ns = new Set(tmpSel);
+    filtered.forEach(f => ns.add(f.id));
+    setTmpSel(ns);
+  };
+  const quitarTodasFiltradas = () => {
+    const ns = new Set(tmpSel);
+    filtered.forEach(f => ns.delete(f.id));
+    setTmpSel(ns);
   };
 
   const aplicar = () => { setSeleccion(tmpSel); onClose(); };
 
+  // ─── Totales del seleccionado (footer) ────────
+  const totalesSel = useMemo(() => {
+    const r = { count:0, MXN:0, USD:0, EUR:0 };
+    facturas.forEach(f => {
+      if (!tmpSel.has(f.id)) return;
+      r.count++;
+      const m = f.moneda || 'MXN';
+      r[m] = (r[m] || 0) + f.saldo;
+    });
+    return r;
+  }, [tmpSel, facturas]);
+
+  const chipBase = { padding:'5px 11px', fontSize:11, borderRadius:99, cursor:'pointer', fontWeight:600, fontFamily:'inherit', border:`1px solid ${C.border}`, background:C.surface, color:C.muted };
+  const chipActive = (color) => ({ ...chipBase, background:color, color:'#fff', border:`1px solid ${color}` });
+
   return (
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:20}} onClick={onClose}>
-      <div style={{background:C.surface,borderRadius:14,width:'100%',maxWidth:900,maxHeight:'85vh',display:'flex',flexDirection:'column',boxShadow:'0 24px 60px rgba(0,0,0,0.3)'}} onClick={e=>e.stopPropagation()}>
-        <div style={{padding:'20px 24px',borderBottom:`1px solid ${C.border}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+      <div style={{background:C.surface,borderRadius:14,width:'100%',maxWidth:1000,maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 24px 60px rgba(0,0,0,0.3)'}} onClick={e=>e.stopPropagation()}>
+
+        {/* ─── Header ─── */}
+        <div style={{padding:'18px 24px',borderBottom:`1px solid ${C.border}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
           <div>
             <div style={{fontSize:18,fontWeight:800,color:C.text}}>📋 Seleccionar facturas a factorizar</div>
-            <div style={{fontSize:12,color:C.muted,marginTop:2}}>{tmpSel.size} de {facturas.length} seleccionadas</div>
+            <div style={{fontSize:12,color:C.muted,marginTop:2}}>
+              <strong style={{color:C.purple}}>{tmpSel.size} de {facturas.length}</strong> seleccionadas · {clientesUnicos.length} cliente{clientesUnicos.length!==1?'s':''}
+            </div>
           </div>
           <button onClick={onClose} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:C.muted}}>✕</button>
         </div>
 
-        <div style={{padding:'14px 24px',borderBottom:`1px solid ${C.border}`,display:'flex',gap:10,alignItems:'center'}}>
-          <input type="text" value={filtro} onChange={e=>setFiltro(e.target.value)} placeholder="🔍 Buscar por cliente, folio, concepto…"
-            style={{flex:1,padding:'9px 14px',borderRadius:8,border:`1px solid ${C.border}`,fontSize:13,outline:'none',background:C.bgSoft,fontFamily:'inherit'}}/>
-          <button onClick={toggleTodos} style={{padding:'9px 14px',fontSize:12,background:tmpSel.size===filtered.length?C.purple:C.surface,color:tmpSel.size===filtered.length?'#fff':C.text,border:`1px solid ${tmpSel.size===filtered.length?C.purple:C.border}`,borderRadius:8,cursor:'pointer',fontWeight:600,fontFamily:'inherit',whiteSpace:'nowrap'}}>
-            {tmpSel.size===filtered.length ? 'Quitar todas' : 'Seleccionar todas'}
-          </button>
+        {/* ─── Toolbar ─── */}
+        <div style={{padding:'14px 24px',borderBottom:`1px solid ${C.border}`,display:'flex',flexDirection:'column',gap:10}}>
+          {/* Búsqueda + Vista toggle */}
+          <div style={{display:'flex',gap:10,alignItems:'center'}}>
+            <input type="text" value={filtro} onChange={e=>setFiltro(e.target.value)} placeholder="🔍 Buscar por cliente, folio, concepto…"
+              style={{flex:1,padding:'9px 14px',borderRadius:8,border:`1px solid ${C.border}`,fontSize:13,outline:'none',background:C.bgSoft,fontFamily:'inherit'}}/>
+            <div style={{display:'flex',border:`1px solid ${C.border}`,borderRadius:8,overflow:'hidden'}}>
+              <button onClick={()=>setVista('cliente')} style={{padding:'9px 14px',fontSize:11,background:vista==='cliente'?C.navy:C.surface,color:vista==='cliente'?'#fff':C.muted,border:'none',cursor:'pointer',fontWeight:700,fontFamily:'inherit'}}>👥 Por cliente</button>
+              <button onClick={()=>setVista('lista')} style={{padding:'9px 14px',fontSize:11,background:vista==='lista'?C.navy:C.surface,color:vista==='lista'?'#fff':C.muted,border:'none',cursor:'pointer',fontWeight:700,fontFamily:'inherit'}}>📋 Lista</button>
+            </div>
+          </div>
+
+          {/* Filtros rápidos */}
+          <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+            <span style={{fontSize:10,color:C.muted,fontWeight:700,textTransform:'uppercase',letterSpacing:0.4,marginRight:4}}>Filtros:</span>
+            <button onClick={()=>setFiltroRapido('todas')} style={filtroRapido==='todas' ? chipActive(C.purple) : chipBase}>Todas ({conteos.todas})</button>
+            <button onClick={()=>setFiltroRapido('vencidas')} style={filtroRapido==='vencidas' ? chipActive(C.red) : {...chipBase, color: conteos.vencidas>0 ? C.red : C.muted, border:`1px solid ${conteos.vencidas>0?'#FCA5A5':C.border}`}}>🔴 Vencidas ({conteos.vencidas})</button>
+            <button onClick={()=>setFiltroRapido('pv15')} style={filtroRapido==='pv15' ? chipActive(C.amber) : {...chipBase, color: conteos.pv15>0 ? '#8C6B1A' : C.muted, border:`1px solid ${conteos.pv15>0?'#FCD34D':C.border}`}}>🟡 0-15 días ({conteos.pv15})</button>
+            <button onClick={()=>setFiltroRapido('pvMas15')} style={filtroRapido==='pvMas15' ? chipActive(C.green) : chipBase}>🟢 +15 días ({conteos.pvMas15})</button>
+            <span style={{width:1,height:18,background:C.border,margin:'0 4px'}}/>
+            <select value={filtroCliente} onChange={e=>setFiltroCliente(e.target.value)}
+              style={{padding:'5px 10px',fontSize:11,borderRadius:99,border:`1px solid ${filtroCliente?C.blue:C.border}`,background:filtroCliente?'rgba(24,95,165,0.1)':C.surface,color:filtroCliente?C.blue:C.muted,cursor:'pointer',fontWeight:600,fontFamily:'inherit',outline:'none'}}>
+              <option value="">+ Por cliente</option>
+              {clientesUnicos.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <span style={{width:1,height:18,background:C.border,margin:'0 4px'}}/>
+            <button onClick={seleccionarTodasFiltradas} style={{...chipBase, background:C.green, color:'#fff', border:`1px solid ${C.green}`}}>✓ Todas</button>
+            <button onClick={quitarTodasFiltradas} style={chipBase}>✕ Ninguna</button>
+          </div>
         </div>
 
-        <div style={{flex:1,overflowY:'auto',padding:'0 24px'}}>
-          <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-            <thead style={{position:'sticky',top:0,background:C.surface,zIndex:1}}>
-              <tr style={{borderBottom:`1px solid ${C.border}`}}>
-                <th style={{padding:'10px 6px',textAlign:'left',fontWeight:700,color:C.muted,fontSize:10,textTransform:'uppercase',letterSpacing:0.4}}>✓</th>
-                <th style={{padding:'10px 6px',textAlign:'left',fontWeight:700,color:C.muted,fontSize:10,textTransform:'uppercase',letterSpacing:0.4}}>Cliente</th>
-                <th style={{padding:'10px 6px',textAlign:'left',fontWeight:700,color:C.muted,fontSize:10,textTransform:'uppercase',letterSpacing:0.4}}>Folio</th>
-                <th style={{padding:'10px 6px',textAlign:'left',fontWeight:700,color:C.muted,fontSize:10,textTransform:'uppercase',letterSpacing:0.4}}>F.Vence</th>
-                <th style={{padding:'10px 6px',textAlign:'left',fontWeight:700,color:C.muted,fontSize:10,textTransform:'uppercase',letterSpacing:0.4}}>Días</th>
-                <th style={{padding:'10px 6px',textAlign:'right',fontWeight:700,color:C.muted,fontSize:10,textTransform:'uppercase',letterSpacing:0.4}}>Saldo</th>
-                <th style={{padding:'10px 6px',textAlign:'left',fontWeight:700,color:C.muted,fontSize:10,textTransform:'uppercase',letterSpacing:0.4}}>Mon</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(f => {
-                const d = diasDiff ? diasDiff(f.fechaVencimiento) : 0;
-                const sel = tmpSel.has(f.id);
-                return (
-                  <tr key={f.id} onClick={()=>toggle(f.id)} style={{borderBottom:`1px solid #F1F5F9`,cursor:'pointer',background:sel?'rgba(94,45,143,0.04)':'transparent'}}>
-                    <td style={{padding:'8px 6px'}}>
-                      <input type="checkbox" checked={sel} onChange={()=>toggle(f.id)} onClick={e=>e.stopPropagation()} style={{cursor:'pointer'}}/>
-                    </td>
-                    <td style={{padding:'8px 6px',color:C.text,fontWeight:600}}>{f.cliente}</td>
-                    <td style={{padding:'8px 6px',color:C.muted,fontSize:11}}>{f.folio || '—'}</td>
-                    <td style={{padding:'8px 6px',color:C.muted,fontSize:11}}>{fmtFecha(f.fechaVencimiento)}</td>
-                    <td style={{padding:'8px 6px',color:d!==null && d<0?C.red:(d!==null && d<=15?C.amber:C.green),fontSize:11,fontWeight:700}}>{d===null?'—':(d<0?d:`+${d}`)}</td>
-                    <td style={{padding:'8px 6px',textAlign:'right',fontWeight:700,fontVariantNumeric:'tabular-nums'}}>{monedaSym(f.moneda)}{fmt(f.saldo)}</td>
-                    <td style={{padding:'8px 6px',fontSize:11,color:C.muted}}>{f.moneda}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        {/* ─── Cuerpo: vista cliente o vista lista ─── */}
+        <div style={{flex:1,overflowY:'auto'}}>
+          {vista === 'cliente' ? (
+            // ─── VISTA POR CLIENTE (acordeón) ───
+            grupos.length === 0 ? (
+              <div style={{padding:40,textAlign:'center',color:C.muted,fontSize:13}}>
+                No hay facturas que coincidan con los filtros.
+              </div>
+            ) : grupos.map(g => {
+              const estado = estadoSeleccionCliente(g.cliente);
+              const seleccionadasCount = g.facturas.filter(f => tmpSel.has(f.id)).length;
+              const expandido = expandidos.has(g.cliente);
+              return (
+                <div key={g.cliente} style={{borderBottom:`1px solid #F1F5F9`}}>
+                  {/* Header del cliente */}
+                  <div style={{padding:'12px 24px',display:'flex',alignItems:'center',gap:12,cursor:'pointer',background:estado==='todas'?'rgba(94,45,143,0.04)':estado==='parcial'?'rgba(245,158,11,0.04)':'transparent'}}
+                    onClick={()=>toggleExpansion(g.cliente)}>
+                    {/* Checkbox con estado parcial */}
+                    {estado === 'parcial' ? (
+                      <div onClick={e=>{e.stopPropagation();toggleCliente(g.cliente);}}
+                        style={{width:16,height:16,border:`1.5px solid ${C.purple}`,borderRadius:3,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',background:'#fff'}}>
+                        <div style={{width:8,height:2,background:C.purple}}/>
+                      </div>
+                    ) : (
+                      <input type="checkbox" checked={estado==='todas'}
+                        onChange={e=>{e.stopPropagation();toggleCliente(g.cliente);}}
+                        onClick={e=>e.stopPropagation()}
+                        style={{cursor:'pointer',accentColor:C.purple,width:16,height:16}}/>
+                    )}
+                    <span style={{color:C.muted,fontSize:10,width:10}}>{expandido?'▼':'▶'}</span>
+                    <span style={{fontWeight:700,color:C.text,fontSize:13,flex:1}}>{g.cliente}</span>
+                    <span style={{fontSize:11,color:C.muted}}>
+                      {g.facturas.length} factura{g.facturas.length!==1?'s':''}
+                      {estado==='parcial' && <> · <strong style={{color:C.purple}}>{seleccionadasCount} sel.</strong></>}
+                    </span>
+                    <span style={{fontSize:13,fontWeight:800,color:C.text,fontVariantNumeric:'tabular-nums',minWidth:140,textAlign:'right'}}>
+                      {Object.entries(g.totalMoneda).map(([m,t]) => (
+                        <div key={m}>{monedaSym(m)}{fmt(t)} {m}</div>
+                      ))}
+                    </span>
+                  </div>
+
+                  {/* Detalle expandido */}
+                  {expandido && (
+                    <div style={{padding:'0 24px 8px 60px',background:'#FAFBFC'}}>
+                      {g.facturas.map(f => {
+                        const d = diasDiff?.(f.fechaVencimiento);
+                        const sel = tmpSel.has(f.id);
+                        return (
+                          <div key={f.id} onClick={()=>toggle(f.id)}
+                            style={{display:'grid',gridTemplateColumns:'24px 1fr 110px 60px 50px 130px',gap:10,padding:'6px 0',fontSize:11,color:C.muted,borderBottom:`1px solid #F1F5F9`,cursor:'pointer',background:sel?'rgba(94,45,143,0.04)':'transparent',alignItems:'center'}}>
+                            <input type="checkbox" checked={sel} onChange={()=>toggle(f.id)} onClick={e=>e.stopPropagation()} style={{cursor:'pointer',accentColor:C.purple}}/>
+                            <div style={{color:C.text,fontWeight:600}}>{f.folio || '—'}{f._esPorFacturar && <span style={{marginLeft:6,fontSize:9,background:'rgba(94,45,143,0.1)',color:C.purple,padding:'1px 6px',borderRadius:99,fontWeight:700}}>PF</span>}</div>
+                            <div>{fmtFecha(f.fechaVencimiento)}</div>
+                            <div style={{color:d===null||d===undefined?C.muted:(d<0?C.red:(d<=15?C.amber:C.green)),fontWeight:700}}>{d===null||d===undefined?'—':(d<0?d:`+${d}`)}</div>
+                            <div>{f.moneda}</div>
+                            <div style={{textAlign:'right',fontWeight:700,color:C.text,fontVariantNumeric:'tabular-nums'}}>{monedaSym(f.moneda)}{fmt(f.saldo)}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          ) : (
+            // ─── VISTA LISTA (plana) ───
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+              <thead style={{position:'sticky',top:0,background:C.surface,zIndex:1}}>
+                <tr style={{borderBottom:`1px solid ${C.border}`}}>
+                  <th style={{padding:'10px 6px 10px 24px',textAlign:'left',fontWeight:700,color:C.muted,fontSize:10,textTransform:'uppercase',letterSpacing:0.4}}>✓</th>
+                  <th style={{padding:'10px 6px',textAlign:'left',fontWeight:700,color:C.muted,fontSize:10,textTransform:'uppercase',letterSpacing:0.4}}>Cliente</th>
+                  <th style={{padding:'10px 6px',textAlign:'left',fontWeight:700,color:C.muted,fontSize:10,textTransform:'uppercase',letterSpacing:0.4}}>Folio</th>
+                  <th style={{padding:'10px 6px',textAlign:'left',fontWeight:700,color:C.muted,fontSize:10,textTransform:'uppercase',letterSpacing:0.4}}>F.Vence</th>
+                  <th style={{padding:'10px 6px',textAlign:'left',fontWeight:700,color:C.muted,fontSize:10,textTransform:'uppercase',letterSpacing:0.4}}>Días</th>
+                  <th style={{padding:'10px 6px',textAlign:'right',fontWeight:700,color:C.muted,fontSize:10,textTransform:'uppercase',letterSpacing:0.4}}>Saldo</th>
+                  <th style={{padding:'10px 24px 10px 6px',textAlign:'left',fontWeight:700,color:C.muted,fontSize:10,textTransform:'uppercase',letterSpacing:0.4}}>Mon</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.length === 0 ? (
+                  <tr><td colSpan="7" style={{padding:40,textAlign:'center',color:C.muted}}>No hay facturas que coincidan con los filtros.</td></tr>
+                ) : filtered.map(f => {
+                  const d = diasDiff?.(f.fechaVencimiento);
+                  const sel = tmpSel.has(f.id);
+                  return (
+                    <tr key={f.id} onClick={()=>toggle(f.id)} style={{borderBottom:`1px solid #F1F5F9`,cursor:'pointer',background:sel?'rgba(94,45,143,0.04)':'transparent'}}>
+                      <td style={{padding:'8px 6px 8px 24px'}}>
+                        <input type="checkbox" checked={sel} onChange={()=>toggle(f.id)} onClick={e=>e.stopPropagation()} style={{cursor:'pointer',accentColor:C.purple}}/>
+                      </td>
+                      <td style={{padding:'8px 6px',color:C.text,fontWeight:600}}>{f.cliente}</td>
+                      <td style={{padding:'8px 6px',color:C.muted,fontSize:11}}>{f.folio || '—'}{f._esPorFacturar && <span style={{marginLeft:6,fontSize:9,background:'rgba(94,45,143,0.1)',color:C.purple,padding:'1px 6px',borderRadius:99,fontWeight:700}}>PF</span>}</td>
+                      <td style={{padding:'8px 6px',color:C.muted,fontSize:11}}>{fmtFecha(f.fechaVencimiento)}</td>
+                      <td style={{padding:'8px 6px',color:d===null||d===undefined?C.muted:(d<0?C.red:(d<=15?C.amber:C.green)),fontSize:11,fontWeight:700}}>{d===null||d===undefined?'—':(d<0?d:`+${d}`)}</td>
+                      <td style={{padding:'8px 6px',textAlign:'right',fontWeight:700,fontVariantNumeric:'tabular-nums'}}>{monedaSym(f.moneda)}{fmt(f.saldo)}</td>
+                      <td style={{padding:'8px 24px 8px 6px',fontSize:11,color:C.muted}}>{f.moneda}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
 
-        <div style={{padding:'14px 24px',borderTop:`1px solid ${C.border}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        {/* ─── Footer: total seleccionado en vivo ─── */}
+        <div style={{padding:'14px 24px',borderTop:`1px solid ${C.border}`,display:'flex',justifyContent:'space-between',alignItems:'center',background:C.bgSoft}}>
           <div style={{fontSize:12,color:C.muted}}>
-            <strong style={{color:C.text}}>{tmpSel.size}</strong> de {facturas.length} facturas
+            Total seleccionado:
+            <strong style={{color:C.text,fontSize:14,marginLeft:6}}>
+              {totalesSel.MXN > 0 && <>${fmt(totalesSel.MXN)} MXN</>}
+              {totalesSel.USD > 0 && <>{totalesSel.MXN>0?' · ':''}${fmt(totalesSel.USD)} USD</>}
+              {totalesSel.EUR > 0 && <>{(totalesSel.MXN>0||totalesSel.USD>0)?' · ':''}€{fmt(totalesSel.EUR)} EUR</>}
+              {totalesSel.MXN===0 && totalesSel.USD===0 && totalesSel.EUR===0 && <span style={{color:C.muted}}>$0.00</span>}
+            </strong>
+            <span style={{marginLeft:8,color:C.muted}}>· {totalesSel.count} factura{totalesSel.count!==1?'s':''}</span>
           </div>
           <div style={{display:'flex',gap:8}}>
             <button onClick={onClose} style={{padding:'9px 16px',fontSize:12,border:`1px solid ${C.border}`,background:C.surface,borderRadius:8,color:C.muted,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>Cancelar</button>
