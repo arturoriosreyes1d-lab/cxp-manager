@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from "react";
+import React, { useState, useRef, useMemo, useEffect } from "react";
 
 /* ─────────────────────────────────────────────────────────────
    ExportarReporteCxC — Botón + Modal para generar reportes de
@@ -110,6 +110,8 @@ export default function ExportarReporteCxC({
   empresaNombre = "Travel Air Solutions",
   generadoPor = "Administrador",
   diasDiff,
+  triggerOpen = 0,    // Si cambia (timestamp), abre el modal programáticamente
+  hideButton = false, // Si true, oculta el botón propio del componente
 }) {
   const dDiff = diasDiff || defaultDiasDiff;
 
@@ -117,6 +119,11 @@ export default function ExportarReporteCxC({
   const [generando, setGenerando] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("");
   const reportRef = useRef(null);
+
+  // Abre el modal cuando el padre cambia el valor de triggerOpen (cualquier truthy value distinto al anterior)
+  useEffect(() => {
+    if (triggerOpen) setModalOpen(true);
+  }, [triggerOpen]);
 
   // Mes seleccionado (default: mes siguiente al actual)
   const ahora = new Date();
@@ -620,27 +627,30 @@ export default function ExportarReporteCxC({
   return (
     <>
       {/* Botón en la toolbar */}
-      <button
-        onClick={() => setModalOpen(true)}
-        style={{
-          background: "#534AB7",
-          color: "#fff",
-          padding: "8px 16px",
-          fontSize: 13,
-          border: "none",
-          borderRadius: 8,
-          cursor: "pointer",
-          fontWeight: 700,
-          fontFamily: "inherit",
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          boxShadow: "0 2px 8px rgba(83,74,183,0.25)",
-        }}
-        title="Generar reporte para tu jefe (PDF o WhatsApp)"
-      >
-        📊 Generar Reporte CxC
-      </button>
+      {!hideButton && (
+        <button
+          onClick={() => setModalOpen(true)}
+          data-export-reporte-cxc-btn="true"
+          style={{
+            background: "#534AB7",
+            color: "#fff",
+            padding: "8px 16px",
+            fontSize: 13,
+            border: "none",
+            borderRadius: 8,
+            cursor: "pointer",
+            fontWeight: 700,
+            fontFamily: "inherit",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            boxShadow: "0 2px 8px rgba(83,74,183,0.25)",
+          }}
+          title="Generar reporte para tu jefe (PDF o WhatsApp)"
+        >
+          📊 Generar Reporte CxC
+        </button>
+      )}
 
       {/* Reporte renderizado off-screen para captura */}
       <div style={{

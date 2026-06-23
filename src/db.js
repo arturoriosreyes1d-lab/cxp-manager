@@ -2264,3 +2264,43 @@ export async function fetchHistoricoSaldoPlataforma(plataforma) {
   if (error) { console.error('fetchHistoricoSaldoPlataforma:', error); return []; }
   return data || [];
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// FACTORAJE — simulaciones guardadas
+// ═══════════════════════════════════════════════════════════════════
+
+// Guarda una simulación de factoraje en Supabase.
+// payload = { empresa_id, nombre?, usuario?, num_facturas, total_mxn, total_usd, total_eur,
+//             ingreso_ids[], tasa_anual, pct_anticipo, plazo_dias, pct_comision,
+//             pct_retencion, resultado{...}, notas? }
+export async function saveSimulacionFactoraje(payload) {
+  const { data, error } = await supabase
+    .from('simulaciones_factoraje')
+    .insert([payload])
+    .select()
+    .single();
+  if (error) { console.error('saveSimulacionFactoraje:', error); throw error; }
+  return data;
+}
+
+// Lista las simulaciones de una empresa (más recientes primero).
+export async function fetchSimulacionesFactoraje(empresaId) {
+  const { data, error } = await supabase
+    .from('simulaciones_factoraje')
+    .select('*')
+    .eq('empresa_id', empresaId)
+    .order('fecha_sim', { ascending: false })
+    .limit(50);
+  if (error) { console.error('fetchSimulacionesFactoraje:', error); return []; }
+  return data || [];
+}
+
+// Borra una simulación por id.
+export async function deleteSimulacionFactoraje(id) {
+  const { error } = await supabase
+    .from('simulaciones_factoraje')
+    .delete()
+    .eq('id', id);
+  if (error) { console.error('deleteSimulacionFactoraje:', error); throw error; }
+  return true;
+}

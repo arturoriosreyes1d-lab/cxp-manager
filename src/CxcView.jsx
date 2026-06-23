@@ -3,6 +3,8 @@ import * as XLSX from "xlsx";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import ExportarReporteCxC from "./ExportarReporteCxC";
+import ReportesCxCView from "./ReportesCxCView";
+import FactorajeModule from "./FactorajeModule";
 import { exportarPendientesFacturar } from "./ExportPorFacturar";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -121,6 +123,11 @@ export default function CxcView({
   const [calDayDetail, setCalDayDetail] = useState(null);
   const [kpiModal, setKpiModal] = useState(null); // { titulo, tipo, moneda }
   const [vistaGrupo, setVistaGrupo] = useState("cliente"); // "ingreso" | "cliente"
+
+  // Vista superior: 'cxc' (normal) | 'reportes' (pantalla de cards) | 'factoraje' (módulo)
+  const [vistaActual, setVistaActual] = useState("cxc");
+  // Trigger numérico para abrir el modal del reporte CxC clásico desde la card
+  const [triggerReporteClasico, setTriggerReporteClasico] = useState(0);
   const [clientesExpanded, setClientesExpanded] = useState(new Set());
   const [clienteSortCol, setClienteSortCol] = useState("fechaContable");
   const [clienteSortDir, setClienteSortDir] = useState("desc");
@@ -1941,6 +1948,38 @@ export default function CxcView({
   const totalIngresos = ingresos.length;
   const pendientesDeCobrar = ingresos.filter(ing=>(metrics[ing.id]?.porCobrar||0)>0).length;
 
+  // ═══════════════════════════════════════════════════════════════
+  // ROUTING: vista Reportes o Factoraje (oculta el CxC normal)
+  // ═══════════════════════════════════════════════════════════════
+  if (vistaActual === "reportes") {
+    return (
+      <ReportesCxCView
+        onBack={()=>setVistaActual("cxc")}
+        onOpenFactoraje={()=>setVistaActual("factoraje")}
+        onOpenReporteClasico={()=>{
+          // Volvemos a vista CxC para que el componente ExportarReporteCxC esté montado,
+          // y disparamos el trigger para que abra su modal automáticamente.
+          setVistaActual("cxc");
+          setTimeout(()=>setTriggerReporteClasico(Date.now()), 50);
+        }}
+        ingresos={ingresos}
+        kpis={kpis}
+        metrics={metrics}
+      />
+    );
+  }
+  if (vistaActual === "factoraje") {
+    return (
+      <FactorajeModule
+        onBack={()=>setVistaActual("reportes")}
+        ingresos={ingresos}
+        empresaId={empresaId}
+        usuario={"admin"}
+        diasDiff={diasDiff}
+      />
+    );
+  }
+
   return (
     <div>
       {/* Header */}
@@ -1970,6 +2009,14 @@ export default function CxcView({
             + Nuevo Ingreso
           </button>}
           {empresaId === "empresa_2" && !esConsulta && (
+            <button onClick={()=>setVistaActual("reportes")}
+              style={{...btnStyle, background:"linear-gradient(135deg, #5E2D8F, #6B47C7)", color:"#fff", padding:"8px 16px", fontSize:13, boxShadow:"0 2px 8px rgba(94, 45, 143, 0.25)"}}>
+              📊 Reportes
+            </button>
+          )}
+          {/* ExportarReporteCxC montado SIN su botón propio. Se abre programáticamente
+              cuando el usuario clic en la card "Reporte CxC" (cambia triggerReporteClasico) */}
+          {empresaId === "empresa_2" && !esConsulta && (
             <ExportarReporteCxC
               ingresos={ingresos}
               cobros={cobros}
@@ -1979,6 +2026,8 @@ export default function CxcView({
               empresaNombre="Travel Air Solutions"
               generadoPor="Administrador"
               diasDiff={diasDiff}
+              triggerOpen={triggerReporteClasico}
+              hideButton={true}
             />
           )}
         </div>
