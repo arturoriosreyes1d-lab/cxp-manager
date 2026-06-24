@@ -156,40 +156,40 @@ const KpiCard = ({label, value, sub, color=C.navy, colorEnd, pill, statusColor='
     <div onClick={onClick}
       style={{
         background: `linear-gradient(180deg, #fff 0%, ${bgSoft} 100%)`,
-        borderRadius: 16,
-        padding: '18px 20px',
-        boxShadow: '0 4px 16px rgba(15, 45, 74, 0.04), 0 1px 2px rgba(15, 45, 74, 0.04)',
+        borderRadius: 18,
+        padding: '24px 26px',
+        boxShadow: '0 6px 22px rgba(15, 45, 74, 0.05), 0 1px 2px rgba(15, 45, 74, 0.04)',
         border: `1px solid ${hexToRgba(color, 0.10)}`,
         position: 'relative',
         overflow: 'hidden',
         cursor: onClick ? 'pointer' : 'default',
         transition: 'transform .2s, box-shadow .2s',
-        flex: 1, minWidth: 160,
+        flex: 1, minWidth: 180,
       }}
       onMouseEnter={e=>{if(onClick){e.currentTarget.style.transform='translateY(-2px)';e.currentTarget.style.boxShadow='0 8px 20px rgba(15, 45, 74, 0.08)';}}}
       onMouseLeave={e=>{e.currentTarget.style.transform='translateY(0)';e.currentTarget.style.boxShadow='0 4px 16px rgba(15, 45, 74, 0.04), 0 1px 2px rgba(15, 45, 74, 0.04)';}}>
-      {/* Borde superior 2px gradient */}
-      <div style={{position:'absolute',top:0,left:0,right:0,height:2,background:borderTopGradient}}/>
+      {/* Borde superior 3px gradient */}
+      <div style={{position:'absolute',top:0,left:0,right:0,height:3,background:borderTopGradient}}/>
       {/* Header: label + pill */}
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14}}>
-        <div style={{fontSize:10,color:'#94A3B8',fontWeight:700,letterSpacing:0.6,textTransform:'uppercase'}}>{label}</div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:18}}>
+        <div style={{fontSize:11,color:'#94A3B8',fontWeight:700,letterSpacing:0.7,textTransform:'uppercase'}}>{label}</div>
         {pill && (
           <span style={{
-            color:'#fff',fontSize:9,fontWeight:800,padding:'3px 9px',borderRadius:99,
+            color:'#fff',fontSize:10,fontWeight:800,padding:'4px 11px',borderRadius:99,
             letterSpacing:0.5,background:gradient,
-            boxShadow:`0 2px 6px ${hexToRgba(color, 0.25)}`,
+            boxShadow:`0 2px 8px ${hexToRgba(color, 0.30)}`,
           }}>{pill}</span>
         )}
       </div>
       {/* Value */}
       <div style={{
-        fontSize:22,fontWeight:800,color:valueColor||color,
-        fontVariantNumeric:'tabular-nums',letterSpacing:'-0.5px',lineHeight:1,
+        fontSize:28,fontWeight:800,color:valueColor||color,
+        fontVariantNumeric:'tabular-nums',letterSpacing:'-0.6px',lineHeight:1,
       }}>{value}</div>
       {/* Sub con punto status */}
       {sub && (
-        <div style={{fontSize:10,color:'#94A3B8',marginTop:8,display:'flex',alignItems:'center',gap:6}}>
-          <span style={{width:6,height:6,borderRadius:'50%',background:statusColor,flexShrink:0}}/>
+        <div style={{fontSize:11,color:'#94A3B8',marginTop:12,display:'flex',alignItems:'center',gap:7}}>
+          <span style={{width:7,height:7,borderRadius:'50%',background:statusColor,flexShrink:0}}/>
           {sub}
         </div>
       )}
@@ -298,6 +298,9 @@ export default function CxpApp({ user, onLogout }) {
   const [tarjetaImportPreview, setTarjetaImportPreview] = useState(null);
   const [tarjetaImportando, setTarjetaImportando] = useState(false);
   const tarjetaImportRef = useRef();
+  // Modales del dashboard (Tarjetas / Financiamientos resumidos)
+  const [showDashTarjetasModal, setShowDashTarjetasModal] = useState(false);
+  const [showDashFinanciamientosModal, setShowDashFinanciamientosModal] = useState(false);
   const [editingSaldoId, setEditingSaldoId] = useState(null);
   const [editingSaldoVal, setEditingSaldoVal] = useState("");
   const [tarjetaFiltroInt, setTarjetaFiltroInt] = useState("");
@@ -1368,13 +1371,13 @@ export default function CxpApp({ user, onLogout }) {
             sub={kpis.tarjetasActivas>0 ? `${kpis.tarjetasActivas} activa${kpis.tarjetasActivas!==1?"s":""} · saldo TDC` : "Sin tarjetas activas"}
             color="#C04A4D" colorEnd="#E97375" pill="💳"
             statusColor={kpis.totalTarjetas>0?"#C04A4D":"#94A3B8"} bgSoft="#FEFAFA"
-            onClick={()=>setView("cartera")}/>
+            onClick={()=>setShowDashTarjetasModal(true)}/>
           <KpiCard label="Financiamientos"
             value={`$${fmt(kpis.totalFinanciamientos)}`}
             sub={kpis.financiamientosActivos>0 ? `${kpis.financiamientosActivos} activo${kpis.financiamientosActivos!==1?"s":""} · cuotas pendientes` : "Sin financiamientos"}
             color="#6B47C7" colorEnd="#9580E2" pill="🏦"
             statusColor={kpis.totalFinanciamientos>0?"#6B47C7":"#94A3B8"} bgSoft="#FAFAFE"
-            onClick={()=>setView("cartera")}/>
+            onClick={()=>setShowDashFinanciamientosModal(true)}/>
         </div>
 
         {/* Fila inferior: 2 cards a la izquierda, espacio vacío a la derecha */}
@@ -1394,25 +1397,25 @@ export default function CxpApp({ user, onLogout }) {
 
         {/* Banner navy: Gran Total de la Deuda Corporativa */}
         <div style={{
-          padding:"14px 18px",
+          padding:"22px 28px",
           background:"linear-gradient(135deg, #0F2D4A 0%, #1F4F7A 100%)",
-          borderRadius:12,
+          borderRadius:16,
           color:"#fff",
           display:"flex",
           justifyContent:"space-between",
           alignItems:"center",
-          boxShadow:"0 4px 12px rgba(15, 45, 74, 0.2)",
+          boxShadow:"0 8px 22px rgba(15, 45, 74, 0.25)",
           marginBottom:24,
           flexWrap:"wrap",
-          gap:12,
+          gap:14,
         }}>
           <div>
-            <div style={{fontSize:10,opacity:0.7,fontWeight:700,letterSpacing:0.8}}>💰 GRAN TOTAL DE LA DEUDA CORPORATIVA</div>
-            <div style={{fontSize:10,opacity:0.55,marginTop:4}}>
+            <div style={{fontSize:12,opacity:0.75,fontWeight:700,letterSpacing:1,marginBottom:6}}>💰 GRAN TOTAL DE LA DEUDA CORPORATIVA</div>
+            <div style={{fontSize:12,opacity:0.6,lineHeight:1.6}}>
               Facturas MXN ${fmt(kpis.totalMXN)} + Tarjetas ${fmt(kpis.totalTarjetas)} + Financiamientos ${fmt(kpis.totalFinanciamientos)}
             </div>
           </div>
-          <div style={{fontSize:28,fontWeight:800,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.6px"}}>
+          <div style={{fontSize:38,fontWeight:800,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.8px"}}>
             ${fmt(kpis.granTotalDeuda)}
           </div>
         </div>
@@ -10455,6 +10458,208 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             </button>
           </div>
         </ModalShell>
+        );
+      })()}
+
+      {/* ─── Modal: Detalle de Tarjetas de Crédito (dashboard) ───────── */}
+      {showDashTarjetasModal && (()=>{
+        const tarjetasActivas = (tarjetas||[]).filter(t=>t.activo);
+        const totalTDC = tarjetasActivas.reduce((s,t)=>s+(+t.saldoActual||0),0);
+        return (
+          <div style={{position:"fixed",inset:0,background:"rgba(15, 45, 74, 0.55)",backdropFilter:"blur(2px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}
+               onClick={()=>setShowDashTarjetasModal(false)}>
+            <div onClick={e=>e.stopPropagation()}
+                 style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:760,maxHeight:"92vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 60px rgba(0,0,0,0.3)",overflow:"hidden"}}>
+              {/* Header */}
+              <div style={{padding:"22px 28px 16px",borderBottom:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{width:36,height:36,borderRadius:10,background:"linear-gradient(135deg, #C04A4D, #E97375)",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,boxShadow:"0 4px 10px rgba(192, 74, 77, 0.30)"}}>💳</div>
+                  <div>
+                    <div style={{fontSize:18,fontWeight:800,color:"#1A2332",letterSpacing:"-0.3px"}}>Tarjetas de Crédito</div>
+                    <div style={{fontSize:12,color:"#64748B",marginTop:2}}>
+                      {tarjetasActivas.length} {tarjetasActivas.length===1?"activa":"activas"} · Saldo total <strong style={{color:"#C04A4D"}}>${fmt(totalTDC)}</strong>
+                    </div>
+                  </div>
+                </div>
+                <button onClick={()=>setShowDashTarjetasModal(false)}
+                        style={{background:"#F1F5F9",border:"none",width:34,height:34,borderRadius:8,cursor:"pointer",fontSize:18,color:"#64748B",fontWeight:600}}>×</button>
+              </div>
+
+              {/* Cuerpo: tarjetas tipo crédito */}
+              <div style={{padding:"22px 28px",overflowY:"auto",flex:1}}>
+                {tarjetasActivas.length === 0 ? (
+                  <div style={{padding:"40px 20px",textAlign:"center",color:"#94A3B8"}}>
+                    <div style={{fontSize:36,opacity:0.4,marginBottom:8}}>💳</div>
+                    <div style={{fontSize:14,fontWeight:600}}>No hay tarjetas activas</div>
+                    <div style={{fontSize:12,marginTop:6}}>Agrégalas desde el módulo Cartera (CxP)</div>
+                  </div>
+                ) : (
+                  <div style={{display:"grid",gridTemplateColumns:tarjetasActivas.length===1?"1fr":"repeat(auto-fit, minmax(280px, 1fr))",gap:14}}>
+                    {tarjetasActivas.map(t=>{
+                      const pct = t.limite>0 ? Math.round((t.saldoActual/t.limite)*100) : 0;
+                      const disponible = (t.limite||0) - (t.saldoActual||0);
+                      // Color por banco
+                      const esAmex = (t.banco||"").toLowerCase().includes("amex") || (t.banco||"").toLowerCase().includes("american");
+                      const gradFondo = esAmex
+                        ? "linear-gradient(135deg, #5E2D8F 0%, #3D1E5F 100%)"
+                        : "linear-gradient(135deg, #1E3A5F 0%, #0F2D4A 100%)";
+                      const shadowColor = esAmex ? "rgba(94, 45, 143, 0.25)" : "rgba(15, 45, 74, 0.25)";
+                      return (
+                        <div key={t.id} style={{
+                          background:gradFondo,color:"#fff",borderRadius:14,padding:"20px 22px",
+                          boxShadow:`0 6px 20px ${shadowColor}`,position:"relative",overflow:"hidden",
+                        }}>
+                          {/* Halo decorativo */}
+                          <div style={{position:"absolute",top:-20,right:-20,width:110,height:110,
+                                       background:"radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 70%)"}}/>
+                          {/* Header tarjeta */}
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20,position:"relative",zIndex:1}}>
+                            <div>
+                              <div style={{fontSize:10,opacity:0.7,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase"}}>
+                                {empresaId==="empresa_1" ? "Viajes Libero" : "TravelAirSolutions"}
+                              </div>
+                              <div style={{fontSize:16,fontWeight:800,marginTop:4}}>{t.banco}</div>
+                              {t.titular && <div style={{fontSize:11,opacity:0.6,marginTop:3}}>{t.titular}</div>}
+                            </div>
+                            {t.contrato && <div style={{fontSize:11,opacity:0.65,fontWeight:600}}>Contrato {t.contrato}</div>}
+                          </div>
+                          {/* Saldo */}
+                          <div style={{fontSize:10,opacity:0.65,fontWeight:700,letterSpacing:0.5,position:"relative",zIndex:1}}>SALDO ACTUAL</div>
+                          <div style={{fontSize:28,fontWeight:800,marginTop:4,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.5px",position:"relative",zIndex:1}}>${fmt(t.saldoActual||0)}</div>
+                          {/* Footer */}
+                          <div style={{display:"flex",justifyContent:"space-between",marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.15)",position:"relative",zIndex:1}}>
+                            <div>
+                              <div style={{fontSize:10,opacity:0.55}}>Disponible</div>
+                              <div style={{fontSize:13,fontWeight:700,color:"#4ADE80",fontVariantNumeric:"tabular-nums",marginTop:2}}>${fmt(disponible)}</div>
+                            </div>
+                            {t.fechaCorte && (
+                              <div style={{textAlign:"right"}}>
+                                <div style={{fontSize:10,opacity:0.55}}>Corte día</div>
+                                <div style={{fontSize:13,fontWeight:700,marginTop:2}}>{t.fechaCorte}</div>
+                              </div>
+                            )}
+                          </div>
+                          {/* Barra de utilización */}
+                          <div style={{marginTop:14,position:"relative",zIndex:1}}>
+                            <div style={{display:"flex",justifyContent:"space-between",fontSize:10,opacity:0.7,marginBottom:5}}>
+                              <span style={{letterSpacing:0.5}}>UTILIZADO</span>
+                              <span style={{fontWeight:700}}>{pct}%</span>
+                            </div>
+                            <div style={{height:5,background:"rgba(255,255,255,0.15)",borderRadius:99,overflow:"hidden"}}>
+                              <div style={{width:`${Math.min(pct,100)}%`,height:"100%",
+                                           background: pct>80?"#FCA5A5":pct>50?"linear-gradient(90deg, #FCD34D, #FCA5A5)":"linear-gradient(90deg, #4ADE80, #FCD34D)",
+                                           borderRadius:99,transition:"width .4s"}}/>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ─── Modal: Detalle de Financiamientos (dashboard) ───────── */}
+      {showDashFinanciamientosModal && (()=>{
+        const financiamientosActivos = (financiamientos||[]).filter(f=>f.activo);
+        const today = new Date(); today.setHours(0,0,0,0);
+        const getPlazos = (f) => {
+          const plazos = [];
+          if (!f.fechaInicio || !f.fechaFin) return plazos;
+          let d = new Date(f.fechaInicio+"T12:00:00");
+          const fin = new Date(f.fechaFin+"T12:00:00");
+          while (d <= fin) { plazos.push(d.toISOString().slice(0,10)); d = new Date(d.getFullYear(), d.getMonth()+1, d.getDate()); }
+          return plazos;
+        };
+        let totalFinanc = 0;
+        const financData = financiamientosActivos.map(f=>{
+          const plazos = getPlazos(f);
+          const pagosF = (financiamientoPagos||[]).filter(p=>p.financiamientoId===f.id);
+          const pagosFechas = new Set(pagosF.map(p=>p.fechaPago));
+          const totalPlazos = plazos.length;
+          const pagados = plazos.filter(pl=>pagosFechas.has(pl)).length;
+          const pendientes = totalPlazos - pagados;
+          const saldo = (+f.montoMensual||0) * pendientes;
+          totalFinanc += saldo;
+          const pct = totalPlazos>0 ? Math.round((pagados/totalPlazos)*100) : 0;
+          const proxPlazo = plazos.find(pl=>!pagosFechas.has(pl) && new Date(pl+"T12:00:00")>=today);
+          const vencidos = plazos.filter(pl=>!pagosFechas.has(pl) && new Date(pl+"T12:00:00")<today).length;
+          return { f, saldo, pct, pagados, totalPlazos, proxPlazo, vencidos };
+        }).sort((a,b)=>b.saldo-a.saldo);
+
+        return (
+          <div style={{position:"fixed",inset:0,background:"rgba(15, 45, 74, 0.55)",backdropFilter:"blur(2px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}
+               onClick={()=>setShowDashFinanciamientosModal(false)}>
+            <div onClick={e=>e.stopPropagation()}
+                 style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:900,maxHeight:"92vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 60px rgba(0,0,0,0.3)",overflow:"hidden"}}>
+              {/* Header */}
+              <div style={{padding:"22px 28px 16px",borderBottom:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{width:36,height:36,borderRadius:10,background:"linear-gradient(135deg, #6B47C7, #9580E2)",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,boxShadow:"0 4px 10px rgba(107, 71, 199, 0.30)"}}>🏦</div>
+                  <div>
+                    <div style={{fontSize:18,fontWeight:800,color:"#1A2332",letterSpacing:"-0.3px"}}>Financiamientos</div>
+                    <div style={{fontSize:12,color:"#64748B",marginTop:2}}>
+                      {financiamientosActivos.length} {financiamientosActivos.length===1?"activo":"activos"} · Saldo pendiente total <strong style={{color:"#6B47C7"}}>${fmt(totalFinanc)}</strong>
+                    </div>
+                  </div>
+                </div>
+                <button onClick={()=>setShowDashFinanciamientosModal(false)}
+                        style={{background:"#F1F5F9",border:"none",width:34,height:34,borderRadius:8,cursor:"pointer",fontSize:18,color:"#64748B",fontWeight:600}}>×</button>
+              </div>
+
+              {/* Cuerpo */}
+              <div style={{padding:"22px 28px",overflowY:"auto",flex:1}}>
+                {financData.length === 0 ? (
+                  <div style={{padding:"40px 20px",textAlign:"center",color:"#94A3B8"}}>
+                    <div style={{fontSize:36,opacity:0.4,marginBottom:8}}>🏦</div>
+                    <div style={{fontSize:14,fontWeight:600}}>No hay financiamientos activos</div>
+                    <div style={{fontSize:12,marginTop:6}}>Agrégalos desde el módulo Cartera (CxP)</div>
+                  </div>
+                ) : (
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(380px, 1fr))",gap:14}}>
+                    {financData.map(({f, saldo, pct, pagados, totalPlazos, proxPlazo, vencidos})=>(
+                      <div key={f.id} style={{
+                        background:"linear-gradient(180deg, #fff 0%, #FAFAFE 100%)",
+                        border:`1.5px solid ${vencidos>0 ? "rgba(192, 74, 77, 0.3)" : "rgba(107, 71, 199, 0.18)"}`,
+                        borderRadius:14,padding:"18px 20px",
+                        boxShadow:"0 4px 14px rgba(15, 45, 74, 0.05)",
+                        position:"relative",
+                      }}>
+                        {vencidos>0 && (
+                          <div style={{position:"absolute",top:14,right:14,background:"#FEE",color:"#C04A4D",fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99}}>⚠️ {vencidos} venc.</div>
+                        )}
+                        {/* Nombre */}
+                        <div style={{fontSize:15,fontWeight:800,color:"#1A2332",letterSpacing:"-0.2px",paddingRight:vencidos>0?80:0}}>{f.nombre}</div>
+                        {f.concepto && <div style={{fontSize:12,color:"#64748B",marginTop:3}}>{f.concepto}</div>}
+                        {/* Saldo */}
+                        <div style={{marginTop:14}}>
+                          <div style={{fontSize:10,color:"#94A3B8",fontWeight:700,letterSpacing:0.5,textTransform:"uppercase"}}>Saldo pendiente</div>
+                          <div style={{fontSize:24,fontWeight:800,color:saldo>0?"#6B47C7":"#1D7A4E",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.5px",marginTop:2}}>${fmt(saldo)}</div>
+                        </div>
+                        {/* Detalle */}
+                        <div style={{display:"flex",justifyContent:"space-between",marginTop:12,fontSize:11,color:"#64748B"}}>
+                          <span><strong style={{color:"#1A2332"}}>{pagados}</strong>/{totalPlazos} meses · <strong style={{color:"#1A2332"}}>${fmt(f.montoMensual||0)}</strong>/mes</span>
+                          <span style={{color:"#6B47C7",fontWeight:700}}>{pct}%</span>
+                        </div>
+                        {/* Barra progreso */}
+                        <div style={{height:6,background:"#EEF2FF",borderRadius:99,overflow:"hidden",marginTop:8}}>
+                          <div style={{width:`${pct}%`,height:"100%",background:pct>=100?"#1D7A4E":"linear-gradient(90deg, #6B47C7, #9580E2)",borderRadius:99,transition:"width .4s"}}/>
+                        </div>
+                        {proxPlazo && (
+                          <div style={{fontSize:11,color:"#6B47C7",marginTop:10,fontWeight:600,display:"flex",alignItems:"center",gap:5}}>
+                            📅 Próximo pago: {proxPlazo}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         );
       })()}
 
