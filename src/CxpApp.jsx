@@ -1416,11 +1416,11 @@ export default function CxpApp({ user, onLogout }) {
         }}>
           {/* COL 1: Gran Total */}
           <div style={{flex:1,minWidth:240,textAlign:"center"}}>
-            <div style={{fontSize:11,opacity:0.85,fontWeight:700,letterSpacing:0.8,marginBottom:6}}>💰 GRAN TOTAL DE LA DEUDA</div>
+            <div style={{fontSize:13,opacity:0.9,fontWeight:700,letterSpacing:0.9,marginBottom:8}}>💰 GRAN TOTAL DE LA DEUDA</div>
             <div style={{fontSize:24,fontWeight:800,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.5px",lineHeight:1}}>
               ${fmt(kpis.granTotalDeuda)}
             </div>
-            <div style={{fontSize:11,opacity:0.6,marginTop:6,lineHeight:1.5}}>
+            <div style={{fontSize:13,opacity:0.72,marginTop:8,lineHeight:1.5}}>
               Suma facturas + tarjetas + financiamientos
             </div>
           </div>
@@ -1430,14 +1430,14 @@ export default function CxpApp({ user, onLogout }) {
 
           {/* COL 2: Corto Plazo (amarillo) */}
           <div style={{flex:1,minWidth:200,textAlign:"center"}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:7,marginBottom:6}}>
-              <span style={{width:8,height:8,borderRadius:"50%",background:"#FCD34D",boxShadow:"0 0 6px #FCD34D"}}/>
-              <span style={{fontSize:11,opacity:0.85,fontWeight:700,letterSpacing:0.8}}>CORTO PLAZO</span>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:8}}>
+              <span style={{width:9,height:9,borderRadius:"50%",background:"#FCD34D",boxShadow:"0 0 6px #FCD34D"}}/>
+              <span style={{fontSize:13,opacity:0.9,fontWeight:700,letterSpacing:0.9}}>CORTO PLAZO</span>
             </div>
             <div style={{fontSize:20,fontWeight:800,color:"#FCD34D",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.4px",lineHeight:1}}>
               ${fmt(kpis.totalMXN + kpis.totalTarjetas)}
             </div>
-            <div style={{fontSize:11,opacity:0.6,marginTop:6,lineHeight:1.5}}>
+            <div style={{fontSize:13,opacity:0.72,marginTop:8,lineHeight:1.5}}>
               Facturas por pagar + saldo de tarjetas de crédito
             </div>
           </div>
@@ -1447,14 +1447,14 @@ export default function CxpApp({ user, onLogout }) {
 
           {/* COL 3: Largo Plazo (lavanda) */}
           <div style={{flex:1,minWidth:200,textAlign:"center"}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:7,marginBottom:6}}>
-              <span style={{width:8,height:8,borderRadius:"50%",background:"#A78BFA"}}/>
-              <span style={{fontSize:11,opacity:0.85,fontWeight:700,letterSpacing:0.8}}>LARGO PLAZO</span>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:8}}>
+              <span style={{width:9,height:9,borderRadius:"50%",background:"#A78BFA"}}/>
+              <span style={{fontSize:13,opacity:0.9,fontWeight:700,letterSpacing:0.9}}>LARGO PLAZO</span>
             </div>
             <div style={{fontSize:20,fontWeight:800,color:"#C4B5FD",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.4px",lineHeight:1}}>
               ${fmt(kpis.totalFinanciamientos)}
             </div>
-            <div style={{fontSize:11,opacity:0.6,marginTop:6,lineHeight:1.5}}>
+            <div style={{fontSize:13,opacity:0.72,marginTop:8,lineHeight:1.5}}>
               {kpis.ultimoAnioFinanc > 0
                 ? `Financiamientos · cuotas mensuales hasta ${kpis.ultimoAnioFinanc}`
                 : "Financiamientos · cuotas mensuales a varios años"}
