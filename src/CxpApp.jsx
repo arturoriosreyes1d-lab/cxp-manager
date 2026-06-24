@@ -129,20 +129,73 @@ const ModalShell = ({title,onClose,wide,extraWide,children}) => (
   </div>
 );
 
-const KpiCard = ({label,value,sub,color=C.navy,icon,onClick}) => (
-  <div onClick={onClick} style={{background:"#fff",borderRadius:16,padding:"18px 22px",border:`1px solid ${C.border}`,borderLeft:`4px solid ${color}`,boxShadow:"0 2px 10px rgba(0,0,0,.06)",flex:1,minWidth:160,cursor:onClick?"pointer":"default",transition:"all .15s"}}
-    onMouseEnter={e=>{if(onClick){e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 8px 24px rgba(0,0,0,.12)`;e.currentTarget.style.borderLeftColor=color;}}}
-    onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 2px 10px rgba(0,0,0,.06)";}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-      <div>
-        <div style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:.7,marginBottom:4}}>{label}</div>
-        <div style={{fontSize:24,fontWeight:900,color,lineHeight:1.1}}>{value}</div>
-        {sub && <div style={{fontSize:11,color:C.muted,marginTop:4}}>{sub}</div>}
+/**
+ * KpiCard premium glassmorphism con pill, borde superior gradient y punto status.
+ * Props:
+ *  - label, value, sub: texto
+ *  - color: color base (hex). Genera variantes auto.
+ *  - colorEnd: opcional, color final del gradient. Si no se pasa, se aclara color.
+ *  - pill: contenido del pill (ej "MX", "💳"). Default: '·'
+ *  - statusColor: color del puntito (verde si activo, gris si cero, rojo si alerta). Default gris.
+ *  - bgSoft: tinte sutil de fondo. Default casi blanco.
+ *  - valueColor: color del número grande. Default = color base.
+ *  - onClick
+ */
+const KpiCard = ({label, value, sub, color=C.navy, colorEnd, pill, statusColor='#94A3B8', bgSoft='#FAFCFE', valueColor, onClick}) => {
+  // Si no se da colorEnd, generamos uno claro mezclando con blanco
+  const end = colorEnd || color;
+  const gradient = `linear-gradient(135deg, ${color}, ${end})`;
+  const borderTopGradient = `linear-gradient(90deg, ${color}, ${end})`;
+  // Convertir color hex a rgba 0.08 para el borde sutil
+  const hexToRgba = (hex, a=0.08) => {
+    const c = hex.replace('#','');
+    const r = parseInt(c.substring(0,2),16), g = parseInt(c.substring(2,4),16), b = parseInt(c.substring(4,6),16);
+    return `rgba(${r}, ${g}, ${b}, ${a})`;
+  };
+  return (
+    <div onClick={onClick}
+      style={{
+        background: `linear-gradient(180deg, #fff 0%, ${bgSoft} 100%)`,
+        borderRadius: 16,
+        padding: '18px 20px',
+        boxShadow: '0 4px 16px rgba(15, 45, 74, 0.04), 0 1px 2px rgba(15, 45, 74, 0.04)',
+        border: `1px solid ${hexToRgba(color, 0.10)}`,
+        position: 'relative',
+        overflow: 'hidden',
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'transform .2s, box-shadow .2s',
+        flex: 1, minWidth: 160,
+      }}
+      onMouseEnter={e=>{if(onClick){e.currentTarget.style.transform='translateY(-2px)';e.currentTarget.style.boxShadow='0 8px 20px rgba(15, 45, 74, 0.08)';}}}
+      onMouseLeave={e=>{e.currentTarget.style.transform='translateY(0)';e.currentTarget.style.boxShadow='0 4px 16px rgba(15, 45, 74, 0.04), 0 1px 2px rgba(15, 45, 74, 0.04)';}}>
+      {/* Borde superior 2px gradient */}
+      <div style={{position:'absolute',top:0,left:0,right:0,height:2,background:borderTopGradient}}/>
+      {/* Header: label + pill */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14}}>
+        <div style={{fontSize:10,color:'#94A3B8',fontWeight:700,letterSpacing:0.6,textTransform:'uppercase'}}>{label}</div>
+        {pill && (
+          <span style={{
+            color:'#fff',fontSize:9,fontWeight:800,padding:'3px 9px',borderRadius:99,
+            letterSpacing:0.5,background:gradient,
+            boxShadow:`0 2px 6px ${hexToRgba(color, 0.25)}`,
+          }}>{pill}</span>
+        )}
       </div>
-      <div style={{fontSize:26,background:`${color}15`,borderRadius:10,width:42,height:42,display:"flex",alignItems:"center",justifyContent:"center"}}>{icon}</div>
+      {/* Value */}
+      <div style={{
+        fontSize:22,fontWeight:800,color:valueColor||color,
+        fontVariantNumeric:'tabular-nums',letterSpacing:'-0.5px',lineHeight:1,
+      }}>{value}</div>
+      {/* Sub con punto status */}
+      {sub && (
+        <div style={{fontSize:10,color:'#94A3B8',marginTop:8,display:'flex',alignItems:'center',gap:6}}>
+          <span style={{width:6,height:6,borderRadius:'50%',background:statusColor,flexShrink:0}}/>
+          {sub}
+        </div>
+      )}
     </div>
-  </div>
-);
+  );
+};
 
 /* ═══════════════════════════════════════════════════════════════════════════
    APP
@@ -459,14 +512,48 @@ export default function CxpApp({ user, onLogout }) {
   }, [curInvoices, filters, search, sortCol, sortDir, carteraTab, filtroGrupo, filtroProveedoresKey, suppliers, filtroMesConcepto, filtroTipo]);
 
   const kpis = useMemo(() => {
-    const allInvs = [...invoices.MXN,...invoices.USD,...invoices.EUR];
-    const pend = list => list.filter(i=>i.estatus!=="Pagado").reduce((s,i)=>s+((+i.total||0)-(+i.montoPagado||0)),0);
-    return {
-      totalMXN:pend(invoices.MXN), totalUSD:pend(invoices.USD), totalEUR:pend(invoices.EUR),
-      vencidas:allInvs.filter(i=>isOverdue(i.vencimiento,i.estatus)).length,
-      facturas:allInvs.length, proveedores:suppliers.filter(s=>s.activo).length,
+    const allInvs = [...invoices.MXN,...invoices.USD,...invoices.EUR].filter(i => i.tipo !== 'EgresoNF');
+    const saldoOf = i => (+i.total||0)-(+i.montoPagado||0);
+    const conSaldo = list => list.filter(i => i.estatus!=="Pagado" && saldoOf(i)>0);
+    const pend = list => conSaldo(list).reduce((s,i)=>s+saldoOf(i),0);
+    // Solo facturas con saldo pendiente (no las pagadas)
+    const facturasActivas = allInvs.filter(i => i.estatus!=="Pagado" && saldoOf(i)>0);
+    // Total tarjetas activas (todas en MXN según contexto)
+    const totalTarjetas = (tarjetas||[]).filter(t=>t.activo).reduce((s,t)=>s+(+t.saldoActual||0),0);
+    // Total financiamientos: saldo pendiente = monto_mensual × meses_pendientes
+    const today = new Date(); today.setHours(0,0,0,0);
+    const getPlazos = (f) => {
+      const plazos = [];
+      if (!f.fechaInicio || !f.fechaFin) return plazos;
+      let d = new Date(f.fechaInicio+"T12:00:00");
+      const fin = new Date(f.fechaFin+"T12:00:00");
+      while (d <= fin) { plazos.push(d.toISOString().slice(0,10)); d = new Date(d.getFullYear(), d.getMonth()+1, d.getDate()); }
+      return plazos;
     };
-  }, [invoices, suppliers]);
+    const totalFinanciamientos = (financiamientos||[]).filter(f=>f.activo).reduce((s,f)=>{
+      const plazos = getPlazos(f);
+      const pagosF = (financiamientoPagos||[]).filter(p=>p.financiamientoId===f.id);
+      const pagosFechas = new Set(pagosF.map(p=>p.fechaPago));
+      const pendientes = plazos.filter(pl=>!pagosFechas.has(pl)).length;
+      return s + (+f.montoMensual||0) * pendientes;
+    }, 0);
+    const totalMXN = pend(invoices.MXN.filter(i => i.tipo !== 'EgresoNF'));
+    const totalUSD = pend(invoices.USD.filter(i => i.tipo !== 'EgresoNF'));
+    const totalEUR = pend(invoices.EUR.filter(i => i.tipo !== 'EgresoNF'));
+    // Gran Total Deuda Corporativa (en MXN nominal — facturas MXN + tarjetas + financiamientos)
+    const granTotalDeuda = totalMXN + totalTarjetas + totalFinanciamientos;
+    return {
+      totalMXN, totalUSD, totalEUR,
+      vencidas: facturasActivas.filter(i=>isOverdue(i.vencimiento,i.estatus)).length,
+      facturas: facturasActivas.length, // Solo activas (con saldo)
+      proveedores: suppliers.filter(s=>s.activo).length,
+      totalTarjetas,
+      totalFinanciamientos,
+      granTotalDeuda,
+      tarjetasActivas: (tarjetas||[]).filter(t=>t.activo).length,
+      financiamientosActivos: (financiamientos||[]).filter(f=>f.activo).length,
+    };
+  }, [invoices, suppliers, tarjetas, financiamientos, financiamientoPagos]);
 
   /* ── Duplicate folio detection ───────────────────────────────────────── */
   const duplicates = useMemo(() => {
@@ -1261,14 +1348,73 @@ export default function CxpApp({ user, onLogout }) {
           </div>
         </div>
 
-        {/* ── KPI Cards ── */}
-        <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:24}}>
-          <KpiCard label="Saldo MXN" value={`$${fmt(kpis.totalMXN)}`} sub="Pendiente de pago" color={C.mxn} icon="🇲🇽" onClick={()=>openDetailGrouped("Saldo Pendiente MXN",pendByCur("MXN"))}/>
-          <KpiCard label="Saldo USD" value={`$${fmt(kpis.totalUSD)}`} sub="Pendiente de pago" color={C.usd} icon="🇺🇸" onClick={()=>openDetailGrouped("Saldo Pendiente USD",pendByCur("USD"))}/>
-          <KpiCard label="Saldo EUR" value={`€${fmt(kpis.totalEUR)}`} sub="Pendiente de pago" color={C.eur} icon="🇪🇺" onClick={()=>openDetailGrouped("Saldo Pendiente EUR",pendByCur("EUR"))}/>
-          <KpiCard label="Facturas Vencidas" value={kpis.vencidas} sub="Requieren atención" color={C.danger} icon="⚠️" onClick={()=>openDetailGrouped("Facturas Vencidas",pendAll.filter(i=>isOverdue(i.vencimiento,i.estatus)))}/>
-          <KpiCard label="Total Facturas" value={kpis.facturas} color={C.sky} icon="🧾" onClick={()=>openDetailGrouped("Todas las Facturas",allInvs)}/>
-          <KpiCard label="Proveedores" value={kpis.proveedores} sub="Activos" color={C.teal} icon="🏢" onClick={()=>{setDashSearch("");setDashFilterProv("");setDashFilterClasif("");setDashFilterEstatus("");setDashGroupBy("");setDashDetail({title:"Proveedores Activos",type:"suppliers",items:suppliers.filter(s=>s.activo)});}}/>
+        {/* ── KPI Cards: Fila superior (5) + Fila inferior (2) + Banner Gran Total ── */}
+        {/* Fila superior */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(5, 1fr)",gap:12,marginBottom:12}}>
+          <KpiCard label="Saldos Facturas MXN" value={`$${fmt(kpis.totalMXN)}`} sub="Pendiente de pago"
+            color="#185FA5" colorEnd="#2E78C7" pill="MX"
+            statusColor={kpis.totalMXN>0?"#1D7A4E":"#94A3B8"} bgSoft="#FAFCFE"
+            onClick={()=>openDetailGrouped("Saldo Pendiente MXN",pendByCur("MXN"))}/>
+          <KpiCard label="Saldos Facturas USD" value={`$${fmt(kpis.totalUSD)}`} sub="Pendiente de pago"
+            color="#1D7A4E" colorEnd="#2EBC76" pill="US"
+            statusColor={kpis.totalUSD>0?"#1D7A4E":"#94A3B8"} bgSoft="#FAFCFB"
+            onClick={()=>openDetailGrouped("Saldo Pendiente USD",pendByCur("USD"))}/>
+          <KpiCard label="Saldos Facturas EUR" value={`€${fmt(kpis.totalEUR)}`} sub="Pendiente de pago"
+            color="#5E2D8F" colorEnd="#8E5BBF" pill="EU"
+            statusColor={kpis.totalEUR>0?"#1D7A4E":"#94A3B8"} bgSoft="#FCFAFE"
+            onClick={()=>openDetailGrouped("Saldo Pendiente EUR",pendByCur("EUR"))}/>
+          <KpiCard label="Tarjetas"
+            value={`$${fmt(kpis.totalTarjetas)}`}
+            sub={kpis.tarjetasActivas>0 ? `${kpis.tarjetasActivas} activa${kpis.tarjetasActivas!==1?"s":""} · saldo TDC` : "Sin tarjetas activas"}
+            color="#C04A4D" colorEnd="#E97375" pill="💳"
+            statusColor={kpis.totalTarjetas>0?"#C04A4D":"#94A3B8"} bgSoft="#FEFAFA"
+            onClick={()=>setView("cartera")}/>
+          <KpiCard label="Financiamientos"
+            value={`$${fmt(kpis.totalFinanciamientos)}`}
+            sub={kpis.financiamientosActivos>0 ? `${kpis.financiamientosActivos} activo${kpis.financiamientosActivos!==1?"s":""} · cuotas pendientes` : "Sin financiamientos"}
+            color="#6B47C7" colorEnd="#9580E2" pill="🏦"
+            statusColor={kpis.totalFinanciamientos>0?"#6B47C7":"#94A3B8"} bgSoft="#FAFAFE"
+            onClick={()=>setView("cartera")}/>
+        </div>
+
+        {/* Fila inferior: 2 cards a la izquierda, espacio vacío a la derecha */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(5, 1fr)",gap:12,marginBottom:14}}>
+          <KpiCard label="Facturas Vencidas" value={kpis.vencidas} sub="Requieren atención"
+            color="#F59E0B" colorEnd="#FBBF24" pill="⚠"
+            valueColor={kpis.vencidas>0?"#C04A4D":"#185FA5"}
+            statusColor={kpis.vencidas>0?"#C04A4D":"#94A3B8"} bgSoft="#FFFCF7"
+            onClick={()=>openDetailGrouped("Facturas Vencidas",pendAll.filter(i=>isOverdue(i.vencimiento,i.estatus)))}/>
+          <KpiCard label="Total Facturas Activas" value={kpis.facturas} sub="Solo con saldo pendiente"
+            color="#148EA1" colorEnd="#38BDD0" pill="📋"
+            statusColor={kpis.facturas>0?"#148EA1":"#94A3B8"} bgSoft="#F8FCFD"
+            onClick={()=>openDetailGrouped("Facturas Activas",pendAll)}/>
+          {/* Espacios vacíos a la derecha para mantener la rejilla */}
+          <div/><div/><div/>
+        </div>
+
+        {/* Banner navy: Gran Total de la Deuda Corporativa */}
+        <div style={{
+          padding:"14px 18px",
+          background:"linear-gradient(135deg, #0F2D4A 0%, #1F4F7A 100%)",
+          borderRadius:12,
+          color:"#fff",
+          display:"flex",
+          justifyContent:"space-between",
+          alignItems:"center",
+          boxShadow:"0 4px 12px rgba(15, 45, 74, 0.2)",
+          marginBottom:24,
+          flexWrap:"wrap",
+          gap:12,
+        }}>
+          <div>
+            <div style={{fontSize:10,opacity:0.7,fontWeight:700,letterSpacing:0.8}}>💰 GRAN TOTAL DE LA DEUDA CORPORATIVA</div>
+            <div style={{fontSize:10,opacity:0.55,marginTop:4}}>
+              Facturas MXN ${fmt(kpis.totalMXN)} + Tarjetas ${fmt(kpis.totalTarjetas)} + Financiamientos ${fmt(kpis.totalFinanciamientos)}
+            </div>
+          </div>
+          <div style={{fontSize:28,fontWeight:800,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.6px"}}>
+            ${fmt(kpis.granTotalDeuda)}
+          </div>
         </div>
 
         {/* ── Antigüedad de Saldos ── */}

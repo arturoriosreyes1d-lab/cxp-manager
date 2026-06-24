@@ -862,7 +862,6 @@ function FlujoProyectado({ ingresos, escenario, diasDiff }) {
                 chipShadow="0 4px 12px rgba(16, 185, 129, 0.35)"
                 importe={anticipoHoy}
                 barColor={`linear-gradient(135deg, #10B981, #34D399)`}
-                alturaBarra={18}
                 fechaTexto={fmtFecha(hoy.toISOString().slice(0,10))}
                 subtexto="Anticipo factoraje"
                 destacado
@@ -872,9 +871,6 @@ function FlujoProyectado({ ingresos, escenario, diasDiff }) {
             {/* Cobranzas */}
             {cobranzas.map((c, i) => {
               const esGrande = i === idxMasGrande && cobranzas.length > 1;
-              // Altura de la barra proporcional al monto (entre 10 y 22 px)
-              const pct = c.total / maxMonto;
-              const altura = esGrande ? 18 : Math.max(10, Math.min(22, 10 + pct * 12));
               return (
                 <TimelineNodo
                   key={c.fechaStr}
@@ -884,7 +880,6 @@ function FlujoProyectado({ ingresos, escenario, diasDiff }) {
                   chipShadow={esGrande ? '0 4px 12px rgba(245, 158, 11, 0.35)' : 'none'}
                   importe={c.total}
                   barColor={esGrande ? `linear-gradient(135deg, #F59E0B, #FCD34D)` : '#FCD34D'}
-                  alturaBarra={altura}
                   fechaTexto={fmtFecha(c.fechaStr)}
                   subtexto={`${c.count} factura${c.count!==1?'s':''}`}
                   destacado={esGrande}
@@ -931,63 +926,66 @@ function FlujoProyectado({ ingresos, escenario, diasDiff }) {
 }
 
 // ─── Subcomponente: nodo individual del timeline ───
-function TimelineNodo({ chipLabel, chipColor, chipTextColor='#fff', chipShadow, importe, barColor, fechaTexto, subtexto, destacado, alturaBarra }) {
+function TimelineNodo({ chipLabel, chipColor, chipTextColor='#fff', chipShadow, importe, barColor, fechaTexto, subtexto, destacado }) {
   return (
     <div style={{position:'relative',display:'flex',flexDirection:'column',alignItems:'center',padding:'4px 6px'}}>
-      {/* Chip "Dentro de X días" — MÁS GRANDE */}
-      <div style={{
-        background: chipColor,
-        color: chipTextColor,
-        fontSize: destacado ? 13 : 12,
-        fontWeight: 800,
-        letterSpacing: 0.3,
-        padding: destacado ? '8px 16px' : '7px 14px',
-        borderRadius: 99,
-        textTransform: chipLabel.includes('⚡')||chipLabel.includes('⭐') ? 'uppercase' : 'none',
-        boxShadow: chipShadow,
-        marginBottom: 16,
-        whiteSpace: 'nowrap',
-        textAlign: 'center',
-      }}>{chipLabel}</div>
+      {/* ─── Zona 1: Chip "Dentro de X días" — altura fija ─── */}
+      <div style={{height:32,display:'flex',alignItems:'center',marginBottom:14}}>
+        <div style={{
+          background: chipColor,
+          color: chipTextColor,
+          fontSize: 12,
+          fontWeight: 800,
+          letterSpacing: 0.3,
+          padding: '6px 14px',
+          borderRadius: 99,
+          textTransform: chipLabel.includes('⚡')||chipLabel.includes('⭐') ? 'uppercase' : 'none',
+          boxShadow: chipShadow,
+          whiteSpace: 'nowrap',
+          textAlign: 'center',
+          lineHeight: 1.2,
+        }}>{chipLabel}</div>
+      </div>
 
-      {/* Importe centro — MÁS GRANDE */}
-      <div style={{
-        fontSize: destacado ? 30 : 26,
-        fontWeight: 800,
-        color: '#0F2D4A',
-        fontVariantNumeric: 'tabular-nums',
-        letterSpacing: '-0.6px',
-        lineHeight: 1,
-        marginBottom: 18,
-        whiteSpace: 'nowrap',
-      }}>${fmtCompact(importe)}</div>
+      {/* ─── Zona 2: Importe — altura fija ─── */}
+      <div style={{height:32,display:'flex',alignItems:'center',marginBottom:18}}>
+        <div style={{
+          fontSize: 26,
+          fontWeight: 800,
+          color: '#0F2D4A',
+          fontVariantNumeric: 'tabular-nums',
+          letterSpacing: '-0.6px',
+          lineHeight: 1,
+          whiteSpace: 'nowrap',
+        }}>${fmtCompact(importe)}</div>
+      </div>
 
-      {/* BARRA RECTANGULAR (en lugar de punto circular) */}
+      {/* ─── Zona 3: BARRA RECTANGULAR — altura FIJA 14px para todas ─── */}
       <div style={{
         position: 'relative',
         zIndex: 2,
-        width: '70%',
-        minWidth: 80,
-        height: alturaBarra || 14,
+        width: '85%',
+        minWidth: 90,
+        height: 14,
         background: barColor,
         borderRadius: 4,
         boxShadow: destacado
-          ? `0 0 0 2px #fff, 0 4px 16px ${barColor.includes('linear-gradient') ? 'rgba(245, 158, 11, 0.5)' : barColor+'66'}`
-          : `0 0 0 2px #fff, 0 3px 10px ${barColor.includes('linear-gradient') ? 'rgba(252, 211, 77, 0.4)' : barColor+'55'}`,
+          ? `0 0 0 2px #fff, 0 4px 16px rgba(245, 158, 11, 0.45)`
+          : `0 0 0 2px #fff, 0 3px 10px rgba(252, 211, 77, 0.35)`,
         marginBottom: 16,
       }}>
         {destacado && (
           <div style={{
             position:'absolute',inset:0,borderRadius:4,
-            background:'linear-gradient(180deg, rgba(255,255,255,0.3) 0%, transparent 50%)',
+            background:'linear-gradient(180deg, rgba(255,255,255,0.4) 0%, transparent 60%)',
           }}/>
         )}
       </div>
 
-      {/* Fecha real */}
+      {/* ─── Zona 4: Fecha real ─── */}
       <div style={{fontSize:12,fontWeight:700,color:'#1A2332',textAlign:'center',whiteSpace:'nowrap'}}>{fechaTexto}</div>
 
-      {/* Subtexto (solo # facturas — sin cliente) */}
+      {/* ─── Zona 5: Subtexto (solo # facturas) ─── */}
       {subtexto && (
         <div style={{fontSize:11,color:C.muted,marginTop:4,textAlign:'center',whiteSpace:'nowrap',fontWeight:600}}>{subtexto}</div>
       )}
