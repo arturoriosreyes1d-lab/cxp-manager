@@ -1395,28 +1395,51 @@ export default function CxpApp({ user, onLogout }) {
           <div/><div/><div/>
         </div>
 
-        {/* Banner navy: Gran Total de la Deuda Corporativa */}
+        {/* Banner navy: Gran Total de la Deuda Corporativa (split corto/largo plazo) */}
         <div style={{
-          padding:"22px 28px",
+          padding:"20px 26px",
           background:"linear-gradient(135deg, #0F2D4A 0%, #1F4F7A 100%)",
           borderRadius:16,
           color:"#fff",
-          display:"flex",
-          justifyContent:"space-between",
-          alignItems:"center",
           boxShadow:"0 8px 22px rgba(15, 45, 74, 0.25)",
           marginBottom:24,
-          flexWrap:"wrap",
-          gap:14,
         }}>
-          <div>
-            <div style={{fontSize:12,opacity:0.75,fontWeight:700,letterSpacing:1,marginBottom:6}}>💰 GRAN TOTAL DE LA DEUDA CORPORATIVA</div>
-            <div style={{fontSize:12,opacity:0.6,lineHeight:1.6}}>
-              Facturas MXN ${fmt(kpis.totalMXN)} + Tarjetas ${fmt(kpis.totalTarjetas)} + Financiamientos ${fmt(kpis.totalFinanciamientos)}
+          {/* Top: título + total grande */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,paddingBottom:14,borderBottom:"1px solid rgba(255,255,255,0.12)",flexWrap:"wrap",gap:12}}>
+            <div style={{fontSize:11,opacity:0.75,fontWeight:700,letterSpacing:0.8}}>💰 GRAN TOTAL DE LA DEUDA CORPORATIVA</div>
+            <div style={{fontSize:24,fontWeight:800,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.5px"}}>
+              ${fmt(kpis.granTotalDeuda)}
             </div>
           </div>
-          <div style={{fontSize:38,fontWeight:800,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.8px"}}>
-            ${fmt(kpis.granTotalDeuda)}
+
+          {/* Split: corto plazo vs largo plazo */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24}}>
+            {/* Corto plazo: facturas MXN + tarjetas */}
+            <div>
+              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+                <span style={{width:6,height:6,borderRadius:"50%",background:"#FCD34D"}}/>
+                <span style={{fontSize:10,opacity:0.8,fontWeight:700,letterSpacing:0.4}}>DEUDA INMEDIATA · CORTO PLAZO</span>
+              </div>
+              <div style={{fontSize:17,fontWeight:800,fontVariantNumeric:"tabular-nums",color:"#FCD34D",letterSpacing:"-0.3px"}}>
+                ${fmt(kpis.totalMXN + kpis.totalTarjetas)}
+              </div>
+              <div style={{fontSize:10,opacity:0.5,marginTop:2}}>
+                Facturas ${fmt(kpis.totalMXN)} + Tarjetas ${fmt(kpis.totalTarjetas)}
+              </div>
+            </div>
+            {/* Largo plazo: financiamientos */}
+            <div>
+              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+                <span style={{width:6,height:6,borderRadius:"50%",background:"#A78BFA"}}/>
+                <span style={{fontSize:10,opacity:0.8,fontWeight:700,letterSpacing:0.4}}>FINANCIAMIENTOS · LARGO PLAZO</span>
+              </div>
+              <div style={{fontSize:17,fontWeight:800,fontVariantNumeric:"tabular-nums",color:"#C4B5FD",letterSpacing:"-0.3px"}}>
+                ${fmt(kpis.totalFinanciamientos)}
+              </div>
+              <div style={{fontSize:10,opacity:0.5,marginTop:2}}>
+                Cuotas mensuales pendientes a varios años
+              </div>
+            </div>
           </div>
         </div>
 
