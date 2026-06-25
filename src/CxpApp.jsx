@@ -10786,8 +10786,12 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                             {groups && groups.every(g => facturasMesExpanded[g.prov]) ? '▲ Colapsar todos' : '▼ Expandir todos'}
                           </button>
                         </div>
-                        <div style={{fontSize:11,color:"#64748B",marginBottom:8}}>
-                          Mostrando <strong style={{color:"#1A2332"}}>{arr.length}</strong> {arr.length===1?'factura':'facturas'} · Total filtrado: <strong style={{color:"#185FA5"}}>${fmt(totalFiltrado)}</strong>
+                        <div style={{fontSize:11,color:"#64748B",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+                          <span>Mostrando <strong style={{color:"#1A2332"}}>{arr.length}</strong> {arr.length===1?'factura':'facturas'} · Total filtrado: <strong style={{color:"#185FA5"}}>${fmt(totalFiltrado)}</strong></span>
+                          <span style={{display:"flex",gap:14,fontSize:10}}>
+                            <span style={{display:"flex",alignItems:"center",gap:4}}><span style={{width:14,height:14,background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:3}}/> Programada (★ fecha que cuenta)</span>
+                            <span style={{display:"flex",alignItems:"center",gap:4}}><span style={{width:14,height:14,background:"#FEF9C3",border:"1px solid #FCD34D",borderRadius:3}}/> Vence (★ usada si no hay programación)</span>
+                          </span>
                         </div>
 
                         {/* Tabla */}
@@ -10826,13 +10830,20 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                                       {/* Filas del grupo */}
                                       {expanded && g.items.map(f=>{
                                         const vencida = isOverdue(f.vencimiento, f.estatus);
+                                        const usaProgramada = !!f.fechaProgramacion;
                                         return (
                                           <tr key={f.id} style={{background:vencida?"#FEF2F2":"#fff"}}>
                                             <td style={{padding:"10px 14px 10px 36px",borderBottom:"1px solid #F1F5F9",fontSize:12,fontWeight:600,color:"#1A2332"}}>{f.folio}</td>
                                             <td style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,color:"#94A3B8",fontStyle:"italic"}}>↳ misma</td>
                                             <td style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",fontSize:11,color:"#64748B"}}>{f.clasificacion || '—'}</td>
-                                            <td style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,color:vencida?"#C04A4D":"#64748B",textAlign:"center",fontWeight:vencida?700:400}}>{f.vencimiento || '—'}{vencida && ' ⚠️'}</td>
-                                            <td style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,color:"#64748B",textAlign:"center"}}>{f.fechaProgramacion || '—'}</td>
+                                            <td title={usaProgramada?"Usa vencimiento como referencia (no tiene programación)":"Usa esta fecha para el cálculo"}
+                                                style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,color:vencida?"#C04A4D":"#64748B",textAlign:"center",fontWeight:vencida?700:400,background:!usaProgramada?"#FEF9C3":"transparent"}}>
+                                              {f.vencimiento || '—'}{vencida && ' ⚠️'}{!usaProgramada && <span style={{marginLeft:6,fontSize:9,color:"#8C6B1A",fontWeight:700}}>★</span>}
+                                            </td>
+                                            <td title={usaProgramada?"Esta fecha se usa para el cálculo del mes":"Sin programación"}
+                                                style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,color:usaProgramada?"#185FA5":"#94A3B8",textAlign:"center",background:usaProgramada?"#EFF6FF":"transparent",fontWeight:usaProgramada?700:400}}>
+                                              {f.fechaProgramacion || '—'}{usaProgramada && <span style={{marginLeft:6,fontSize:9,color:"#185FA5",fontWeight:700}}>★</span>}
+                                            </td>
                                             <td style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",fontSize:13,fontWeight:700,color:"#185FA5",fontVariantNumeric:"tabular-nums",textAlign:"right"}}>${fmt(saldoOf(f))}</td>
                                           </tr>
                                         );
@@ -10844,13 +10855,20 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                                 // Sin agrupar (vista plana)
                                 arr.map(f=>{
                                   const vencida = isOverdue(f.vencimiento, f.estatus);
+                                  const usaProgramada = !!f.fechaProgramacion;
                                   return (
                                     <tr key={f.id} style={{background:vencida?"#FEF2F2":"#fff"}}>
                                       <td style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,fontWeight:600,color:"#1A2332"}}>{f.folio}</td>
                                       <td style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,color:"#1A2332"}}>{f.proveedor || '—'}</td>
                                       <td style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:11,color:"#64748B"}}>{f.clasificacion || '—'}</td>
-                                      <td style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,color:vencida?"#C04A4D":"#64748B",textAlign:"center",fontWeight:vencida?700:400}}>{f.vencimiento || '—'}{vencida && ' ⚠️'}</td>
-                                      <td style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,color:"#64748B",textAlign:"center"}}>{f.fechaProgramacion || '—'}</td>
+                                      <td title={usaProgramada?"Usa vencimiento como referencia (no tiene programación)":"Usa esta fecha para el cálculo"}
+                                          style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,color:vencida?"#C04A4D":"#64748B",textAlign:"center",fontWeight:vencida?700:400,background:!usaProgramada?"#FEF9C3":"transparent"}}>
+                                        {f.vencimiento || '—'}{vencida && ' ⚠️'}{!usaProgramada && <span style={{marginLeft:6,fontSize:9,color:"#8C6B1A",fontWeight:700}}>★</span>}
+                                      </td>
+                                      <td title={usaProgramada?"Esta fecha se usa para el cálculo del mes":"Sin programación"}
+                                          style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,color:usaProgramada?"#185FA5":"#94A3B8",textAlign:"center",background:usaProgramada?"#EFF6FF":"transparent",fontWeight:usaProgramada?700:400}}>
+                                        {f.fechaProgramacion || '—'}{usaProgramada && <span style={{marginLeft:6,fontSize:9,color:"#185FA5",fontWeight:700}}>★</span>}
+                                      </td>
                                       <td style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:13,fontWeight:700,color:"#185FA5",fontVariantNumeric:"tabular-nums",textAlign:"right"}}>${fmt(saldoOf(f))}</td>
                                     </tr>
                                   );
