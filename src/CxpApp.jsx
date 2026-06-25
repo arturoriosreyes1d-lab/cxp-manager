@@ -304,11 +304,22 @@ export default function CxpApp({ user, onLogout }) {
   const [showDashTarjetasModal, setShowDashTarjetasModal] = useState(false);
   const [showDashFinanciamientosModal, setShowDashFinanciamientosModal] = useState(false);
   const [showDashCortoPlazoModal, setShowDashCortoPlazoModal] = useState(false);
+  // Recargar gastos fijos cada vez que se abre el modal (garantiza data fresca)
+  useEffect(() => {
+    if (showDashCortoPlazoModal && empresaId) {
+      fetchGastosFijos(empresaId).then(setGastosFijos);
+    }
+  }, [showDashCortoPlazoModal, empresaId]);
   // Sub-modal de detalle dentro de Corto Plazo (al hacer clic en una card)
   const [cortoPlazoDetail, setCortoPlazoDetail] = useState(null); // 'facturas' | 'tarjetas' | 'financiamientos' | 'gastos'
   // Edición de gastos fijos
   const [gastoFijoEditId, setGastoFijoEditId] = useState(null);
   const [gastoFijoForm, setGastoFijoForm] = useState({ concepto:'', emoji:'📌', monto:'0' });
+  // Facturas del mes: buscador, ordenamiento y agrupación
+  const [facturasMesSearch, setFacturasMesSearch] = useState("");
+  const [facturasMesSort, setFacturasMesSort] = useState({ col:'vencimiento', dir:'asc' });
+  const [facturasMesAgrupado, setFacturasMesAgrupado] = useState(true);
+  const [facturasMesExpanded, setFacturasMesExpanded] = useState({}); // {proveedor: true/false}
   const [editingSaldoId, setEditingSaldoId] = useState(null);
   const [editingSaldoVal, setEditingSaldoVal] = useState("");
   const [tarjetaFiltroInt, setTarjetaFiltroInt] = useState("");
@@ -10655,7 +10666,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
           return (
             <div style={{position:"fixed",inset:0,background:"rgba(15, 45, 74, 0.65)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1100,padding:16}}
-                 onClick={()=>{setCortoPlazoDetail(null);setGastoFijoEditId(null);}}>
+                 onClick={(e)=>{e.stopPropagation();setCortoPlazoDetail(null);setGastoFijoEditId(null);}}>
               <div onClick={e=>e.stopPropagation()}
                    style={{background:"#fff",borderRadius:20,width:"92vw",maxWidth:1200,height:"88vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 60px rgba(0,0,0,0.4)",overflow:"hidden"}}>
                 {/* HEADER del sub-modal */}
@@ -10674,46 +10685,179 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                 {/* CUERPO del sub-modal */}
                 <div style={{padding:"24px 32px",overflowY:"auto",flex:1}}>
                   {/* ═══ Facturas ═══ */}
-                  {cortoPlazoDetail === 'facturas' && (
-                    facturasMes.length === 0 ? (
-                      <div style={{padding:"60px 20px",textAlign:"center",color:"#94A3B8"}}>
-                        <div style={{fontSize:48,opacity:0.4,marginBottom:12}}>📋</div>
-                        <div style={{fontSize:16,fontWeight:600}}>No hay facturas que venzan o estén programadas para {mesEs.toLowerCase()}</div>
-                      </div>
-                    ) : (
-                      <table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:13}}>
-                        <thead>
-                          <tr style={{background:"#F8FAFC"}}>
-                            <th style={{padding:"12px 14px",textAlign:"left",fontSize:11,color:"#64748B",fontWeight:700,letterSpacing:0.5,borderBottom:"1px solid #E2E8F0"}}>FOLIO</th>
-                            <th style={{padding:"12px 14px",textAlign:"left",fontSize:11,color:"#64748B",fontWeight:700,letterSpacing:0.5,borderBottom:"1px solid #E2E8F0"}}>PROVEEDOR</th>
-                            <th style={{padding:"12px 14px",textAlign:"left",fontSize:11,color:"#64748B",fontWeight:700,letterSpacing:0.5,borderBottom:"1px solid #E2E8F0"}}>CLASIFICACIÓN</th>
-                            <th style={{padding:"12px 14px",textAlign:"center",fontSize:11,color:"#64748B",fontWeight:700,letterSpacing:0.5,borderBottom:"1px solid #E2E8F0"}}>VENCE</th>
-                            <th style={{padding:"12px 14px",textAlign:"center",fontSize:11,color:"#64748B",fontWeight:700,letterSpacing:0.5,borderBottom:"1px solid #E2E8F0"}}>PROGRAMADA</th>
-                            <th style={{padding:"12px 14px",textAlign:"right",fontSize:11,color:"#64748B",fontWeight:700,letterSpacing:0.5,borderBottom:"1px solid #E2E8F0"}}>SALDO</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {facturasMes.map(f=>{
-                            const vencida = isOverdue(f.vencimiento, f.estatus);
-                            return (
-                              <tr key={f.id} style={{background:vencida?"#FEF2F2":"transparent"}}>
-                                <td style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,fontWeight:600,color:"#1A2332"}}>{f.folio}</td>
-                                <td style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,color:"#1A2332"}}>{f.proveedor || '—'}</td>
-                                <td style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:11,color:"#64748B"}}>{f.clasificacion || '—'}</td>
-                                <td style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,color:vencida?"#C04A4D":"#64748B",textAlign:"center",fontWeight:vencida?700:400}}>{f.vencimiento || '—'}{vencida && ' ⚠️'}</td>
-                                <td style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,color:"#64748B",textAlign:"center"}}>{f.fechaProgramacion || '—'}</td>
-                                <td style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:13,fontWeight:700,color:"#185FA5",fontVariantNumeric:"tabular-nums",textAlign:"right"}}>${fmt(saldoOf(f))}</td>
+                  {cortoPlazoDetail === 'facturas' && (() => {
+                    if (facturasMes.length === 0) {
+                      return (
+                        <div style={{padding:"60px 20px",textAlign:"center",color:"#94A3B8"}}>
+                          <div style={{fontSize:48,opacity:0.4,marginBottom:12}}>📋</div>
+                          <div style={{fontSize:16,fontWeight:600}}>No hay facturas que venzan o estén programadas para {mesEs.toLowerCase()}</div>
+                        </div>
+                      );
+                    }
+                    // Filtrar por búsqueda
+                    const q = facturasMesSearch.trim().toLowerCase();
+                    let arr = q
+                      ? facturasMes.filter(f =>
+                          (f.folio||'').toString().toLowerCase().includes(q) ||
+                          (f.proveedor||'').toLowerCase().includes(q) ||
+                          (f.clasificacion||'').toLowerCase().includes(q) ||
+                          (f.vencimiento||'').includes(q) ||
+                          (f.fechaProgramacion||'').includes(q)
+                        )
+                      : facturasMes;
+                    // Ordenar
+                    const col = facturasMesSort.col;
+                    const dir = facturasMesSort.dir === 'asc' ? 1 : -1;
+                    arr = [...arr].sort((a,b) => {
+                      let va, vb;
+                      if (col === 'saldo') { va = saldoOf(a); vb = saldoOf(b); }
+                      else if (col === 'folio') { va = String(a.folio||''); vb = String(b.folio||''); }
+                      else { va = String(a[col]||''); vb = String(b[col]||''); }
+                      if (typeof va === 'number') return (va - vb) * dir;
+                      return va.localeCompare(vb) * dir;
+                    });
+                    const totalFiltrado = arr.reduce((s,f)=>s+saldoOf(f),0);
+                    // Cambiar orden al hacer clic en una columna
+                    const sortBy = (c) => {
+                      if (facturasMesSort.col === c) {
+                        setFacturasMesSort({ col:c, dir: facturasMesSort.dir==='asc'?'desc':'asc' });
+                      } else {
+                        setFacturasMesSort({ col:c, dir:'asc' });
+                      }
+                    };
+                    // Flecha de orden
+                    const arrow = (c) => facturasMesSort.col === c ? (facturasMesSort.dir==='asc' ? ' ▲' : ' ▼') : '';
+                    const thStyle = (c, align='left') => ({
+                      padding:"12px 14px", textAlign:align, fontSize:11, color:facturasMesSort.col===c?"#185FA5":"#64748B",
+                      fontWeight:700, letterSpacing:0.5, borderBottom:"1px solid #E2E8F0", cursor:"pointer", userSelect:"none",
+                      background: facturasMesSort.col===c?"#EFF6FF":"#F8FAFC",
+                    });
+
+                    // Agrupar por proveedor si está activo
+                    let groups = null;
+                    if (facturasMesAgrupado) {
+                      const map = new Map();
+                      arr.forEach(f => {
+                        const prov = f.proveedor || '— Sin proveedor —';
+                        if (!map.has(prov)) map.set(prov, []);
+                        map.get(prov).push(f);
+                      });
+                      groups = Array.from(map.entries()).map(([prov, items]) => ({
+                        prov, items, total: items.reduce((s,f)=>s+saldoOf(f),0), count: items.length
+                      })).sort((a,b) => b.total - a.total);
+                    }
+
+                    return (
+                      <div>
+                        {/* Toolbar: buscador + toggle agrupar */}
+                        <div style={{display:"flex",gap:12,marginBottom:14,alignItems:"center",flexWrap:"wrap"}}>
+                          <input
+                            type="text"
+                            value={facturasMesSearch}
+                            onChange={e=>setFacturasMesSearch(e.target.value)}
+                            placeholder="🔍 Buscar por folio, proveedor, clasificación..."
+                            style={{flex:1,minWidth:260,padding:"10px 14px",fontSize:13,border:"1.5px solid #E2E8F0",borderRadius:10,outline:"none",background:"#fff"}}
+                            onFocus={e=>e.target.style.borderColor="#185FA5"}
+                            onBlur={e=>e.target.style.borderColor="#E2E8F0"}
+                          />
+                          <button onClick={()=>setFacturasMesAgrupado(v=>!v)}
+                                  style={{padding:"10px 16px",fontSize:12,fontWeight:700,border:"1.5px solid #E2E8F0",borderRadius:10,cursor:"pointer",background:facturasMesAgrupado?"#185FA5":"#fff",color:facturasMesAgrupado?"#fff":"#64748B"}}>
+                            {facturasMesAgrupado ? '✓ Agrupado por proveedor' : '○ Agrupar por proveedor'}
+                          </button>
+                          <button onClick={()=>{
+                            // Expandir/colapsar todos
+                            if (!facturasMesAgrupado) return;
+                            const allExpanded = groups && groups.every(g => facturasMesExpanded[g.prov]);
+                            const newState = {};
+                            if (!allExpanded && groups) groups.forEach(g => newState[g.prov] = true);
+                            setFacturasMesExpanded(newState);
+                          }}
+                                  style={{padding:"10px 14px",fontSize:12,fontWeight:600,border:"1.5px solid #E2E8F0",borderRadius:10,cursor:facturasMesAgrupado?"pointer":"not-allowed",background:"#fff",color:"#64748B",opacity:facturasMesAgrupado?1:0.5}}
+                                  disabled={!facturasMesAgrupado}>
+                            {groups && groups.every(g => facturasMesExpanded[g.prov]) ? '▲ Colapsar todos' : '▼ Expandir todos'}
+                          </button>
+                        </div>
+                        <div style={{fontSize:11,color:"#64748B",marginBottom:8}}>
+                          Mostrando <strong style={{color:"#1A2332"}}>{arr.length}</strong> {arr.length===1?'factura':'facturas'} · Total filtrado: <strong style={{color:"#185FA5"}}>${fmt(totalFiltrado)}</strong>
+                        </div>
+
+                        {/* Tabla */}
+                        <div style={{border:"1px solid #E2E8F0",borderRadius:12,overflow:"hidden",background:"#fff"}}>
+                          <table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:13}}>
+                            <thead>
+                              <tr>
+                                <th style={thStyle('folio')} onClick={()=>sortBy('folio')}>FOLIO{arrow('folio')}</th>
+                                <th style={thStyle('proveedor')} onClick={()=>sortBy('proveedor')}>PROVEEDOR{arrow('proveedor')}</th>
+                                <th style={thStyle('clasificacion')} onClick={()=>sortBy('clasificacion')}>CLASIFICACIÓN{arrow('clasificacion')}</th>
+                                <th style={thStyle('vencimiento','center')} onClick={()=>sortBy('vencimiento')}>VENCE{arrow('vencimiento')}</th>
+                                <th style={thStyle('fechaProgramacion','center')} onClick={()=>sortBy('fechaProgramacion')}>PROGRAMADA{arrow('fechaProgramacion')}</th>
+                                <th style={thStyle('saldo','right')} onClick={()=>sortBy('saldo')}>SALDO{arrow('saldo')}</th>
                               </tr>
-                            );
-                          })}
-                          <tr style={{background:"#EBF1F8"}}>
-                            <td colSpan={5} style={{padding:"14px",fontSize:13,fontWeight:800,color:"#1A2332"}}>TOTAL FACTURAS DEL MES</td>
-                            <td style={{padding:"14px",fontSize:16,fontWeight:800,color:"#185FA5",fontVariantNumeric:"tabular-nums",textAlign:"right"}}>${fmt(totalFactMes)}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    )
-                  )}
+                            </thead>
+                            <tbody>
+                              {facturasMesAgrupado && groups ? (
+                                // Agrupado por proveedor
+                                groups.map(g => {
+                                  const expanded = facturasMesExpanded[g.prov];
+                                  return (
+                                    <React.Fragment key={g.prov}>
+                                      {/* Header de grupo */}
+                                      <tr onClick={()=>setFacturasMesExpanded(prev=>({...prev,[g.prov]:!prev[g.prov]}))}
+                                          style={{background:"linear-gradient(90deg, #F0F7FF, #fff)",cursor:"pointer"}}>
+                                        <td colSpan={2} style={{padding:"12px 14px",borderBottom:"1px solid #E2E8F0",fontSize:13,fontWeight:800,color:"#185FA5"}}>
+                                          <span style={{marginRight:8}}>{expanded ? '▼' : '▶'}</span>
+                                          {g.prov}
+                                          <span style={{background:"#185FA5",color:"#fff",fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:99,marginLeft:10}}>{g.count}</span>
+                                        </td>
+                                        <td colSpan={3} style={{padding:"12px 14px",borderBottom:"1px solid #E2E8F0",fontSize:11,color:"#64748B"}}>
+                                          {g.count} factura{g.count===1?'':'s'} pendiente{g.count===1?'':'s'}
+                                        </td>
+                                        <td style={{padding:"12px 14px",borderBottom:"1px solid #E2E8F0",fontSize:14,fontWeight:800,color:"#185FA5",fontVariantNumeric:"tabular-nums",textAlign:"right"}}>${fmt(g.total)}</td>
+                                      </tr>
+                                      {/* Filas del grupo */}
+                                      {expanded && g.items.map(f=>{
+                                        const vencida = isOverdue(f.vencimiento, f.estatus);
+                                        return (
+                                          <tr key={f.id} style={{background:vencida?"#FEF2F2":"#fff"}}>
+                                            <td style={{padding:"10px 14px 10px 36px",borderBottom:"1px solid #F1F5F9",fontSize:12,fontWeight:600,color:"#1A2332"}}>{f.folio}</td>
+                                            <td style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,color:"#94A3B8",fontStyle:"italic"}}>↳ misma</td>
+                                            <td style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",fontSize:11,color:"#64748B"}}>{f.clasificacion || '—'}</td>
+                                            <td style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,color:vencida?"#C04A4D":"#64748B",textAlign:"center",fontWeight:vencida?700:400}}>{f.vencimiento || '—'}{vencida && ' ⚠️'}</td>
+                                            <td style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,color:"#64748B",textAlign:"center"}}>{f.fechaProgramacion || '—'}</td>
+                                            <td style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",fontSize:13,fontWeight:700,color:"#185FA5",fontVariantNumeric:"tabular-nums",textAlign:"right"}}>${fmt(saldoOf(f))}</td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </React.Fragment>
+                                  );
+                                })
+                              ) : (
+                                // Sin agrupar (vista plana)
+                                arr.map(f=>{
+                                  const vencida = isOverdue(f.vencimiento, f.estatus);
+                                  return (
+                                    <tr key={f.id} style={{background:vencida?"#FEF2F2":"#fff"}}>
+                                      <td style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,fontWeight:600,color:"#1A2332"}}>{f.folio}</td>
+                                      <td style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,color:"#1A2332"}}>{f.proveedor || '—'}</td>
+                                      <td style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:11,color:"#64748B"}}>{f.clasificacion || '—'}</td>
+                                      <td style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,color:vencida?"#C04A4D":"#64748B",textAlign:"center",fontWeight:vencida?700:400}}>{f.vencimiento || '—'}{vencida && ' ⚠️'}</td>
+                                      <td style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,color:"#64748B",textAlign:"center"}}>{f.fechaProgramacion || '—'}</td>
+                                      <td style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:13,fontWeight:700,color:"#185FA5",fontVariantNumeric:"tabular-nums",textAlign:"right"}}>${fmt(saldoOf(f))}</td>
+                                    </tr>
+                                  );
+                                })
+                              )}
+                              {/* Total */}
+                              <tr style={{background:"#EBF1F8"}}>
+                                <td colSpan={5} style={{padding:"14px",fontSize:13,fontWeight:800,color:"#1A2332"}}>TOTAL {q?'FILTRADO':'FACTURAS DEL MES'}</td>
+                                <td style={{padding:"14px",fontSize:16,fontWeight:800,color:"#185FA5",fontVariantNumeric:"tabular-nums",textAlign:"right"}}>${fmt(q?totalFiltrado:totalFactMes)}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* ═══ Tarjetas ═══ */}
                   {cortoPlazoDetail === 'tarjetas' && (
@@ -10814,14 +10958,18 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                   {/* ═══ Gastos Fijos (editor) ═══ */}
                   {cortoPlazoDetail === 'gastos' && (
                     <div>
-                      {esSuperadmin && (
-                        <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,gap:10,flexWrap:"wrap"}}>
+                        <button onClick={()=>fetchGastosFijos(empresaId).then(setGastosFijos)}
+                                style={{background:"#fff",border:"1.5px solid #E2E8F0",color:"#64748B",padding:"8px 14px",borderRadius:10,fontSize:12,cursor:"pointer",fontWeight:600}}>
+                          🔄 Recargar desde Supabase
+                        </button>
+                        {esSuperadmin && (
                           <button onClick={handleAddGasto} disabled={gastoFijoEditId==='new'}
                                   style={{background:gastoFijoEditId==='new'?"#CBD5E1":"linear-gradient(135deg, #1D7A4E, #2EBC76)",border:"none",color:"#fff",padding:"10px 18px",borderRadius:10,fontSize:13,cursor:gastoFijoEditId==='new'?"not-allowed":"pointer",fontWeight:700,boxShadow:gastoFijoEditId==='new'?"none":"0 4px 12px rgba(29, 122, 78, 0.30)"}}>
                             + Agregar nuevo gasto fijo
                           </button>
-                        </div>
-                      )}
+                        )}
+                      </div>
                       {!esSuperadmin && (
                         <div style={{marginBottom:14,padding:"10px 16px",background:"#FFFBEB",border:"1px solid #FCD34D",borderRadius:8,fontSize:12,color:"#8C6B1A"}}>
                           ℹ️ Solo un <strong>superadmin</strong> puede modificar los gastos fijos. Estás en modo lectura.
@@ -10829,12 +10977,20 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                       )}
 
                       {gastosActivos.length === 0 && gastoFijoEditId !== 'new' ? (
-                        <div style={{padding:"60px 20px",textAlign:"center",color:"#94A3B8"}}>
+                        <div style={{padding:"40px 20px",textAlign:"center",color:"#94A3B8",background:"#FFFBEB",border:"1.5px solid #FCD34D",borderRadius:12}}>
                           <div style={{fontSize:48,opacity:0.4,marginBottom:12}}>📌</div>
-                          <div style={{fontSize:16,fontWeight:600}}>No hay gastos fijos configurados</div>
-                          <div style={{fontSize:13,marginTop:6}}>
-                            {esSuperadmin ? 'Clic en "Agregar nuevo" para empezar' : 'Pídele a un superadmin que configure los gastos fijos'}
+                          <div style={{fontSize:16,fontWeight:700,color:"#8C6B1A"}}>No se cargaron gastos fijos para esta empresa</div>
+                          <div style={{fontSize:12,marginTop:10,color:"#64748B",lineHeight:1.6,maxWidth:600,margin:"10px auto 0"}}>
+                            Empresa actual: <strong style={{color:"#1A2332",background:"#fff",padding:"2px 8px",borderRadius:6}}>{empresaId}</strong><br/>
+                            Si ya corriste el SQL en Supabase, intenta <strong>🔄 Recargar desde Supabase</strong> arriba.<br/>
+                            Si aún ves 0 después de recargar, verifica que las filas en Supabase tengan exactamente <code style={{background:"#fff",padding:"1px 5px",borderRadius:4,fontSize:11}}>empresa_id = '{empresaId}'</code> (con minúsculas).
                           </div>
+                          {esSuperadmin && (
+                            <button onClick={handleAddGasto}
+                                    style={{marginTop:18,background:"linear-gradient(135deg, #1D7A4E, #2EBC76)",border:"none",color:"#fff",padding:"10px 20px",borderRadius:10,fontSize:13,cursor:"pointer",fontWeight:700}}>
+                              + Crear el primer gasto fijo manualmente
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <div style={{background:"#fff",borderRadius:12,border:"1px solid #C3E6D2",overflow:"hidden"}}>
