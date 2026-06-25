@@ -576,9 +576,12 @@ export default function CxpApp({ user, onLogout }) {
       const d = new Date(isoStr+"T12:00:00");
       return d.getFullYear() === mesActualY && d.getMonth() === mesActualM;
     };
-    // Facturas que vencen en el mes en curso O están programadas para el mes en curso
+    // Regla: si la factura tiene fechaProgramacion, esa es la fecha relevante.
+    // Si NO tiene fechaProgramacion, se usa el vencimiento.
+    // La factura entra en el corto plazo del mes solo si la fecha relevante cae en este mes.
     const facturasMesArr = facturasActivas.filter(f => {
-      return enMesActual(f.vencimiento) || enMesActual(f.fechaProgramacion);
+      const fechaRelevante = f.fechaProgramacion || f.vencimiento;
+      return enMesActual(fechaRelevante);
     });
     const totalFacturasMes = facturasMesArr.reduce((s,f)=>s+saldoOf(f),0);
     // Cuota mensual de financiamientos activos (suma del monto_mensual)
@@ -10577,7 +10580,13 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         const allInvs = [...invoices.MXN.map(i=>({...i,moneda:"MXN"})),...invoices.USD.map(i=>({...i,moneda:"USD"})),...invoices.EUR.map(i=>({...i,moneda:"EUR"}))]
           .filter(i => i.tipo !== 'EgresoNF');
         const saldoOf = i => (+i.total||0)-(+i.montoPagado||0);
-        const facturasMes = allInvs.filter(f=> f.estatus!=="Pagado" && saldoOf(f)>0 && (enMes(f.vencimiento)||enMes(f.fechaProgramacion)));
+        // Regla: si tiene fechaProgramacion, esa es la fecha relevante.
+        // Si NO tiene fechaProgramacion, se usa el vencimiento.
+        const facturasMes = allInvs.filter(f => {
+          if (f.estatus === "Pagado" || saldoOf(f) <= 0) return false;
+          const fechaRelevante = f.fechaProgramacion || f.vencimiento;
+          return enMes(fechaRelevante);
+        });
         const totalFactMes = facturasMes.reduce((s,f)=>s+saldoOf(f),0);
         const vencidasMes = facturasMes.filter(f=>isOverdue(f.vencimiento,f.estatus)).length;
 
@@ -10658,7 +10667,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
           // Configuración por categoría
           const config = {
-            facturas:       { color:'#185FA5', bg:'#FAFCFE', emoji:'📋', titulo:'Facturas del mes', sub:`${facturasMes.length} facturas que vencen o están programadas en ${mesEs.toLowerCase()}` },
+            facturas:       { color:'#185FA5', bg:'#FAFCFE', emoji:'📋', titulo:'Facturas del mes', sub:`${facturasMes.length} facturas con pago programado en ${mesEs.toLowerCase()} (o que vencen sin programación)` },
             tarjetas:       { color:'#C04A4D', bg:'#FEFAFA', emoji:'💳', titulo:'Tarjetas de Crédito',  sub:`${tarjetasActivas.length} tarjeta${tarjetasActivas.length===1?'':'s'} activa${tarjetasActivas.length===1?'':'s'}` },
             financiamientos:{ color:'#6B47C7', bg:'#FAFAFE', emoji:'🏦', titulo:'Cuotas de Financiamientos', sub:`${financActivos.length} cuota${financActivos.length===1?'':'s'} mensual${financActivos.length===1?'':'es'} de ${mesEs.toLowerCase()}` },
             gastos:         { color:'#1D7A4E', bg:'#F0FAF5', emoji:'📌', titulo:'Gastos Fijos del Mes', sub:`${gastosActivos.length} gasto${gastosActivos.length===1?'':'s'} fijo${gastosActivos.length===1?'':'s'} configurado${gastosActivos.length===1?'':'s'}` },
@@ -10690,7 +10699,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                       return (
                         <div style={{padding:"60px 20px",textAlign:"center",color:"#94A3B8"}}>
                           <div style={{fontSize:48,opacity:0.4,marginBottom:12}}>📋</div>
-                          <div style={{fontSize:16,fontWeight:600}}>No hay facturas que venzan o estén programadas para {mesEs.toLowerCase()}</div>
+                          <div style={{fontSize:16,fontWeight:600}}>No hay facturas programadas o por vencer en {mesEs.toLowerCase()}</div>
                         </div>
                       );
                     }
@@ -11121,7 +11130,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
                     <div>
                       <div style={{fontSize:13,color:"#94A3B8",fontWeight:700,letterSpacing:0.6}}>FACTURAS DEL MES</div>
-                      <div style={{fontSize:12,color:"#64748B",marginTop:4}}>Vencen o programadas en {mesEs.toLowerCase()}</div>
+                      <div style={{fontSize:12,color:"#64748B",marginTop:4}}>Pago programado en {mesEs.toLowerCase()} (o vencen sin programación)</div>
                     </div>
                     <span style={{background:"linear-gradient(135deg, #185FA5, #2E78C7)",color:"#fff",fontSize:12,fontWeight:800,padding:"6px 14px",borderRadius:99,boxShadow:"0 3px 8px rgba(24, 95, 165, 0.30)"}}>📋 {facturasMes.length}</span>
                   </div>
