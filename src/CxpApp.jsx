@@ -10641,280 +10641,404 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           setGastoFijoForm({ concepto:'', emoji:'📌', monto:'0' });
         };
 
-        // Vista de detalle por categoría (sub-modal interno)
-        const renderDetalle = () => {
-          if (cortoPlazoDetail === 'facturas') {
-            return (
-              <div style={{padding:"18px 28px",borderTop:"1px solid #F1F5F9",background:"#FAFCFE"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-                  <div style={{fontSize:13,fontWeight:800,color:"#1A2332"}}>📋 Facturas del mes ({facturasMes.length})</div>
-                  <button onClick={()=>setCortoPlazoDetail(null)} style={{background:"#fff",border:"1px solid #E2E8F0",padding:"4px 12px",borderRadius:7,fontSize:11,cursor:"pointer",color:"#64748B",fontWeight:600}}>▲ Cerrar detalle</button>
-                </div>
-                <div style={{maxHeight:280,overflowY:"auto",background:"#fff",borderRadius:10,border:"1px solid #F1F5F9"}}>
-                  {facturasMes.slice(0,30).map(f=>(
-                    <div key={f.id} style={{display:"flex",justifyContent:"space-between",padding:"8px 14px",borderBottom:"1px solid #F8FAFC",fontSize:12}}>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{color:"#1A2332",fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.proveedor || f.cliente || 'Sin nombre'}</div>
-                        <div style={{color:"#94A3B8",fontSize:11,marginTop:2}}>{f.folio} · vence {f.vencimiento || '—'}</div>
-                      </div>
-                      <div style={{fontWeight:700,color:"#185FA5",fontVariantNumeric:"tabular-nums"}}>${fmt(saldoOf(f))}</div>
+        // ─── Sub-modal flotante con detalle ───
+        const renderSubModal = () => {
+          if (!cortoPlazoDetail) return null;
+
+          // Configuración por categoría
+          const config = {
+            facturas:       { color:'#185FA5', bg:'#FAFCFE', emoji:'📋', titulo:'Facturas del mes', sub:`${facturasMes.length} facturas que vencen o están programadas en ${mesEs.toLowerCase()}` },
+            tarjetas:       { color:'#C04A4D', bg:'#FEFAFA', emoji:'💳', titulo:'Tarjetas de Crédito',  sub:`${tarjetasActivas.length} tarjeta${tarjetasActivas.length===1?'':'s'} activa${tarjetasActivas.length===1?'':'s'}` },
+            financiamientos:{ color:'#6B47C7', bg:'#FAFAFE', emoji:'🏦', titulo:'Cuotas de Financiamientos', sub:`${financActivos.length} cuota${financActivos.length===1?'':'s'} mensual${financActivos.length===1?'':'es'} de ${mesEs.toLowerCase()}` },
+            gastos:         { color:'#1D7A4E', bg:'#F0FAF5', emoji:'📌', titulo:'Gastos Fijos del Mes', sub:`${gastosActivos.length} gasto${gastosActivos.length===1?'':'s'} fijo${gastosActivos.length===1?'':'s'} configurado${gastosActivos.length===1?'':'s'}` },
+          }[cortoPlazoDetail];
+
+          return (
+            <div style={{position:"fixed",inset:0,background:"rgba(15, 45, 74, 0.65)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1100,padding:16}}
+                 onClick={()=>{setCortoPlazoDetail(null);setGastoFijoEditId(null);}}>
+              <div onClick={e=>e.stopPropagation()}
+                   style={{background:"#fff",borderRadius:20,width:"92vw",maxWidth:1200,height:"88vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 60px rgba(0,0,0,0.4)",overflow:"hidden"}}>
+                {/* HEADER del sub-modal */}
+                <div style={{padding:"24px 32px",borderBottom:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between",alignItems:"center",background:config.bg}}>
+                  <div style={{display:"flex",alignItems:"center",gap:14}}>
+                    <div style={{width:48,height:48,borderRadius:14,background:config.color,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,boxShadow:`0 4px 14px ${config.color}55`}}>{config.emoji}</div>
+                    <div>
+                      <div style={{fontSize:22,fontWeight:800,color:"#1A2332",letterSpacing:"-0.3px"}}>{config.titulo}</div>
+                      <div style={{fontSize:14,color:"#64748B",marginTop:3}}>{config.sub}</div>
                     </div>
-                  ))}
-                  {facturasMes.length>30 && <div style={{padding:10,textAlign:"center",fontSize:11,color:"#94A3B8"}}>… y {facturasMes.length-30} más</div>}
+                  </div>
+                  <button onClick={()=>{setCortoPlazoDetail(null);setGastoFijoEditId(null);}}
+                          style={{background:"#fff",border:"none",width:40,height:40,borderRadius:10,cursor:"pointer",fontSize:20,color:"#64748B",fontWeight:600,boxShadow:"0 2px 6px rgba(0,0,0,0.06)"}}>×</button>
                 </div>
-              </div>
-            );
-          }
-          if (cortoPlazoDetail === 'tarjetas') {
-            return (
-              <div style={{padding:"18px 28px",borderTop:"1px solid #F1F5F9",background:"#FEFAFA"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-                  <div style={{fontSize:13,fontWeight:800,color:"#1A2332"}}>💳 Tarjetas activas ({tarjetasActivas.length})</div>
-                  <button onClick={()=>setCortoPlazoDetail(null)} style={{background:"#fff",border:"1px solid #E2E8F0",padding:"4px 12px",borderRadius:7,fontSize:11,cursor:"pointer",color:"#64748B",fontWeight:600}}>▲ Cerrar detalle</button>
-                </div>
-                <div style={{background:"#fff",borderRadius:10,border:"1px solid #F1F5F9",padding:10}}>
-                  {tarjetasActivas.map(t=>{
-                    const pctT = t.limite>0 ? Math.round((t.saldoActual/t.limite)*100) : 0;
-                    return (
-                      <div key={t.id} style={{padding:"8px 6px",borderBottom:"1px solid #F8FAFC",fontSize:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                        <div>
-                          <div style={{color:"#1A2332",fontWeight:700}}>{t.banco} · {t.titular}</div>
-                          <div style={{color:"#94A3B8",fontSize:11,marginTop:2}}>Corte día {t.fechaCorte} · {pctT}% utilizado</div>
+
+                {/* CUERPO del sub-modal */}
+                <div style={{padding:"24px 32px",overflowY:"auto",flex:1}}>
+                  {/* ═══ Facturas ═══ */}
+                  {cortoPlazoDetail === 'facturas' && (
+                    facturasMes.length === 0 ? (
+                      <div style={{padding:"60px 20px",textAlign:"center",color:"#94A3B8"}}>
+                        <div style={{fontSize:48,opacity:0.4,marginBottom:12}}>📋</div>
+                        <div style={{fontSize:16,fontWeight:600}}>No hay facturas que venzan o estén programadas para {mesEs.toLowerCase()}</div>
+                      </div>
+                    ) : (
+                      <table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:13}}>
+                        <thead>
+                          <tr style={{background:"#F8FAFC"}}>
+                            <th style={{padding:"12px 14px",textAlign:"left",fontSize:11,color:"#64748B",fontWeight:700,letterSpacing:0.5,borderBottom:"1px solid #E2E8F0"}}>FOLIO</th>
+                            <th style={{padding:"12px 14px",textAlign:"left",fontSize:11,color:"#64748B",fontWeight:700,letterSpacing:0.5,borderBottom:"1px solid #E2E8F0"}}>PROVEEDOR</th>
+                            <th style={{padding:"12px 14px",textAlign:"left",fontSize:11,color:"#64748B",fontWeight:700,letterSpacing:0.5,borderBottom:"1px solid #E2E8F0"}}>CLASIFICACIÓN</th>
+                            <th style={{padding:"12px 14px",textAlign:"center",fontSize:11,color:"#64748B",fontWeight:700,letterSpacing:0.5,borderBottom:"1px solid #E2E8F0"}}>VENCE</th>
+                            <th style={{padding:"12px 14px",textAlign:"center",fontSize:11,color:"#64748B",fontWeight:700,letterSpacing:0.5,borderBottom:"1px solid #E2E8F0"}}>PROGRAMADA</th>
+                            <th style={{padding:"12px 14px",textAlign:"right",fontSize:11,color:"#64748B",fontWeight:700,letterSpacing:0.5,borderBottom:"1px solid #E2E8F0"}}>SALDO</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {facturasMes.map(f=>{
+                            const vencida = isOverdue(f.vencimiento, f.estatus);
+                            return (
+                              <tr key={f.id} style={{background:vencida?"#FEF2F2":"transparent"}}>
+                                <td style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,fontWeight:600,color:"#1A2332"}}>{f.folio}</td>
+                                <td style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,color:"#1A2332"}}>{f.proveedor || '—'}</td>
+                                <td style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:11,color:"#64748B"}}>{f.clasificacion || '—'}</td>
+                                <td style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,color:vencida?"#C04A4D":"#64748B",textAlign:"center",fontWeight:vencida?700:400}}>{f.vencimiento || '—'}{vencida && ' ⚠️'}</td>
+                                <td style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:12,color:"#64748B",textAlign:"center"}}>{f.fechaProgramacion || '—'}</td>
+                                <td style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",fontSize:13,fontWeight:700,color:"#185FA5",fontVariantNumeric:"tabular-nums",textAlign:"right"}}>${fmt(saldoOf(f))}</td>
+                              </tr>
+                            );
+                          })}
+                          <tr style={{background:"#EBF1F8"}}>
+                            <td colSpan={5} style={{padding:"14px",fontSize:13,fontWeight:800,color:"#1A2332"}}>TOTAL FACTURAS DEL MES</td>
+                            <td style={{padding:"14px",fontSize:16,fontWeight:800,color:"#185FA5",fontVariantNumeric:"tabular-nums",textAlign:"right"}}>${fmt(totalFactMes)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    )
+                  )}
+
+                  {/* ═══ Tarjetas ═══ */}
+                  {cortoPlazoDetail === 'tarjetas' && (
+                    tarjetasActivas.length === 0 ? (
+                      <div style={{padding:"60px 20px",textAlign:"center",color:"#94A3B8"}}>
+                        <div style={{fontSize:48,opacity:0.4,marginBottom:12}}>💳</div>
+                        <div style={{fontSize:16,fontWeight:600}}>No hay tarjetas activas</div>
+                      </div>
+                    ) : (
+                      <div style={{display:"grid",gridTemplateColumns:tarjetasActivas.length===1?"1fr":"repeat(auto-fit, minmax(360px, 1fr))",gap:18}}>
+                        {tarjetasActivas.map(t=>{
+                          const pctT = t.limite>0 ? Math.round((t.saldoActual/t.limite)*100) : 0;
+                          const disponible = (t.limite||0) - (t.saldoActual||0);
+                          const esAmex = (t.banco||"").toLowerCase().includes("amex") || (t.banco||"").toLowerCase().includes("american");
+                          const gradFondo = esAmex
+                            ? "linear-gradient(135deg, #5E2D8F 0%, #3D1E5F 100%)"
+                            : "linear-gradient(135deg, #1E3A5F 0%, #0F2D4A 100%)";
+                          return (
+                            <div key={t.id} style={{background:gradFondo,color:"#fff",borderRadius:16,padding:"24px 26px",boxShadow:"0 8px 22px rgba(15, 45, 74, 0.28)",position:"relative",overflow:"hidden"}}>
+                              <div style={{position:"absolute",top:-30,right:-30,width:140,height:140,background:"radial-gradient(circle, rgba(255,255,255,0.10) 0%, transparent 70%)"}}/>
+                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24,position:"relative",zIndex:1}}>
+                                <div>
+                                  <div style={{fontSize:11,opacity:0.7,fontWeight:700,letterSpacing:0.5,textTransform:"uppercase"}}>{empresaId==="empresa_1"?"Viajes Libero":"TravelAirSolutions"}</div>
+                                  <div style={{fontSize:18,fontWeight:800,marginTop:6}}>{t.banco}</div>
+                                  {t.titular && <div style={{fontSize:12,opacity:0.65,marginTop:4}}>{t.titular}</div>}
+                                </div>
+                                {t.contrato && <div style={{fontSize:12,opacity:0.7,fontWeight:600}}>Contrato {t.contrato}</div>}
+                              </div>
+                              <div style={{fontSize:11,opacity:0.7,fontWeight:700,letterSpacing:0.5,position:"relative",zIndex:1}}>SALDO ACTUAL</div>
+                              <div style={{fontSize:32,fontWeight:800,marginTop:6,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.6px",position:"relative",zIndex:1}}>${fmt(t.saldoActual||0)}</div>
+                              <div style={{display:"flex",justifyContent:"space-between",marginTop:14,paddingTop:14,borderTop:"1px solid rgba(255,255,255,0.15)",position:"relative",zIndex:1}}>
+                                <div>
+                                  <div style={{fontSize:11,opacity:0.6}}>Disponible</div>
+                                  <div style={{fontSize:15,fontWeight:700,color:"#4ADE80",fontVariantNumeric:"tabular-nums",marginTop:3}}>${fmt(disponible)}</div>
+                                </div>
+                                <div>
+                                  <div style={{fontSize:11,opacity:0.6}}>Límite</div>
+                                  <div style={{fontSize:15,fontWeight:700,fontVariantNumeric:"tabular-nums",marginTop:3}}>${fmt(t.limite||0)}</div>
+                                </div>
+                                {t.fechaCorte && (
+                                  <div style={{textAlign:"right"}}>
+                                    <div style={{fontSize:11,opacity:0.6}}>Corte día</div>
+                                    <div style={{fontSize:15,fontWeight:700,marginTop:3}}>{t.fechaCorte}</div>
+                                  </div>
+                                )}
+                              </div>
+                              <div style={{marginTop:16,position:"relative",zIndex:1}}>
+                                <div style={{display:"flex",justifyContent:"space-between",fontSize:11,opacity:0.75,marginBottom:6}}>
+                                  <span style={{letterSpacing:0.5,fontWeight:700}}>UTILIZADO</span>
+                                  <span style={{fontWeight:700}}>{pctT}%</span>
+                                </div>
+                                <div style={{height:7,background:"rgba(255,255,255,0.15)",borderRadius:99,overflow:"hidden"}}>
+                                  <div style={{width:`${Math.min(pctT,100)}%`,height:"100%",background: pctT>80?"#FCA5A5":pctT>50?"linear-gradient(90deg, #FCD34D, #FCA5A5)":"linear-gradient(90deg, #4ADE80, #FCD34D)",borderRadius:99}}/>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )
+                  )}
+
+                  {/* ═══ Financiamientos ═══ */}
+                  {cortoPlazoDetail === 'financiamientos' && (
+                    financActivos.length === 0 ? (
+                      <div style={{padding:"60px 20px",textAlign:"center",color:"#94A3B8"}}>
+                        <div style={{fontSize:48,opacity:0.4,marginBottom:12}}>🏦</div>
+                        <div style={{fontSize:16,fontWeight:600}}>No hay financiamientos activos</div>
+                      </div>
+                    ) : (
+                      <table style={{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:13}}>
+                        <thead>
+                          <tr style={{background:"#F8FAFC"}}>
+                            <th style={{padding:"12px 14px",textAlign:"left",fontSize:11,color:"#64748B",fontWeight:700,letterSpacing:0.5,borderBottom:"1px solid #E2E8F0"}}>NOMBRE</th>
+                            <th style={{padding:"12px 14px",textAlign:"left",fontSize:11,color:"#64748B",fontWeight:700,letterSpacing:0.5,borderBottom:"1px solid #E2E8F0"}}>CONCEPTO</th>
+                            <th style={{padding:"12px 14px",textAlign:"center",fontSize:11,color:"#64748B",fontWeight:700,letterSpacing:0.5,borderBottom:"1px solid #E2E8F0"}}>DÍA DE PAGO</th>
+                            <th style={{padding:"12px 14px",textAlign:"right",fontSize:11,color:"#64748B",fontWeight:700,letterSpacing:0.5,borderBottom:"1px solid #E2E8F0"}}>CUOTA MENSUAL</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {financActivos.map(f=>(
+                            <tr key={f.id}>
+                              <td style={{padding:"14px",borderBottom:"1px solid #F1F5F9",fontSize:13,fontWeight:700,color:"#1A2332"}}>{f.nombre}</td>
+                              <td style={{padding:"14px",borderBottom:"1px solid #F1F5F9",fontSize:12,color:"#64748B"}}>{f.concepto || '—'}</td>
+                              <td style={{padding:"14px",borderBottom:"1px solid #F1F5F9",fontSize:12,color:"#64748B",textAlign:"center"}}>{f.diaPago ? `Día ${f.diaPago}` : '—'}</td>
+                              <td style={{padding:"14px",borderBottom:"1px solid #F1F5F9",fontSize:14,fontWeight:700,color:"#6B47C7",fontVariantNumeric:"tabular-nums",textAlign:"right"}}>${fmt(f.montoMensual||0)}</td>
+                            </tr>
+                          ))}
+                          <tr style={{background:"#F3EFFC"}}>
+                            <td colSpan={3} style={{padding:"14px",fontSize:13,fontWeight:800,color:"#1A2332"}}>TOTAL CUOTAS MENSUALES</td>
+                            <td style={{padding:"14px",fontSize:16,fontWeight:800,color:"#6B47C7",fontVariantNumeric:"tabular-nums",textAlign:"right"}}>${fmt(totalCuotaMensual)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    )
+                  )}
+
+                  {/* ═══ Gastos Fijos (editor) ═══ */}
+                  {cortoPlazoDetail === 'gastos' && (
+                    <div>
+                      {esSuperadmin && (
+                        <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}>
+                          <button onClick={handleAddGasto} disabled={gastoFijoEditId==='new'}
+                                  style={{background:gastoFijoEditId==='new'?"#CBD5E1":"linear-gradient(135deg, #1D7A4E, #2EBC76)",border:"none",color:"#fff",padding:"10px 18px",borderRadius:10,fontSize:13,cursor:gastoFijoEditId==='new'?"not-allowed":"pointer",fontWeight:700,boxShadow:gastoFijoEditId==='new'?"none":"0 4px 12px rgba(29, 122, 78, 0.30)"}}>
+                            + Agregar nuevo gasto fijo
+                          </button>
                         </div>
-                        <div style={{fontWeight:700,color:"#C04A4D",fontVariantNumeric:"tabular-nums",fontSize:14}}>${fmt(t.saldoActual||0)}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          }
-          if (cortoPlazoDetail === 'financiamientos') {
-            return (
-              <div style={{padding:"18px 28px",borderTop:"1px solid #F1F5F9",background:"#FAFAFE"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-                  <div style={{fontSize:13,fontWeight:800,color:"#1A2332"}}>🏦 Cuotas mensuales activas ({financActivos.length})</div>
-                  <button onClick={()=>setCortoPlazoDetail(null)} style={{background:"#fff",border:"1px solid #E2E8F0",padding:"4px 12px",borderRadius:7,fontSize:11,cursor:"pointer",color:"#64748B",fontWeight:600}}>▲ Cerrar detalle</button>
-                </div>
-                <div style={{background:"#fff",borderRadius:10,border:"1px solid #F1F5F9",padding:10}}>
-                  {financActivos.map(f=>(
-                    <div key={f.id} style={{padding:"8px 6px",borderBottom:"1px solid #F8FAFC",fontSize:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                      <div>
-                        <div style={{color:"#1A2332",fontWeight:700}}>{f.nombre}</div>
-                        <div style={{color:"#94A3B8",fontSize:11,marginTop:2}}>{f.concepto} · día de pago: {f.diaPago||'—'}</div>
-                      </div>
-                      <div style={{fontWeight:700,color:"#6B47C7",fontVariantNumeric:"tabular-nums",fontSize:14}}>${fmt(f.montoMensual||0)}/mes</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          }
-          if (cortoPlazoDetail === 'gastos') {
-            return (
-              <div style={{padding:"18px 28px",borderTop:"1px solid #F1F5F9",background:"#F0FAF5"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <div style={{fontSize:13,fontWeight:800,color:"#1A2332"}}>📌 Gastos fijos del mes ({gastosActivos.length})</div>
-                    {!esSuperadmin && <div style={{fontSize:10,color:"#64748B",background:"#fff",padding:"2px 7px",borderRadius:99,border:"1px solid #E2E8F0"}}>Solo lectura</div>}
-                  </div>
-                  <div style={{display:"flex",gap:8}}>
-                    {esSuperadmin && (
-                      <button onClick={handleAddGasto} style={{background:"linear-gradient(135deg, #1D7A4E, #2EBC76)",border:"none",color:"#fff",padding:"5px 12px",borderRadius:7,fontSize:11,cursor:"pointer",fontWeight:700}}>+ Agregar nuevo</button>
-                    )}
-                    <button onClick={()=>{setCortoPlazoDetail(null);setGastoFijoEditId(null);}} style={{background:"#fff",border:"1px solid #E2E8F0",padding:"4px 12px",borderRadius:7,fontSize:11,cursor:"pointer",color:"#64748B",fontWeight:600}}>▲ Cerrar</button>
-                  </div>
-                </div>
-                {/* Tabla de gastos */}
-                <div style={{background:"#fff",borderRadius:10,border:"1px solid #C3E6D2",overflow:"hidden"}}>
-                  {/* Header */}
-                  <div style={{display:"grid",gridTemplateColumns:"40px 1fr 180px 100px",gap:10,padding:"8px 14px",fontSize:10,color:"#94A3B8",fontWeight:700,letterSpacing:0.4,background:"#FAFCFB",borderBottom:"1px solid #E2E8F0"}}>
-                    <div></div><div>CONCEPTO</div><div style={{textAlign:"right"}}>MONTO MENSUAL</div><div></div>
-                  </div>
-                  {/* Fila nueva (al agregar) */}
-                  {gastoFijoEditId === 'new' && (
-                    <div style={{display:"grid",gridTemplateColumns:"40px 1fr 180px 100px",gap:10,padding:"10px 14px",alignItems:"center",background:"#FFFBEB",borderBottom:"1.5px solid #FCD34D"}}>
-                      <input value={gastoFijoForm.emoji} onChange={e=>setGastoFijoForm(p=>({...p,emoji:e.target.value}))} maxLength={3} style={{width:36,textAlign:"center",fontSize:18,padding:6,border:"1px solid #FCD34D",borderRadius:6,background:"#fff"}}/>
-                      <input value={gastoFijoForm.concepto} onChange={e=>setGastoFijoForm(p=>({...p,concepto:e.target.value}))} placeholder="Ej: Internet" autoFocus style={{fontSize:12,padding:"6px 10px",border:"1px solid #FCD34D",borderRadius:6,background:"#fff"}}/>
-                      <input type="number" value={gastoFijoForm.monto} onChange={e=>setGastoFijoForm(p=>({...p,monto:e.target.value}))} style={{fontSize:12,padding:"6px 10px",border:"1px solid #FCD34D",borderRadius:6,background:"#fff",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:700}}/>
-                      <div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
-                        <button onClick={handleSaveGasto} style={{background:"#1D7A4E",border:"none",color:"#fff",padding:"5px 8px",borderRadius:6,cursor:"pointer",fontSize:11,fontWeight:700}}>✓</button>
-                        <button onClick={()=>setGastoFijoEditId(null)} style={{background:"#F1F5F9",border:"none",color:"#64748B",padding:"5px 8px",borderRadius:6,cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button>
+                      )}
+                      {!esSuperadmin && (
+                        <div style={{marginBottom:14,padding:"10px 16px",background:"#FFFBEB",border:"1px solid #FCD34D",borderRadius:8,fontSize:12,color:"#8C6B1A"}}>
+                          ℹ️ Solo un <strong>superadmin</strong> puede modificar los gastos fijos. Estás en modo lectura.
+                        </div>
+                      )}
+
+                      {gastosActivos.length === 0 && gastoFijoEditId !== 'new' ? (
+                        <div style={{padding:"60px 20px",textAlign:"center",color:"#94A3B8"}}>
+                          <div style={{fontSize:48,opacity:0.4,marginBottom:12}}>📌</div>
+                          <div style={{fontSize:16,fontWeight:600}}>No hay gastos fijos configurados</div>
+                          <div style={{fontSize:13,marginTop:6}}>
+                            {esSuperadmin ? 'Clic en "Agregar nuevo" para empezar' : 'Pídele a un superadmin que configure los gastos fijos'}
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{background:"#fff",borderRadius:12,border:"1px solid #C3E6D2",overflow:"hidden"}}>
+                          {/* Header */}
+                          <div style={{display:"grid",gridTemplateColumns:"60px 1fr 240px 120px",gap:12,padding:"14px 18px",fontSize:11,color:"#64748B",fontWeight:700,letterSpacing:0.4,background:"#FAFCFB",borderBottom:"1px solid #E2E8F0"}}>
+                            <div style={{textAlign:"center"}}>EMOJI</div>
+                            <div>CONCEPTO</div>
+                            <div style={{textAlign:"right"}}>MONTO MENSUAL</div>
+                            <div></div>
+                          </div>
+                          {/* Fila nueva */}
+                          {gastoFijoEditId === 'new' && (
+                            <div style={{display:"grid",gridTemplateColumns:"60px 1fr 240px 120px",gap:12,padding:"14px 18px",alignItems:"center",background:"#FFFBEB",borderBottom:"2px solid #FCD34D"}}>
+                              <input value={gastoFijoForm.emoji} onChange={e=>setGastoFijoForm(p=>({...p,emoji:e.target.value}))} maxLength={3} style={{width:46,textAlign:"center",fontSize:22,padding:8,border:"1.5px solid #FCD34D",borderRadius:8,background:"#fff"}}/>
+                              <input value={gastoFijoForm.concepto} onChange={e=>setGastoFijoForm(p=>({...p,concepto:e.target.value}))} placeholder="Ej: Internet, Teléfono..." autoFocus style={{fontSize:14,padding:"10px 14px",border:"1.5px solid #FCD34D",borderRadius:8,background:"#fff",fontWeight:600}}/>
+                              <input type="number" value={gastoFijoForm.monto} onChange={e=>setGastoFijoForm(p=>({...p,monto:e.target.value}))} style={{fontSize:14,padding:"10px 14px",border:"1.5px solid #FCD34D",borderRadius:8,background:"#fff",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:700}}/>
+                              <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                                <button onClick={handleSaveGasto} style={{background:"#1D7A4E",border:"none",color:"#fff",padding:"8px 14px",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:700}}>✓ Guardar</button>
+                                <button onClick={()=>setGastoFijoEditId(null)} style={{background:"#F1F5F9",border:"none",color:"#64748B",padding:"8px 12px",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:700}}>✕</button>
+                              </div>
+                            </div>
+                          )}
+                          {/* Filas existentes */}
+                          {gastosActivos.map(g => {
+                            const enEdicion = gastoFijoEditId === g.id;
+                            return (
+                              <div key={g.id} style={{display:"grid",gridTemplateColumns:"60px 1fr 240px 120px",gap:12,padding:"14px 18px",alignItems:"center",borderBottom:"1px solid #F8FAFC",background:enEdicion?"#FFFBEB":"#fff",transition:"background .2s"}}>
+                                {enEdicion ? (
+                                  <>
+                                    <input value={gastoFijoForm.emoji} onChange={e=>setGastoFijoForm(p=>({...p,emoji:e.target.value}))} maxLength={3} style={{width:46,textAlign:"center",fontSize:22,padding:8,border:"1.5px solid #FCD34D",borderRadius:8,background:"#fff"}}/>
+                                    <input value={gastoFijoForm.concepto} onChange={e=>setGastoFijoForm(p=>({...p,concepto:e.target.value}))} style={{fontSize:14,padding:"10px 14px",border:"1.5px solid #FCD34D",borderRadius:8,background:"#fff",fontWeight:600}}/>
+                                    <input type="number" value={gastoFijoForm.monto} onChange={e=>setGastoFijoForm(p=>({...p,monto:e.target.value}))} style={{fontSize:14,padding:"10px 14px",border:"1.5px solid #FCD34D",borderRadius:8,background:"#fff",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:700}}/>
+                                    <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                                      <button onClick={handleSaveGasto} style={{background:"#1D7A4E",border:"none",color:"#fff",padding:"8px 14px",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:700}}>✓</button>
+                                      <button onClick={()=>setGastoFijoEditId(null)} style={{background:"#F1F5F9",border:"none",color:"#64748B",padding:"8px 12px",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:700}}>✕</button>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div style={{fontSize:26,textAlign:"center"}}>{g.emoji}</div>
+                                    <div style={{fontSize:14,color:"#1A2332",fontWeight:600}}>{g.concepto}</div>
+                                    <div style={{textAlign:"right",fontSize:16,color:"#1A2332",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>${fmt(g.monto||0)}</div>
+                                    <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                                      {esSuperadmin && (
+                                        <>
+                                          <button onClick={()=>handleEditGasto(g)} title="Editar" style={{background:"#F1F5F9",border:"none",width:32,height:32,borderRadius:8,cursor:"pointer",fontSize:14}}>✏️</button>
+                                          <button onClick={()=>handleDeleteGasto(g.id)} title="Eliminar" style={{background:"#FEE",border:"none",width:32,height:32,borderRadius:8,cursor:"pointer",fontSize:14}}>🗑</button>
+                                        </>
+                                      )}
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })}
+                          {/* Total */}
+                          <div style={{display:"grid",gridTemplateColumns:"60px 1fr 240px 120px",gap:12,padding:"18px",alignItems:"center",background:"linear-gradient(90deg, rgba(29,122,78,0.10), rgba(29,122,78,0.03))"}}>
+                            <div></div>
+                            <div style={{fontSize:14,color:"#1A2332",fontWeight:800}}>TOTAL GASTOS FIJOS</div>
+                            <div style={{textAlign:"right",fontSize:20,color:"#1D7A4E",fontWeight:800,fontVariantNumeric:"tabular-nums"}}>${fmt(totalGastos)}</div>
+                            <div></div>
+                          </div>
+                        </div>
+                      )}
+
+                      <div style={{fontSize:12,color:"#64748B",marginTop:14,fontStyle:"italic"}}>
+                        💡 Estos gastos se consideran cada mes en el cálculo del Corto Plazo.
                       </div>
                     </div>
                   )}
-                  {/* Filas existentes */}
-                  {gastosActivos.map(g => {
-                    const enEdicion = gastoFijoEditId === g.id;
-                    return (
-                      <div key={g.id} style={{display:"grid",gridTemplateColumns:"40px 1fr 180px 100px",gap:10,padding:"10px 14px",alignItems:"center",borderBottom:"1px solid #F8FAFC",background:enEdicion?"#FFFBEB":"#fff"}}>
-                        {enEdicion ? (
-                          <>
-                            <input value={gastoFijoForm.emoji} onChange={e=>setGastoFijoForm(p=>({...p,emoji:e.target.value}))} maxLength={3} style={{width:36,textAlign:"center",fontSize:18,padding:6,border:"1px solid #FCD34D",borderRadius:6,background:"#fff"}}/>
-                            <input value={gastoFijoForm.concepto} onChange={e=>setGastoFijoForm(p=>({...p,concepto:e.target.value}))} style={{fontSize:12,padding:"6px 10px",border:"1px solid #FCD34D",borderRadius:6,background:"#fff"}}/>
-                            <input type="number" value={gastoFijoForm.monto} onChange={e=>setGastoFijoForm(p=>({...p,monto:e.target.value}))} style={{fontSize:12,padding:"6px 10px",border:"1px solid #FCD34D",borderRadius:6,background:"#fff",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:700}}/>
-                            <div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
-                              <button onClick={handleSaveGasto} style={{background:"#1D7A4E",border:"none",color:"#fff",padding:"5px 8px",borderRadius:6,cursor:"pointer",fontSize:11,fontWeight:700}}>✓</button>
-                              <button onClick={()=>setGastoFijoEditId(null)} style={{background:"#F1F5F9",border:"none",color:"#64748B",padding:"5px 8px",borderRadius:6,cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div style={{fontSize:20,textAlign:"center"}}>{g.emoji}</div>
-                            <div style={{fontSize:12,color:"#1A2332",fontWeight:600}}>{g.concepto}</div>
-                            <div style={{textAlign:"right",fontSize:13,color:"#1A2332",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>${fmt(g.monto||0)}</div>
-                            <div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
-                              {esSuperadmin && (
-                                <>
-                                  <button onClick={()=>handleEditGasto(g)} style={{background:"#F1F5F9",border:"none",width:28,height:28,borderRadius:6,cursor:"pointer",fontSize:12}}>✏️</button>
-                                  <button onClick={()=>handleDeleteGasto(g.id)} style={{background:"#FEE",border:"none",width:28,height:28,borderRadius:6,cursor:"pointer",fontSize:12}}>🗑</button>
-                                </>
-                              )}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })}
-                  {/* Total */}
-                  <div style={{display:"grid",gridTemplateColumns:"40px 1fr 180px 100px",gap:10,padding:"12px 14px",alignItems:"center",background:"linear-gradient(90deg, rgba(29,122,78,0.08), rgba(29,122,78,0.02))"}}>
-                    <div></div>
-                    <div style={{fontSize:12,color:"#1A2332",fontWeight:800}}>TOTAL GASTOS FIJOS</div>
-                    <div style={{textAlign:"right",fontSize:16,color:"#1D7A4E",fontWeight:800,fontVariantNumeric:"tabular-nums"}}>${fmt(totalGastos)}</div>
-                    <div></div>
-                  </div>
-                </div>
-                <div style={{fontSize:10,color:"#64748B",marginTop:10,fontStyle:"italic"}}>
-                  💡 Estos gastos se consideran cada mes en el cálculo del Corto Plazo.
-                  {!esSuperadmin && " · Solo un superadmin puede modificarlos."}
                 </div>
               </div>
-            );
-          }
-          return null;
+            </div>
+          );
         };
 
         return (
-          <div style={{position:"fixed",inset:0,background:"rgba(15, 45, 74, 0.55)",backdropFilter:"blur(2px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}
+          <div style={{position:"fixed",inset:0,background:"rgba(15, 45, 74, 0.6)",backdropFilter:"blur(3px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}
                onClick={()=>{setShowDashCortoPlazoModal(false);setCortoPlazoDetail(null);setGastoFijoEditId(null);}}>
             <div onClick={e=>e.stopPropagation()}
-                 style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:1200,maxHeight:"94vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 60px rgba(0,0,0,0.3)",overflow:"hidden"}}>
+                 style={{background:"#fff",borderRadius:20,width:"96vw",maxWidth:1500,height:"94vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 60px rgba(0,0,0,0.35)",overflow:"hidden"}}>
               {/* HEADER */}
-              <div style={{padding:"22px 28px 18px",borderBottom:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div style={{display:"flex",alignItems:"center",gap:12}}>
-                  <div style={{width:38,height:38,borderRadius:12,background:"linear-gradient(135deg, #FCD34D, #F59E0B)",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,boxShadow:"0 4px 12px rgba(245, 158, 11, 0.30)"}}>📅</div>
+              <div style={{padding:"24px 32px 20px",borderBottom:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div style={{display:"flex",alignItems:"center",gap:14}}>
+                  <div style={{width:44,height:44,borderRadius:13,background:"linear-gradient(135deg, #FCD34D, #F59E0B)",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,boxShadow:"0 4px 12px rgba(245, 158, 11, 0.30)"}}>📅</div>
                   <div>
-                    <div style={{fontSize:19,fontWeight:800,color:"#1A2332",letterSpacing:"-0.3px"}}>Corto Plazo · {mesEs} {anio}</div>
-                    <div style={{fontSize:12,color:"#64748B",marginTop:2}}>Todo lo que debes pagar este mes</div>
+                    <div style={{fontSize:22,fontWeight:800,color:"#1A2332",letterSpacing:"-0.3px"}}>Corto Plazo · {mesEs} {anio}</div>
+                    <div style={{fontSize:14,color:"#64748B",marginTop:3}}>Todo lo que debes pagar este mes</div>
                   </div>
                 </div>
                 <button onClick={()=>{setShowDashCortoPlazoModal(false);setCortoPlazoDetail(null);setGastoFijoEditId(null);}}
-                        style={{background:"#F1F5F9",border:"none",width:36,height:36,borderRadius:10,cursor:"pointer",fontSize:18,color:"#64748B",fontWeight:600}}>×</button>
+                        style={{background:"#F1F5F9",border:"none",width:40,height:40,borderRadius:10,cursor:"pointer",fontSize:20,color:"#64748B",fontWeight:600}}>×</button>
               </div>
 
-              {/* HERO: Total del mes */}
-              <div style={{padding:"22px 28px",background:"linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)",borderBottom:"1px solid #F4E0A0",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:16}}>
+              {/* HERO: Total del mes (más grande) */}
+              <div style={{padding:"28px 32px",background:"linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)",borderBottom:"1px solid #F4E0A0",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:24}}>
                 <div>
-                  <div style={{fontSize:11,color:"#8C6B1A",fontWeight:700,letterSpacing:0.6,textTransform:"uppercase"}}>Compromiso total del mes</div>
-                  <div style={{fontSize:32,fontWeight:800,color:"#1A2332",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.6px",lineHeight:1,marginTop:4}}>${fmt(granTotalMes)}</div>
-                  <div style={{fontSize:11,color:"#64748B",marginTop:6}}>Suma de facturas + tarjetas + cuotas + gastos fijos</div>
+                  <div style={{fontSize:13,color:"#8C6B1A",fontWeight:700,letterSpacing:0.6,textTransform:"uppercase"}}>Compromiso total del mes</div>
+                  <div style={{fontSize:42,fontWeight:800,color:"#1A2332",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.8px",lineHeight:1,marginTop:6}}>${fmt(granTotalMes)}</div>
+                  <div style={{fontSize:13,color:"#64748B",marginTop:8}}>Suma de facturas + tarjetas + cuotas + gastos fijos</div>
                 </div>
-                {/* Barra apilada */}
-                <div style={{textAlign:"right",minWidth:340}}>
-                  <div style={{fontSize:10,color:"#64748B",marginBottom:6,fontWeight:600}}>Distribución del mes</div>
-                  <div style={{display:"flex",height:12,width:"100%",borderRadius:99,overflow:"hidden",boxShadow:"0 2px 6px rgba(0,0,0,0.1)"}}>
-                    {pctFact>0 && <div style={{flex:pctFact,background:"#185FA5"}} title={`Facturas ${pctFact.toFixed(1)}%`}/>}
-                    {pctTDC>0 && <div style={{flex:pctTDC,background:"#C04A4D"}} title={`Tarjetas ${pctTDC.toFixed(1)}%`}/>}
-                    {pctFinanc>0 && <div style={{flex:pctFinanc,background:"#6B47C7"}} title={`Financ. ${pctFinanc.toFixed(1)}%`}/>}
-                    {pctGastos>0 && <div style={{flex:pctGastos,background:"#1D7A4E"}} title={`Gastos ${pctGastos.toFixed(1)}%`}/>}
+                {/* Barra apilada MÁS GRANDE */}
+                <div style={{minWidth:420,flex:"0 0 auto"}}>
+                  <div style={{fontSize:12,color:"#64748B",marginBottom:8,fontWeight:700,letterSpacing:0.4,textAlign:"right"}}>DISTRIBUCIÓN DEL MES</div>
+                  <div style={{display:"flex",height:18,width:"100%",borderRadius:99,overflow:"hidden",boxShadow:"0 3px 8px rgba(0,0,0,0.15)"}}>
+                    {pctFact>0 && <div style={{flex:pctFact,background:"#185FA5",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:10,fontWeight:800}} title={`Facturas ${pctFact.toFixed(1)}%`}>{pctFact>10?`${pctFact.toFixed(0)}%`:''}</div>}
+                    {pctTDC>0 && <div style={{flex:pctTDC,background:"#C04A4D",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:10,fontWeight:800}} title={`Tarjetas ${pctTDC.toFixed(1)}%`}>{pctTDC>10?`${pctTDC.toFixed(0)}%`:''}</div>}
+                    {pctFinanc>0 && <div style={{flex:pctFinanc,background:"#6B47C7",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:10,fontWeight:800}} title={`Financ. ${pctFinanc.toFixed(1)}%`}>{pctFinanc>10?`${pctFinanc.toFixed(0)}%`:''}</div>}
+                    {pctGastos>0 && <div style={{flex:pctGastos,background:"#1D7A4E",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:10,fontWeight:800}} title={`Gastos ${pctGastos.toFixed(1)}%`}>{pctGastos>10?`${pctGastos.toFixed(0)}%`:''}</div>}
                   </div>
-                  <div style={{display:"flex",gap:10,marginTop:6,fontSize:9,color:"#64748B",justifyContent:"flex-end",flexWrap:"wrap"}}>
-                    <span style={{color:"#185FA5"}}>● Facturas {pctFact.toFixed(0)}%</span>
-                    <span style={{color:"#C04A4D"}}>● Tarjetas {pctTDC.toFixed(0)}%</span>
-                    <span style={{color:"#6B47C7"}}>● Financ. {pctFinanc.toFixed(0)}%</span>
-                    <span style={{color:"#1D7A4E"}}>● Gastos {pctGastos.toFixed(0)}%</span>
+                  <div style={{display:"flex",gap:14,marginTop:10,fontSize:12,fontWeight:600,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                    <span style={{color:"#185FA5",display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:"#185FA5"}}/>Facturas {pctFact.toFixed(1)}%</span>
+                    <span style={{color:"#C04A4D",display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:"#C04A4D"}}/>Tarjetas {pctTDC.toFixed(1)}%</span>
+                    <span style={{color:"#6B47C7",display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:"#6B47C7"}}/>Financ. {pctFinanc.toFixed(1)}%</span>
+                    <span style={{color:"#1D7A4E",display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:"#1D7A4E"}}/>Gastos {pctGastos.toFixed(1)}%</span>
                   </div>
                 </div>
               </div>
 
-              {/* CARDS · 4 categorías clickeables */}
-              <div style={{padding:"22px 28px",display:"grid",gridTemplateColumns:"repeat(2, 1fr)",gap:14,flex:cortoPlazoDetail?"0 0 auto":"1",overflowY:cortoPlazoDetail?"visible":"auto"}}>
+              {/* CARDS · 4 categorías clickeables (más grandes) */}
+              <div style={{padding:"28px 32px",display:"grid",gridTemplateColumns:"repeat(2, 1fr)",gap:18,flex:1,overflowY:"auto",alignContent:"start"}}>
                 {/* Card Facturas */}
-                <div onClick={()=>setCortoPlazoDetail(cortoPlazoDetail==='facturas'?null:'facturas')}
-                     style={{background:"linear-gradient(180deg, #fff 0%, #FAFCFE 100%)",border:`1.5px solid ${cortoPlazoDetail==='facturas'?'#185FA5':'rgba(24, 95, 165, 0.12)'}`,borderRadius:14,padding:"18px 22px",position:"relative",cursor:"pointer",transition:"all .2s"}}>
-                  <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"linear-gradient(90deg, #185FA5, #2E78C7)"}}/>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                <div onClick={()=>setCortoPlazoDetail('facturas')}
+                     style={{background:"linear-gradient(180deg, #fff 0%, #FAFCFE 100%)",border:"1.5px solid rgba(24, 95, 165, 0.14)",borderRadius:16,padding:"24px 28px",position:"relative",cursor:"pointer",transition:"all .2s",boxShadow:"0 4px 14px rgba(15, 45, 74, 0.05)"}}
+                     onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow="0 10px 24px rgba(24, 95, 165, 0.15)";}}
+                     onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 4px 14px rgba(15, 45, 74, 0.05)";}}>
+                  <div style={{position:"absolute",top:0,left:0,right:0,height:4,background:"linear-gradient(90deg, #185FA5, #2E78C7)"}}/>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
                     <div>
-                      <div style={{fontSize:11,color:"#94A3B8",fontWeight:700,letterSpacing:0.5}}>FACTURAS DEL MES</div>
-                      <div style={{fontSize:10,color:"#64748B",marginTop:3}}>Vencen o programadas en {mesEs.toLowerCase()}</div>
+                      <div style={{fontSize:13,color:"#94A3B8",fontWeight:700,letterSpacing:0.6}}>FACTURAS DEL MES</div>
+                      <div style={{fontSize:12,color:"#64748B",marginTop:4}}>Vencen o programadas en {mesEs.toLowerCase()}</div>
                     </div>
-                    <span style={{background:"linear-gradient(135deg, #185FA5, #2E78C7)",color:"#fff",fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:99}}>📋 {facturasMes.length}</span>
+                    <span style={{background:"linear-gradient(135deg, #185FA5, #2E78C7)",color:"#fff",fontSize:12,fontWeight:800,padding:"6px 14px",borderRadius:99,boxShadow:"0 3px 8px rgba(24, 95, 165, 0.30)"}}>📋 {facturasMes.length}</span>
                   </div>
-                  <div style={{fontSize:26,fontWeight:800,color:"#185FA5",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.5px"}}>${fmt(totalFactMes)}</div>
-                  <div style={{display:"flex",justifyContent:"space-between",marginTop:12,paddingTop:12,borderTop:"1px solid #F1F5F9",fontSize:11,color:"#64748B"}}>
-                    <span>{vencidasMes>0 ? <strong style={{color:"#C04A4D"}}>⚠️ {vencidasMes} vencidas</strong> : "✓ Todo en plazo"}</span>
-                    <span style={{color:"#185FA5",fontWeight:600}}>Clic para ver detalle →</span>
+                  <div style={{fontSize:34,fontWeight:800,color:"#185FA5",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.7px"}}>${fmt(totalFactMes)}</div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:16,paddingTop:16,borderTop:"1px solid #F1F5F9",fontSize:13}}>
+                    <span style={{color:"#64748B"}}>{vencidasMes>0 ? <strong style={{color:"#C04A4D"}}>⚠️ {vencidasMes} vencidas</strong> : "✓ Todo en plazo"}</span>
+                    <span style={{color:"#185FA5",fontWeight:700}}>Clic para ver detalle →</span>
                   </div>
                 </div>
 
                 {/* Card Tarjetas */}
-                <div onClick={()=>setCortoPlazoDetail(cortoPlazoDetail==='tarjetas'?null:'tarjetas')}
-                     style={{background:"linear-gradient(180deg, #fff 0%, #FEFAFA 100%)",border:`1.5px solid ${cortoPlazoDetail==='tarjetas'?'#C04A4D':'rgba(192, 74, 77, 0.14)'}`,borderRadius:14,padding:"18px 22px",position:"relative",cursor:"pointer",transition:"all .2s"}}>
-                  <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"linear-gradient(90deg, #C04A4D, #E97375)"}}/>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                <div onClick={()=>setCortoPlazoDetail('tarjetas')}
+                     style={{background:"linear-gradient(180deg, #fff 0%, #FEFAFA 100%)",border:"1.5px solid rgba(192, 74, 77, 0.14)",borderRadius:16,padding:"24px 28px",position:"relative",cursor:"pointer",transition:"all .2s",boxShadow:"0 4px 14px rgba(192, 74, 77, 0.05)"}}
+                     onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow="0 10px 24px rgba(192, 74, 77, 0.15)";}}
+                     onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 4px 14px rgba(192, 74, 77, 0.05)";}}>
+                  <div style={{position:"absolute",top:0,left:0,right:0,height:4,background:"linear-gradient(90deg, #C04A4D, #E97375)"}}/>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
                     <div>
-                      <div style={{fontSize:11,color:"#94A3B8",fontWeight:700,letterSpacing:0.5}}>TARJETAS DE CRÉDITO</div>
-                      <div style={{fontSize:10,color:"#64748B",marginTop:3}}>Saldo a pagar en próximo corte</div>
+                      <div style={{fontSize:13,color:"#94A3B8",fontWeight:700,letterSpacing:0.6}}>TARJETAS DE CRÉDITO</div>
+                      <div style={{fontSize:12,color:"#64748B",marginTop:4}}>Saldo a pagar en próximo corte</div>
                     </div>
-                    <span style={{background:"linear-gradient(135deg, #C04A4D, #E97375)",color:"#fff",fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:99}}>💳 {tarjetasActivas.length}</span>
+                    <span style={{background:"linear-gradient(135deg, #C04A4D, #E97375)",color:"#fff",fontSize:12,fontWeight:800,padding:"6px 14px",borderRadius:99,boxShadow:"0 3px 8px rgba(192, 74, 77, 0.30)"}}>💳 {tarjetasActivas.length}</span>
                   </div>
-                  <div style={{fontSize:26,fontWeight:800,color:"#C04A4D",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.5px"}}>${fmt(totalTDC)}</div>
-                  <div style={{display:"flex",justifyContent:"space-between",marginTop:12,paddingTop:12,borderTop:"1px solid #F1F5F9",fontSize:11,color:"#64748B"}}>
-                    <span>{tarjetasActivas.length} TDC{tarjetasActivas.length===1?'':'s'} activa{tarjetasActivas.length===1?'':'s'}</span>
-                    <span style={{color:"#C04A4D",fontWeight:600}}>Clic para ver detalle →</span>
+                  <div style={{fontSize:34,fontWeight:800,color:"#C04A4D",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.7px"}}>${fmt(totalTDC)}</div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:16,paddingTop:16,borderTop:"1px solid #F1F5F9",fontSize:13}}>
+                    <span style={{color:"#64748B"}}>{tarjetasActivas.length} TDC{tarjetasActivas.length===1?'':'s'} activa{tarjetasActivas.length===1?'':'s'}</span>
+                    <span style={{color:"#C04A4D",fontWeight:700}}>Clic para ver detalle →</span>
                   </div>
                 </div>
 
                 {/* Card Financiamientos */}
-                <div onClick={()=>setCortoPlazoDetail(cortoPlazoDetail==='financiamientos'?null:'financiamientos')}
-                     style={{background:"linear-gradient(180deg, #fff 0%, #FAFAFE 100%)",border:`1.5px solid ${cortoPlazoDetail==='financiamientos'?'#6B47C7':'rgba(107, 71, 199, 0.14)'}`,borderRadius:14,padding:"18px 22px",position:"relative",cursor:"pointer",transition:"all .2s"}}>
-                  <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"linear-gradient(90deg, #6B47C7, #9580E2)"}}/>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                <div onClick={()=>setCortoPlazoDetail('financiamientos')}
+                     style={{background:"linear-gradient(180deg, #fff 0%, #FAFAFE 100%)",border:"1.5px solid rgba(107, 71, 199, 0.14)",borderRadius:16,padding:"24px 28px",position:"relative",cursor:"pointer",transition:"all .2s",boxShadow:"0 4px 14px rgba(107, 71, 199, 0.05)"}}
+                     onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow="0 10px 24px rgba(107, 71, 199, 0.15)";}}
+                     onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 4px 14px rgba(107, 71, 199, 0.05)";}}>
+                  <div style={{position:"absolute",top:0,left:0,right:0,height:4,background:"linear-gradient(90deg, #6B47C7, #9580E2)"}}/>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
                     <div>
-                      <div style={{fontSize:11,color:"#94A3B8",fontWeight:700,letterSpacing:0.5}}>CUOTAS FINANCIAMIENTOS</div>
-                      <div style={{fontSize:10,color:"#64748B",marginTop:3}}>Solo la cuota mensual de {mesEs.toLowerCase()}</div>
+                      <div style={{fontSize:13,color:"#94A3B8",fontWeight:700,letterSpacing:0.6}}>CUOTAS FINANCIAMIENTOS</div>
+                      <div style={{fontSize:12,color:"#64748B",marginTop:4}}>Solo la cuota mensual de {mesEs.toLowerCase()}</div>
                     </div>
-                    <span style={{background:"linear-gradient(135deg, #6B47C7, #9580E2)",color:"#fff",fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:99}}>🏦 {financActivos.length}</span>
+                    <span style={{background:"linear-gradient(135deg, #6B47C7, #9580E2)",color:"#fff",fontSize:12,fontWeight:800,padding:"6px 14px",borderRadius:99,boxShadow:"0 3px 8px rgba(107, 71, 199, 0.30)"}}>🏦 {financActivos.length}</span>
                   </div>
-                  <div style={{fontSize:26,fontWeight:800,color:"#6B47C7",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.5px"}}>${fmt(totalCuotaMensual)}</div>
-                  <div style={{display:"flex",justifyContent:"space-between",marginTop:12,paddingTop:12,borderTop:"1px solid #F1F5F9",fontSize:11,color:"#64748B"}}>
-                    <span>{financActivos.length} cuota{financActivos.length===1?'':'s'} mensual{financActivos.length===1?'':'es'}</span>
-                    <span style={{color:"#6B47C7",fontWeight:600}}>Clic para ver detalle →</span>
+                  <div style={{fontSize:34,fontWeight:800,color:"#6B47C7",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.7px"}}>${fmt(totalCuotaMensual)}</div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:16,paddingTop:16,borderTop:"1px solid #F1F5F9",fontSize:13}}>
+                    <span style={{color:"#64748B"}}>{financActivos.length} cuota{financActivos.length===1?'':'s'} mensual{financActivos.length===1?'':'es'}</span>
+                    <span style={{color:"#6B47C7",fontWeight:700}}>Clic para ver detalle →</span>
                   </div>
                 </div>
 
                 {/* Card Gastos Fijos */}
-                <div onClick={()=>setCortoPlazoDetail(cortoPlazoDetail==='gastos'?null:'gastos')}
-                     style={{background:"linear-gradient(180deg, #fff 0%, #FAFCFB 100%)",border:`1.5px solid ${cortoPlazoDetail==='gastos'?'#1D7A4E':'rgba(29, 122, 78, 0.14)'}`,borderRadius:14,padding:"18px 22px",position:"relative",cursor:"pointer",transition:"all .2s"}}>
-                  <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"linear-gradient(90deg, #1D7A4E, #2EBC76)"}}/>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                <div onClick={()=>setCortoPlazoDetail('gastos')}
+                     style={{background:"linear-gradient(180deg, #fff 0%, #FAFCFB 100%)",border:"1.5px solid rgba(29, 122, 78, 0.14)",borderRadius:16,padding:"24px 28px",position:"relative",cursor:"pointer",transition:"all .2s",boxShadow:"0 4px 14px rgba(29, 122, 78, 0.05)"}}
+                     onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow="0 10px 24px rgba(29, 122, 78, 0.15)";}}
+                     onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 4px 14px rgba(29, 122, 78, 0.05)";}}>
+                  <div style={{position:"absolute",top:0,left:0,right:0,height:4,background:"linear-gradient(90deg, #1D7A4E, #2EBC76)"}}/>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
                     <div>
-                      <div style={{fontSize:11,color:"#94A3B8",fontWeight:700,letterSpacing:0.5}}>GASTOS FIJOS DEL MES</div>
-                      <div style={{fontSize:10,color:"#64748B",marginTop:3}}>Nómina, rentas, servicios, etc.</div>
+                      <div style={{fontSize:13,color:"#94A3B8",fontWeight:700,letterSpacing:0.6}}>GASTOS FIJOS DEL MES</div>
+                      <div style={{fontSize:12,color:"#64748B",marginTop:4}}>Nómina, rentas, servicios, etc.</div>
                     </div>
-                    <span style={{background:"linear-gradient(135deg, #1D7A4E, #2EBC76)",color:"#fff",fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:99}}>📌 {gastosActivos.length}</span>
+                    <span style={{background:"linear-gradient(135deg, #1D7A4E, #2EBC76)",color:"#fff",fontSize:12,fontWeight:800,padding:"6px 14px",borderRadius:99,boxShadow:"0 3px 8px rgba(29, 122, 78, 0.30)"}}>📌 {gastosActivos.length}</span>
                   </div>
-                  <div style={{fontSize:26,fontWeight:800,color:"#1D7A4E",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.5px"}}>${fmt(totalGastos)}</div>
-                  <div style={{display:"flex",justifyContent:"space-between",marginTop:12,paddingTop:12,borderTop:"1px solid #F1F5F9",fontSize:11,color:"#64748B"}}>
-                    <span>{gastosActivos.map(g=>g.emoji).join(' ')}</span>
-                    <span style={{color:"#1D7A4E",fontWeight:600}}>{esSuperadmin ? 'Clic para editar →' : 'Clic para ver detalle →'}</span>
+                  <div style={{fontSize:34,fontWeight:800,color:"#1D7A4E",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.7px"}}>${fmt(totalGastos)}</div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:16,paddingTop:16,borderTop:"1px solid #F1F5F9",fontSize:13}}>
+                    <span style={{color:"#64748B",fontSize:16}}>{gastosActivos.length>0 ? gastosActivos.map(g=>g.emoji).join(' ') : '— (corre el SQL primero)'}</span>
+                    <span style={{color:"#1D7A4E",fontWeight:700}}>{esSuperadmin ? 'Clic para editar →' : 'Clic para ver detalle →'}</span>
                   </div>
                 </div>
               </div>
-
-              {/* Detalle expandible debajo de las cards */}
-              {cortoPlazoDetail && renderDetalle()}
             </div>
+            {/* Sub-modal flotante con el detalle de la card */}
+            {renderSubModal()}
           </div>
         );
       })()}
