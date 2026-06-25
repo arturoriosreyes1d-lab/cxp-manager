@@ -18,6 +18,7 @@ import {
   fetchPorFacturar, insertPorFacturar, updatePorFacturar, deletePorFacturar, bulkInsertPorFacturar, bulkInsertPorFacturarPlain,
   fetchFinanciamientos, insertFinanciamiento, updateFinanciamiento, deleteFinanciamiento,
   fetchFinanciamientoPagos, insertFinanciamientoPago, deleteFinanciamientoPago,
+  fetchGastosFijos, insertGastoFijo, updateGastoFijo, deleteGastoFijo,
   fetchTarjetas, updateTarjetaSaldo, fetchTarjetaMovimientos, bulkInsertMovimientos,
   fetchProgramados, upsertProgramado, deleteProgramado,
   fetchReporteSaldos, upsertReporteSaldos,
@@ -286,6 +287,7 @@ export default function CxpApp({ user, onLogout }) {
   const [clientes, setClientes] = useState([]);
   const [porFacturar, setPorFacturar] = useState([]);
   const [financiamientos, setFinanciamientos] = useState([]);
+  const [gastosFijos, setGastosFijos] = useState([]);
   const [financiamientoPagos, setFinanciamientoPagos] = useState([]);
   const [financModalId, setFinancModalId] = useState(null);
   const [financCollapsed, setFinancCollapsed] = useState(true);
@@ -301,6 +303,12 @@ export default function CxpApp({ user, onLogout }) {
   // Modales del dashboard (Tarjetas / Financiamientos resumidos)
   const [showDashTarjetasModal, setShowDashTarjetasModal] = useState(false);
   const [showDashFinanciamientosModal, setShowDashFinanciamientosModal] = useState(false);
+  const [showDashCortoPlazoModal, setShowDashCortoPlazoModal] = useState(false);
+  // Sub-modal de detalle dentro de Corto Plazo (al hacer clic en una card)
+  const [cortoPlazoDetail, setCortoPlazoDetail] = useState(null); // 'facturas' | 'tarjetas' | 'financiamientos' | 'gastos'
+  // Edición de gastos fijos
+  const [gastoFijoEditId, setGastoFijoEditId] = useState(null);
+  const [gastoFijoForm, setGastoFijoForm] = useState({ concepto:'', emoji:'📌', monto:'0' });
   const [editingSaldoId, setEditingSaldoId] = useState(null);
   const [editingSaldoVal, setEditingSaldoVal] = useState("");
   const [tarjetaFiltroInt, setTarjetaFiltroInt] = useState("");
@@ -385,8 +393,9 @@ export default function CxpApp({ user, onLogout }) {
         fetchFinanciamientos(empresaId), fetchFinanciamientoPagos(empresaId),
         fetchTarjetas(empresaId), fetchTarjetaMovimientos(empresaId),
         fetchProgramados(empresaId),
+        fetchGastosFijos(empresaId),
       ]);
-      const [inv, sup, cls, pays, ings, cbs, invIngs, cats, clts, pf, fins, finPagos, tarjs, tarjMovs, progs] =
+      const [inv, sup, cls, pays, ings, cbs, invIngs, cats, clts, pf, fins, finPagos, tarjs, tarjMovs, progs, gFijos] =
         results.map(r => r.status==="fulfilled" ? r.value : []);
       setInvoices(inv);
       setSuppliers(sup.length > 0 ? sup : []);
@@ -403,6 +412,7 @@ export default function CxpApp({ user, onLogout }) {
       setTarjetas(tarjs);
       setTarjetaMovimientos(tarjMovs);
       setProgramados(progs);
+      setGastosFijos(gFijos);
       setLoading(false);
     })();
   }, [empresaId]);
@@ -545,6 +555,27 @@ export default function CxpApp({ user, onLogout }) {
       const anio = parseInt((f.fechaFin||'').slice(0,4), 10);
       return (!isNaN(anio) && anio > max) ? anio : max;
     }, 0);
+
+    // ─── CORTO PLAZO DEL MES (mes en curso) ───
+    const hoy = new Date(); hoy.setHours(0,0,0,0);
+    const mesActualY = hoy.getFullYear();
+    const mesActualM = hoy.getMonth(); // 0-11
+    const enMesActual = (isoStr) => {
+      if (!isoStr) return false;
+      const d = new Date(isoStr+"T12:00:00");
+      return d.getFullYear() === mesActualY && d.getMonth() === mesActualM;
+    };
+    // Facturas que vencen en el mes en curso O están programadas para el mes en curso
+    const facturasMesArr = facturasActivas.filter(f => {
+      return enMesActual(f.vencimiento) || enMesActual(f.fechaProgramacion);
+    });
+    const totalFacturasMes = facturasMesArr.reduce((s,f)=>s+saldoOf(f),0);
+    // Cuota mensual de financiamientos activos (suma del monto_mensual)
+    const cuotaMensualFinanc = (financiamientos||[]).filter(f=>f.activo).reduce((s,f)=>s+(+f.montoMensual||0),0);
+    // Total gastos fijos del mes
+    const totalGastosFijos = (gastosFijos||[]).filter(g=>g.activo).reduce((s,g)=>s+(+g.monto||0),0);
+    // Total Corto Plazo del Mes
+    const totalCortoPlazoMes = totalFacturasMes + totalTarjetas + cuotaMensualFinanc + totalGastosFijos;
     const totalMXN = pend(invoices.MXN.filter(i => i.tipo !== 'EgresoNF'));
     const totalUSD = pend(invoices.USD.filter(i => i.tipo !== 'EgresoNF'));
     const totalEUR = pend(invoices.EUR.filter(i => i.tipo !== 'EgresoNF'));
@@ -561,8 +592,15 @@ export default function CxpApp({ user, onLogout }) {
       tarjetasActivas: (tarjetas||[]).filter(t=>t.activo).length,
       financiamientosActivos: (financiamientos||[]).filter(f=>f.activo).length,
       ultimoAnioFinanc,
+      // Corto Plazo del Mes
+      totalFacturasMes,
+      facturasMesCount: facturasMesArr.length,
+      cuotaMensualFinanc,
+      totalGastosFijos,
+      gastosFijosCount: (gastosFijos||[]).filter(g=>g.activo).length,
+      totalCortoPlazoMes,
     };
-  }, [invoices, suppliers, tarjetas, financiamientos, financiamientoPagos]);
+  }, [invoices, suppliers, tarjetas, financiamientos, financiamientoPagos, gastosFijos]);
 
   /* ── Duplicate folio detection ───────────────────────────────────────── */
   const duplicates = useMemo(() => {
@@ -1278,6 +1316,11 @@ export default function CxpApp({ user, onLogout }) {
 
   /* ── DASHBOARD ──────────────────────────────────────────────────────── */
   const renderDashboard = () => {
+    // Nombre del mes en curso (español)
+    const MESES_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const _now = new Date();
+    const mesEnCursoEs = MESES_ES[_now.getMonth()];
+    const anioEnCurso = _now.getFullYear();
     // Excluimos los Egresos No Facturados del dashboard, métricas y gráficas
     const allInvs = [...invoices.MXN.map(i=>({...i,moneda:"MXN"})),...invoices.USD.map(i=>({...i,moneda:"USD"})),...invoices.EUR.map(i=>({...i,moneda:"EUR"}))]
       .filter(i => i.tipo !== 'EgresoNF');
@@ -1428,17 +1471,20 @@ export default function CxpApp({ user, onLogout }) {
           {/* Separador vertical 1 */}
           <div style={{width:1,background:"rgba(255,255,255,0.18)",alignSelf:"stretch"}}/>
 
-          {/* COL 2: Corto Plazo (amarillo) */}
-          <div style={{flex:1,minWidth:200,textAlign:"center"}}>
+          {/* COL 2: Corto Plazo (amarillo) — clickeable */}
+          <div onClick={()=>setShowDashCortoPlazoModal(true)}
+               style={{flex:1,minWidth:200,textAlign:"center",cursor:"pointer",padding:"4px 8px",borderRadius:10,transition:"background .2s"}}
+               onMouseEnter={e=>e.currentTarget.style.background="rgba(252, 211, 77, 0.06)"}
+               onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:8}}>
               <span style={{width:9,height:9,borderRadius:"50%",background:"#FCD34D",boxShadow:"0 0 6px #FCD34D"}}/>
-              <span style={{fontSize:13,opacity:0.9,fontWeight:700,letterSpacing:0.9}}>CORTO PLAZO</span>
+              <span style={{fontSize:13,opacity:0.9,fontWeight:700,letterSpacing:0.9}}>CORTO PLAZO · {mesEnCursoEs.toUpperCase()}</span>
             </div>
             <div style={{fontSize:20,fontWeight:800,color:"#FCD34D",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.4px",lineHeight:1}}>
-              ${fmt(kpis.totalMXN + kpis.totalTarjetas)}
+              ${fmt(kpis.totalCortoPlazoMes)}
             </div>
             <div style={{fontSize:13,opacity:0.72,marginTop:8,lineHeight:1.5}}>
-              Facturas por pagar + saldo de tarjetas de crédito
+              Facturas + tarjetas + cuotas + gastos fijos · clic para ver detalle
             </div>
           </div>
 
@@ -10500,6 +10546,376 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             </button>
           </div>
         </ModalShell>
+        );
+      })()}
+
+      {/* ─── Modal: Corto Plazo del Mes (dashboard) ─────── */}
+      {showDashCortoPlazoModal && (()=>{
+        const MESES_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+        const _now = new Date();
+        const mesEs = MESES_ES[_now.getMonth()];
+        const anio = _now.getFullYear();
+        const mesY = _now.getFullYear();
+        const mesM = _now.getMonth();
+        const enMes = iso => {
+          if (!iso) return false;
+          const d = new Date(iso+"T12:00:00");
+          return d.getFullYear()===mesY && d.getMonth()===mesM;
+        };
+        // Facturas del mes
+        const allInvs = [...invoices.MXN.map(i=>({...i,moneda:"MXN"})),...invoices.USD.map(i=>({...i,moneda:"USD"})),...invoices.EUR.map(i=>({...i,moneda:"EUR"}))]
+          .filter(i => i.tipo !== 'EgresoNF');
+        const saldoOf = i => (+i.total||0)-(+i.montoPagado||0);
+        const facturasMes = allInvs.filter(f=> f.estatus!=="Pagado" && saldoOf(f)>0 && (enMes(f.vencimiento)||enMes(f.fechaProgramacion)));
+        const totalFactMes = facturasMes.reduce((s,f)=>s+saldoOf(f),0);
+        const vencidasMes = facturasMes.filter(f=>isOverdue(f.vencimiento,f.estatus)).length;
+
+        // Tarjetas activas
+        const tarjetasActivas = (tarjetas||[]).filter(t=>t.activo);
+        const totalTDC = tarjetasActivas.reduce((s,t)=>s+(+t.saldoActual||0),0);
+
+        // Cuota mensual financiamientos
+        const financActivos = (financiamientos||[]).filter(f=>f.activo);
+        const totalCuotaMensual = financActivos.reduce((s,f)=>s+(+f.montoMensual||0),0);
+
+        // Gastos fijos
+        const gastosActivos = (gastosFijos||[]).filter(g=>g.activo).sort((a,b)=>(a.orden||0)-(b.orden||0));
+        const totalGastos = gastosActivos.reduce((s,g)=>s+(+g.monto||0),0);
+
+        const granTotalMes = totalFactMes + totalTDC + totalCuotaMensual + totalGastos;
+
+        // Distribución % para la barra apilada
+        const pct = v => granTotalMes>0 ? (v/granTotalMes*100) : 0;
+        const pctFact   = pct(totalFactMes);
+        const pctTDC    = pct(totalTDC);
+        const pctFinanc = pct(totalCuotaMensual);
+        const pctGastos = pct(totalGastos);
+
+        // Permisos (esSuperadmin ya está en scope del componente)
+
+        // Guardar/Crear/Eliminar gasto fijo
+        const handleSaveGasto = async () => {
+          if (!gastoFijoForm.concepto.trim()) return;
+          if (gastoFijoEditId === 'new') {
+            const nuevo = await insertGastoFijo({
+              empresaId,
+              concepto: gastoFijoForm.concepto,
+              emoji: gastoFijoForm.emoji,
+              monto: +gastoFijoForm.monto,
+              orden: gastosActivos.length+1,
+              updatedBy: user?.username || '',
+            });
+            if (nuevo) {
+              const fresh = await fetchGastosFijos(empresaId);
+              setGastosFijos(fresh);
+            }
+          } else if (gastoFijoEditId) {
+            const ok = await updateGastoFijo(gastoFijoEditId, {
+              concepto: gastoFijoForm.concepto,
+              emoji: gastoFijoForm.emoji,
+              monto: +gastoFijoForm.monto,
+              updatedBy: user?.username || '',
+            });
+            if (ok) {
+              const fresh = await fetchGastosFijos(empresaId);
+              setGastosFijos(fresh);
+            }
+          }
+          setGastoFijoEditId(null);
+          setGastoFijoForm({ concepto:'', emoji:'📌', monto:'0' });
+        };
+        const handleDeleteGasto = async (id) => {
+          if (!confirm("¿Eliminar este gasto fijo?")) return;
+          const ok = await deleteGastoFijo(id);
+          if (ok) {
+            const fresh = await fetchGastosFijos(empresaId);
+            setGastosFijos(fresh);
+          }
+        };
+        const handleEditGasto = (g) => {
+          setGastoFijoEditId(g.id);
+          setGastoFijoForm({ concepto:g.concepto, emoji:g.emoji||'📌', monto:String(g.monto||0) });
+        };
+        const handleAddGasto = () => {
+          setGastoFijoEditId('new');
+          setGastoFijoForm({ concepto:'', emoji:'📌', monto:'0' });
+        };
+
+        // Vista de detalle por categoría (sub-modal interno)
+        const renderDetalle = () => {
+          if (cortoPlazoDetail === 'facturas') {
+            return (
+              <div style={{padding:"18px 28px",borderTop:"1px solid #F1F5F9",background:"#FAFCFE"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                  <div style={{fontSize:13,fontWeight:800,color:"#1A2332"}}>📋 Facturas del mes ({facturasMes.length})</div>
+                  <button onClick={()=>setCortoPlazoDetail(null)} style={{background:"#fff",border:"1px solid #E2E8F0",padding:"4px 12px",borderRadius:7,fontSize:11,cursor:"pointer",color:"#64748B",fontWeight:600}}>▲ Cerrar detalle</button>
+                </div>
+                <div style={{maxHeight:280,overflowY:"auto",background:"#fff",borderRadius:10,border:"1px solid #F1F5F9"}}>
+                  {facturasMes.slice(0,30).map(f=>(
+                    <div key={f.id} style={{display:"flex",justifyContent:"space-between",padding:"8px 14px",borderBottom:"1px solid #F8FAFC",fontSize:12}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{color:"#1A2332",fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{f.proveedor || f.cliente || 'Sin nombre'}</div>
+                        <div style={{color:"#94A3B8",fontSize:11,marginTop:2}}>{f.folio} · vence {f.vencimiento || '—'}</div>
+                      </div>
+                      <div style={{fontWeight:700,color:"#185FA5",fontVariantNumeric:"tabular-nums"}}>${fmt(saldoOf(f))}</div>
+                    </div>
+                  ))}
+                  {facturasMes.length>30 && <div style={{padding:10,textAlign:"center",fontSize:11,color:"#94A3B8"}}>… y {facturasMes.length-30} más</div>}
+                </div>
+              </div>
+            );
+          }
+          if (cortoPlazoDetail === 'tarjetas') {
+            return (
+              <div style={{padding:"18px 28px",borderTop:"1px solid #F1F5F9",background:"#FEFAFA"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                  <div style={{fontSize:13,fontWeight:800,color:"#1A2332"}}>💳 Tarjetas activas ({tarjetasActivas.length})</div>
+                  <button onClick={()=>setCortoPlazoDetail(null)} style={{background:"#fff",border:"1px solid #E2E8F0",padding:"4px 12px",borderRadius:7,fontSize:11,cursor:"pointer",color:"#64748B",fontWeight:600}}>▲ Cerrar detalle</button>
+                </div>
+                <div style={{background:"#fff",borderRadius:10,border:"1px solid #F1F5F9",padding:10}}>
+                  {tarjetasActivas.map(t=>{
+                    const pctT = t.limite>0 ? Math.round((t.saldoActual/t.limite)*100) : 0;
+                    return (
+                      <div key={t.id} style={{padding:"8px 6px",borderBottom:"1px solid #F8FAFC",fontSize:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                        <div>
+                          <div style={{color:"#1A2332",fontWeight:700}}>{t.banco} · {t.titular}</div>
+                          <div style={{color:"#94A3B8",fontSize:11,marginTop:2}}>Corte día {t.fechaCorte} · {pctT}% utilizado</div>
+                        </div>
+                        <div style={{fontWeight:700,color:"#C04A4D",fontVariantNumeric:"tabular-nums",fontSize:14}}>${fmt(t.saldoActual||0)}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          }
+          if (cortoPlazoDetail === 'financiamientos') {
+            return (
+              <div style={{padding:"18px 28px",borderTop:"1px solid #F1F5F9",background:"#FAFAFE"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                  <div style={{fontSize:13,fontWeight:800,color:"#1A2332"}}>🏦 Cuotas mensuales activas ({financActivos.length})</div>
+                  <button onClick={()=>setCortoPlazoDetail(null)} style={{background:"#fff",border:"1px solid #E2E8F0",padding:"4px 12px",borderRadius:7,fontSize:11,cursor:"pointer",color:"#64748B",fontWeight:600}}>▲ Cerrar detalle</button>
+                </div>
+                <div style={{background:"#fff",borderRadius:10,border:"1px solid #F1F5F9",padding:10}}>
+                  {financActivos.map(f=>(
+                    <div key={f.id} style={{padding:"8px 6px",borderBottom:"1px solid #F8FAFC",fontSize:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <div>
+                        <div style={{color:"#1A2332",fontWeight:700}}>{f.nombre}</div>
+                        <div style={{color:"#94A3B8",fontSize:11,marginTop:2}}>{f.concepto} · día de pago: {f.diaPago||'—'}</div>
+                      </div>
+                      <div style={{fontWeight:700,color:"#6B47C7",fontVariantNumeric:"tabular-nums",fontSize:14}}>${fmt(f.montoMensual||0)}/mes</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          }
+          if (cortoPlazoDetail === 'gastos') {
+            return (
+              <div style={{padding:"18px 28px",borderTop:"1px solid #F1F5F9",background:"#F0FAF5"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{fontSize:13,fontWeight:800,color:"#1A2332"}}>📌 Gastos fijos del mes ({gastosActivos.length})</div>
+                    {!esSuperadmin && <div style={{fontSize:10,color:"#64748B",background:"#fff",padding:"2px 7px",borderRadius:99,border:"1px solid #E2E8F0"}}>Solo lectura</div>}
+                  </div>
+                  <div style={{display:"flex",gap:8}}>
+                    {esSuperadmin && (
+                      <button onClick={handleAddGasto} style={{background:"linear-gradient(135deg, #1D7A4E, #2EBC76)",border:"none",color:"#fff",padding:"5px 12px",borderRadius:7,fontSize:11,cursor:"pointer",fontWeight:700}}>+ Agregar nuevo</button>
+                    )}
+                    <button onClick={()=>{setCortoPlazoDetail(null);setGastoFijoEditId(null);}} style={{background:"#fff",border:"1px solid #E2E8F0",padding:"4px 12px",borderRadius:7,fontSize:11,cursor:"pointer",color:"#64748B",fontWeight:600}}>▲ Cerrar</button>
+                  </div>
+                </div>
+                {/* Tabla de gastos */}
+                <div style={{background:"#fff",borderRadius:10,border:"1px solid #C3E6D2",overflow:"hidden"}}>
+                  {/* Header */}
+                  <div style={{display:"grid",gridTemplateColumns:"40px 1fr 180px 100px",gap:10,padding:"8px 14px",fontSize:10,color:"#94A3B8",fontWeight:700,letterSpacing:0.4,background:"#FAFCFB",borderBottom:"1px solid #E2E8F0"}}>
+                    <div></div><div>CONCEPTO</div><div style={{textAlign:"right"}}>MONTO MENSUAL</div><div></div>
+                  </div>
+                  {/* Fila nueva (al agregar) */}
+                  {gastoFijoEditId === 'new' && (
+                    <div style={{display:"grid",gridTemplateColumns:"40px 1fr 180px 100px",gap:10,padding:"10px 14px",alignItems:"center",background:"#FFFBEB",borderBottom:"1.5px solid #FCD34D"}}>
+                      <input value={gastoFijoForm.emoji} onChange={e=>setGastoFijoForm(p=>({...p,emoji:e.target.value}))} maxLength={3} style={{width:36,textAlign:"center",fontSize:18,padding:6,border:"1px solid #FCD34D",borderRadius:6,background:"#fff"}}/>
+                      <input value={gastoFijoForm.concepto} onChange={e=>setGastoFijoForm(p=>({...p,concepto:e.target.value}))} placeholder="Ej: Internet" autoFocus style={{fontSize:12,padding:"6px 10px",border:"1px solid #FCD34D",borderRadius:6,background:"#fff"}}/>
+                      <input type="number" value={gastoFijoForm.monto} onChange={e=>setGastoFijoForm(p=>({...p,monto:e.target.value}))} style={{fontSize:12,padding:"6px 10px",border:"1px solid #FCD34D",borderRadius:6,background:"#fff",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:700}}/>
+                      <div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
+                        <button onClick={handleSaveGasto} style={{background:"#1D7A4E",border:"none",color:"#fff",padding:"5px 8px",borderRadius:6,cursor:"pointer",fontSize:11,fontWeight:700}}>✓</button>
+                        <button onClick={()=>setGastoFijoEditId(null)} style={{background:"#F1F5F9",border:"none",color:"#64748B",padding:"5px 8px",borderRadius:6,cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button>
+                      </div>
+                    </div>
+                  )}
+                  {/* Filas existentes */}
+                  {gastosActivos.map(g => {
+                    const enEdicion = gastoFijoEditId === g.id;
+                    return (
+                      <div key={g.id} style={{display:"grid",gridTemplateColumns:"40px 1fr 180px 100px",gap:10,padding:"10px 14px",alignItems:"center",borderBottom:"1px solid #F8FAFC",background:enEdicion?"#FFFBEB":"#fff"}}>
+                        {enEdicion ? (
+                          <>
+                            <input value={gastoFijoForm.emoji} onChange={e=>setGastoFijoForm(p=>({...p,emoji:e.target.value}))} maxLength={3} style={{width:36,textAlign:"center",fontSize:18,padding:6,border:"1px solid #FCD34D",borderRadius:6,background:"#fff"}}/>
+                            <input value={gastoFijoForm.concepto} onChange={e=>setGastoFijoForm(p=>({...p,concepto:e.target.value}))} style={{fontSize:12,padding:"6px 10px",border:"1px solid #FCD34D",borderRadius:6,background:"#fff"}}/>
+                            <input type="number" value={gastoFijoForm.monto} onChange={e=>setGastoFijoForm(p=>({...p,monto:e.target.value}))} style={{fontSize:12,padding:"6px 10px",border:"1px solid #FCD34D",borderRadius:6,background:"#fff",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:700}}/>
+                            <div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
+                              <button onClick={handleSaveGasto} style={{background:"#1D7A4E",border:"none",color:"#fff",padding:"5px 8px",borderRadius:6,cursor:"pointer",fontSize:11,fontWeight:700}}>✓</button>
+                              <button onClick={()=>setGastoFijoEditId(null)} style={{background:"#F1F5F9",border:"none",color:"#64748B",padding:"5px 8px",borderRadius:6,cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div style={{fontSize:20,textAlign:"center"}}>{g.emoji}</div>
+                            <div style={{fontSize:12,color:"#1A2332",fontWeight:600}}>{g.concepto}</div>
+                            <div style={{textAlign:"right",fontSize:13,color:"#1A2332",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>${fmt(g.monto||0)}</div>
+                            <div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
+                              {esSuperadmin && (
+                                <>
+                                  <button onClick={()=>handleEditGasto(g)} style={{background:"#F1F5F9",border:"none",width:28,height:28,borderRadius:6,cursor:"pointer",fontSize:12}}>✏️</button>
+                                  <button onClick={()=>handleDeleteGasto(g.id)} style={{background:"#FEE",border:"none",width:28,height:28,borderRadius:6,cursor:"pointer",fontSize:12}}>🗑</button>
+                                </>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {/* Total */}
+                  <div style={{display:"grid",gridTemplateColumns:"40px 1fr 180px 100px",gap:10,padding:"12px 14px",alignItems:"center",background:"linear-gradient(90deg, rgba(29,122,78,0.08), rgba(29,122,78,0.02))"}}>
+                    <div></div>
+                    <div style={{fontSize:12,color:"#1A2332",fontWeight:800}}>TOTAL GASTOS FIJOS</div>
+                    <div style={{textAlign:"right",fontSize:16,color:"#1D7A4E",fontWeight:800,fontVariantNumeric:"tabular-nums"}}>${fmt(totalGastos)}</div>
+                    <div></div>
+                  </div>
+                </div>
+                <div style={{fontSize:10,color:"#64748B",marginTop:10,fontStyle:"italic"}}>
+                  💡 Estos gastos se consideran cada mes en el cálculo del Corto Plazo.
+                  {!esSuperadmin && " · Solo un superadmin puede modificarlos."}
+                </div>
+              </div>
+            );
+          }
+          return null;
+        };
+
+        return (
+          <div style={{position:"fixed",inset:0,background:"rgba(15, 45, 74, 0.55)",backdropFilter:"blur(2px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}
+               onClick={()=>{setShowDashCortoPlazoModal(false);setCortoPlazoDetail(null);setGastoFijoEditId(null);}}>
+            <div onClick={e=>e.stopPropagation()}
+                 style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:1200,maxHeight:"94vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 60px rgba(0,0,0,0.3)",overflow:"hidden"}}>
+              {/* HEADER */}
+              <div style={{padding:"22px 28px 18px",borderBottom:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{width:38,height:38,borderRadius:12,background:"linear-gradient(135deg, #FCD34D, #F59E0B)",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,boxShadow:"0 4px 12px rgba(245, 158, 11, 0.30)"}}>📅</div>
+                  <div>
+                    <div style={{fontSize:19,fontWeight:800,color:"#1A2332",letterSpacing:"-0.3px"}}>Corto Plazo · {mesEs} {anio}</div>
+                    <div style={{fontSize:12,color:"#64748B",marginTop:2}}>Todo lo que debes pagar este mes</div>
+                  </div>
+                </div>
+                <button onClick={()=>{setShowDashCortoPlazoModal(false);setCortoPlazoDetail(null);setGastoFijoEditId(null);}}
+                        style={{background:"#F1F5F9",border:"none",width:36,height:36,borderRadius:10,cursor:"pointer",fontSize:18,color:"#64748B",fontWeight:600}}>×</button>
+              </div>
+
+              {/* HERO: Total del mes */}
+              <div style={{padding:"22px 28px",background:"linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)",borderBottom:"1px solid #F4E0A0",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:16}}>
+                <div>
+                  <div style={{fontSize:11,color:"#8C6B1A",fontWeight:700,letterSpacing:0.6,textTransform:"uppercase"}}>Compromiso total del mes</div>
+                  <div style={{fontSize:32,fontWeight:800,color:"#1A2332",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.6px",lineHeight:1,marginTop:4}}>${fmt(granTotalMes)}</div>
+                  <div style={{fontSize:11,color:"#64748B",marginTop:6}}>Suma de facturas + tarjetas + cuotas + gastos fijos</div>
+                </div>
+                {/* Barra apilada */}
+                <div style={{textAlign:"right",minWidth:340}}>
+                  <div style={{fontSize:10,color:"#64748B",marginBottom:6,fontWeight:600}}>Distribución del mes</div>
+                  <div style={{display:"flex",height:12,width:"100%",borderRadius:99,overflow:"hidden",boxShadow:"0 2px 6px rgba(0,0,0,0.1)"}}>
+                    {pctFact>0 && <div style={{flex:pctFact,background:"#185FA5"}} title={`Facturas ${pctFact.toFixed(1)}%`}/>}
+                    {pctTDC>0 && <div style={{flex:pctTDC,background:"#C04A4D"}} title={`Tarjetas ${pctTDC.toFixed(1)}%`}/>}
+                    {pctFinanc>0 && <div style={{flex:pctFinanc,background:"#6B47C7"}} title={`Financ. ${pctFinanc.toFixed(1)}%`}/>}
+                    {pctGastos>0 && <div style={{flex:pctGastos,background:"#1D7A4E"}} title={`Gastos ${pctGastos.toFixed(1)}%`}/>}
+                  </div>
+                  <div style={{display:"flex",gap:10,marginTop:6,fontSize:9,color:"#64748B",justifyContent:"flex-end",flexWrap:"wrap"}}>
+                    <span style={{color:"#185FA5"}}>● Facturas {pctFact.toFixed(0)}%</span>
+                    <span style={{color:"#C04A4D"}}>● Tarjetas {pctTDC.toFixed(0)}%</span>
+                    <span style={{color:"#6B47C7"}}>● Financ. {pctFinanc.toFixed(0)}%</span>
+                    <span style={{color:"#1D7A4E"}}>● Gastos {pctGastos.toFixed(0)}%</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* CARDS · 4 categorías clickeables */}
+              <div style={{padding:"22px 28px",display:"grid",gridTemplateColumns:"repeat(2, 1fr)",gap:14,flex:cortoPlazoDetail?"0 0 auto":"1",overflowY:cortoPlazoDetail?"visible":"auto"}}>
+                {/* Card Facturas */}
+                <div onClick={()=>setCortoPlazoDetail(cortoPlazoDetail==='facturas'?null:'facturas')}
+                     style={{background:"linear-gradient(180deg, #fff 0%, #FAFCFE 100%)",border:`1.5px solid ${cortoPlazoDetail==='facturas'?'#185FA5':'rgba(24, 95, 165, 0.12)'}`,borderRadius:14,padding:"18px 22px",position:"relative",cursor:"pointer",transition:"all .2s"}}>
+                  <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"linear-gradient(90deg, #185FA5, #2E78C7)"}}/>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                    <div>
+                      <div style={{fontSize:11,color:"#94A3B8",fontWeight:700,letterSpacing:0.5}}>FACTURAS DEL MES</div>
+                      <div style={{fontSize:10,color:"#64748B",marginTop:3}}>Vencen o programadas en {mesEs.toLowerCase()}</div>
+                    </div>
+                    <span style={{background:"linear-gradient(135deg, #185FA5, #2E78C7)",color:"#fff",fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:99}}>📋 {facturasMes.length}</span>
+                  </div>
+                  <div style={{fontSize:26,fontWeight:800,color:"#185FA5",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.5px"}}>${fmt(totalFactMes)}</div>
+                  <div style={{display:"flex",justifyContent:"space-between",marginTop:12,paddingTop:12,borderTop:"1px solid #F1F5F9",fontSize:11,color:"#64748B"}}>
+                    <span>{vencidasMes>0 ? <strong style={{color:"#C04A4D"}}>⚠️ {vencidasMes} vencidas</strong> : "✓ Todo en plazo"}</span>
+                    <span style={{color:"#185FA5",fontWeight:600}}>Clic para ver detalle →</span>
+                  </div>
+                </div>
+
+                {/* Card Tarjetas */}
+                <div onClick={()=>setCortoPlazoDetail(cortoPlazoDetail==='tarjetas'?null:'tarjetas')}
+                     style={{background:"linear-gradient(180deg, #fff 0%, #FEFAFA 100%)",border:`1.5px solid ${cortoPlazoDetail==='tarjetas'?'#C04A4D':'rgba(192, 74, 77, 0.14)'}`,borderRadius:14,padding:"18px 22px",position:"relative",cursor:"pointer",transition:"all .2s"}}>
+                  <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"linear-gradient(90deg, #C04A4D, #E97375)"}}/>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                    <div>
+                      <div style={{fontSize:11,color:"#94A3B8",fontWeight:700,letterSpacing:0.5}}>TARJETAS DE CRÉDITO</div>
+                      <div style={{fontSize:10,color:"#64748B",marginTop:3}}>Saldo a pagar en próximo corte</div>
+                    </div>
+                    <span style={{background:"linear-gradient(135deg, #C04A4D, #E97375)",color:"#fff",fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:99}}>💳 {tarjetasActivas.length}</span>
+                  </div>
+                  <div style={{fontSize:26,fontWeight:800,color:"#C04A4D",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.5px"}}>${fmt(totalTDC)}</div>
+                  <div style={{display:"flex",justifyContent:"space-between",marginTop:12,paddingTop:12,borderTop:"1px solid #F1F5F9",fontSize:11,color:"#64748B"}}>
+                    <span>{tarjetasActivas.length} TDC{tarjetasActivas.length===1?'':'s'} activa{tarjetasActivas.length===1?'':'s'}</span>
+                    <span style={{color:"#C04A4D",fontWeight:600}}>Clic para ver detalle →</span>
+                  </div>
+                </div>
+
+                {/* Card Financiamientos */}
+                <div onClick={()=>setCortoPlazoDetail(cortoPlazoDetail==='financiamientos'?null:'financiamientos')}
+                     style={{background:"linear-gradient(180deg, #fff 0%, #FAFAFE 100%)",border:`1.5px solid ${cortoPlazoDetail==='financiamientos'?'#6B47C7':'rgba(107, 71, 199, 0.14)'}`,borderRadius:14,padding:"18px 22px",position:"relative",cursor:"pointer",transition:"all .2s"}}>
+                  <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"linear-gradient(90deg, #6B47C7, #9580E2)"}}/>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                    <div>
+                      <div style={{fontSize:11,color:"#94A3B8",fontWeight:700,letterSpacing:0.5}}>CUOTAS FINANCIAMIENTOS</div>
+                      <div style={{fontSize:10,color:"#64748B",marginTop:3}}>Solo la cuota mensual de {mesEs.toLowerCase()}</div>
+                    </div>
+                    <span style={{background:"linear-gradient(135deg, #6B47C7, #9580E2)",color:"#fff",fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:99}}>🏦 {financActivos.length}</span>
+                  </div>
+                  <div style={{fontSize:26,fontWeight:800,color:"#6B47C7",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.5px"}}>${fmt(totalCuotaMensual)}</div>
+                  <div style={{display:"flex",justifyContent:"space-between",marginTop:12,paddingTop:12,borderTop:"1px solid #F1F5F9",fontSize:11,color:"#64748B"}}>
+                    <span>{financActivos.length} cuota{financActivos.length===1?'':'s'} mensual{financActivos.length===1?'':'es'}</span>
+                    <span style={{color:"#6B47C7",fontWeight:600}}>Clic para ver detalle →</span>
+                  </div>
+                </div>
+
+                {/* Card Gastos Fijos */}
+                <div onClick={()=>setCortoPlazoDetail(cortoPlazoDetail==='gastos'?null:'gastos')}
+                     style={{background:"linear-gradient(180deg, #fff 0%, #FAFCFB 100%)",border:`1.5px solid ${cortoPlazoDetail==='gastos'?'#1D7A4E':'rgba(29, 122, 78, 0.14)'}`,borderRadius:14,padding:"18px 22px",position:"relative",cursor:"pointer",transition:"all .2s"}}>
+                  <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"linear-gradient(90deg, #1D7A4E, #2EBC76)"}}/>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                    <div>
+                      <div style={{fontSize:11,color:"#94A3B8",fontWeight:700,letterSpacing:0.5}}>GASTOS FIJOS DEL MES</div>
+                      <div style={{fontSize:10,color:"#64748B",marginTop:3}}>Nómina, rentas, servicios, etc.</div>
+                    </div>
+                    <span style={{background:"linear-gradient(135deg, #1D7A4E, #2EBC76)",color:"#fff",fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:99}}>📌 {gastosActivos.length}</span>
+                  </div>
+                  <div style={{fontSize:26,fontWeight:800,color:"#1D7A4E",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.5px"}}>${fmt(totalGastos)}</div>
+                  <div style={{display:"flex",justifyContent:"space-between",marginTop:12,paddingTop:12,borderTop:"1px solid #F1F5F9",fontSize:11,color:"#64748B"}}>
+                    <span>{gastosActivos.map(g=>g.emoji).join(' ')}</span>
+                    <span style={{color:"#1D7A4E",fontWeight:600}}>{esSuperadmin ? 'Clic para editar →' : 'Clic para ver detalle →'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Detalle expandible debajo de las cards */}
+              {cortoPlazoDetail && renderDetalle()}
+            </div>
+          </div>
         );
       })()}
 

@@ -2304,3 +2304,75 @@ export async function deleteSimulacionFactoraje(id) {
   if (error) { console.error('deleteSimulacionFactoraje:', error); throw error; }
   return true;
 }
+
+/* ─────────────────────────────────────────────────────────────────────
+ * GASTOS FIJOS MENSUALES (Dashboard · Corto Plazo)
+ * ───────────────────────────────────────────────────────────────────── */
+
+export async function fetchGastosFijos(empresaId) {
+  const { data, error } = await supabase
+    .from('gastos_fijos_mensuales')
+    .select('*')
+    .eq('empresa_id', empresaId)
+    .order('orden', { ascending: true });
+  if (error) { console.error('fetchGastosFijos:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id,
+    empresaId: r.empresa_id,
+    concepto: r.concepto || '',
+    emoji: r.emoji || '📌',
+    monto: +r.monto || 0,
+    orden: +r.orden || 0,
+    activo: r.activo !== false,
+    notas: r.notas || '',
+    updatedAt: r.updated_at,
+    updatedBy: r.updated_by || '',
+  }));
+}
+
+export async function insertGastoFijo(g) {
+  const row = {
+    empresa_id: g.empresaId,
+    concepto: g.concepto || 'Nuevo gasto',
+    emoji: g.emoji || '📌',
+    monto: +g.monto || 0,
+    orden: +g.orden || 0,
+    activo: g.activo !== false,
+    notas: g.notas || '',
+    updated_by: g.updatedBy || '',
+  };
+  const { data, error } = await supabase
+    .from('gastos_fijos_mensuales')
+    .insert([row])
+    .select()
+    .single();
+  if (error) { console.error('insertGastoFijo:', error); return null; }
+  return data;
+}
+
+export async function updateGastoFijo(id, patch) {
+  const map = {
+    concepto: 'concepto', emoji: 'emoji', monto: 'monto',
+    orden: 'orden', activo: 'activo', notas: 'notas',
+    updatedBy: 'updated_by',
+  };
+  const row = { updated_at: new Date().toISOString() };
+  Object.entries(patch).forEach(([k, v]) => {
+    if (map[k]) row[map[k]] = (k === 'monto' || k === 'orden') ? (+v || 0) : v;
+  });
+  const { error } = await supabase
+    .from('gastos_fijos_mensuales')
+    .update(row)
+    .eq('id', id);
+  if (error) { console.error('updateGastoFijo:', error); return false; }
+  return true;
+}
+
+export async function deleteGastoFijo(id) {
+  const { error } = await supabase
+    .from('gastos_fijos_mensuales')
+    .delete()
+    .eq('id', id);
+  if (error) { console.error('deleteGastoFijo:', error); return false; }
+  return true;
+}
