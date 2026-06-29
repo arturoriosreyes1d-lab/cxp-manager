@@ -7991,7 +7991,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
     const puedeGuardar = isCrearPrestamo
       ? (banco.trim() && parseMonto(montoAutorizado) > 0)
-      : (parseMonto(montoMov) > 0);
+      : (parseMonto(montoMov) > 0 && empresaDestino && rubroId);
 
     const handleGuardar = async () => {
       if (!puedeGuardar || guardando) return;
@@ -8022,7 +8022,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           }
         } else {
           // Crear o editar movimiento (versión extendida con empresa_destino, rubro_id, nota)
-          await upsertPrestamoMovimientoExt({
+          const payload = {
             id: isEditarMov ? movDefault.id : undefined,
             prestamoId: prestamo.id,
             empresaId,
@@ -8033,7 +8033,10 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             empresaDestino: empresaDestino || null,
             rubroId: rubroId || null,
             nota: notaMov.trim() || '',
-          }, usuario?.nombre);
+          };
+          console.log('[PrestamoMov] Guardando movimiento:', payload);
+          const result = await upsertPrestamoMovimientoExt(payload, usuario?.nombre);
+          console.log('[PrestamoMov] Resultado de upsert:', result);
         }
         await onSaved();
       } catch (err) {
@@ -8199,6 +8202,12 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
               {guardando ? 'Guardando...' : (isCrearPrestamo ? 'Crear préstamo' : 'Guardar')}
             </button>
           </div>
+          {/* Pista visual de campos faltantes */}
+          {!isCrearPrestamo && !puedeGuardar && parseMonto(montoMov) > 0 && (
+            <div style={{marginTop:8,padding:'8px 12px',background:'#FEF2F2',border:'1px solid #FCA5A5',borderRadius:6,fontSize:11,color:'#C04A4D'}}>
+              ⚠️ Faltan campos requeridos: {!empresaDestino && '🏢 Empresa destino'} {!empresaDestino && !rubroId && '·'} {!rubroId && '📌 Rubro'}
+            </div>
+          )}
         </div>
       </div>
     );

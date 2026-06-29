@@ -2445,6 +2445,7 @@ export async function upsertPrestamoMovimientoExt(m, usuario) {
     nota: m.nota || '',
     updated_by: usuario || 'desconocido',
   };
+  console.log('[upsertPrestamoMovimientoExt] Row a guardar en BD:', row);
   const isUUID = m.id && /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(m.id);
   if (isUUID) {
     const { data, error } = await supabase
@@ -2453,7 +2454,12 @@ export async function upsertPrestamoMovimientoExt(m, usuario) {
       .eq('id', m.id)
       .select()
       .single();
-    if (error) { console.error('upsertPrestamoMovimientoExt update:', error); return null; }
+    if (error) {
+      console.error('[upsertPrestamoMovimientoExt] Error en UPDATE:', error);
+      console.error('[upsertPrestamoMovimientoExt] Error details:', JSON.stringify(error, null, 2));
+      return null;
+    }
+    console.log('[upsertPrestamoMovimientoExt] UPDATE OK, data:', data);
     return data?.id;
   } else {
     row.created_by = usuario || 'desconocido';
@@ -2462,7 +2468,12 @@ export async function upsertPrestamoMovimientoExt(m, usuario) {
       .insert(row)
       .select()
       .single();
-    if (error) { console.error('upsertPrestamoMovimientoExt insert:', error); return null; }
+    if (error) {
+      console.error('[upsertPrestamoMovimientoExt] Error en INSERT:', error);
+      console.error('[upsertPrestamoMovimientoExt] Error details:', JSON.stringify(error, null, 2));
+      return null;
+    }
+    console.log('[upsertPrestamoMovimientoExt] INSERT OK, data:', data);
     return data?.id;
   }
 }
