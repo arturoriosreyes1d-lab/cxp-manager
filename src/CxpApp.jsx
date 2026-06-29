@@ -8146,19 +8146,26 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                     </div>
                     <div style={{display:'flex',gap:6}}>
                       <button type="button" disabled={!nuevoRubroNombre.trim()} onClick={async()=>{
+                        console.log('[CrearRubro] Iniciando creación con:', { nombre: nuevoRubroNombre.trim(), emoji: nuevoRubroEmoji });
                         const nuevo = await insertRubroPrestamo({
                           nombre: nuevoRubroNombre.trim(),
                           emoji: nuevoRubroEmoji,
                           orden: 999,
                         }, usuario?.nombre);
-                        if (nuevo) {
+                        console.log('[CrearRubro] Resultado insertRubroPrestamo:', nuevo);
+                        if (nuevo && nuevo.id) {
                           const fresh = await fetchRubrosPrestamo();
+                          console.log('[CrearRubro] Rubros refrescados:', fresh.length, 'rubros');
                           setRubrosPrestamo(fresh);
                           setRubroId(nuevo.id);
+                          console.log('[CrearRubro] rubroId seteado a:', nuevo.id);
+                          setAgregandoRubro(false);
+                          setNuevoRubroNombre('');
+                          setNuevoRubroEmoji('📦');
+                        } else {
+                          console.error('[CrearRubro] No se pudo crear el rubro, no cerramos el form');
+                          alert('No se pudo crear el rubro. Revisa la consola del navegador (F12) para más detalles.');
                         }
-                        setAgregandoRubro(false);
-                        setNuevoRubroNombre('');
-                        setNuevoRubroEmoji('📦');
                       }} style={{flex:1,background:'#1D7A4E',color:'#fff',border:'none',padding:'7px',borderRadius:6,fontSize:12,fontWeight:700,cursor:nuevoRubroNombre.trim()?'pointer':'not-allowed',opacity:nuevoRubroNombre.trim()?1:0.5}}>✓ Crear rubro</button>
                       <button type="button" onClick={()=>{setAgregandoRubro(false);setNuevoRubroNombre('');setNuevoRubroEmoji('📦');}}
                               style={{background:'#fff',border:'1px solid #E2E8F0',color:'#64748B',padding:'7px 12px',borderRadius:6,fontSize:12,fontWeight:600,cursor:'pointer'}}>Cancelar</button>

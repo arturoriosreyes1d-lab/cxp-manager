@@ -2410,24 +2410,33 @@ export async function insertRubroPrestamo(rubro, usuario) {
     orden: rubro.orden || 999,
     created_by: usuario || '',
   };
+  console.log('[insertRubroPrestamo] Insertando rubro:', row);
   const { data, error } = await supabase
     .from('rubros_prestamo')
     .insert([row])
     .select()
     .single();
   if (error) {
+    console.error('[insertRubroPrestamo] Error:', error);
+    console.error('[insertRubroPrestamo] Error details:', JSON.stringify(error, null, 2));
     // Si fue conflicto de duplicado, recuperamos el existente
     if (error.code === '23505') {
-      const { data: existente } = await supabase
+      console.log('[insertRubroPrestamo] Era duplicado, buscando existente con nombre:', rubro.nombre);
+      const { data: existente, error: errBuscar } = await supabase
         .from('rubros_prestamo')
         .select('*')
         .ilike('nombre', rubro.nombre)
         .single();
+      if (errBuscar) {
+        console.error('[insertRubroPrestamo] Error al buscar existente:', errBuscar);
+        return null;
+      }
+      console.log('[insertRubroPrestamo] Rubro existente recuperado:', existente);
       return existente;
     }
-    console.error('insertRubroPrestamo:', error);
     return null;
   }
+  console.log('[insertRubroPrestamo] Rubro creado OK:', data);
   return data;
 }
 
