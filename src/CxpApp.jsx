@@ -19,6 +19,7 @@ import {
   fetchFinanciamientos, insertFinanciamiento, updateFinanciamiento, deleteFinanciamiento,
   fetchFinanciamientoPagos, insertFinanciamientoPago, deleteFinanciamientoPago,
   fetchGastosFijos, insertGastoFijo, updateGastoFijo, deleteGastoFijo,
+  fetchRubrosPrestamo, insertRubroPrestamo, upsertPrestamoMovimientoExt,
   fetchTarjetas, updateTarjetaSaldo, fetchTarjetaMovimientos, bulkInsertMovimientos,
   fetchProgramados, upsertProgramado, deleteProgramado,
   fetchReporteSaldos, upsertReporteSaldos,
@@ -288,6 +289,7 @@ export default function CxpApp({ user, onLogout }) {
   const [porFacturar, setPorFacturar] = useState([]);
   const [financiamientos, setFinanciamientos] = useState([]);
   const [gastosFijos, setGastosFijos] = useState([]);
+  const [rubrosPrestamo, setRubrosPrestamo] = useState([]);
   const [financiamientoPagos, setFinanciamientoPagos] = useState([]);
   const [financModalId, setFinancModalId] = useState(null);
   const [financCollapsed, setFinancCollapsed] = useState(true);
@@ -405,8 +407,9 @@ export default function CxpApp({ user, onLogout }) {
         fetchTarjetas(empresaId), fetchTarjetaMovimientos(empresaId),
         fetchProgramados(empresaId),
         fetchGastosFijos(empresaId),
+        fetchRubrosPrestamo(),
       ]);
-      const [inv, sup, cls, pays, ings, cbs, invIngs, cats, clts, pf, fins, finPagos, tarjs, tarjMovs, progs, gFijos] =
+      const [inv, sup, cls, pays, ings, cbs, invIngs, cats, clts, pf, fins, finPagos, tarjs, tarjMovs, progs, gFijos, rPrest] =
         results.map(r => r.status==="fulfilled" ? r.value : []);
       setInvoices(inv);
       setSuppliers(sup.length > 0 ? sup : []);
@@ -424,6 +427,7 @@ export default function CxpApp({ user, onLogout }) {
       setTarjetaMovimientos(tarjMovs);
       setProgramados(progs);
       setGastosFijos(gFijos);
+      setRubrosPrestamo(rPrest || []);
       setLoading(false);
     })();
   }, [empresaId]);
@@ -7952,6 +7956,13 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     const [fechaMov, setFechaMov] = useState(movDefault.fecha || today());
     const [montoMov, setMontoMov] = useState(movDefault.monto !== '' && movDefault.monto != null ? String(movDefault.monto) : '');
     const [conceptoMov, setConceptoMov] = useState(movDefault.concepto || '');
+    const [empresaDestino, setEmpresaDestino] = useState(movDefault.empresaDestino || '');
+    const [rubroId, setRubroId] = useState(movDefault.rubroId || '');
+    const [notaMov, setNotaMov] = useState(movDefault.nota || '');
+    // Para agregar rubro nuevo
+    const [agregandoRubro, setAgregandoRubro] = useState(false);
+    const [nuevoRubroNombre, setNuevoRubroNombre] = useState('');
+    const [nuevoRubroEmoji, setNuevoRubroEmoji] = useState('📦');
     const [guardando, setGuardando] = useState(false);
 
     const parseMonto = (v) => parseFloat(String(v).replace(/[^\d.]/g, '')) || 0;
@@ -8010,8 +8021,8 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             }, usuario?.nombre);
           }
         } else {
-          // Crear o editar movimiento
-          await upsertPrestamoMovimiento({
+          // Crear o editar movimiento (versión extendida con empresa_destino, rubro_id, nota)
+          await upsertPrestamoMovimientoExt({
             id: isEditarMov ? movDefault.id : undefined,
             prestamoId: prestamo.id,
             empresaId,
@@ -8019,6 +8030,9 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             tipo: tipoMov,
             monto: parseMonto(montoMov),
             concepto: conceptoMov.trim() || null,
+            empresaDestino: empresaDestino || null,
+            rubroId: rubroId || null,
+            nota: notaMov.trim() || '',
           }, usuario?.nombre);
         }
         await onSaved();
@@ -8087,8 +8101,79 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                 )}
               </div>
               <div style={{marginBottom:14}}>
-                <label style={{fontSize:11,color:C.muted,display:'block',marginBottom:4,fontWeight:600}}>Concepto</label>
+                <label style={{fontSize:11,color:C.muted,display:'block',marginBottom:4,fontWeight:600}}>Empresa destino</label>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                  <button type="button" onClick={()=>setEmpresaDestino('viajes_libero')}
+                          style={{padding:'10px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',
+                                  background:empresaDestino==='viajes_libero'?'linear-gradient(135deg, #185FA5, #2E78C7)':'#fff',
+                                  color:empresaDestino==='viajes_libero'?'#fff':'#185FA5',
+                                  border: empresaDestino==='viajes_libero'?'none':'1.5px solid #DBEAFE'}}>
+                    🏢 Viajes Libero
+                  </button>
+                  <button type="button" onClick={()=>setEmpresaDestino('bromelia')}
+                          style={{padding:'10px',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',
+                                  background:empresaDestino==='bromelia'?'linear-gradient(135deg, #6B47C7, #9580E2)':'#fff',
+                                  color:empresaDestino==='bromelia'?'#fff':'#6B47C7',
+                                  border: empresaDestino==='bromelia'?'none':'1.5px solid #DDD6FE'}}>
+                    🏢 Transportes Bromelia
+                  </button>
+                </div>
+              </div>
+
+              <div style={{marginBottom:14}}>
+                <label style={{fontSize:11,color:C.muted,display:'block',marginBottom:4,fontWeight:600}}>Rubro</label>
+                {!agregandoRubro ? (
+                  <select value={rubroId} onChange={(e)=>{
+                    if (e.target.value === '__nuevo__') { setAgregandoRubro(true); }
+                    else { setRubroId(e.target.value); }
+                  }} style={{width:'100%',border:`1px solid ${C.border}`,padding:'8px 10px',borderRadius:6,fontSize:13,background:'#fff',fontFamily:'inherit'}}>
+                    <option value="">-- Selecciona un rubro --</option>
+                    {(rubrosPrestamo||[]).map(r => (
+                      <option key={r.id} value={r.id}>{r.emoji} {r.nombre}</option>
+                    ))}
+                    <option value="__nuevo__">➕ Agregar rubro nuevo...</option>
+                  </select>
+                ) : (
+                  <div style={{background:'#FFFBEB',border:'1.5px solid #FCD34D',borderRadius:8,padding:'10px 12px'}}>
+                    <div style={{display:'grid',gridTemplateColumns:'70px 1fr',gap:8,marginBottom:8}}>
+                      <input value={nuevoRubroEmoji} onChange={(e)=>setNuevoRubroEmoji(e.target.value)} maxLength={3}
+                             style={{textAlign:'center',padding:8,border:'1px solid #FCD34D',borderRadius:6,fontSize:18,background:'#fff'}}/>
+                      <input value={nuevoRubroNombre} onChange={(e)=>setNuevoRubroNombre(e.target.value)} autoFocus
+                             placeholder="Nombre del rubro" style={{padding:'8px 10px',border:'1px solid #FCD34D',borderRadius:6,fontSize:13,background:'#fff'}}/>
+                    </div>
+                    <div style={{display:'flex',gap:6}}>
+                      <button type="button" disabled={!nuevoRubroNombre.trim()} onClick={async()=>{
+                        const nuevo = await insertRubroPrestamo({
+                          nombre: nuevoRubroNombre.trim(),
+                          emoji: nuevoRubroEmoji,
+                          orden: 999,
+                        }, usuario?.nombre);
+                        if (nuevo) {
+                          const fresh = await fetchRubrosPrestamo();
+                          setRubrosPrestamo(fresh);
+                          setRubroId(nuevo.id);
+                        }
+                        setAgregandoRubro(false);
+                        setNuevoRubroNombre('');
+                        setNuevoRubroEmoji('📦');
+                      }} style={{flex:1,background:'#1D7A4E',color:'#fff',border:'none',padding:'7px',borderRadius:6,fontSize:12,fontWeight:700,cursor:nuevoRubroNombre.trim()?'pointer':'not-allowed',opacity:nuevoRubroNombre.trim()?1:0.5}}>✓ Crear rubro</button>
+                      <button type="button" onClick={()=>{setAgregandoRubro(false);setNuevoRubroNombre('');setNuevoRubroEmoji('📦');}}
+                              style={{background:'#fff',border:'1px solid #E2E8F0',color:'#64748B',padding:'7px 12px',borderRadius:6,fontSize:12,fontWeight:600,cursor:'pointer'}}>Cancelar</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div style={{marginBottom:14}}>
+                <label style={{fontSize:11,color:C.muted,display:'block',marginBottom:4,fontWeight:600}}>Concepto (opcional, descripción adicional)</label>
                 <input value={conceptoMov} onChange={(e) => setConceptoMov(e.target.value)} placeholder="Ej: Pago nómina quincena 1" style={{width:'100%',border:`1px solid ${C.border}`,padding:'8px 10px',borderRadius:6,fontSize:13,fontFamily:'inherit'}}/>
+              </div>
+
+              <div style={{marginBottom:14}}>
+                <label style={{fontSize:11,color:C.muted,display:'block',marginBottom:4,fontWeight:600}}>Nota (opcional)</label>
+                <textarea value={notaMov} onChange={(e) => setNotaMov(e.target.value)} placeholder="Ej: El miércoles se depositan USD para reponer"
+                          rows={2}
+                          style={{width:'100%',border:`1px solid ${C.border}`,padding:'8px 10px',borderRadius:6,fontSize:12,fontFamily:'inherit',resize:'vertical'}}/>
               </div>
 
               {/* Preview del efecto */}
@@ -8123,103 +8208,328 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
   // MODAL: Histórico de movimientos del préstamo
   // ═══════════════════════════════════════════════════════════════════
   const PrestamoHistoricoModal = ({ prestamo, movimientos, prestamoCalc, esConsulta, onClose, onEditar, onBorrar, onNuevo }) => {
-    // Calcular saldo bloqueado después de cada movimiento (recorrido cronológico)
-    const movsConSaldo = useMemo(() => {
-      let utilAcum = 0;
-      return (movimientos || []).map(m => {
-        if (m.tipo === 'disposicion') utilAcum += +m.monto || 0;
-        else if (m.tipo === 'pago')   utilAcum -= +m.monto || 0;
-        utilAcum = Math.max(0, utilAcum);
-        return { ...m, bloqueadoDespues: Math.max(0, (+prestamo.montoAutorizado || 0) - utilAcum) };
-      });
-    }, [movimientos, prestamo]);
+    // Mapa de rubros por id para lookup rápido
+    const rubrosMap = useMemo(() => {
+      const m = {};
+      (rubrosPrestamo || []).forEach(r => { m[r.id] = r; });
+      return m;
+    }, [rubrosPrestamo]);
 
-    const tipoBadge = (tipo) => {
-      if (tipo === 'inicial')     return { bg:'#D1FAE5', color:'#065F46', text:'Inicial', sign:'+' };
-      if (tipo === 'disposicion') return { bg:'#DBEAFE', color:'#1E40AF', text:'Disposición', sign:'−' };
-      if (tipo === 'pago')        return { bg:'#FEF3C7', color:'#92400E', text:'Pago', sign:'+' };
-      return { bg:'#F3F4F6', color:'#374151', text:tipo, sign:'' };
+    // Recepción inicial (mostrar arriba destacada)
+    const recepcionInicial = (movimientos || []).find(m => m.tipo === 'inicial');
+    // Movimientos no iniciales (disposiciones + pagos)
+    const movsNoIniciales = (movimientos || []).filter(m => m.tipo !== 'inicial');
+
+    // Agrupar por empresa_destino y luego por rubro
+    const agruparPorEmpresa = (empresaDestino) => {
+      const movsEmpresa = movsNoIniciales.filter(m => m.empresaDestino === empresaDestino);
+      // Agrupar por rubro
+      const grupos = new Map(); // key = rubro_id || concepto_normalizado
+      movsEmpresa.forEach(m => {
+        const key = m.rubroId || `concepto:${(m.concepto||'sin_rubro').toLowerCase().trim()}`;
+        if (!grupos.has(key)) {
+          grupos.set(key, {
+            key,
+            rubro: m.rubroId ? rubrosMap[m.rubroId] : null,
+            conceptoLegado: !m.rubroId ? (m.concepto || 'Sin rubro') : '',
+            movimientos: [],
+            total: 0,
+          });
+        }
+        const g = grupos.get(key);
+        g.movimientos.push(m);
+        // Disposición resta, pago suma (al concepto)
+        const signed = m.tipo === 'pago' ? -m.monto : m.monto;
+        g.total += signed;
+      });
+      // Convertir a array y ordenar por total descendente
+      return Array.from(grupos.values()).sort((a,b) => b.total - a.total);
     };
 
-    return (
-      <div onClick={onClose} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(31,41,55,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:20,fontFamily:'"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',WebkitFontSmoothing:'antialiased',MozOsxFontSmoothing:'grayscale',textRendering:'optimizeLegibility'}}>
-        <div onClick={(e) => e.stopPropagation()} style={{background:'#fff',borderRadius:14,padding:24,maxWidth:760,width:'100%',maxHeight:'85vh',display:'flex',flexDirection:'column',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14,paddingBottom:12,borderBottom:`1px solid ${C.border}`}}>
-            <div>
-              <h3 style={{fontSize:16,fontWeight:800,color:C.navy,margin:0}}>📜 Histórico del préstamo</h3>
-              <p style={{fontSize:11,color:C.muted,margin:'4px 0 0'}}>{prestamo.banco}{prestamo.numeroCuenta ? ` · Cta. ${prestamo.numeroCuenta}` : ''}</p>
-            </div>
-            <div style={{display:'flex',gap:8,alignItems:'center'}}>
-              {!esConsulta && (
-                <button onClick={onNuevo} style={{background:C.navy,color:'#fff',border:'none',padding:'7px 14px',borderRadius:7,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>+ Nuevo movimiento</button>
+    const gruposVL = useMemo(() => agruparPorEmpresa('viajes_libero'), [movsNoIniciales, rubrosMap]);
+    const gruposBR = useMemo(() => agruparPorEmpresa('bromelia'), [movsNoIniciales, rubrosMap]);
+
+    // Totales por empresa
+    const totalVL = gruposVL.reduce((s,g) => s + g.total, 0);
+    const totalBR = gruposBR.reduce((s,g) => s + g.total, 0);
+    const movsVLCount = gruposVL.reduce((s,g) => s + g.movimientos.length, 0);
+    const movsBRCount = gruposBR.reduce((s,g) => s + g.movimientos.length, 0);
+
+    // Estado de grupos expandidos
+    const [gruposExpandidos, setGruposExpandidos] = useState({});
+    const toggleGrupo = (key) => setGruposExpandidos(prev => ({ ...prev, [key]: !prev[key] }));
+
+    // Exportar imagen con html2canvas
+    const exportRef = useRef(null);
+    const [exportando, setExportando] = useState(false);
+    const handleExportar = async () => {
+      if (!exportRef.current) return;
+      setExportando(true);
+      try {
+        const html2canvas = (await import('html2canvas')).default;
+        const canvas = await html2canvas(exportRef.current, {
+          backgroundColor: '#FFFFFF',
+          scale: 2,
+          useCORS: true,
+        });
+        const link = document.createElement('a');
+        link.download = `historico-prestamo-${prestamo.banco}-${new Date().toISOString().slice(0,10)}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      } catch (err) {
+        console.error('Error al exportar:', err);
+        alert('Error al exportar la imagen');
+      }
+      setExportando(false);
+    };
+
+    // Renderiza una card de grupo (un rubro)
+    const renderGrupoCard = (grupo, colorBase, borderColor, bgLight) => {
+      const expanded = gruposExpandidos[grupo.key] || false;
+      const tieneMultiples = grupo.movimientos.length > 1;
+      const emoji = grupo.rubro?.emoji || '📦';
+      const nombre = grupo.rubro?.nombre || grupo.conceptoLegado;
+      // Movimientos ordenados cronológicamente
+      const movsOrdenados = [...grupo.movimientos].sort((a,b) => (a.fecha || '').localeCompare(b.fecha || ''));
+
+      return (
+        <div key={grupo.key} style={{
+          background:'#fff',
+          border:`1px solid ${borderColor}`,
+          borderRadius:12,
+          overflow:'hidden',
+          boxShadow:`0 2px 6px ${colorBase}10`,
+        }}>
+          {/* Header del rubro */}
+          <div onClick={tieneMultiples ? () => toggleGrupo(grupo.key) : undefined}
+               style={{
+                 padding:'12px 16px',
+                 background: tieneMultiples ? `linear-gradient(90deg, ${bgLight}, #fff)` : '#fff',
+                 borderLeft:`4px solid ${colorBase}`,
+                 cursor: tieneMultiples ? 'pointer' : 'default',
+                 display:'flex',
+                 justifyContent:'space-between',
+                 alignItems:'center',
+               }}>
+            <div style={{display:'flex',alignItems:'center',gap:10}}>
+              {tieneMultiples && (
+                <span style={{fontSize:12,color:colorBase,fontWeight:700}}>{expanded ? '▼' : '▶'}</span>
               )}
-              <button onClick={onClose} style={{background:'transparent',border:'none',fontSize:22,cursor:'pointer',color:C.muted,padding:0,lineHeight:1}}>×</button>
+              <span style={{fontSize:18}}>{emoji}</span>
+              <div>
+                <div style={{fontSize:13,fontWeight:800,color:'#1A2332'}}>{nombre}</div>
+                <div style={{fontSize:10,color:tieneMultiples?colorBase:'#94A3B8',marginTop:2,fontWeight:600}}>
+                  {grupo.movimientos.length} {grupo.movimientos.length===1?'movimiento':'movimientos'}
+                </div>
+              </div>
+            </div>
+            <div style={{fontSize:tieneMultiples?19:18,fontWeight:700,color:'#C04A4D',fontVariantNumeric:'tabular-nums'}}>
+              -${fmt(Math.abs(grupo.total))}
             </div>
           </div>
-
-          {/* KPIs */}
-          {prestamoCalc && (
-            <div style={{display:'grid',gridTemplateColumns:'repeat(3, 1fr)',gap:10,marginBottom:14}}>
-              <div style={{background:'#F9FAFB',borderRadius:8,padding:'10px 12px'}}>
-                <div style={{fontSize:10,color:C.muted,fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>Autorizado</div>
-                <div style={{fontSize:16,fontWeight:800,marginTop:2,fontFamily:'monospace',fontVariantNumeric:'tabular-nums',color:'#1F2937'}}>${fmt(prestamoCalc.autorizado)}</div>
-              </div>
-              <div style={{background:'#EFF6FF',borderRadius:8,padding:'10px 12px'}}>
-                <div style={{fontSize:10,color:'#1E40AF',fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>Utilizado</div>
-                <div style={{fontSize:16,fontWeight:800,marginTop:2,fontFamily:'monospace',fontVariantNumeric:'tabular-nums',color:'#1E40AF'}}>${fmt(prestamoCalc.utilizado)}</div>
-              </div>
-              <div style={{background:'#FEF3C7',borderRadius:8,padding:'10px 12px'}}>
-                <div style={{fontSize:10,color:'#92400E',fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}>Bloqueado</div>
-                <div style={{fontSize:16,fontWeight:800,marginTop:2,fontFamily:'monospace',fontVariantNumeric:'tabular-nums',color:'#92400E'}}>${fmt(prestamoCalc.bloqueado)}</div>
+          {/* Sub-movimientos (si está expandido) */}
+          {expanded && tieneMultiples && (
+            <div style={{padding:'6px 12px 12px 36px',display:'flex',flexDirection:'column',gap:6,background:bgLight}}>
+              {movsOrdenados.map(m => (
+                <div key={m.id} style={{
+                  background: m.nota ? '#FFFBEB' : '#fff',
+                  borderRadius:8,
+                  border: m.nota ? '1px solid #FCD34D' : '1px solid #F1F5F9',
+                  padding:'8px 12px',
+                }}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <div style={{fontSize:11,color:'#64748B'}}>
+                      📅 {m.fecha}
+                      {m.tipo === 'pago' && <span style={{marginLeft:6,color:'#1D7A4E',fontWeight:700,fontSize:10}}>· Pago</span>}
+                    </div>
+                    <div style={{display:'flex',alignItems:'center',gap:6}}>
+                      <span style={{fontSize:13,fontWeight:700,color: m.tipo==='pago'?'#1D7A4E':'#C04A4D',fontVariantNumeric:'tabular-nums'}}>
+                        {m.tipo==='pago' ? '+' : '-'}${fmt(m.monto)}
+                      </span>
+                      {!esConsulta && (
+                        <div style={{display:'flex',gap:3}}>
+                          <button onClick={(e) => {e.stopPropagation();onEditar(m);}} title="Editar"
+                                  style={{background:'#F1F5F9',border:'none',width:22,height:22,borderRadius:5,fontSize:10,cursor:'pointer'}}>✎</button>
+                          <button onClick={(e) => {e.stopPropagation();onBorrar(m.id);}} title="Borrar"
+                                  style={{background:'#FEE',border:'none',width:22,height:22,borderRadius:5,fontSize:10,cursor:'pointer'}}>🗑</button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {m.nota && (
+                    <div style={{background:'#FEF3C7',borderRadius:5,padding:'5px 9px',marginTop:6,borderLeft:'2px solid #F59E0B'}}>
+                      <div style={{fontSize:10,color:'#8C6B1A',fontWeight:600,lineHeight:1.3}}>📝 {m.nota}</div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {/* Si tiene 1 solo movimiento, mostrar nota inline si la tiene */}
+          {!tieneMultiples && movsOrdenados[0]?.nota && (
+            <div style={{padding:'0 16px 12px',marginLeft:4}}>
+              <div style={{background:'#FFFBEB',borderRadius:6,padding:'7px 11px',borderLeft:'2px solid #F59E0B'}}>
+                <div style={{fontSize:11,color:'#8C6B1A',fontWeight:600,lineHeight:1.4}}>📝 {movsOrdenados[0].nota}</div>
               </div>
             </div>
           )}
+          {/* Si tiene 1 solo movimiento, fecha + botones de editar inline */}
+          {!tieneMultiples && (
+            <div style={{padding:'0 16px 12px',marginLeft:4,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div style={{fontSize:11,color:'#64748B'}}>📅 {movsOrdenados[0]?.fecha}</div>
+              {!esConsulta && (
+                <div style={{display:'flex',gap:4}}>
+                  <button onClick={(e) => {e.stopPropagation();onEditar(movsOrdenados[0]);}} title="Editar"
+                          style={{background:'#F1F5F9',border:'none',width:24,height:24,borderRadius:6,fontSize:11,cursor:'pointer'}}>✎</button>
+                  <button onClick={(e) => {e.stopPropagation();onBorrar(movsOrdenados[0].id);}} title="Borrar"
+                          style={{background:'#FEE',border:'none',width:24,height:24,borderRadius:6,fontSize:11,cursor:'pointer'}}>🗑</button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    };
 
-          {/* Tabla */}
-          <div style={{flex:1,overflowY:'auto',border:`1px solid ${C.border}`,borderRadius:8}}>
-            {movsConSaldo.length === 0 ? (
-              <div style={{padding:40,textAlign:'center',color:C.muted}}>
-                <div style={{fontSize:36,marginBottom:8}}>📋</div>
-                <div style={{fontSize:13}}>Sin movimientos registrados todavía.</div>
+    return (
+      <div onClick={onClose} style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(31,41,55,0.55)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:16,fontFamily:'"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif'}}>
+        <div onClick={(e) => e.stopPropagation()} style={{background:'#fff',borderRadius:16,maxWidth:1500,width:'95vw',height:'92vh',display:'flex',flexDirection:'column',boxShadow:'0 24px 60px rgba(0,0,0,0.3)',overflow:'hidden'}}>
+          {/* HEADER */}
+          <div style={{padding:'18px 28px',borderBottom:`1px solid ${C.border}`,display:'flex',justifyContent:'space-between',alignItems:'center',background:'linear-gradient(180deg, #fff, #FAFCFE)'}}>
+            <div>
+              <div style={{fontSize:18,fontWeight:800,color:'#1A2332',display:'flex',alignItems:'center',gap:10}}>
+                <span style={{fontSize:22}}>📜</span> Histórico del préstamo
+                <span style={{background:'#F1F5F9',color:'#185FA5',fontSize:11,fontWeight:800,padding:'4px 11px',borderRadius:99,letterSpacing:0.4}}>{prestamo.banco}{prestamo.numeroCuenta ? ` · ${limpiaCta(prestamo.numeroCuenta)}` : ''}</span>
               </div>
-            ) : (
-              <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                <thead style={{background:'#F9FAFB',position:'sticky',top:0}}>
-                  <tr style={{borderBottom:`1px solid ${C.border}`}}>
-                    <th style={{textAlign:'left',padding:'9px 10px',fontWeight:700,color:C.muted,fontSize:10,letterSpacing:0.5,textTransform:'uppercase'}}>Fecha</th>
-                    <th style={{textAlign:'left',padding:'9px 10px',fontWeight:700,color:C.muted,fontSize:10,letterSpacing:0.5,textTransform:'uppercase'}}>Tipo</th>
-                    <th style={{textAlign:'left',padding:'9px 10px',fontWeight:700,color:C.muted,fontSize:10,letterSpacing:0.5,textTransform:'uppercase'}}>Concepto</th>
-                    <th style={{textAlign:'right',padding:'9px 10px',fontWeight:700,color:C.muted,fontSize:10,letterSpacing:0.5,textTransform:'uppercase'}}>Monto</th>
-                    <th style={{textAlign:'right',padding:'9px 10px',fontWeight:700,color:C.muted,fontSize:10,letterSpacing:0.5,textTransform:'uppercase'}}>Bloqueado</th>
-                    <th style={{width:80}}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {movsConSaldo.map((m, idx) => {
-                    const b = tipoBadge(m.tipo);
-                    return (
-                      <tr key={m.id || idx} style={{borderBottom:idx<movsConSaldo.length-1?`1px solid ${C.border}`:'none'}}>
-                        <td style={{padding:'9px 10px',fontFamily:'monospace',fontSize:11,color:'#1F2937'}}>{m.fecha}</td>
-                        <td style={{padding:'9px 10px'}}>
-                          <span style={{padding:'2px 9px',background:b.bg,color:b.color,borderRadius:999,fontSize:10,fontWeight:700,letterSpacing:0.3}}>{b.text}</span>
-                        </td>
-                        <td style={{padding:'9px 10px',color:'#1F2937'}}>{m.concepto || '—'}</td>
-                        <td style={{padding:'9px 10px',textAlign:'right',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',fontWeight:700,color:b.color}}>{b.sign}${fmt(m.monto)}</td>
-                        <td style={{padding:'9px 10px',textAlign:'right',fontFamily:'monospace',fontVariantNumeric:'tabular-nums',color:C.muted}}>${fmt(m.bloqueadoDespues)}</td>
-                        <td style={{textAlign:'center',padding:'4px 6px'}}>
-                          {!esConsulta && m.tipo !== 'inicial' && (
-                            <div style={{display:'flex',gap:4,justifyContent:'center'}}>
-                              <button onClick={() => onEditar(m)} title="Editar" style={{background:'transparent',border:`1px solid ${C.border}`,padding:'3px 6px',borderRadius:4,fontSize:10,cursor:'pointer',color:C.muted,fontFamily:'inherit'}}>✎</button>
-                              <button onClick={() => onBorrar(m.id)} title="Borrar" style={{background:'transparent',border:`1px solid #FCA5A5`,padding:'3px 6px',borderRadius:4,fontSize:10,cursor:'pointer',color:'#DC2626',fontFamily:'inherit'}}>🗑</button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <div style={{fontSize:12,color:'#64748B',marginTop:4}}>Trazabilidad por empresa y rubro</div>
+            </div>
+            <div style={{display:'flex',gap:8}}>
+              <button onClick={handleExportar} disabled={exportando}
+                      style={{background:'#fff',border:'1.5px solid #E2E8F0',color:'#64748B',padding:'8px 14px',borderRadius:9,fontSize:12,fontWeight:700,cursor:exportando?'wait':'pointer',display:'flex',alignItems:'center',gap:6}}>
+                📸 {exportando ? 'Generando...' : 'Exportar imagen'}
+              </button>
+              {!esConsulta && (
+                <button onClick={onNuevo}
+                        style={{background:'linear-gradient(135deg, #185FA5, #2E78C7)',color:'#fff',border:'none',padding:'8px 14px',borderRadius:9,fontSize:12,fontWeight:700,cursor:'pointer'}}>+ Nuevo movimiento</button>
+              )}
+              <button onClick={onClose}
+                      style={{background:'#F1F5F9',border:'none',width:34,height:34,borderRadius:9,cursor:'pointer',color:'#64748B',fontSize:16}}>×</button>
+            </div>
+          </div>
+
+          {/* Contenido scrolleable + ref para exportar */}
+          <div ref={exportRef} style={{flex:1,overflowY:'auto',background:'#fff'}}>
+            {/* KPIs */}
+            {prestamoCalc && (
+              <div style={{display:'grid',gridTemplateColumns:'repeat(3, 1fr)',gap:12,padding:'18px 28px',borderBottom:`1px solid ${C.border}`}}>
+                <div style={{background:'#F0FAF5',border:'1px solid #BFE5CD',borderRadius:10,padding:'12px 16px'}}>
+                  <div style={{fontSize:10,color:'#1D7A4E',fontWeight:700,letterSpacing:0.5}}>AUTORIZADO</div>
+                  <div style={{fontSize:19,fontWeight:800,color:'#1A2332',fontVariantNumeric:'tabular-nums',marginTop:2}}>${fmt(prestamoCalc.autorizado)}</div>
+                </div>
+                <div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:10,padding:'12px 16px'}}>
+                  <div style={{fontSize:10,color:'#185FA5',fontWeight:700,letterSpacing:0.5}}>UTILIZADO</div>
+                  <div style={{fontSize:19,fontWeight:800,color:'#1A2332',fontVariantNumeric:'tabular-nums',marginTop:2}}>${fmt(prestamoCalc.utilizado)}</div>
+                </div>
+                <div style={{background:'linear-gradient(135deg, #FFFBEB, #FEF3C7)',border:'1.5px solid #FCD34D',borderRadius:10,padding:'12px 16px',boxShadow:'0 2px 8px rgba(245, 158, 11, 0.10)'}}>
+                  <div style={{fontSize:10,color:'#8C6B1A',fontWeight:700,letterSpacing:0.5}}>💰 DISPONIBLE</div>
+                  <div style={{fontSize:19,fontWeight:800,color:'#1A2332',fontVariantNumeric:'tabular-nums',marginTop:2}}>${fmt(prestamoCalc.bloqueado)}</div>
+                </div>
+              </div>
             )}
+
+            {/* Recepción inicial */}
+            {recepcionInicial && (
+              <div style={{padding:'14px 28px',background:'linear-gradient(90deg, #F0FAF5, #F0FAF5 60%, #fff)',borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',gap:14}}>
+                <div style={{width:36,height:36,borderRadius:'50%',background:'linear-gradient(135deg, #2EBC76, #1D7A4E)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0,boxShadow:'0 2px 6px rgba(29, 122, 78, 0.30)'}}>💰</div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:13,color:'#1A2332',fontWeight:700}}>Recepción del préstamo {prestamo.banco}</div>
+                  <div style={{fontSize:11,color:'#64748B'}}>{recepcionInicial.fecha} · Inicio del crédito</div>
+                </div>
+                <div style={{fontSize:17,color:'#1D7A4E',fontWeight:700,fontVariantNumeric:'tabular-nums'}}>+${fmt(recepcionInicial.monto)}</div>
+              </div>
+            )}
+
+            {/* Headers de cascadas */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:0,background:'#F8FAFC',borderBottom:`1px solid ${C.border}`}}>
+              {/* Header VIAJES LIBERO */}
+              <div style={{padding:'14px 22px',background:'linear-gradient(90deg, #DBEAFE, #EFF6FF)',borderRight:`2px solid ${C.border}`}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:20}}>
+                  <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                    <span style={{fontSize:18}}>🏢</span>
+                    <span style={{fontSize:14,fontWeight:800,color:'#185FA5',letterSpacing:0.3}}>VIAJES LIBERO</span>
+                    <span style={{background:'#185FA5',color:'#fff',fontSize:10,fontWeight:800,padding:'3px 9px',borderRadius:99,marginRight:8}}>{movsVLCount} {movsVLCount===1?'mov':'movs'} · {gruposVL.length} {gruposVL.length===1?'rubro':'rubros'}</span>
+                  </div>
+                  <div style={{fontSize:16,fontWeight:800,color:'#185FA5',fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>-${fmt(Math.abs(totalVL))}</div>
+                </div>
+              </div>
+              {/* Header BROMELIA */}
+              <div style={{padding:'14px 22px',background:'linear-gradient(90deg, #EDE9FE, #F5F3FF)'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:20}}>
+                  <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                    <span style={{fontSize:18}}>🏢</span>
+                    <span style={{fontSize:14,fontWeight:800,color:'#6B47C7',letterSpacing:0.3}}>TRANSPORTES BROMELIA</span>
+                    <span style={{background:'#6B47C7',color:'#fff',fontSize:10,fontWeight:800,padding:'3px 9px',borderRadius:99,marginRight:8}}>{movsBRCount} {movsBRCount===1?'mov':'movs'} · {gruposBR.length} {gruposBR.length===1?'rubro':'rubros'}</span>
+                  </div>
+                  <div style={{fontSize:16,fontWeight:800,color:'#6B47C7',fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>-${fmt(Math.abs(totalBR))}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* CASCADAS · grid 1fr 1fr */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:0,minHeight:300}}>
+              {/* IZQUIERDA · Viajes Libero */}
+              <div style={{padding:'18px 22px',borderRight:`2px solid ${C.border}`,background:'linear-gradient(180deg, #FAFCFE 0%, #fff 100%)',display:'flex',flexDirection:'column',gap:14}}>
+                {gruposVL.length === 0 ? (
+                  <div style={{padding:'40px 20px',textAlign:'center',color:'#94A3B8'}}>
+                    <div style={{fontSize:32,opacity:0.4,marginBottom:8}}>🏢</div>
+                    <div style={{fontSize:12,fontWeight:600}}>Sin movimientos a Viajes Libero</div>
+                  </div>
+                ) : (
+                  gruposVL.map(g => renderGrupoCard(g, '#185FA5', '#DBEAFE', '#EFF6FF'))
+                )}
+              </div>
+              {/* DERECHA · Bromelia */}
+              <div style={{padding:'18px 22px',background:'linear-gradient(180deg, #FAFAFE 0%, #fff 100%)',display:'flex',flexDirection:'column',gap:14}}>
+                {gruposBR.length === 0 ? (
+                  <div style={{padding:'40px 20px',textAlign:'center',color:'#94A3B8'}}>
+                    <div style={{fontSize:32,opacity:0.4,marginBottom:8}}>🏢</div>
+                    <div style={{fontSize:12,fontWeight:600}}>Sin movimientos a Transportes Bromelia</div>
+                  </div>
+                ) : (
+                  gruposBR.map(g => renderGrupoCard(g, '#6B47C7', '#DDD6FE', '#F5F3FF'))
+                )}
+              </div>
+            </div>
+
+            {/* Movimientos legacy (sin empresa_destino) */}
+            {(() => {
+              const legacy = movsNoIniciales.filter(m => !m.empresaDestino);
+              if (legacy.length === 0) return null;
+              return (
+                <div style={{padding:'14px 28px',borderTop:`1px solid ${C.border}`,background:'#FFFBEB'}}>
+                  <div style={{fontSize:11,fontWeight:700,color:'#8C6B1A',marginBottom:8,letterSpacing:0.4}}>⚠️ MOVIMIENTOS SIN EMPRESA ASIGNADA ({legacy.length})</div>
+                  <div style={{fontSize:11,color:'#64748B',marginBottom:10}}>Edita estos movimientos para asignarles una empresa y un rubro.</div>
+                  <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                    {legacy.map(m => (
+                      <div key={m.id} style={{background:'#fff',borderRadius:8,padding:'8px 12px',display:'flex',justifyContent:'space-between',alignItems:'center',border:'1px solid #FCD34D'}}>
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:12,color:'#1A2332',fontWeight:600}}>{m.concepto || '—'}</div>
+                          <div style={{fontSize:10,color:'#64748B'}}>📅 {m.fecha}</div>
+                        </div>
+                        <div style={{display:'flex',alignItems:'center',gap:8}}>
+                          <span style={{fontSize:13,fontWeight:700,color: m.tipo==='pago'?'#1D7A4E':'#C04A4D',fontVariantNumeric:'tabular-nums'}}>
+                            {m.tipo==='pago' ? '+' : '-'}${fmt(m.monto)}
+                          </span>
+                          {!esConsulta && (
+                            <button onClick={() => onEditar(m)} style={{background:'#F1F5F9',border:'none',padding:'4px 8px',borderRadius:5,fontSize:10,cursor:'pointer',fontWeight:700}}>✎ Asignar</button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       </div>

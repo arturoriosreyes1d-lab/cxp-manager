@@ -1472,6 +1472,9 @@ export async function fetchPrestamoMovimientos(prestamoId) {
     tipo: r.tipo,            // 'disposicion' | 'pago' | 'inicial'
     monto: +r.monto || 0,    // siempre positivo
     concepto: r.concepto || '',
+    empresaDestino: r.empresa_destino || '',  // 'viajes_libero' | 'bromelia' | ''
+    rubroId: r.rubro_id || null,
+    nota: r.nota || '',
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }));
@@ -2375,4 +2378,91 @@ export async function deleteGastoFijo(id) {
     .eq('id', id);
   if (error) { console.error('deleteGastoFijo:', error); return false; }
   return true;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ * RUBROS DEL PRÉSTAMO (globales para ambas empresas)
+ * ───────────────────────────────────────────────────────────────────── */
+
+export async function fetchRubrosPrestamo() {
+  const { data, error } = await supabase
+    .from('rubros_prestamo')
+    .select('*')
+    .eq('activo', true)
+    .order('orden', { ascending: true })
+    .order('nombre', { ascending: true });
+  if (error) { console.error('fetchRubrosPrestamo:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id,
+    nombre: r.nombre || '',
+    emoji: r.emoji || '📦',
+    orden: +r.orden || 0,
+    activo: r.activo !== false,
+    createdAt: r.created_at,
+    createdBy: r.created_by || '',
+  }));
+}
+
+export async function insertRubroPrestamo(rubro, usuario) {
+  const row = {
+    nombre: rubro.nombre,
+    emoji: rubro.emoji || '📦',
+    orden: rubro.orden || 999,
+    created_by: usuario || '',
+  };
+  const { data, error } = await supabase
+    .from('rubros_prestamo')
+    .insert([row])
+    .select()
+    .single();
+  if (error) {
+    // Si fue conflicto de duplicado, recuperamos el existente
+    if (error.code === '23505') {
+      const { data: existente } = await supabase
+        .from('rubros_prestamo')
+        .select('*')
+        .ilike('nombre', rubro.nombre)
+        .single();
+      return existente;
+    }
+    console.error('insertRubroPrestamo:', error);
+    return null;
+  }
+  return data;
+}
+
+/* Actualización de upsertPrestamoMovimiento para soportar empresa_destino, rubro_id, nota */
+export async function upsertPrestamoMovimientoExt(m, usuario) {
+  const row = {
+    prestamo_id: m.prestamoId,
+    empresa_id: m.empresaId,
+    fecha: m.fecha,
+    tipo: m.tipo,
+    monto: +m.monto || 0,
+    concepto: m.concepto || null,
+    empresa_destino: m.empresaDestino || null,
+    rubro_id: m.rubroId || null,
+    nota: m.nota || '',
+    updated_by: usuario || 'desconocido',
+  };
+  const isUUID = m.id && /^[0-9a-f]{8}-[0-9a-f]{4}-/.test(m.id);
+  if (isUUID) {
+    const { data, error } = await supabase
+      .from('prestamo_movimientos')
+      .update(row)
+      .eq('id', m.id)
+      .select()
+      .single();
+    if (error) { console.error('upsertPrestamoMovimientoExt update:', error); return null; }
+    return data?.id;
+  } else {
+    row.created_by = usuario || 'desconocido';
+    const { data, error } = await supabase
+      .from('prestamo_movimientos')
+      .insert(row)
+      .select()
+      .single();
+    if (error) { console.error('upsertPrestamoMovimientoExt insert:', error); return null; }
+    return data?.id;
+  }
 }
