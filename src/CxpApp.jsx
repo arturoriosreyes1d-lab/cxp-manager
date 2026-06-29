@@ -8359,7 +8359,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                       {m.tipo === 'pago' && <span style={{marginLeft:6,color:'#1D7A4E',fontWeight:700,fontSize:14}}>· Pago</span>}
                     </div>
                     <div style={{display:'flex',alignItems:'center',gap:6}}>
-                      <span style={{fontSize:17,fontWeight:700,color: m.tipo==='pago'?'#1D7A4E':'#C04A4D',fontVariantNumeric:'tabular-nums'}}>
+                      <span style={{fontSize:17,fontWeight:700,color: m.tipo==='pago'?'#1D7A4E':'#C04A4D',fontVariantNumeric:'tabular-nums',minWidth:140,textAlign:'right',display:'inline-block'}}>
                         {m.tipo==='pago' ? '+' : '-'}${fmt(m.monto)}
                       </span>
                       {!esConsulta && (
