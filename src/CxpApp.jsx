@@ -10683,11 +10683,32 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           ...invoices.USD.map(i=>({...i,moneda:"USD"})),
           ...invoices.EUR.map(i=>({...i,moneda:"EUR"})),
         ];
+        // Calcular total pagado por factura (sumando TODOS los pagos, no solo los filtrados)
+        const totalPagadoPorFactura = {};
+        payments.filter(p => p.tipo === 'realizado').forEach(p => {
+          totalPagadoPorFactura[p.invoiceId] = (totalPagadoPorFactura[p.invoiceId] || 0) + p.monto;
+        });
+
         const pagosActualizados = payments.filter(p => p.tipo === 'realizado').map(p => {
           const inv = allInvsForDetail.find(i=>i.id===p.invoiceId);
           if(!inv) return null;
           if (inv.proveedor !== pagosDetail.proveedor) return null;
-          return { ...p, proveedor:inv.proveedor, folio:`${inv.serie}${inv.folio}`, tipo:inv.tipo, fecha:inv.fecha, concepto:inv.concepto, moneda:inv.moneda, totalFactura:inv.total };
+          const pagadoTotal = totalPagadoPorFactura[p.invoiceId] || 0;
+          const pendiente = Math.max(0, (inv.total||0) - pagadoTotal);
+          return {
+            ...p,
+            proveedor: inv.proveedor,
+            folio: `${inv.serie}${inv.folio}`,
+            tipo: inv.tipo,
+            fecha: inv.fecha,
+            concepto: inv.concepto,
+            moneda: inv.moneda,
+            totalFactura: inv.total,
+            clasificacion: inv.clasificacion || '—',
+            vencimiento: inv.vencimiento || '—',
+            pagadoTotal,
+            pendiente,
+          };
         }).filter(Boolean);
 
         // Aplicar mismos filtros de fecha/búsqueda que en la vista principal
@@ -10785,32 +10806,61 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                     <div style={{fontWeight:800,color:C.ok,fontSize:18,fontVariantNumeric:"tabular-nums"}}>{monedaSimbolo}{fmt(group.total)}</div>
                   </div>
                 </div>
-                {/* Expanded: invoice detail */}
+                {/* Expanded: invoice detail — estilo Proyección de Pagos */}
                 {isOpen && (
                   <div style={{padding:"0 8px 8px"}}>
-                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
+                      <colgroup>
+                        <col style={{width:'9%'}}/>
+                        <col style={{width:'22%'}}/>
+                        <col style={{width:'10%'}}/>
+                        <col style={{width:'9%'}}/>
+                        <col style={{width:'10%'}}/>
+                        <col style={{width:'10%'}}/>
+                        <col style={{width:'10%'}}/>
+                        <col style={{width:'9%'}}/>
+                        <col style={{width:'11%'}}/>
+                      </colgroup>
                       <thead><tr style={{background:"#FAFBFC"}}>
-                        {["Tipo","Fecha Fact.","Folio","Concepto","Importe","Notas"].map(h=>(
-                          <th key={h} style={{padding:"8px 10px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>{h}</th>
-                        ))}
+                        <th style={{padding:"8px 8px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Folio</th>
+                        <th style={{padding:"8px 8px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Concepto</th>
+                        <th style={{padding:"8px 8px",textAlign:"center",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Clasif.</th>
+                        <th style={{padding:"8px 8px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Fecha</th>
+                        <th style={{padding:"8px 8px",textAlign:"right",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Total</th>
+                        <th style={{padding:"8px 8px",textAlign:"right",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Pagado</th>
+                        <th style={{padding:"8px 8px",textAlign:"right",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Pendiente</th>
+                        <th style={{padding:"8px 8px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Vence</th>
+                        <th style={{padding:"8px 8px",textAlign:"center",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Moneda</th>
                       </tr></thead>
                       <tbody>
-                        {group.pagos.map(p=>(
+                        {group.pagos.map(p=>{
+                          const monedaBg = { MXN:"#E3F2FD", USD:"#E8F5E9", EUR:"#F3E5F5" }[p.moneda] || "#F5F5F5";
+                          const monedaColor = { MXN:C.mxn, USD:C.usd, EUR:C.eur }[p.moneda] || "#666";
+                          return (
                           <tr key={p.id} style={{borderTop:`1px solid ${C.border}`}}>
-                            <td style={{padding:"8px 10px"}}>{p.tipo}</td>
-                            <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>{p.fecha}</td>
-                            <td style={{padding:"8px 10px",fontWeight:700}}>{p.folio}</td>
-                            <td style={{padding:"8px 10px",color:p.concepto?C.text:C.muted,fontStyle:p.concepto?"normal":"italic"}}>{p.concepto||"—"}</td>
-                            <td style={{padding:"8px 10px",fontWeight:800,color:C.ok,fontVariantNumeric:"tabular-nums"}}>{monedaSimbolo}{fmt(p.monto)}</td>
-                            <td style={{padding:"8px 10px",color:C.muted,fontSize:11}}>{p.notas||"—"}</td>
+                            <td style={{padding:"8px 8px",fontWeight:700,fontSize:12,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}} title={p.folio}>{p.folio}</td>
+                            <td style={{padding:"8px 8px",color:p.concepto?C.text:C.muted,fontStyle:p.concepto?"normal":"italic",fontSize:11,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.concepto||"—"}>{p.concepto||"—"}</td>
+                            <td style={{padding:"8px 8px",textAlign:"center"}}>
+                              <span style={{background:"#EEF2FF",color:C.blue,padding:"2px 8px",borderRadius:20,fontSize:10,fontWeight:600,whiteSpace:"nowrap",display:"inline-block",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis"}} title={p.clasificacion}>{p.clasificacion}</span>
+                            </td>
+                            <td style={{padding:"8px 8px",whiteSpace:"nowrap",fontSize:11,color:C.muted}}>{p.fecha||"—"}</td>
+                            <td style={{padding:"8px 8px",textAlign:"right",fontWeight:600,fontVariantNumeric:"tabular-nums",fontSize:11}}>{monedaSimbolo}{fmt(p.totalFactura||0)}</td>
+                            <td style={{padding:"8px 8px",textAlign:"right",fontWeight:700,color:C.ok,fontVariantNumeric:"tabular-nums",fontSize:11}}>{monedaSimbolo}{fmt(p.pagadoTotal||0)}</td>
+                            <td style={{padding:"8px 8px",textAlign:"right",fontWeight:600,color:p.pendiente>0?C.danger:C.muted,fontVariantNumeric:"tabular-nums",fontSize:11}}>{p.pendiente>0?`${monedaSimbolo}${fmt(p.pendiente)}`:"—"}</td>
+                            <td style={{padding:"8px 8px",whiteSpace:"nowrap",fontSize:11,color:C.muted}}>{p.vencimiento||"—"}</td>
+                            <td style={{padding:"8px 8px",textAlign:"center"}}>
+                              <span style={{background:monedaBg,color:monedaColor,padding:"2px 8px",borderRadius:20,fontSize:10,fontWeight:700}}>{p.moneda}</span>
+                            </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
-                      <tfoot><tr style={{borderTop:`2px solid ${C.border}`,background:"#FAFBFC"}}>
-                        <td colSpan={4} style={{padding:"8px 10px",fontWeight:700,color:C.navy,fontSize:11}}>Subtotal {group.fecha} · {group.moneda}</td>
-                        <td style={{padding:"8px 10px",fontWeight:800,color:C.navy,fontVariantNumeric:"tabular-nums"}}>{monedaSimbolo}{fmt(group.total)}</td>
-                        <td/>
-                      </tr></tfoot>
+                      <tfoot>
+                        <tr style={{borderTop:`2px solid ${C.border}`,background:"#FAFBFC"}}>
+                          <td colSpan={5} style={{padding:"10px 8px",fontWeight:700,color:C.navy,fontSize:11,textAlign:"right"}}>Total pagado en este grupo:</td>
+                          <td colSpan={4} style={{padding:"10px 8px",fontWeight:800,color:C.ok,fontVariantNumeric:"tabular-nums",fontSize:14}}>{monedaSimbolo}{fmt(group.total)} <span style={{fontSize:10,color:C.muted,fontWeight:600}}>{group.moneda}</span></td>
+                        </tr>
+                      </tfoot>
                     </table>
                   </div>
                 )}
