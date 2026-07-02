@@ -73,6 +73,7 @@ const supToApp = (row) => ({
   contacto: row.contacto || '',
   telefono: row.telefono || '',
   email: row.email || '',
+  emailsCc: row.emails_cc || [],
   banco: row.banco || '',
   clabe: row.clabe || '',
   clasificacion: row.clasificacion || 'Otros',
@@ -90,6 +91,7 @@ const supToDB = (sup) => ({
   contacto: sup.contacto || '',
   telefono: sup.telefono || '',
   email: sup.email || '',
+  emails_cc: (sup.emailsCc || []).filter(e => e && e.trim()).slice(0, 2),
   banco: sup.banco || '',
   clabe: sup.clabe || '',
   clasificacion: sup.clasificacion || 'Otros',
@@ -291,6 +293,12 @@ export async function fetchPayments(empresaId) {
     id: r.id, invoiceId: r.invoice_id, monto: +r.monto || 0,
     fechaPago: r.fecha_pago || '', notas: r.notas || '', tipo: r.tipo || 'realizado',
     metodoPago: r.metodo_pago || 'banco',
+    comprobanteUrl: r.comprobante_url || '',
+    comprobanteNombre: r.comprobante_nombre || '',
+    correoEnviado: r.correo_enviado === true,
+    correoEnviadoAt: r.correo_enviado_at || null,
+    correoEnviadoA: r.correo_enviado_a || '',
+    correoError: r.correo_error || '',
   }));
 }
 
@@ -301,6 +309,8 @@ export async function insertPayment(p) {
     invoice_id: p.invoiceId, monto: p.monto, fecha_pago: p.fechaPago,
     notas: p.notas || '', tipo: p.tipo || 'realizado',
     metodo_pago: p.metodoPago || 'banco',
+    comprobante_url: p.comprobanteUrl || '',
+    comprobante_nombre: p.comprobanteNombre || '',
   };
   const { data, error } = await supabase.from('payments').insert(row).select().single();
   if (error) { console.error('insertPayment:', error); return p; }
@@ -309,6 +319,12 @@ export async function insertPayment(p) {
     id: data.id, invoiceId: data.invoice_id, monto: +data.monto,
     fechaPago: data.fecha_pago, notas: data.notas || '', tipo: data.tipo || 'realizado',
     metodoPago: data.metodo_pago || 'banco',
+    comprobanteUrl: data.comprobante_url || '',
+    comprobanteNombre: data.comprobante_nombre || '',
+    correoEnviado: data.correo_enviado === true,
+    correoEnviadoAt: data.correo_enviado_at || null,
+    correoEnviadoA: data.correo_enviado_a || '',
+    correoError: data.correo_error || '',
   };
 }
 
@@ -2486,3 +2502,152 @@ export async function upsertPrestamoMovimientoExt(m, usuario) {
     return data?.id;
   }
 }
+
+/* ═════════════════════════════════════════════════════════════════════
+ * FASE 1 · Sistema de correos a proveedores
+ * ═════════════════════════════════════════════════════════════════════ */
+
+/* ── STORAGE · Subir comprobante PDF a Supabase Storage ────────────── */
+export async function uploadComprobantePDF(file, paymentId, empresaId) {
+  if (!file) return { url: '', nombre: '', error: 'No hay archivo' };
+  if (file.type !== 'application/pdf') return { url: '', nombre: '', error: 'Solo se aceptan archivos PDF' };
+  if (file.size > 5 * 1024 * 1024) return { url: '', nombre: '', error: 'El archivo excede 5 MB' };
+
+  // Ruta única: empresa/pago-id/timestamp-nombre.pdf
+  const timestamp = Date.now();
+  const safeName = file.name.replace(/[^\w\s.-]/g, '_').replace(/\s+/g, '-');
+  const path = `${empresaId}/${paymentId || 'temp'}/${timestamp}-${safeName}`;
+
+  const { data, error } = await supabase.storage
+    .from('comprobantes-pago')
+    .upload(path, file, {
+      contentType: 'application/pdf',
+      upsert: false,
+    });
+
+  if (error) {
+    console.error('[uploadComprobantePDF]', error);
+    return { url: '', nombre: '', error: error.message };
+  }
+  return { url: data.path, nombre: file.name, error: null };
+}
+
+/* ── STORAGE · Obtener URL firmada para ver el PDF (1 hora) ─────────── */
+export async function getComprobanteSignedUrl(storagePath) {
+  if (!storagePath) return null;
+  const { data, error } = await supabase.storage
+    .from('comprobantes-pago')
+    .createSignedUrl(storagePath, 3600);
+  if (error) { console.error('[getComprobanteSignedUrl]', error); return null; }
+  return data?.signedUrl || null;
+}
+
+/* ── STORAGE · Eliminar comprobante ──────────────────────────────── */
+export async function deleteComprobantePDF(storagePath) {
+  if (!storagePath) return false;
+  const { error } = await supabase.storage
+    .from('comprobantes-pago')
+    .remove([storagePath]);
+  if (error) { console.error('[deleteComprobantePDF]', error); return false; }
+  return true;
+}
+
+/* ── SUPPLIERS · Actualizar emails ─────────────────────────────────── */
+export async function updateSupplierEmails(supplierId, email, emailsCc = []) {
+  const filtered = (emailsCc || []).filter(e => e && e.trim()).slice(0, 2);
+  const { data, error } = await supabase
+    .from('suppliers')
+    .update({
+      email: (email || '').trim(),
+      emails_cc: filtered,
+    })
+    .eq('id', supplierId)
+    .select()
+    .single();
+  if (error) { console.error('[updateSupplierEmails]', error); return null; }
+  return data;
+}
+
+/* ── PAYMENTS · Actualizar comprobante ─────────────────────────────── */
+export async function updatePaymentComprobante(paymentId, comprobanteUrl, comprobanteNombre) {
+  const { data, error } = await supabase
+    .from('payments')
+    .update({
+      comprobante_url: comprobanteUrl || '',
+      comprobante_nombre: comprobanteNombre || '',
+    })
+    .eq('id', paymentId)
+    .select()
+    .single();
+  if (error) { console.error('[updatePaymentComprobante]', error); return null; }
+  return data;
+}
+
+/* ── PAYMENTS · Marcar correo enviado ──────────────────────────────── */
+export async function marcarCorreoEnviado(paymentId, destinatario, error = '') {
+  const { data, error: dbError } = await supabase
+    .from('payments')
+    .update({
+      correo_enviado: !error,
+      correo_enviado_at: new Date().toISOString(),
+      correo_enviado_a: destinatario || '',
+      correo_error: error || '',
+    })
+    .eq('id', paymentId)
+    .select()
+    .single();
+  if (dbError) { console.error('[marcarCorreoEnviado]', dbError); return null; }
+  return data;
+}
+
+/* ── CONFIG CORREOS · Fetch config ─────────────────────────────────── */
+export async function fetchAppConfigCorreos(empresaId) {
+  const { data, error } = await supabase
+    .from('app_config_correos')
+    .select('*')
+    .eq('empresa_id', empresaId)
+    .single();
+  if (error && error.code !== 'PGRST116') {
+    console.error('[fetchAppConfigCorreos]', error);
+    return null;
+  }
+  if (!data) return null;
+  return {
+    id: data.id,
+    empresaId: data.empresa_id,
+    remitenteEmail: data.remitente_email || '',
+    remitenteNombre: data.remitente_nombre || '',
+    emailsCcGlobales: data.emails_cc_globales || [],
+    plantillaAsunto: data.plantilla_asunto || '',
+    plantillaCuerpo: data.plantilla_cuerpo || '',
+    activo: data.activo !== false,
+    updatedAt: data.updated_at,
+    updatedBy: data.updated_by || '',
+  };
+}
+
+/* ── CONFIG CORREOS · Update config ────────────────────────────────── */
+export async function updateAppConfigCorreos(empresaId, config, usuario) {
+  const row = {
+    empresa_id: empresaId,
+    remitente_email: config.remitenteEmail || '',
+    remitente_nombre: config.remitenteNombre || '',
+    emails_cc_globales: config.emailsCcGlobales || [],
+    plantilla_asunto: config.plantillaAsunto || '',
+    plantilla_cuerpo: config.plantillaCuerpo || '',
+    activo: config.activo !== false,
+    updated_by: usuario || 'desconocido',
+    updated_at: new Date().toISOString(),
+  };
+  // Upsert por empresa_id (que es UNIQUE)
+  const { data, error } = await supabase
+    .from('app_config_correos')
+    .upsert(row, { onConflict: 'empresa_id' })
+    .select()
+    .single();
+  if (error) { console.error('[updateAppConfigCorreos]', error); return null; }
+  return data;
+}
+
+/* ── Extender fetchSuppliers para incluir email y emails_cc ─────────── */
+// (Ya se leen los campos si son parte del SELECT *; no hace falta cambio en fetchSuppliers)

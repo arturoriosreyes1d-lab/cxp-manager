@@ -20,6 +20,9 @@ import {
   fetchFinanciamientoPagos, insertFinanciamientoPago, deleteFinanciamientoPago,
   fetchGastosFijos, insertGastoFijo, updateGastoFijo, deleteGastoFijo,
   fetchRubrosPrestamo, insertRubroPrestamo, upsertPrestamoMovimientoExt,
+  uploadComprobantePDF, getComprobanteSignedUrl, deleteComprobantePDF,
+  updateSupplierEmails, updatePaymentComprobante,
+  fetchAppConfigCorreos, updateAppConfigCorreos,
   fetchTarjetas, updateTarjetaSaldo, fetchTarjetaMovimientos, bulkInsertMovimientos,
   fetchProgramados, upsertProgramado, deleteProgramado,
   fetchReporteSaldos, upsertReporteSaldos,
@@ -290,6 +293,9 @@ export default function CxpApp({ user, onLogout }) {
   const [financiamientos, setFinanciamientos] = useState([]);
   const [gastosFijos, setGastosFijos] = useState([]);
   const [rubrosPrestamo, setRubrosPrestamo] = useState([]);
+  // Fase 1 · Sistema de correos a proveedores
+  const [configCorreos, setConfigCorreos] = useState(null);
+  const [showConfigCorreosModal, setShowConfigCorreosModal] = useState(false);
   const [financiamientoPagos, setFinanciamientoPagos] = useState([]);
   const [financModalId, setFinancModalId] = useState(null);
   const [financCollapsed, setFinancCollapsed] = useState(true);
@@ -408,26 +414,28 @@ export default function CxpApp({ user, onLogout }) {
         fetchProgramados(empresaId),
         fetchGastosFijos(empresaId),
         fetchRubrosPrestamo(),
+        fetchAppConfigCorreos(empresaId),
       ]);
-      const [inv, sup, cls, pays, ings, cbs, invIngs, cats, clts, pf, fins, finPagos, tarjs, tarjMovs, progs, gFijos, rPrest] =
-        results.map(r => r.status==="fulfilled" ? r.value : []);
-      setInvoices(inv);
-      setSuppliers(sup.length > 0 ? sup : []);
-      setClases(cls.length > 0 ? cls : DEFAULT_CLASES);
-      setPayments(pays);
-      setIngresos(ings);
-      setCobros(cbs);
-      setInvoiceIngresos(invIngs);
-      setCategoriasIngreso(cats);
-      setClientes(clts);
-      setPorFacturar(pf);
-      setFinanciamientos(fins);
-      setFinanciamientoPagos(finPagos);
-      setTarjetas(tarjs);
-      setTarjetaMovimientos(tarjMovs);
-      setProgramados(progs);
-      setGastosFijos(gFijos);
+      const [inv, sup, cls, pays, ings, cbs, invIngs, cats, clts, pf, fins, finPagos, tarjs, tarjMovs, progs, gFijos, rPrest, cfgCorreos] =
+        results.map(r => r.status==="fulfilled" ? r.value : null);
+      setInvoices(inv || { MXN: [], USD: [], EUR: [] });
+      setSuppliers((sup && sup.length > 0) ? sup : []);
+      setClases((cls && cls.length > 0) ? cls : DEFAULT_CLASES);
+      setPayments(pays || []);
+      setIngresos(ings || []);
+      setCobros(cbs || []);
+      setInvoiceIngresos(invIngs || []);
+      setCategoriasIngreso(cats || []);
+      setClientes(clts || []);
+      setPorFacturar(pf || []);
+      setFinanciamientos(fins || []);
+      setFinanciamientoPagos(finPagos || []);
+      setTarjetas(tarjs || []);
+      setTarjetaMovimientos(tarjMovs || []);
+      setProgramados(progs || []);
+      setGastosFijos(gFijos || []);
       setRubrosPrestamo(rPrest || []);
+      setConfigCorreos(cfgCorreos || null);
       setLoading(false);
     })();
   }, [empresaId]);
@@ -9750,8 +9758,24 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
   };
 
   const SupplierModal = () => {
-    const [form,setForm]=useState({...modalSup});
+    const [form,setForm]=useState({...modalSup, emailsCc: modalSup.emailsCc || []});
     const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+    const setEmailCc=(idx,val)=>{
+      const arr=[...(form.emailsCc||[])];
+      arr[idx]=val;
+      setForm(f=>({...f,emailsCc:arr}));
+    };
+    const addEmailCc=()=>{
+      const arr=[...(form.emailsCc||[])];
+      if(arr.length>=2) return;
+      arr.push('');
+      setForm(f=>({...f,emailsCc:arr}));
+    };
+    const removeEmailCc=(idx)=>{
+      const arr=[...(form.emailsCc||[])];
+      arr.splice(idx,1);
+      setForm(f=>({...f,emailsCc:arr}));
+    };
     return (
       <ModalShell title={form.id?"Editar Proveedor":"Nuevo Proveedor"} onClose={()=>setModalSup(null)}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
@@ -9761,7 +9785,6 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           <Field label="Días Crédito"><input type="number" value={form.diasCredito} onChange={e=>set("diasCredito",e.target.value)} style={inputStyle}/></Field>
           <Field label="Contacto"><input value={form.contacto} onChange={e=>set("contacto",e.target.value)} style={inputStyle}/></Field>
           <Field label="Teléfono"><input value={form.telefono} onChange={e=>set("telefono",e.target.value)} style={inputStyle}/></Field>
-          <Field label="Email"><input value={form.email} onChange={e=>set("email",e.target.value)} style={inputStyle}/></Field>
           <Field label="Banco"><input value={form.banco} onChange={e=>set("banco",e.target.value)} style={inputStyle}/></Field>
           <Field label="CLABE"><input value={form.clabe} onChange={e=>set("clabe",e.target.value)} style={inputStyle}/></Field>
           <Field label="Clasificación"><select value={form.clasificacion} onChange={e=>set("clasificacion",e.target.value)} style={selectStyle}>{clases.map(c=><option key={c}>{c}</option>)}</select></Field>
@@ -9770,6 +9793,38 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           </Field>
           <Field label="Activo"><select value={form.activo?"Sí":"No"} onChange={e=>set("activo",e.target.value==="Sí")} style={selectStyle}><option>Sí</option><option>No</option></select></Field>
         </div>
+
+        {/* ── SECCIÓN CONTACTO PARA CORREOS AUTOMÁTICOS ────────── */}
+        <div style={{background:"linear-gradient(180deg, #FAFCFE, #fff)",border:"1.5px solid #BFDBFE",borderRadius:10,padding:16,marginTop:16}}>
+          <div style={{fontSize:12,fontWeight:800,color:"#185FA5",letterSpacing:0.3,marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
+            📧 CONTACTO PARA CORREOS AUTOMÁTICOS
+          </div>
+          <div style={{marginBottom:12}}>
+            <label style={{fontSize:11,color:C.muted,fontWeight:700,display:"block",marginBottom:4}}>EMAIL PRINCIPAL</label>
+            <input value={form.email||""} onChange={e=>set("email",e.target.value)} placeholder="facturacion@proveedor.com" style={{...inputStyle,width:"100%"}}/>
+            <div style={{fontSize:10,color:"#94A3B8",marginTop:3}}>A este correo llegan los comprobantes de pago</div>
+          </div>
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+              <label style={{fontSize:11,color:C.muted,fontWeight:700}}>EMAILS ADICIONALES (CC · máximo 2)</label>
+              {(form.emailsCc||[]).length<2 && (
+                <button type="button" onClick={addEmailCc} style={{background:"transparent",border:"1px dashed #185FA5",color:"#185FA5",padding:"3px 9px",borderRadius:5,fontSize:10,fontWeight:700,cursor:"pointer"}}>+ Agregar</button>
+              )}
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {(form.emailsCc||[]).map((ecc,idx)=>(
+                <div key={idx} style={{display:"flex",alignItems:"center",gap:6}}>
+                  <input value={ecc} onChange={e=>setEmailCc(idx,e.target.value)} placeholder="contacto@proveedor.com" style={{...inputStyle,flex:1,fontSize:12,padding:"7px 10px"}}/>
+                  <button type="button" onClick={()=>removeEmailCc(idx)} style={{background:"#FEE",border:"1px solid #FCA5A5",color:"#C04A4D",width:26,height:26,borderRadius:5,fontSize:11,cursor:"pointer"}}>×</button>
+                </div>
+              ))}
+              {(form.emailsCc||[]).length===0 && (
+                <div style={{border:"1.5px dashed #E2E8F0",borderRadius:6,padding:"7px 10px",fontSize:11,color:"#94A3B8",textAlign:"center"}}>Sin emails adicionales</div>
+              )}
+            </div>
+          </div>
+        </div>
+
         <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
           <button onClick={()=>setModalSup(null)} style={{...btnStyle,background:"#F1F5F9",color:C.text}}>Cancelar</button>
           <button onClick={()=>saveSupplier(form)} style={btnStyle}>Guardar</button>
@@ -9864,6 +9919,12 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
               <div style={{fontSize:10,color:C.muted,textTransform:"capitalize"}}>{user?.rol||"usuario"}</div>
             </div>
           </div>
+          {esSuperadmin && empresaId === 'empresa_1' && (
+            <button onClick={()=>setShowConfigCorreosModal(true)}
+                    style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"8px 16px",borderRadius:10,border:"none",cursor:"pointer",background:"#EFF6FF",color:"#185FA5",fontWeight:600,fontSize:13,fontFamily:"inherit",marginBottom:8}}>
+              ⚙️ Config. correos
+            </button>
+          )}
           <button onClick={onLogout} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"8px 16px",borderRadius:10,border:"none",cursor:"pointer",background:"#FFF5F5",color:C.danger,fontWeight:600,fontSize:13,fontFamily:"inherit"}}>
             🚪 Cerrar sesión
           </button>
@@ -10558,10 +10619,78 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         const totalSched = scheduled.reduce((s,p)=>s+p.monto,0);
         const saldoRest = (+payModal.total||0) - totalPaid;
         const saldoSinProgramar = saldoRest - totalSched;
+        // Componente para adjuntar/ver/borrar el PDF del comprobante
+        const ComprobanteButton = ({ pago, esConsulta }) => {
+          const [subiendo, setSubiendo] = useState(false);
+          const fileRef = useRef(null);
+          const tieneComprobante = !!pago.comprobanteUrl;
+
+          const handleUpload = async (file) => {
+            if (!file) return;
+            setSubiendo(true);
+            try {
+              const result = await uploadComprobantePDF(file, pago.id, empresaId);
+              if (result.error) {
+                alert('Error: ' + result.error);
+              } else {
+                await updatePaymentComprobante(pago.id, result.url, result.nombre);
+                setPayments(prev => prev.map(x => x.id === pago.id
+                  ? { ...x, comprobanteUrl: result.url, comprobanteNombre: result.nombre }
+                  : x));
+              }
+            } catch (err) {
+              alert('Error al subir: ' + err.message);
+            }
+            setSubiendo(false);
+          };
+
+          const handleVer = async () => {
+            const url = await getComprobanteSignedUrl(pago.comprobanteUrl);
+            if (url) window.open(url, '_blank');
+            else alert('No se pudo obtener el comprobante');
+          };
+
+          const handleQuitar = async () => {
+            if (!confirm('¿Quitar el comprobante de este pago?')) return;
+            await deleteComprobantePDF(pago.comprobanteUrl);
+            await updatePaymentComprobante(pago.id, '', '');
+            setPayments(prev => prev.map(x => x.id === pago.id
+              ? { ...x, comprobanteUrl: '', comprobanteNombre: '' }
+              : x));
+          };
+
+          if (tieneComprobante) {
+            return (
+              <div style={{display:'flex',alignItems:'center',gap:4}}>
+                <button onClick={handleVer} title={pago.comprobanteNombre || 'Ver comprobante'}
+                        style={{background:'#DBEAFE',border:'1px solid #BFDBFE',color:'#185FA5',padding:'3px 8px',borderRadius:5,fontSize:11,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:3}}>
+                  📄 Ver
+                </button>
+                {!esConsulta && (
+                  <button onClick={handleQuitar} title="Quitar comprobante"
+                          style={{background:'#FEE',border:'1px solid #FCA5A5',color:'#C04A4D',width:22,height:22,borderRadius:5,fontSize:10,cursor:'pointer'}}>×</button>
+                )}
+              </div>
+            );
+          }
+          if (esConsulta) return <span style={{fontSize:11,color:C.muted}}>—</span>;
+          return (
+            <div>
+              <input type="file" accept="application/pdf" ref={fileRef}
+                     onChange={(e) => handleUpload(e.target.files?.[0])}
+                     style={{display:'none'}}/>
+              <button onClick={() => fileRef.current?.click()} disabled={subiendo}
+                      style={{background:subiendo?'#F1F5F9':'#F0F7FF',border:'1px dashed #BFDBFE',color:'#185FA5',padding:'4px 10px',borderRadius:5,fontSize:11,fontWeight:600,cursor:subiendo?'wait':'pointer',display:'flex',alignItems:'center',gap:3}}>
+                {subiendo ? '⏳ Subiendo...' : '📎 Adjuntar PDF'}
+              </button>
+            </div>
+          );
+        };
+
         const PayTable = ({items,color,showType}) => (
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,marginBottom:8}}>
             <thead><tr style={{background:"#F8FAFC"}}>
-              {["Fecha","Monto","Notas",""].map(h=><th key={h} style={{padding:"8px 10px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>{h}</th>)}
+              {["Fecha","Monto","Notas","Comprobante",""].map(h=><th key={h} style={{padding:"8px 10px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>{h}</th>)}
             </tr></thead>
             <tbody>
               {items.map(p=>{
@@ -10571,6 +10700,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                   tdc:   { label: '💳 TDC',   bg: '#F3E5F5', color: '#6A1B9A' },
                   otro:  { label: '➕ Otro',  bg: '#F5F5F5', color: '#616161' },
                 }[metodo] || { label: metodo, bg: '#F5F5F5', color: '#666' };
+                const tieneComprobante = !!p.comprobanteUrl;
                 return (
                 <tr key={p.id} style={{borderTop:`1px solid ${C.border}`}}>
                   <td style={{padding:"8px 10px",fontWeight:600}}>{p.fechaPago}</td>
@@ -10594,6 +10724,9 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                       <span style={{background:metodoMeta.bg,color:metodoMeta.color,padding:'3px 8px',borderRadius:6,fontSize:11,fontWeight:700}}>{metodoMeta.label}</span>
                     )}
                     {p.notas ? <span style={{marginLeft:8,color:C.muted}}>{p.notas}</span> : null}
+                  </td>
+                  <td style={{padding:"8px 10px"}}>
+                    <ComprobanteButton pago={p} esConsulta={esConsulta}/>
                   </td>
                   <td style={{padding:"8px 10px",textAlign:"right"}}>
                     {!esConsulta && <button onClick={()=>removePayment(p.id,payModal.invoiceId)} style={{background:"none",border:"none",cursor:"pointer",color:C.danger,fontSize:14}} title="Eliminar">🗑️</button>}
@@ -10887,6 +11020,168 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           </div>
         </ModalShell>
         );
+      })()}
+
+      {/* ─── Modal: Configuración de Correos Automáticos ─────── */}
+      {showConfigCorreosModal && (() => {
+        const ConfigCorreosModal = () => {
+          const [form, setForm] = useState({
+            remitenteEmail: configCorreos?.remitenteEmail || 'cuentasporpagar@viajeslibero.com',
+            remitenteNombre: configCorreos?.remitenteNombre || 'Viajes Libero · Cuentas por Pagar',
+            emailsCcGlobales: configCorreos?.emailsCcGlobales || [],
+            plantillaAsunto: configCorreos?.plantillaAsunto || 'Comprobante de pago · {{empresa}} · {{fecha}}',
+            plantillaCuerpo: configCorreos?.plantillaCuerpo || `Estimados {{proveedor}},
+
+Adjunto encontrarán el comprobante de pago correspondiente a las siguientes facturas:
+
+{{lista_facturas}}
+
+Total pagado: {{monto_total}}
+Fecha de pago: {{fecha}}
+Método: {{metodo}}
+
+Quedamos atentos a cualquier aclaración.
+
+Saludos cordiales,
+Viajes Libero`,
+          });
+          const [guardando, setGuardando] = useState(false);
+          const [pruebaEnviando, setPruebaEnviando] = useState(false);
+          const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
+          const setCcGlobal = (i, v) => {
+            const arr = [...(form.emailsCcGlobales || [])];
+            arr[i] = v;
+            setF('emailsCcGlobales', arr);
+          };
+          const addCcGlobal = () => {
+            setF('emailsCcGlobales', [...(form.emailsCcGlobales || []), '']);
+          };
+          const removeCcGlobal = (i) => {
+            const arr = [...(form.emailsCcGlobales || [])];
+            arr.splice(i, 1);
+            setF('emailsCcGlobales', arr);
+          };
+          const handleGuardar = async () => {
+            setGuardando(true);
+            try {
+              const cleaned = {
+                ...form,
+                emailsCcGlobales: (form.emailsCcGlobales || []).filter(e => e && e.trim()),
+              };
+              const saved = await updateAppConfigCorreos(empresaId, cleaned, usuario?.nombre);
+              if (saved) {
+                const fresh = await fetchAppConfigCorreos(empresaId);
+                setConfigCorreos(fresh);
+                setShowConfigCorreosModal(false);
+              } else {
+                alert('No se pudo guardar la configuración');
+              }
+            } catch (err) {
+              console.error(err);
+              alert('Error al guardar: ' + err.message);
+            }
+            setGuardando(false);
+          };
+
+          return (
+            <div onClick={() => setShowConfigCorreosModal(false)}
+                 style={{position:'fixed',inset:0,background:'rgba(15, 45, 74, 0.65)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:20}}>
+              <div onClick={(e) => e.stopPropagation()}
+                   style={{background:'#fff',borderRadius:14,width:'90vw',maxWidth:900,maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 24px 60px rgba(0,0,0,0.3)',overflow:'hidden'}}>
+                {/* Header */}
+                <div style={{padding:'18px 24px',background:'linear-gradient(180deg, #fff, #FAFCFE)',borderBottom:'1px solid #F1F5F9',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <div>
+                    <div style={{fontSize:17,fontWeight:800,color:'#1A2332'}}>📧 Configuración de correos automáticos</div>
+                    <div style={{fontSize:12,color:'#64748B',marginTop:2}}>Viajes Libero · Envío a proveedores</div>
+                  </div>
+                  <button onClick={() => setShowConfigCorreosModal(false)}
+                          style={{background:'#F1F5F9',border:'none',width:34,height:34,borderRadius:9,cursor:'pointer',color:'#64748B',fontSize:16}}>×</button>
+                </div>
+
+                {/* Content scroll */}
+                <div style={{flex:1,overflowY:'auto',padding:'20px 24px'}}>
+                  {/* Remitente */}
+                  <div style={{marginBottom:20}}>
+                    <div style={{fontSize:11,color:'#64748B',fontWeight:700,letterSpacing:0.3,marginBottom:8}}>📤 REMITENTE</div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                      <div>
+                        <label style={{fontSize:10,color:'#64748B',fontWeight:700}}>Email</label>
+                        <input value={form.remitenteEmail} onChange={e=>setF('remitenteEmail',e.target.value)} style={{...inputStyle,width:'100%',fontSize:13}}/>
+                      </div>
+                      <div>
+                        <label style={{fontSize:10,color:'#64748B',fontWeight:700}}>Nombre visible</label>
+                        <input value={form.remitenteNombre} onChange={e=>setF('remitenteNombre',e.target.value)} style={{...inputStyle,width:'100%',fontSize:13}}/>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* CC globales */}
+                  <div style={{marginBottom:20}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                      <div style={{fontSize:11,color:'#64748B',fontWeight:700,letterSpacing:0.3}}>👀 CC · CORREOS EN COPIA VISIBLE (globales)</div>
+                      <button type="button" onClick={addCcGlobal} style={{background:'#185FA5',color:'#fff',border:'none',padding:'5px 11px',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer'}}>+ Agregar</button>
+                    </div>
+                    <div style={{fontSize:11,color:'#94A3B8',marginBottom:10,fontStyle:'italic'}}>Estos correos verán todos los envíos automáticos. Aparecen visibles al proveedor.</div>
+                    <div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:8,padding:12,display:'flex',flexDirection:'column',gap:8}}>
+                      {(form.emailsCcGlobales || []).length === 0 ? (
+                        <div style={{fontSize:12,color:'#94A3B8',textAlign:'center',padding:8}}>Sin correos en CC · Da clic en "+ Agregar" para añadir</div>
+                      ) : (
+                        (form.emailsCcGlobales || []).map((email, i) => (
+                          <div key={i} style={{display:'flex',alignItems:'center',gap:10,background:'#fff',padding:'8px 12px',borderRadius:6,border:'1px solid #E2E8F0'}}>
+                            <span style={{fontSize:14}}>📧</span>
+                            <input value={email} onChange={e => setCcGlobal(i, e.target.value)}
+                                   placeholder="correo@ejemplo.com"
+                                   style={{flex:1,border:'none',fontSize:13,color:'#1A2332',background:'transparent',outline:'none'}}/>
+                            <button onClick={() => removeCcGlobal(i)}
+                                    style={{background:'#FEE',border:'1px solid #FCA5A5',color:'#C04A4D',width:24,height:24,borderRadius:5,fontSize:12,cursor:'pointer'}}>×</button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Plantilla asunto */}
+                  <div style={{marginBottom:14}}>
+                    <div style={{fontSize:11,color:'#64748B',fontWeight:700,letterSpacing:0.3,marginBottom:6}}>ASUNTO (plantilla)</div>
+                    <input value={form.plantillaAsunto} onChange={e=>setF('plantillaAsunto',e.target.value)} style={{...inputStyle,width:'100%',fontSize:13,fontFamily:'monospace'}}/>
+                  </div>
+
+                  {/* Plantilla cuerpo */}
+                  <div style={{marginBottom:14}}>
+                    <div style={{fontSize:11,color:'#64748B',fontWeight:700,letterSpacing:0.3,marginBottom:6}}>CUERPO DEL CORREO (plantilla)</div>
+                    <textarea value={form.plantillaCuerpo} onChange={e=>setF('plantillaCuerpo',e.target.value)} rows={12}
+                              style={{width:'100%',border:`1px solid ${C.border}`,padding:'10px 12px',borderRadius:6,fontSize:12,fontFamily:'monospace',lineHeight:1.6,resize:'vertical',outline:'none'}}/>
+                    <div style={{fontSize:10,color:'#94A3B8',marginTop:8,lineHeight:1.5}}>
+                      <strong>Variables disponibles:</strong>{' '}
+                      {['{{proveedor}}','{{fecha}}','{{monto_total}}','{{lista_facturas}}','{{metodo}}','{{empresa}}'].map(v => (
+                        <code key={v} style={{background:'#F1F5F9',padding:'1px 5px',borderRadius:3,marginRight:6,fontSize:10}}>{v}</code>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Estado del sistema */}
+                  <div style={{background:'#FFFBEB',border:'1px solid #FCD34D',borderRadius:8,padding:'12px 14px',marginTop:20}}>
+                    <div style={{fontSize:12,fontWeight:700,color:'#8C6B1A',marginBottom:4}}>🚧 Sistema en construcción · Fase 1 de 4</div>
+                    <div style={{fontSize:11,color:'#64748B',lineHeight:1.5}}>
+                      Esta pantalla te permite guardar la configuración. El envío efectivo de correos se habilitará en la Fase 3, cuando esté listo el endpoint SMTP.
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div style={{padding:'14px 24px',borderTop:'1px solid #F1F5F9',display:'flex',gap:8,background:'#FAFCFE'}}>
+                  <button onClick={() => setShowConfigCorreosModal(false)} disabled={guardando}
+                          style={{flex:1,background:'#fff',border:`1px solid ${C.border}`,color:C.text,padding:10,borderRadius:8,fontSize:13,fontWeight:700,cursor:guardando?'not-allowed':'pointer'}}>Cancelar</button>
+                  <button onClick={handleGuardar} disabled={guardando}
+                          style={{flex:2,background:'linear-gradient(135deg, #185FA5, #2E78C7)',color:'#fff',border:'none',padding:10,borderRadius:8,fontSize:13,fontWeight:700,cursor:guardando?'wait':'pointer',opacity:guardando?0.7:1}}>
+                    {guardando ? 'Guardando...' : '💾 Guardar configuración'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        };
+        return <ConfigCorreosModal/>;
       })()}
 
       {/* ─── Modal: Corto Plazo del Mes (dashboard) ─────── */}
