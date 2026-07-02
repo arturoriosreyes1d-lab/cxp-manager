@@ -301,6 +301,8 @@ export default function CxpApp({ user, onLogout }) {
   const [correoEnvioModal, setCorreoEnvioModal] = useState(null);
   // Modal para capturar email del proveedor cuando no lo tiene
   const [capturarEmailModal, setCapturarEmailModal] = useState(null);
+  // Modal de envío masivo de correos
+  const [envioMasivoModal, setEnvioMasivoModal] = useState(null);
   const [financiamientoPagos, setFinanciamientoPagos] = useState([]);
   const [financModalId, setFinancModalId] = useState(null);
   const [financCollapsed, setFinancCollapsed] = useState(true);
@@ -8667,8 +8669,19 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
     return (
       <div>
-        <h1 style={{fontSize:22,fontWeight:800,color:C.navy,marginBottom:4}}>💰 Pagos Realizados</h1>
-        <p style={{color:C.muted,fontSize:14,marginBottom:20}}>Consulta pagos por rango de fechas o por proveedor</p>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4,flexWrap:"wrap",gap:12}}>
+          <div>
+            <h1 style={{fontSize:22,fontWeight:800,color:C.navy,marginBottom:4}}>💰 Pagos Realizados</h1>
+            <p style={{color:C.muted,fontSize:14,marginBottom:20}}>Consulta pagos por rango de fechas o por proveedor</p>
+          </div>
+          {/* Botón envío masivo (solo Viajes Libero + superadmin) */}
+          {empresaId === 'empresa_1' && esSuperadmin && (
+            <button onClick={() => setEnvioMasivoModal({ open: true })}
+                    style={{background:"linear-gradient(135deg, #1D7A4E, #2EBC76)",color:"#fff",border:"none",padding:"11px 20px",borderRadius:10,fontSize:14,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 12px rgba(29, 122, 78, 0.25)"}}>
+              📤 Envío masivo de correos
+            </button>
+          )}
+        </div>
         {/* Filters */}
         <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:24,flexWrap:"wrap"}}>
           <label style={{fontSize:13,fontWeight:700,color:C.navy}}>Desde:</label>
@@ -11670,6 +11683,429 @@ Saludos cordiales,`;
           );
         };
         return <EnvioCorreoModal/>;
+      })()}
+
+      {/* ─── Modal: Envío Masivo de Correos ─────── */}
+      {envioMasivoModal && (() => {
+        const EnvioMasivoModal = () => {
+          // Estado del modal
+          const [filtroRapido, setFiltroRapido] = useState('pendientes'); // 'hoy' | 'ayer' | 'ultimos7' | 'estemes' | 'pendientes' | 'custom'
+          const [fechaCustomFrom, setFechaCustomFrom] = useState('');
+          const [fechaCustomTo, setFechaCustomTo] = useState('');
+          const [seleccionados, setSeleccionados] = useState(new Set()); // set de groupKeys
+          const [enviando, setEnviando] = useState(false);
+          const [progreso, setProgreso] = useState(null); // {actual, total, mensaje}
+          const [resumen, setResumen] = useState(null); // {enviados: [], fallidos: []}
+
+          // Construir la lista de TODOS los grupos posibles del sistema (todos los proveedores)
+          // Reusa la misma lógica que renderPagos pero global
+          const allInvsGlobal = [
+            ...invoices.MXN.map(i=>({...i,moneda:"MXN"})),
+            ...invoices.USD.map(i=>({...i,moneda:"USD"})),
+            ...invoices.EUR.map(i=>({...i,moneda:"EUR"})),
+          ];
+          const payRecordsGlobal = payments.filter(p => p.tipo === 'realizado').map(p => {
+            const inv = allInvsGlobal.find(i=>i.id===p.invoiceId);
+            if(!inv) return null;
+            return {
+              ...p,
+              proveedor: inv.proveedor,
+              folio: `${inv.serie}${inv.folio}`,
+              tipo: inv.tipo,
+              fecha: inv.fecha,
+              concepto: inv.concepto,
+              moneda: inv.moneda,
+              totalFactura: inv.total,
+              clasificacion: inv.clasificacion || '—',
+              vencimiento: inv.vencimiento || '—',
+            };
+          }).filter(Boolean);
+
+          // Agrupar por proveedor + fechaPago + moneda + comprobanteUrl (solo grupos con PDF)
+          const gruposMap = {};
+          payRecordsGlobal.forEach(p => {
+            if (!p.comprobanteUrl) return; // sin PDF no se puede enviar
+            const key = `${p.proveedor}||${p.fechaPago}||${p.moneda}`;
+            if (!gruposMap[key]) {
+              gruposMap[key] = {
+                key,
+                proveedor: p.proveedor,
+                fechaPago: p.fechaPago,
+                moneda: p.moneda,
+                pagos: [],
+                total: 0,
+                comprobanteUrl: p.comprobanteUrl,
+                comprobanteNombre: p.comprobanteNombre,
+                correoEnviado: true, // se recalcula
+              };
+            }
+            gruposMap[key].pagos.push(p);
+            gruposMap[key].total += p.monto;
+            if (!p.correoEnviado) gruposMap[key].correoEnviado = false;
+          });
+          const todosGrupos = Object.values(gruposMap);
+
+          // Aplicar filtros
+          const hoy = new Date().toISOString().slice(0, 10);
+          const ayer = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+          const hace7 = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+          const primerDiaDelMes = `${hoy.slice(0, 7)}-01`;
+
+          const gruposFiltrados = todosGrupos.filter(g => {
+            switch (filtroRapido) {
+              case 'hoy':        return g.fechaPago === hoy && !g.correoEnviado;
+              case 'ayer':       return g.fechaPago === ayer && !g.correoEnviado;
+              case 'ultimos7':   return g.fechaPago >= hace7 && !g.correoEnviado;
+              case 'estemes':    return g.fechaPago >= primerDiaDelMes && !g.correoEnviado;
+              case 'pendientes': return !g.correoEnviado;
+              case 'custom':
+                if (fechaCustomFrom && g.fechaPago < fechaCustomFrom) return false;
+                if (fechaCustomTo   && g.fechaPago > fechaCustomTo)   return false;
+                return !g.correoEnviado;
+              default: return false;
+            }
+          }).sort((a, b) => (b.fechaPago || '').localeCompare(a.fechaPago || '') || a.proveedor.localeCompare(b.proveedor));
+
+          // Contadores por filtro (para mostrar en botones)
+          const cnt = {
+            pendientes: todosGrupos.filter(g => !g.correoEnviado).length,
+            hoy:        todosGrupos.filter(g => g.fechaPago === hoy && !g.correoEnviado).length,
+            ayer:       todosGrupos.filter(g => g.fechaPago === ayer && !g.correoEnviado).length,
+            ultimos7:   todosGrupos.filter(g => g.fechaPago >= hace7 && !g.correoEnviado).length,
+            estemes:    todosGrupos.filter(g => g.fechaPago >= primerDiaDelMes && !g.correoEnviado).length,
+          };
+
+          // Enriquecer con email del proveedor y si es enviable
+          const gruposConEmail = gruposFiltrados.map(g => {
+            const sup = suppliers.find(s => s.nombre === g.proveedor);
+            return {
+              ...g,
+              email: sup?.email || '',
+              emailsCc: sup?.emailsCc || [],
+              enviable: !!(sup?.email),
+              supplierId: sup?.id,
+            };
+          });
+
+          // Seleccionar todos automáticamente al cambiar de filtro
+          useEffect(() => {
+            const enviables = gruposConEmail.filter(g => g.enviable).map(g => g.key);
+            setSeleccionados(new Set(enviables));
+          }, [filtroRapido, fechaCustomFrom, fechaCustomTo]);
+
+          const toggleSeleccion = (key) => {
+            setSeleccionados(prev => {
+              const n = new Set(prev);
+              if (n.has(key)) n.delete(key); else n.add(key);
+              return n;
+            });
+          };
+
+          const toggleTodos = () => {
+            const enviables = gruposConEmail.filter(g => g.enviable);
+            const todosSeleccionados = enviables.every(g => seleccionados.has(g.key));
+            if (todosSeleccionados) setSeleccionados(new Set());
+            else setSeleccionados(new Set(enviables.map(g => g.key)));
+          };
+
+          const seleccionadosGrupos = gruposConEmail.filter(g => seleccionados.has(g.key));
+          const totalPorMoneda = { MXN: 0, USD: 0, EUR: 0 };
+          seleccionadosGrupos.forEach(g => { totalPorMoneda[g.moneda] = (totalPorMoneda[g.moneda] || 0) + g.total; });
+
+          const handleEnviarMasivo = async () => {
+            if (seleccionadosGrupos.length === 0) return;
+            const confirmar = window.confirm(`¿Enviar ${seleccionadosGrupos.length} correos a los proveedores?\n\nEste proceso puede tardar varios segundos.`);
+            if (!confirmar) return;
+
+            setEnviando(true);
+            const enviados = [];
+            const fallidos = [];
+
+            for (let i = 0; i < seleccionadosGrupos.length; i++) {
+              const g = seleccionadosGrupos[i];
+              setProgreso({ actual: i + 1, total: seleccionadosGrupos.length, mensaje: `Enviando a ${g.proveedor}...` });
+
+              try {
+                // Preparar asunto y cuerpo con reemplazo de variables
+                const cfg = configCorreos || {};
+                const plantillaAsunto = cfg.plantillaAsunto || 'Comprobante de pago · Facturas {{folios}}';
+                const plantillaCuerpo = cfg.plantillaCuerpo || `Estimados {{proveedor}},
+
+Adjunto encontrarán el comprobante de pago correspondiente a las facturas cubiertas. A continuación pueden ver el desglose completo:
+
+Quedamos atentos a cualquier aclaración.
+
+Saludos cordiales,`;
+                const monedaSimbolo = g.moneda === 'EUR' ? '€' : '$';
+                const foliosArr = g.pagos.map(p => p.folio).filter(Boolean);
+                const foliosStr = foliosArr.length > 5
+                  ? `${foliosArr.slice(0, 5).join(', ')} y ${foliosArr.length - 5} más`
+                  : foliosArr.join(', ');
+                const listaFacturas = g.pagos.map(p => {
+                  const conceptoCorto = (p.concepto || '').substring(0, 60);
+                  return `• Folio ${p.folio}${conceptoCorto ? ` — ${conceptoCorto}` : ''} — ${monedaSimbolo}${fmt(p.monto)}`;
+                }).join('\n');
+                const reemplazar = (txt) => (txt || '')
+                  .replace(/\{\{proveedor\}\}/g, g.proveedor)
+                  .replace(/\{\{fecha\}\}/g, g.fechaPago)
+                  .replace(/\{\{monto_total\}\}/g, `${monedaSimbolo}${fmt(g.total)} ${g.moneda}`)
+                  .replace(/\{\{lista_facturas\}\}/g, listaFacturas)
+                  .replace(/\{\{folios\}\}/g, foliosStr)
+                  .replace(/\{\{metodo\}\}/g, 'Transferencia bancaria')
+                  .replace(/\{\{empresa\}\}/g, 'Viajes Libero');
+
+                const emailsCcTodos = [
+                  ...(g.emailsCc || []),
+                  ...((configCorreos?.emailsCcGlobales) || []),
+                ].filter(e => e && e.trim());
+
+                // Envío masivo NO incluye captura de imagen (los grupos no están todos expandidos en pantalla)
+                // Solo se envía el PDF adjunto y el texto+firma
+                const r = await enviarCorreoPago({
+                  modo: 'envio',
+                  destinatario: g.email,
+                  cc: emailsCcTodos,
+                  asunto: reemplazar(plantillaAsunto),
+                  cuerpo: reemplazar(plantillaCuerpo),
+                  nombreRemitente: configCorreos?.remitenteNombre || 'Viajes Libero · Cuentas por Pagar',
+                  comprobantePath: g.comprobanteUrl,
+                  comprobanteNombre: g.comprobanteNombre || 'comprobante.pdf',
+                  imagenInlineBase64: null, // sin captura de imagen en masivo
+                });
+
+                if (!r.ok) {
+                  fallidos.push({ grupo: g, error: r.error });
+                } else {
+                  // Marcar en BD
+                  const destinatariosAudit = [g.email, ...emailsCcTodos].join(', ');
+                  for (const p of g.pagos) {
+                    await marcarCorreoEnviado(p.id, destinatariosAudit, '');
+                  }
+                  enviados.push({ grupo: g });
+                }
+
+                // Espaciar 1 segundo entre envíos para no activar anti-spam
+                if (i < seleccionadosGrupos.length - 1) {
+                  await new Promise(r => setTimeout(r, 1000));
+                }
+              } catch (err) {
+                console.error('Error enviando', g.proveedor, err);
+                fallidos.push({ grupo: g, error: err.message });
+              }
+            }
+
+            // Actualizar payments state
+            const claves = new Set(enviados.map(e => e.grupo.key));
+            setPayments(prev => prev.map(x => {
+              const key = `${x.proveedor || ''}||${x.fechaPago}||${x.moneda || 'MXN'}`;
+              if (claves.has(key)) {
+                return {
+                  ...x,
+                  correoEnviado: true,
+                  correoEnviadoAt: new Date().toISOString(),
+                };
+              }
+              return x;
+            }));
+
+            setEnviando(false);
+            setProgreso(null);
+            setResumen({ enviados, fallidos });
+          };
+
+          // Botones de filtro rápido
+          const FiltroBtn = ({ id, label, icon, count }) => (
+            <button onClick={() => setFiltroRapido(id)}
+                    style={{
+                      background: filtroRapido === id ? '#185FA5' : '#fff',
+                      border: filtroRapido === id ? '1px solid #185FA5' : '1px solid #CBD5E1',
+                      color: filtroRapido === id ? '#fff' : '#1A2332',
+                      padding: '7px 14px', borderRadius: 6, fontSize: 12, fontWeight: 700,
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap'
+                    }}>
+              {icon} {label} <span style={{opacity: 0.75, fontWeight: 600}}>({count})</span>
+            </button>
+          );
+
+          // ── Vista de resumen final ──────────────────────────────
+          if (resumen) {
+            return (
+              <div onClick={() => setEnvioMasivoModal(null)}
+                   style={{position:'fixed',inset:0,background:'rgba(15, 45, 74, 0.65)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1050,padding:16}}>
+                <div onClick={(e) => e.stopPropagation()}
+                     style={{background:'#fff',borderRadius:14,width:'92vw',maxWidth:700,maxHeight:'90vh',display:'flex',flexDirection:'column',boxShadow:'0 24px 60px rgba(0,0,0,0.3)',overflow:'hidden'}}>
+                  <div style={{padding:'20px 24px',borderBottom:'1px solid #F1F5F9',background:resumen.fallidos.length===0?'#DCFCE7':'#FEF3C7'}}>
+                    <div style={{fontSize:20,fontWeight:800,color:resumen.fallidos.length===0?'#166534':'#78350F'}}>
+                      {resumen.fallidos.length===0 ? '✅ Envío masivo completado' : '⚠️ Envío completado con algunos fallos'}
+                    </div>
+                    <div style={{fontSize:13,color:'#64748B',marginTop:4}}>
+                      Enviados: <strong style={{color:'#166534'}}>{resumen.enviados.length}</strong> ·
+                      Fallidos: <strong style={{color:'#991B1B'}}>{resumen.fallidos.length}</strong>
+                    </div>
+                  </div>
+                  <div style={{flex:1,overflowY:'auto',padding:'18px 24px'}}>
+                    {resumen.enviados.length > 0 && (
+                      <div style={{marginBottom:16}}>
+                        <div style={{fontSize:12,color:'#64748B',fontWeight:700,marginBottom:8,letterSpacing:0.3}}>✅ ENVIADOS</div>
+                        {resumen.enviados.map(({grupo:g}, idx) => (
+                          <div key={idx} style={{padding:'8px 12px',background:'#F0FDF4',border:'1px solid #86EFAC',borderRadius:6,marginBottom:6,fontSize:12}}>
+                            <strong style={{color:'#166534'}}>{g.proveedor}</strong>
+                            <span style={{color:'#64748B'}}> · {g.fechaPago} · {g.moneda === 'EUR' ? '€' : '$'}{fmt(g.total)} {g.moneda} → {g.email}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {resumen.fallidos.length > 0 && (
+                      <div>
+                        <div style={{fontSize:12,color:'#64748B',fontWeight:700,marginBottom:8,letterSpacing:0.3}}>❌ FALLIDOS</div>
+                        {resumen.fallidos.map(({grupo:g, error}, idx) => (
+                          <div key={idx} style={{padding:'8px 12px',background:'#FEE2E2',border:'1px solid #FCA5A5',borderRadius:6,marginBottom:6,fontSize:12}}>
+                            <strong style={{color:'#991B1B'}}>{g.proveedor}</strong>
+                            <span style={{color:'#64748B'}}> · {g.fechaPago} · {g.moneda === 'EUR' ? '€' : '$'}{fmt(g.total)} {g.moneda}</span>
+                            <div style={{color:'#991B1B',marginTop:4,fontSize:11,fontStyle:'italic'}}>Error: {error}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{padding:'14px 24px',borderTop:'1px solid #F1F5F9',background:'#FAFCFE'}}>
+                    <button onClick={() => setEnvioMasivoModal(null)}
+                            style={{width:'100%',background:'linear-gradient(135deg, #185FA5, #2E78C7)',color:'#fff',border:'none',padding:12,borderRadius:8,fontSize:14,fontWeight:800,cursor:'pointer'}}>
+                      Cerrar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          // ── Vista principal del modal ───────────────────────────
+          return (
+            <div onClick={() => !enviando && setEnvioMasivoModal(null)}
+                 style={{position:'fixed',inset:0,background:'rgba(15, 45, 74, 0.65)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1050,padding:16}}>
+              <div onClick={(e) => e.stopPropagation()}
+                   style={{background:'#fff',borderRadius:14,width:'95vw',maxWidth:1000,maxHeight:'92vh',display:'flex',flexDirection:'column',boxShadow:'0 24px 60px rgba(0,0,0,0.3)',overflow:'hidden'}}>
+
+                {/* Header */}
+                <div style={{padding:'16px 22px',background:'linear-gradient(180deg, #fff, #FAFCFE)',borderBottom:'1px solid #F1F5F9',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <div>
+                    <div style={{fontSize:18,fontWeight:800,color:'#1A2332'}}>📤 Envío masivo de correos</div>
+                    <div style={{fontSize:12,color:'#64748B',marginTop:2}}>Selecciona los grupos y envía correos a los proveedores</div>
+                  </div>
+                  <button onClick={() => !enviando && setEnvioMasivoModal(null)} disabled={enviando}
+                          style={{background:'#F1F5F9',border:'none',width:34,height:34,borderRadius:8,cursor:enviando?'not-allowed':'pointer',color:'#64748B',fontSize:18}}>×</button>
+                </div>
+
+                {/* Filtros rápidos */}
+                <div style={{padding:'14px 22px',borderBottom:'1px solid #F1F5F9',background:'#FAFCFE'}}>
+                  <div style={{fontSize:11,color:'#64748B',fontWeight:700,marginBottom:10,letterSpacing:0.3}}>FILTROS RÁPIDOS</div>
+                  <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                    <FiltroBtn id="pendientes" label="Todos pendientes" icon="📆" count={cnt.pendientes}/>
+                    <FiltroBtn id="hoy"        label="De hoy"           icon="⚡" count={cnt.hoy}/>
+                    <FiltroBtn id="ayer"       label="De ayer"          icon="🕐" count={cnt.ayer}/>
+                    <FiltroBtn id="ultimos7"   label="Últimos 7 días"   icon="📅" count={cnt.ultimos7}/>
+                    <FiltroBtn id="estemes"    label="Este mes"         icon="🗓" count={cnt.estemes}/>
+                    <button onClick={() => setFiltroRapido('custom')}
+                            style={{background:filtroRapido==='custom'?'#185FA5':'#fff',border:filtroRapido==='custom'?'1px solid #185FA5':'1px solid #CBD5E1',color:filtroRapido==='custom'?'#fff':'#1A2332',padding:'7px 14px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:6}}>
+                      🎯 Personalizado
+                    </button>
+                  </div>
+                  {filtroRapido === 'custom' && (
+                    <div style={{display:'flex',gap:10,marginTop:12,alignItems:'center'}}>
+                      <label style={{fontSize:12,fontWeight:700,color:C.navy}}>Desde:</label>
+                      <input type="date" value={fechaCustomFrom} onChange={e=>setFechaCustomFrom(e.target.value)} style={{...inputStyle,maxWidth:170,fontSize:12}}/>
+                      <label style={{fontSize:12,fontWeight:700,color:C.navy}}>Hasta:</label>
+                      <input type="date" value={fechaCustomTo}   onChange={e=>setFechaCustomTo(e.target.value)}   style={{...inputStyle,maxWidth:170,fontSize:12}}/>
+                    </div>
+                  )}
+                </div>
+
+                {/* Barra de selección + total */}
+                <div style={{padding:'12px 22px',background:'#EFF6FF',borderBottom:'1px solid #BFDBFE',display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:13,flexWrap:'wrap',gap:8}}>
+                  <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
+                    <input type="checkbox"
+                           checked={gruposConEmail.filter(g=>g.enviable).length > 0 && gruposConEmail.filter(g=>g.enviable).every(g => seleccionados.has(g.key))}
+                           onChange={toggleTodos}
+                           style={{width:16,height:16}}/>
+                    <span style={{color:'#1A2332',fontWeight:700}}>Seleccionar todos</span>
+                    <span style={{color:'#64748B'}}>({seleccionados.size} de {gruposConEmail.filter(g=>g.enviable).length} enviables)</span>
+                  </label>
+                  <div style={{color:'#185FA5',fontWeight:700,fontSize:13,display:'flex',gap:14,flexWrap:'wrap'}}>
+                    {totalPorMoneda.MXN > 0 && <span>🇲🇽 ${fmt(totalPorMoneda.MXN)} MXN</span>}
+                    {totalPorMoneda.USD > 0 && <span>🇺🇸 ${fmt(totalPorMoneda.USD)} USD</span>}
+                    {totalPorMoneda.EUR > 0 && <span>🇪🇺 €{fmt(totalPorMoneda.EUR)} EUR</span>}
+                  </div>
+                </div>
+
+                {/* Lista de grupos */}
+                <div style={{flex:1,overflowY:'auto',minHeight:200}}>
+                  {gruposConEmail.length === 0 ? (
+                    <div style={{textAlign:'center',padding:50,color:'#64748B',fontSize:14}}>
+                      <div style={{fontSize:40,marginBottom:12}}>📭</div>
+                      No hay correos pendientes para este filtro.
+                      <div style={{fontSize:12,marginTop:8,color:'#94A3B8'}}>Prueba con otro filtro rápido o rango de fechas.</div>
+                    </div>
+                  ) : gruposConEmail.map(g => (
+                    <div key={g.key}
+                         style={{padding:'12px 22px',borderBottom:'1px solid #F1F5F9',display:'flex',alignItems:'center',gap:12,opacity:g.enviable?1:0.55,cursor:g.enviable?'pointer':'not-allowed',background:g.enviable && seleccionados.has(g.key)?'#F0F9FF':'#fff'}}
+                         onClick={()=>g.enviable && toggleSeleccion(g.key)}>
+                      <input type="checkbox" checked={seleccionados.has(g.key)} disabled={!g.enviable}
+                             onChange={()=>g.enviable && toggleSeleccion(g.key)}
+                             onClick={e=>e.stopPropagation()}
+                             style={{width:16,height:16,cursor:g.enviable?'pointer':'not-allowed'}}/>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4,flexWrap:'wrap'}}>
+                          <span style={{fontWeight:700,color:'#1A2332',fontSize:14}}>{g.proveedor}</span>
+                          <span style={{background:g.moneda==='MXN'?'#E3F2FD':g.moneda==='USD'?'#E8F5E9':'#F3E5F5',color:g.moneda==='MXN'?'#185FA5':g.moneda==='USD'?'#1D7A4E':'#6B47C7',padding:'2px 8px',borderRadius:999,fontSize:10,fontWeight:700}}>
+                            {g.moneda==='MXN'?'🇲🇽 MXN':g.moneda==='USD'?'🇺🇸 USD':'🇪🇺 EUR'}
+                          </span>
+                          <span style={{color:'#64748B',fontSize:11}}>{g.pagos.length} pago{g.pagos.length!==1?'s':''}</span>
+                        </div>
+                        <div style={{fontSize:11,color:'#64748B',lineHeight:1.5}}>
+                          📅 {g.fechaPago} · 📄 {g.comprobanteNombre || 'comprobante.pdf'} ·
+                          {g.enviable ? (
+                            <span> ✉ {g.email}</span>
+                          ) : (
+                            <span style={{color:'#B45309',fontWeight:700}}> ⚠️ Sin email (captura primero en Proveedores)</span>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{textAlign:'right'}}>
+                        <div style={{fontWeight:800,color:'#1D7A4E',fontSize:16,fontVariantNumeric:'tabular-nums'}}>
+                          {g.moneda==='EUR'?'€':'$'}{fmt(g.total)}
+                        </div>
+                        <div style={{fontSize:10,color:'#64748B'}}>{g.moneda}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Barra de progreso durante envío */}
+                {enviando && progreso && (
+                  <div style={{padding:'12px 22px',background:'#FEF3C7',borderTop:'1px solid #F59E0B'}}>
+                    <div style={{fontSize:12,fontWeight:700,color:'#78350F',marginBottom:6}}>
+                      ⏳ {progreso.mensaje} ({progreso.actual}/{progreso.total})
+                    </div>
+                    <div style={{height:8,background:'#FDE68A',borderRadius:4,overflow:'hidden'}}>
+                      <div style={{height:'100%',background:'#F59E0B',width:`${(progreso.actual/progreso.total)*100}%`,transition:'width .3s'}}/>
+                    </div>
+                  </div>
+                )}
+
+                {/* Footer con botón enviar */}
+                <div style={{padding:'14px 22px',borderTop:'1px solid #F1F5F9',display:'flex',gap:10,background:'#FAFCFE'}}>
+                  <button onClick={() => setEnvioMasivoModal(null)} disabled={enviando}
+                          style={{flex:1,background:'#fff',border:`1px solid ${C.border}`,color:C.text,padding:12,borderRadius:8,fontSize:13,fontWeight:700,cursor:enviando?'not-allowed':'pointer'}}>Cancelar</button>
+                  <button onClick={handleEnviarMasivo} disabled={enviando || seleccionadosGrupos.length === 0}
+                          style={{flex:2,background:(enviando||seleccionadosGrupos.length===0)?'#94A3B8':'linear-gradient(135deg, #1D7A4E, #2EBC76)',color:'#fff',border:'none',padding:12,borderRadius:8,fontSize:14,fontWeight:800,cursor:(enviando||seleccionadosGrupos.length===0)?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+                    {enviando ? '⏳ Enviando...' : `📤 Enviar ${seleccionadosGrupos.length} correo${seleccionadosGrupos.length !== 1 ? 's' : ''}`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        };
+        return <EnvioMasivoModal/>;
       })()}
 
       {/* ─── Modal: Configuración de Correos Automáticos ─────── */}
