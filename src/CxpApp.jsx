@@ -11311,7 +11311,7 @@ Viajes Libero`,
                 ...form,
                 emailsCcGlobales: (form.emailsCcGlobales || []).filter(e => e && e.trim()),
               };
-              const saved = await updateAppConfigCorreos(empresaId, cleaned, usuario?.nombre);
+              const saved = await updateAppConfigCorreos(empresaId, cleaned, user?.nombre);
               if (saved) {
                 const fresh = await fetchAppConfigCorreos(empresaId);
                 setConfigCorreos(fresh);
@@ -11403,7 +11403,7 @@ Viajes Libero`,
                   </div>
 
                   {/* ── Prueba de envío SMTP ─────────────────────────── */}
-                  <PruebaSMTPSection form={form} usuario={usuario}/>
+                  <PruebaSMTPSection form={form} usuario={user}/>
                 </div>
 
                 {/* Footer */}
