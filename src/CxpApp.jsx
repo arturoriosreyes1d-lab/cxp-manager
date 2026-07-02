@@ -11449,10 +11449,25 @@ Viajes Libero`;
                 return;
               }
 
+              // Asegurar que el grupo está EXPANDIDO antes de capturar
+              // (si estaba colapsado, la captura no incluiría la tabla)
+              const estabaExpandido = pagosExpandedDates.has(correoEnvioModal.groupKey);
+              if (!estabaExpandido) {
+                setPagosExpandedDates(prev => {
+                  const n = new Set(prev);
+                  n.add(correoEnvioModal.groupKey);
+                  return n;
+                });
+                // Esperar 2 ticks de React para que la tabla se renderice antes de capturar
+                await new Promise(r => setTimeout(r, 400));
+              }
+
               // Renderizar con html2canvas
               let imagenBase64 = null;
               try {
-                const canvas = await html2canvas(grupoDiv, {
+                // Re-query el div por si React re-renderizó
+                const grupoDivExpandido = document.querySelector(`[data-correo-grupo="${correoEnvioModal.groupKey}"]`);
+                const canvas = await html2canvas(grupoDivExpandido || grupoDiv, {
                   backgroundColor: '#ffffff',
                   scale: 2, // alta resolución
                   logging: false,
@@ -11463,6 +11478,10 @@ Viajes Libero`;
                 console.error('[html2canvas]', err);
                 // Continuar sin imagen si falla la captura
               }
+
+              // Restaurar estado si estaba colapsado (para no cambiar la UI de forma inesperada)
+              // Nota: no lo restauramos por ahora — dejamos expandido para que el usuario vea
+              // qué se envió. Si molesta, se puede colapsar automáticamente aquí.
 
               // Paso 2 · Extraer el path del comprobante para el endpoint
               const comprobantePath = correoEnvioModal.comprobanteUrl;
