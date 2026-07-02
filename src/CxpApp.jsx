@@ -303,6 +303,9 @@ export default function CxpApp({ user, onLogout }) {
   const [capturarEmailModal, setCapturarEmailModal] = useState(null);
   // Modal de envío masivo de correos
   const [envioMasivoModal, setEnvioMasivoModal] = useState(null);
+  // Modales para aplicar pagos desde Proyección
+  const [aplicarPagosModal, setAplicarPagosModal] = useState(null); // {fecha, facturas} para confirmar
+  const [historialBatchesModal, setHistorialBatchesModal] = useState(null); // {} para mostrar historial
   const [financiamientoPagos, setFinanciamientoPagos] = useState([]);
   const [financModalId, setFinancModalId] = useState(null);
   const [financCollapsed, setFinancCollapsed] = useState(true);
@@ -3438,10 +3441,112 @@ export default function CxpApp({ user, onLogout }) {
 
   /* ── PROYECCIÓN ─────────────────────────────────────────────────────── */
   const renderProyeccionCxP = () => {
+    // Calcular facturas programadas para HOY (para el botón principal)
+    const hoyISO = new Date().toISOString().slice(0, 10);
+    const facturasHoy = [];
+    ['MXN','USD','EUR'].forEach(mon => {
+      (invoices[mon] || []).forEach(inv => {
+        const pagosDeFactura = payments.filter(p => p.invoiceId === inv.id);
+        const totalPagado = pagosDeFactura
+          .filter(p => p.tipo === 'realizado')
+          .reduce((s, p) => s + p.monto, 0);
+        // Buscar programaciones (tipo 'programado') para HOY
+        const progHoy = pagosDeFactura.filter(p => p.tipo === 'programado' && p.fechaPago === hoyISO);
+        progHoy.forEach(prog => {
+          facturasHoy.push({
+            invoiceId: inv.id,
+            invoice: inv,
+            moneda: mon,
+            programacionId: prog.id,
+            monto: prog.monto,
+            saldoPendiente: (inv.total || 0) - totalPagado,
+          });
+        });
+        // Si no hay programación pero saldo pendiente y vence hoy (fallback)
+        // (no la incluimos automáticamente para no confundir — solo se cuenta lo con programación explícita)
+      });
+    });
+
+    const totalHoyPorMoneda = { MXN: 0, USD: 0, EUR: 0 };
+    facturasHoy.forEach(f => { totalHoyPorMoneda[f.moneda] += f.monto; });
+
+    // Contar batches existentes (para el botón historial)
+    const batchesUnicos = new Set();
+    payments.filter(p => p.tipo === 'realizado' && p.notas && p.notas.includes('BATCH:')).forEach(p => {
+      const m = p.notas.match(/BATCH:([\w\-:.]+)/);
+      if (m) batchesUnicos.add(m[1]);
+    });
+    const cntBatches = batchesUnicos.size;
+
     return (
       <div>
-        <h1 style={{fontSize:22,fontWeight:800,color:C.navy,marginBottom:4}}>Proyección de Pagos</h1>
-        <p style={{color:C.muted,fontSize:14,marginBottom:24}}>Matriz de proveedores por día</p>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4,flexWrap:"wrap",gap:12}}>
+          <div>
+            <h1 style={{fontSize:22,fontWeight:800,color:C.navy,marginBottom:4}}>Proyección de Pagos</h1>
+            <p style={{color:C.muted,fontSize:14,marginBottom:24}}>Matriz de proveedores por día</p>
+          </div>
+          {/* Botones aplicar pagos (solo superadmin) */}
+          {esSuperadmin && (
+            <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-start"}}>
+              {cntBatches > 0 && (
+                <button onClick={() => setHistorialBatchesModal({})}
+                        title="Ver historial de batches aplicados"
+                        style={{background:"#fff",color:"#B45309",border:"1px solid #F59E0B",padding:"11px 16px",borderRadius:10,fontSize:13,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
+                  ↩️ Historial batches ({cntBatches})
+                </button>
+              )}
+              <button onClick={() => {
+                        if (facturasHoy.length === 0) {
+                          alert('No hay facturas programadas para hoy (' + hoyISO + ')');
+                          return;
+                        }
+                        setAplicarPagosModal({ fecha: hoyISO, facturas: facturasHoy });
+                      }}
+                      disabled={facturasHoy.length === 0}
+                      style={{background: facturasHoy.length === 0 ? "#94A3B8" : "linear-gradient(135deg, #185FA5, #2E78C7)",color:"#fff",border:"none",padding:"11px 20px",borderRadius:10,fontSize:14,fontWeight:800,cursor: facturasHoy.length === 0 ? "not-allowed" : "pointer",display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 12px rgba(24, 95, 165, 0.25)"}}>
+                ✅ Aplicar pagos de HOY
+                {facturasHoy.length > 0 && (
+                  <span style={{background:"rgba(255,255,255,0.25)",padding:"3px 10px",borderRadius:12,fontSize:12}}>
+                    {facturasHoy.length} {facturasHoy.length===1?'factura':'facturas'}
+                  </span>
+                )}
+              </button>
+              {/* Selector de fecha para aplicar pagos de otras fechas */}
+              <div style={{position:"relative"}}>
+                <input type="date" onChange={e => {
+                  const fechaSel = e.target.value;
+                  if (!fechaSel) return;
+                  const facs = [];
+                  ['MXN','USD','EUR'].forEach(mon => {
+                    (invoices[mon] || []).forEach(inv => {
+                      const pagosDeFactura = payments.filter(p => p.invoiceId === inv.id);
+                      const totalPagado = pagosDeFactura.filter(p => p.tipo === 'realizado').reduce((s, p) => s + p.monto, 0);
+                      const progFecha = pagosDeFactura.filter(p => p.tipo === 'programado' && p.fechaPago === fechaSel);
+                      progFecha.forEach(prog => {
+                        facs.push({
+                          invoiceId: inv.id,
+                          invoice: inv,
+                          moneda: mon,
+                          programacionId: prog.id,
+                          monto: prog.monto,
+                          saldoPendiente: (inv.total || 0) - totalPagado,
+                        });
+                      });
+                    });
+                  });
+                  if (facs.length === 0) {
+                    alert('No hay facturas programadas para ' + fechaSel);
+                    return;
+                  }
+                  setAplicarPagosModal({ fecha: fechaSel, facturas: facs });
+                  e.target.value = ''; // reset
+                }}
+                title="Aplicar pagos programados para otra fecha"
+                style={{...inputStyle,padding:"10px 12px",fontSize:13,fontWeight:600,cursor:"pointer",maxWidth:160}}/>
+              </div>
+            </div>
+          )}
+        </div>
         {renderMatrizProyeccion()}
       </div>
     );
@@ -11726,6 +11831,416 @@ Saludos cordiales,`;
           );
         };
         return <EnvioCorreoModal/>;
+      })()}
+
+      {/* ─── Modal: Aplicar Pagos Programados (desde Proyección) ─────── */}
+      {aplicarPagosModal && (() => {
+        const AplicarPagosModal = () => {
+          // Estado local: qué facturas están seleccionadas (todas por defecto)
+          const [seleccionadas, setSeleccionadas] = useState(
+            new Set(aplicarPagosModal.facturas.map(f => f.programacionId))
+          );
+          // Estado local: monto por factura (por si el usuario quiere ajustar)
+          const [montosEditables, setMontosEditables] = useState(() => {
+            const obj = {};
+            aplicarPagosModal.facturas.forEach(f => { obj[f.programacionId] = f.monto; });
+            return obj;
+          });
+          const [aplicando, setAplicando] = useState(false);
+          const [resultado, setResultado] = useState(null);
+
+          const toggleSel = (progId) => {
+            setSeleccionadas(prev => {
+              const n = new Set(prev);
+              if (n.has(progId)) n.delete(progId); else n.add(progId);
+              return n;
+            });
+          };
+          const toggleTodas = () => {
+            if (seleccionadas.size === aplicarPagosModal.facturas.length) {
+              setSeleccionadas(new Set());
+            } else {
+              setSeleccionadas(new Set(aplicarPagosModal.facturas.map(f => f.programacionId)));
+            }
+          };
+          const updateMonto = (progId, valor) => {
+            const num = parseFloat(valor) || 0;
+            setMontosEditables(prev => ({ ...prev, [progId]: num }));
+          };
+
+          const facturasSeleccionadas = aplicarPagosModal.facturas.filter(f => seleccionadas.has(f.programacionId));
+          const totalPorMoneda = { MXN: 0, USD: 0, EUR: 0 };
+          facturasSeleccionadas.forEach(f => {
+            totalPorMoneda[f.moneda] = (totalPorMoneda[f.moneda] || 0) + (montosEditables[f.programacionId] || 0);
+          });
+
+          const handleAplicar = async () => {
+            if (facturasSeleccionadas.length === 0) return;
+            const confirmar = window.confirm(`¿Aplicar ${facturasSeleccionadas.length} pago${facturasSeleccionadas.length !== 1 ? 's' : ''}?\n\nLos pagos quedarán registrados como realizados. Puedes deshacerlos después desde el botón "Historial batches".`);
+            if (!confirmar) return;
+
+            setAplicando(true);
+            // Generar batch_id único (fecha + hora)
+            const now = new Date();
+            const batchId = `${now.toISOString().slice(0,19).replace(/[:.]/g, '-')}`;
+            const nombreUsuario = user?.nombre || 'desconocido';
+
+            const nuevos = [];
+            const errores = [];
+            for (const f of facturasSeleccionadas) {
+              const monto = montosEditables[f.programacionId] || 0;
+              if (monto <= 0) {
+                errores.push({ factura: f.invoice, error: 'Monto inválido' });
+                continue;
+              }
+              try {
+                // Crear pago realizado con batch_id + info de programación original en las notas
+                // (para poder restaurarla si se deshace)
+                const progOriginal = {
+                  monto: f.monto,
+                  fechaPago: aplicarPagosModal.fecha,
+                };
+                const notas = `Aplicado desde Proyección · BATCH:${batchId} · Usuario:${nombreUsuario} · PROG_ORIGINAL:${JSON.stringify(progOriginal)}`;
+                const nuevoPago = await insertPayment({
+                  invoiceId: f.invoiceId,
+                  monto,
+                  fechaPago: aplicarPagosModal.fecha,
+                  tipo: 'realizado',
+                  metodoPago: 'banco',
+                  notas,
+                });
+                nuevos.push(nuevoPago);
+                // Eliminar la programación original (ya se cumplió)
+                await deletePayment(f.programacionId);
+              } catch (err) {
+                console.error('Error aplicando pago factura', f.invoice.folio, err);
+                errores.push({ factura: f.invoice, error: err.message });
+              }
+            }
+
+            // Actualizar estado global
+            setPayments(prev => {
+              // Remover programaciones aplicadas + agregar nuevos pagos realizados
+              const idsProgAplicadas = new Set(facturasSeleccionadas.map(f => f.programacionId));
+              const filtrados = prev.filter(p => !idsProgAplicadas.has(p.id));
+              return [...filtrados, ...nuevos];
+            });
+
+            setAplicando(false);
+            setResultado({
+              batchId,
+              aplicados: nuevos.length,
+              errores: errores.length,
+              fecha: aplicarPagosModal.fecha,
+            });
+          };
+
+          // Vista de resultado
+          if (resultado) {
+            return (
+              <div onClick={() => setAplicarPagosModal(null)}
+                   style={{position:'fixed',inset:0,background:'rgba(15, 45, 74, 0.65)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1050,padding:16}}>
+                <div onClick={(e) => e.stopPropagation()}
+                     style={{background:'#fff',borderRadius:14,width:'92vw',maxWidth:520,boxShadow:'0 24px 60px rgba(0,0,0,0.3)',overflow:'hidden'}}>
+                  <div style={{padding:'22px 26px',background: resultado.errores===0 ? '#DCFCE7' : '#FEF3C7'}}>
+                    <div style={{fontSize:20,fontWeight:800,color: resultado.errores===0 ? '#166534' : '#78350F'}}>
+                      {resultado.errores===0 ? '✅ Pagos aplicados' : '⚠️ Aplicado con avisos'}
+                    </div>
+                    <div style={{fontSize:14,color:'#64748B',marginTop:8,lineHeight:1.6}}>
+                      <strong>{resultado.aplicados}</strong> pago{resultado.aplicados!==1?'s':''} aplicado{resultado.aplicados!==1?'s':''} para {resultado.fecha}
+                      {resultado.errores > 0 && (
+                        <><br/><strong style={{color:'#991B1B'}}>{resultado.errores}</strong> con errores</>
+                      )}
+                    </div>
+                    <div style={{marginTop:12,padding:'10px 14px',background:'#fff',borderRadius:8,fontSize:12,color:'#64748B'}}>
+                      Batch ID: <code style={{fontFamily:'monospace',fontWeight:700,color:'#185FA5'}}>{resultado.batchId}</code>
+                      <div style={{marginTop:6,fontStyle:'italic'}}>Puedes deshacer este batch desde el botón "↩️ Historial batches"</div>
+                    </div>
+                  </div>
+                  <div style={{padding:'14px 26px',background:'#FAFCFE'}}>
+                    <button onClick={() => setAplicarPagosModal(null)}
+                            style={{width:'100%',background:'linear-gradient(135deg, #185FA5, #2E78C7)',color:'#fff',border:'none',padding:12,borderRadius:8,fontSize:14,fontWeight:800,cursor:'pointer'}}>
+                      Cerrar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div onClick={() => !aplicando && setAplicarPagosModal(null)}
+                 style={{position:'fixed',inset:0,background:'rgba(15, 45, 74, 0.65)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1050,padding:16}}>
+              <div onClick={(e) => e.stopPropagation()}
+                   style={{background:'#fff',borderRadius:14,width:'95vw',maxWidth:900,maxHeight:'92vh',display:'flex',flexDirection:'column',boxShadow:'0 24px 60px rgba(0,0,0,0.3)',overflow:'hidden'}}>
+                {/* Header */}
+                <div style={{padding:'18px 24px',background:'linear-gradient(180deg, #fff, #FAFCFE)',borderBottom:'1px solid #F1F5F9',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <div>
+                    <div style={{fontSize:20,fontWeight:800,color:'#1A2332'}}>✅ Aplicar pagos programados</div>
+                    <div style={{fontSize:13,color:'#64748B',marginTop:3}}>
+                      Fecha: <strong style={{color:'#185FA5'}}>{aplicarPagosModal.fecha}</strong> · {aplicarPagosModal.facturas.length} factura{aplicarPagosModal.facturas.length!==1?'s':''} programada{aplicarPagosModal.facturas.length!==1?'s':''}
+                    </div>
+                  </div>
+                  <button onClick={() => !aplicando && setAplicarPagosModal(null)} disabled={aplicando}
+                          style={{background:'#F1F5F9',border:'none',width:36,height:36,borderRadius:8,cursor:aplicando?'not-allowed':'pointer',color:'#64748B',fontSize:20}}>×</button>
+                </div>
+
+                {/* Barra de selección + total */}
+                <div style={{padding:'14px 24px',background:'#EFF6FF',borderBottom:'1px solid #BFDBFE',display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:14,flexWrap:'wrap',gap:10}}>
+                  <label style={{display:'flex',alignItems:'center',gap:10,cursor:'pointer'}}>
+                    <input type="checkbox"
+                           checked={seleccionadas.size === aplicarPagosModal.facturas.length}
+                           onChange={toggleTodas}
+                           style={{width:18,height:18}}/>
+                    <span style={{fontWeight:700,color:'#1A2332',fontSize:14}}>Seleccionar todas</span>
+                    <span style={{color:'#64748B'}}>({seleccionadas.size} de {aplicarPagosModal.facturas.length})</span>
+                  </label>
+                  <div style={{color:'#185FA5',fontWeight:800,fontSize:15,display:'flex',gap:16,flexWrap:'wrap'}}>
+                    {totalPorMoneda.MXN > 0 && <span>🇲🇽 ${fmt(totalPorMoneda.MXN)} MXN</span>}
+                    {totalPorMoneda.USD > 0 && <span>🇺🇸 ${fmt(totalPorMoneda.USD)} USD</span>}
+                    {totalPorMoneda.EUR > 0 && <span>🇪🇺 €{fmt(totalPorMoneda.EUR)} EUR</span>}
+                  </div>
+                </div>
+
+                {/* Lista de facturas */}
+                <div style={{flex:1,overflowY:'auto',minHeight:200}}>
+                  {aplicarPagosModal.facturas.map((f, idx) => {
+                    const sel = seleccionadas.has(f.programacionId);
+                    const monto = montosEditables[f.programacionId] || 0;
+                    const saldoDesp = (f.saldoPendiente || 0) - monto;
+                    const monedaSimbolo = f.moneda === 'EUR' ? '€' : '$';
+                    return (
+                      <div key={f.programacionId}
+                           style={{padding:'14px 24px',borderBottom:'1px solid #F1F5F9',display:'flex',alignItems:'center',gap:14,background: sel ? '#F0F9FF' : '#fff'}}>
+                        <input type="checkbox" checked={sel} onChange={()=>toggleSel(f.programacionId)}
+                               style={{width:18,height:18,cursor:'pointer'}}/>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4,flexWrap:'wrap'}}>
+                            <span style={{fontWeight:800,color:'#1A2332',fontSize:15}}>{f.invoice.serie}{f.invoice.folio}</span>
+                            <span style={{background: f.moneda==='MXN'?'#E3F2FD':f.moneda==='USD'?'#E8F5E9':'#F3E5F5', color: f.moneda==='MXN'?'#185FA5':f.moneda==='USD'?'#1D7A4E':'#6B47C7',padding:'2px 8px',borderRadius:999,fontSize:10,fontWeight:700}}>
+                              {f.moneda}
+                            </span>
+                            <span style={{fontSize:12,color:'#64748B'}}>{(f.invoice.concepto || '—').substring(0, 40)}</span>
+                          </div>
+                          <div style={{fontSize:12,color:'#64748B',lineHeight:1.6}}>
+                            {f.invoice.proveedor} · Total: {monedaSimbolo}{fmt(f.invoice.total || 0)} · Saldo actual: {monedaSimbolo}{fmt(f.saldoPendiente || 0)}
+                            {saldoDesp > 0.01 && sel && (
+                              <span style={{color:'#B45309',fontWeight:700}}> · Después: {monedaSimbolo}{fmt(saldoDesp)} pendiente</span>
+                            )}
+                            {saldoDesp < -0.01 && sel && (
+                              <span style={{color:'#991B1B',fontWeight:700}}> · ⚠️ Sobrepago de {monedaSimbolo}{fmt(-saldoDesp)}</span>
+                            )}
+                            {Math.abs(saldoDesp) <= 0.01 && sel && (
+                              <span style={{color:'#166534',fontWeight:700}}> · ✅ Se saldará</span>
+                            )}
+                          </div>
+                        </div>
+                        <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
+                          <div style={{display:'flex',alignItems:'center',gap:4}}>
+                            <span style={{fontSize:12,color:'#64748B'}}>{monedaSimbolo}</span>
+                            <input type="number" step="0.01" value={monto}
+                                   onChange={e=>updateMonto(f.programacionId, e.target.value)}
+                                   disabled={!sel}
+                                   style={{width:120,textAlign:'right',padding:'6px 8px',border:`1px solid ${sel?'#CBD5E1':'#E2E8F0'}`,borderRadius:6,fontSize:14,fontWeight:700,fontVariantNumeric:'tabular-nums',color: sel?'#1D7A4E':'#94A3B8',background: sel?'#fff':'#F8FAFC'}}/>
+                          </div>
+                          <div style={{fontSize:10,color:'#94A3B8'}}>{f.moneda}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Aviso */}
+                <div style={{padding:'12px 24px',background:'#FEF3C7',borderTop:'1px solid #F59E0B',display:'flex',gap:10,alignItems:'flex-start'}}>
+                  <div style={{fontSize:16}}>⚠️</div>
+                  <div style={{fontSize:12,color:'#78350F',lineHeight:1.5}}>
+                    Se creará <strong>1 batch</strong> con todos estos pagos. Puedes deshacerlo después desde el botón <strong>"↩️ Historial batches"</strong>.
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div style={{padding:'16px 24px',borderTop:'1px solid #F1F5F9',display:'flex',gap:12,background:'#FAFCFE'}}>
+                  <button onClick={() => setAplicarPagosModal(null)} disabled={aplicando}
+                          style={{flex:1,background:'#fff',border:`1px solid ${C.border}`,color:C.text,padding:13,borderRadius:8,fontSize:14,fontWeight:700,cursor:aplicando?'not-allowed':'pointer'}}>Cancelar</button>
+                  <button onClick={handleAplicar} disabled={aplicando || facturasSeleccionadas.length === 0}
+                          style={{flex:2,background:(aplicando||facturasSeleccionadas.length===0)?'#94A3B8':'linear-gradient(135deg, #185FA5, #2E78C7)',color:'#fff',border:'none',padding:13,borderRadius:8,fontSize:15,fontWeight:800,cursor:(aplicando||facturasSeleccionadas.length===0)?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+                    {aplicando ? '⏳ Aplicando...' : `✅ Aplicar ${facturasSeleccionadas.length} pago${facturasSeleccionadas.length !== 1 ? 's' : ''}`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        };
+        return <AplicarPagosModal/>;
+      })()}
+
+      {/* ─── Modal: Historial de Batches ─────── */}
+      {historialBatchesModal && (() => {
+        const HistorialBatchesModal = () => {
+          const [deshaciendo, setDeshaciendo] = useState(null); // batch_id en proceso
+
+          // Agrupar pagos por batch_id
+          const batches = useMemo(() => {
+            const map = {};
+            payments.filter(p => p.tipo === 'realizado' && p.notas && p.notas.includes('BATCH:')).forEach(p => {
+              const m = p.notas.match(/BATCH:([\w\-:.]+)/);
+              const usuarioM = p.notas.match(/Usuario:([^·\n]+)/);
+              if (m) {
+                const batchId = m[1];
+                if (!map[batchId]) map[batchId] = {
+                  batchId,
+                  fecha: p.fechaPago,
+                  pagos: [],
+                  totalPorMoneda: { MXN: 0, USD: 0, EUR: 0 },
+                  usuario: usuarioM ? usuarioM[1].trim() : 'desconocido',
+                  createdAt: batchId, // usamos el batchId (que es timestamp) para ordenar
+                };
+                const inv = ['MXN','USD','EUR']
+                  .flatMap(m => (invoices[m] || []).map(i => ({...i, moneda: m})))
+                  .find(i => i.id === p.invoiceId);
+                map[batchId].pagos.push({ ...p, invoice: inv, moneda: inv?.moneda || 'MXN' });
+                if (inv) map[batchId].totalPorMoneda[inv.moneda] = (map[batchId].totalPorMoneda[inv.moneda] || 0) + p.monto;
+              }
+            });
+            return Object.values(map).sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+          }, [payments, invoices]);
+
+          const handleDeshacer = async (batch) => {
+            const confirmar = window.confirm(`¿Deshacer batch de ${batch.pagos.length} pago${batch.pagos.length!==1?'s':''} del ${batch.fecha}?\n\nEsto eliminará los pagos aplicados y restaurará las programaciones originales. Las facturas volverán a estar pendientes.`);
+            if (!confirmar) return;
+
+            setDeshaciendo(batch.batchId);
+            try {
+              const idsAEliminar = batch.pagos.map(p => p.id);
+              const programacionesARestaurar = [];
+
+              for (const p of batch.pagos) {
+                // Recuperar programación original de las notas
+                const progMatch = p.notas && p.notas.match(/PROG_ORIGINAL:(\{[^}]+\})/);
+                if (progMatch) {
+                  try {
+                    const progData = JSON.parse(progMatch[1]);
+                    programacionesARestaurar.push({
+                      invoiceId: p.invoiceId,
+                      monto: progData.monto,
+                      fechaPago: progData.fechaPago,
+                    });
+                  } catch (e) { console.warn('No se pudo parsear PROG_ORIGINAL', e); }
+                }
+              }
+
+              // Eliminar los pagos realizados
+              for (const id of idsAEliminar) {
+                await deletePayment(id);
+              }
+
+              // Recrear las programaciones originales
+              const nuevasProg = [];
+              for (const prog of programacionesARestaurar) {
+                const nuevaProg = await insertPayment({
+                  invoiceId: prog.invoiceId,
+                  monto: prog.monto,
+                  fechaPago: prog.fechaPago,
+                  tipo: 'programado',
+                  metodoPago: 'banco',
+                  notas: 'Restaurada al deshacer batch',
+                });
+                nuevasProg.push(nuevaProg);
+              }
+
+              // Actualizar estado local
+              const idsEliminar = new Set(idsAEliminar);
+              setPayments(prev => [...prev.filter(p => !idsEliminar.has(p.id)), ...nuevasProg]);
+            } catch (err) {
+              alert('Error al deshacer: ' + err.message);
+            }
+            setDeshaciendo(null);
+          };
+
+          const formatBatchTime = (batchId) => {
+            // batchId es: 2026-07-02T15-30-45
+            try {
+              const iso = batchId.replace(/-(\d{2})-(\d{2})$/, ':$1:$2');
+              const d = new Date(iso);
+              return d.toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
+            } catch { return batchId; }
+          };
+
+          return (
+            <div onClick={() => setHistorialBatchesModal(null)}
+                 style={{position:'fixed',inset:0,background:'rgba(15, 45, 74, 0.65)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1050,padding:16}}>
+              <div onClick={(e) => e.stopPropagation()}
+                   style={{background:'#fff',borderRadius:14,width:'95vw',maxWidth:900,maxHeight:'92vh',display:'flex',flexDirection:'column',boxShadow:'0 24px 60px rgba(0,0,0,0.3)',overflow:'hidden'}}>
+                {/* Header */}
+                <div style={{padding:'18px 24px',background:'linear-gradient(180deg, #fff, #FAFCFE)',borderBottom:'1px solid #F1F5F9',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <div>
+                    <div style={{fontSize:20,fontWeight:800,color:'#1A2332'}}>↩️ Historial de batches</div>
+                    <div style={{fontSize:13,color:'#64748B',marginTop:3}}>
+                      {batches.length} batch{batches.length!==1?'es':''} aplicado{batches.length!==1?'s':''} desde Proyección
+                    </div>
+                  </div>
+                  <button onClick={() => setHistorialBatchesModal(null)}
+                          style={{background:'#F1F5F9',border:'none',width:36,height:36,borderRadius:8,cursor:'pointer',color:'#64748B',fontSize:20}}>×</button>
+                </div>
+
+                {/* Lista de batches */}
+                <div style={{flex:1,overflowY:'auto',padding:'0 0 20px'}}>
+                  {batches.length === 0 ? (
+                    <div style={{textAlign:'center',padding:60,color:'#64748B',fontSize:15}}>
+                      <div style={{fontSize:48,marginBottom:12}}>📭</div>
+                      No hay batches aplicados aún.
+                    </div>
+                  ) : batches.map((b) => (
+                    <div key={b.batchId} style={{margin:'12px 20px',border:'1px solid #E2E8F0',borderRadius:12,overflow:'hidden',background:'#fff'}}>
+                      <div style={{padding:'14px 18px',background:'#F8FAFC',borderBottom:'1px solid #E2E8F0',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10}}>
+                        <div>
+                          <div style={{fontSize:14,fontWeight:800,color:'#1A2332'}}>
+                            📅 Aplicado {formatBatchTime(b.batchId)}
+                          </div>
+                          <div style={{fontSize:12,color:'#64748B',marginTop:3}}>
+                            <strong>{b.pagos.length}</strong> pago{b.pagos.length!==1?'s':''} · Fecha de pago: <strong>{b.fecha}</strong> · Usuario: <strong>{b.usuario}</strong>
+                          </div>
+                        </div>
+                        <div style={{display:'flex',gap:10,alignItems:'center'}}>
+                          <div style={{fontSize:13,fontWeight:700,color:'#1D7A4E',display:'flex',gap:12,flexWrap:'wrap'}}>
+                            {b.totalPorMoneda.MXN > 0 && <span>${fmt(b.totalPorMoneda.MXN)} MXN</span>}
+                            {b.totalPorMoneda.USD > 0 && <span>${fmt(b.totalPorMoneda.USD)} USD</span>}
+                            {b.totalPorMoneda.EUR > 0 && <span>€{fmt(b.totalPorMoneda.EUR)} EUR</span>}
+                          </div>
+                          <button onClick={() => handleDeshacer(b)} disabled={deshaciendo===b.batchId}
+                                  style={{background:deshaciendo===b.batchId?'#94A3B8':'#FEF3C7',color:deshaciendo===b.batchId?'#fff':'#78350F',border:'1px solid #F59E0B',padding:'7px 14px',borderRadius:8,fontSize:12,fontWeight:800,cursor:deshaciendo===b.batchId?'wait':'pointer',whiteSpace:'nowrap'}}>
+                            {deshaciendo===b.batchId ? '⏳ Deshaciendo...' : '↩️ Deshacer'}
+                          </button>
+                        </div>
+                      </div>
+                      <div style={{padding:'10px 18px'}}>
+                        {b.pagos.map((p, i) => {
+                          const monedaSimbolo = p.moneda === 'EUR' ? '€' : '$';
+                          return (
+                            <div key={p.id} style={{padding:'6px 0',borderBottom: i < b.pagos.length-1 ? '1px solid #F1F5F9' : 'none',display:'flex',justifyContent:'space-between',fontSize:12,gap:10}}>
+                              <div>
+                                <strong style={{color:'#1A2332'}}>{p.invoice?.serie}{p.invoice?.folio}</strong>
+                                <span style={{color:'#64748B'}}> · {p.invoice?.proveedor} · {(p.invoice?.concepto || '—').substring(0, 40)}</span>
+                              </div>
+                              <div style={{fontWeight:700,color:'#1D7A4E',whiteSpace:'nowrap'}}>{monedaSimbolo}{fmt(p.monto)} <span style={{color:'#94A3B8',fontWeight:500}}>{p.moneda}</span></div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Footer */}
+                <div style={{padding:'14px 24px',borderTop:'1px solid #F1F5F9',background:'#FAFCFE'}}>
+                  <button onClick={() => setHistorialBatchesModal(null)}
+                          style={{width:'100%',background:'#fff',border:`1px solid ${C.border}`,color:C.text,padding:12,borderRadius:8,fontSize:14,fontWeight:700,cursor:'pointer'}}>Cerrar</button>
+                </div>
+              </div>
+            </div>
+          );
+        };
+        return <HistorialBatchesModal/>;
       })()}
 
       {/* ─── Modal: Envío Masivo de Correos ─────── */}
