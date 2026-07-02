@@ -10689,9 +10689,37 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           if (!pagoConComp) return null;  // sin PDF, no se puede enviar
 
           if (yaEnviado) {
+            // Función para abrir el modal de envío de nuevo (reenvío)
+            const handleReenviar = () => {
+              const proveedorSup = suppliers.find(s => s.nombre === pagosDetail.proveedor);
+              const emailProveedor = proveedorSup?.email || '';
+              if (!emailProveedor) return; // ya no debería pasar, pero por si acaso
+              setCorreoEnvioModal({
+                pagosGrupo,
+                groupKey,
+                proveedor: pagosDetail.proveedor,
+                emailPrincipal: emailProveedor,
+                emailsCcProveedor: proveedorSup?.emailsCc || [],
+                fecha: pagosGrupo[0]?.fechaPago || '',
+                moneda: pagosGrupo[0]?.moneda || 'MXN',
+                totalGrupo: pagosGrupo.reduce((s,p)=>s+p.monto,0),
+                comprobanteUrl: pagoConComp.comprobanteUrl,
+                comprobanteNombre: pagoConComp.comprobanteNombre,
+                esReenvio: true,
+              });
+            };
             return (
-              <div style={{display:"flex",alignItems:"center",gap:6,background:"#DCFCE7",border:"1px solid #86EFAC",color:"#166534",padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:700}} onClick={e=>e.stopPropagation()}>
-                ✅ Correo enviado
+              <div style={{display:"flex",alignItems:"center",gap:6}} onClick={e=>e.stopPropagation()}>
+                <div style={{display:"flex",alignItems:"center",gap:6,background:"#DCFCE7",border:"1px solid #86EFAC",color:"#166534",padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:700}}>
+                  ✅ Correo enviado
+                </div>
+                {esSuperadmin && (
+                  <button onClick={handleReenviar}
+                          title="Reenviar el correo al proveedor"
+                          style={{background:"#fff",border:"1px solid #F59E0B",color:"#B45309",padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+                    🔄 Reenviar
+                  </button>
+                )}
               </div>
             );
           }
@@ -11519,7 +11547,7 @@ Saludos cordiales,`;
                 } : x;
               }));
 
-              setResultado({tipo:'ok', mensaje: `✅ Correo enviado a ${correoEnvioModal.emailPrincipal}${emailsCcTodos.length > 0 ? ` (+${emailsCcTodos.length} en copia)` : ''}`});
+              setResultado({tipo:'ok', mensaje: `✅ ${correoEnvioModal.esReenvio ? 'Correo reenviado' : 'Correo enviado'} a ${correoEnvioModal.emailPrincipal}${emailsCcTodos.length > 0 ? ` (+${emailsCcTodos.length} en copia)` : ''}`});
               // Cerrar automáticamente después de 2 segundos
               setTimeout(() => setCorreoEnvioModal(null), 2500);
             } catch (err) {
@@ -11539,7 +11567,9 @@ Saludos cordiales,`;
                 {/* Header */}
                 <div style={{padding:'16px 22px',background:'linear-gradient(180deg, #fff, #FAFCFE)',borderBottom:'1px solid #F1F5F9',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                   <div>
-                    <div style={{fontSize:17,fontWeight:800,color:'#1A2332'}}>📧 Enviar correo al proveedor</div>
+                    <div style={{fontSize:17,fontWeight:800,color:'#1A2332'}}>
+                      {correoEnvioModal.esReenvio ? '🔄 Reenviar correo al proveedor' : '📧 Enviar correo al proveedor'}
+                    </div>
                     <div style={{fontSize:12,color:'#64748B',marginTop:2}}>
                       {correoEnvioModal.proveedor} · {correoEnvioModal.fecha} · {monedaSimbolo}{fmt(correoEnvioModal.totalGrupo)} {correoEnvioModal.moneda}
                     </div>
@@ -11550,6 +11580,16 @@ Saludos cordiales,`;
 
                 {/* Content scroll */}
                 <div style={{flex:1,overflowY:'auto',padding:'18px 22px'}}>
+                  {/* Banner de aviso si es reenvío */}
+                  {correoEnvioModal.esReenvio && (
+                    <div style={{marginBottom:14,background:'#FEF3C7',border:'1px solid #F59E0B',borderRadius:8,padding:'10px 14px',display:'flex',alignItems:'flex-start',gap:10}}>
+                      <div style={{fontSize:18,lineHeight:1}}>⚠️</div>
+                      <div style={{fontSize:12,color:'#78350F',lineHeight:1.5}}>
+                        <strong>ESTÁS REENVIANDO UN CORREO YA ENVIADO ANTES.</strong><br/>
+                        El proveedor recibirá una copia del mismo correo. Úsalo solo para pruebas o correcciones.
+                      </div>
+                    </div>
+                  )}
                   {/* Destinatario */}
                   <div style={{marginBottom:16,background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:8,padding:'12px 14px'}}>
                     <div style={{fontSize:11,color:'#64748B',fontWeight:700,marginBottom:6}}>📤 DESTINATARIOS</div>
@@ -11622,7 +11662,7 @@ Saludos cordiales,`;
                           style={{flex:1,background:'#fff',border:`1px solid ${C.border}`,color:C.text,padding:11,borderRadius:8,fontSize:13,fontWeight:700,cursor:enviando?'not-allowed':'pointer'}}>Cancelar</button>
                   <button onClick={handleEnviar} disabled={enviando || resultado?.tipo === 'ok'}
                           style={{flex:2,background:enviando||resultado?.tipo==='ok'?'#94A3B8':'linear-gradient(135deg, #1D7A4E, #2EBC76)',color:'#fff',border:'none',padding:11,borderRadius:8,fontSize:13,fontWeight:800,cursor:enviando?'wait':(resultado?.tipo==='ok'?'default':'pointer'),display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
-                    {enviando ? '⏳ Enviando correo...' : (resultado?.tipo === 'ok' ? '✅ Enviado' : '📧 Enviar ahora')}
+                    {enviando ? '⏳ Enviando correo...' : (resultado?.tipo === 'ok' ? '✅ Enviado' : (correoEnvioModal.esReenvio ? '🔄 Reenviar ahora' : '📧 Enviar ahora'))}
                   </button>
                 </div>
               </div>
