@@ -10753,32 +10753,32 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         <ModalShell title={`Pagos a ${pagosDetail.proveedor}`} onClose={()=>setPagosDetail(null)} huge>
           {/* Summary */}
           <div style={{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap"}}>
-            <div style={{background:"#F8FAFC",borderRadius:8,padding:"8px 14px",fontSize:13}}>
+            <div style={{background:"#F8FAFC",borderRadius:8,padding:"10px 16px",fontSize:15}}>
               <span style={{color:C.muted}}>Total pagos: </span><span style={{fontWeight:700}}>{pagosActualizadosFiltrados.length}</span>
             </div>
-            <div style={{background:"#F8FAFC",borderRadius:8,padding:"8px 14px",fontSize:13}}>
+            <div style={{background:"#F8FAFC",borderRadius:8,padding:"10px 16px",fontSize:15}}>
               <span style={{color:C.muted}}>Grupos: </span><span style={{fontWeight:700}}>{sortedGroups.length}</span>
             </div>
             {/* Totales por moneda (separados, ya no sumados como peras+manzanas) */}
             {totalesPorMoneda.MXN > 0 && (
-              <div style={{background:monedaBg.MXN,borderRadius:8,padding:"8px 14px",fontSize:13}}>
+              <div style={{background:monedaBg.MXN,borderRadius:8,padding:"10px 16px",fontSize:15}}>
                 <span style={{color:C.muted}}>{monedaFlag.MXN} MXN: </span><span style={{fontWeight:700,color:monedaColor.MXN}}>${fmt(totalesPorMoneda.MXN)}</span>
               </div>
             )}
             {totalesPorMoneda.USD > 0 && (
-              <div style={{background:monedaBg.USD,borderRadius:8,padding:"8px 14px",fontSize:13}}>
+              <div style={{background:monedaBg.USD,borderRadius:8,padding:"10px 16px",fontSize:15}}>
                 <span style={{color:C.muted}}>{monedaFlag.USD} USD: </span><span style={{fontWeight:700,color:monedaColor.USD}}>${fmt(totalesPorMoneda.USD)}</span>
               </div>
             )}
             {totalesPorMoneda.EUR > 0 && (
-              <div style={{background:monedaBg.EUR,borderRadius:8,padding:"8px 14px",fontSize:13}}>
+              <div style={{background:monedaBg.EUR,borderRadius:8,padding:"10px 16px",fontSize:15}}>
                 <span style={{color:C.muted}}>{monedaFlag.EUR} EUR: </span><span style={{fontWeight:700,color:monedaColor.EUR}}>€{fmt(totalesPorMoneda.EUR)}</span>
               </div>
             )}
             <button onClick={()=>{
               if(pagosExpandedDates.size===sortedGroups.length) setPagosExpandedDates(new Set());
               else setPagosExpandedDates(new Set(sortedGroups.map(([k])=>k)));
-            }} style={{...btnStyle,padding:"6px 14px",fontSize:12,background:"#F1F5F9",color:C.text}}>
+            }} style={{...btnStyle,padding:"8px 16px",fontSize:14,background:"#F1F5F9",color:C.text}}>
               {pagosExpandedDates.size===sortedGroups.length ? "Colapsar todo" : "Expandir todo"}
             </button>
           </div>
@@ -10794,22 +10794,22 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                   onMouseEnter={e=>{if(!isOpen) e.currentTarget.style.background="#F0F4FF";}}
                   onMouseLeave={e=>{if(!isOpen) e.currentTarget.style.background="#F8FAFC";}}>
                   <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                    <span style={{fontSize:16}}>{isOpen?"▼":"▶"}</span>
-                    <span style={{fontWeight:800,color:C.navy,fontSize:15}}>📅 {group.fecha}</span>
-                    <span style={{background:monedaBg[group.moneda]||"#F5F5F5",color:monedaColor[group.moneda]||"#666",padding:"2px 10px",borderRadius:20,fontSize:11,fontWeight:800}}>
+                    <span style={{fontSize:18}}>{isOpen?"▼":"▶"}</span>
+                    <span style={{fontWeight:800,color:C.navy,fontSize:17}}>📅 {group.fecha}</span>
+                    <span style={{background:monedaBg[group.moneda]||"#F5F5F5",color:monedaColor[group.moneda]||"#666",padding:"3px 12px",borderRadius:20,fontSize:13,fontWeight:800}}>
                       {monedaFlag[group.moneda]||""} {group.moneda}
                     </span>
-                    <span style={{fontSize:12,color:C.muted}}>{group.pagos.length} pago{group.pagos.length!==1?"s":""}</span>
+                    <span style={{fontSize:14,color:C.muted,fontWeight:600}}>{group.pagos.length} pago{group.pagos.length!==1?"s":""}</span>
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:16}}>
                     <ComprobanteGrupoButton pagosGrupo={group.pagos} groupKey={groupKey}/>
-                    <div style={{fontWeight:800,color:C.ok,fontSize:18,fontVariantNumeric:"tabular-nums"}}>{monedaSimbolo}{fmt(group.total)}</div>
+                    <div style={{fontWeight:800,color:C.ok,fontSize:22,fontVariantNumeric:"tabular-nums"}}>{monedaSimbolo}{fmt(group.total)}</div>
                   </div>
                 </div>
                 {/* Expanded: invoice detail — estilo Proyección de Pagos */}
                 {isOpen && (
-                  <div style={{padding:"0 8px 8px"}}>
-                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
+                  <div style={{padding:"0 10px 10px"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:14,tableLayout:"fixed"}}>
                       <colgroup>
                         <col style={{width:'9%'}}/>
                         <col style={{width:'22%'}}/>
@@ -10822,15 +10822,15 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                         <col style={{width:'11%'}}/>
                       </colgroup>
                       <thead><tr style={{background:"#FAFBFC"}}>
-                        <th style={{padding:"8px 8px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Folio</th>
-                        <th style={{padding:"8px 8px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Concepto</th>
-                        <th style={{padding:"8px 8px",textAlign:"center",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Clasif.</th>
-                        <th style={{padding:"8px 8px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Fecha</th>
-                        <th style={{padding:"8px 8px",textAlign:"right",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Total</th>
-                        <th style={{padding:"8px 8px",textAlign:"right",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Pagado</th>
-                        <th style={{padding:"8px 8px",textAlign:"right",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Pendiente</th>
-                        <th style={{padding:"8px 8px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Vence</th>
-                        <th style={{padding:"8px 8px",textAlign:"center",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Moneda</th>
+                        <th style={{padding:"10px 8px",textAlign:"center",color:C.muted,fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:0.3}}>Folio</th>
+                        <th style={{padding:"10px 8px",textAlign:"left",color:C.muted,fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:0.3}}>Concepto</th>
+                        <th style={{padding:"10px 8px",textAlign:"center",color:C.muted,fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:0.3}}>Clasif.</th>
+                        <th style={{padding:"10px 8px",textAlign:"center",color:C.muted,fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:0.3}}>Fecha</th>
+                        <th style={{padding:"10px 8px",textAlign:"right",color:C.muted,fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:0.3}}>Total</th>
+                        <th style={{padding:"10px 8px",textAlign:"right",color:C.muted,fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:0.3}}>Pagado</th>
+                        <th style={{padding:"10px 8px",textAlign:"right",color:C.muted,fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:0.3}}>Pendiente</th>
+                        <th style={{padding:"10px 8px",textAlign:"center",color:C.muted,fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:0.3}}>Vence</th>
+                        <th style={{padding:"10px 8px",textAlign:"center",color:C.muted,fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:0.3}}>Moneda</th>
                       </tr></thead>
                       <tbody>
                         {group.pagos.map(p=>{
@@ -10838,18 +10838,18 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                           const monedaColor = { MXN:C.mxn, USD:C.usd, EUR:C.eur }[p.moneda] || "#666";
                           return (
                           <tr key={p.id} style={{borderTop:`1px solid ${C.border}`}}>
-                            <td style={{padding:"8px 8px",fontWeight:700,fontSize:12,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}} title={p.folio}>{p.folio}</td>
-                            <td style={{padding:"8px 8px",color:p.concepto?C.text:C.muted,fontStyle:p.concepto?"normal":"italic",fontSize:11,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.concepto||"—"}>{p.concepto||"—"}</td>
-                            <td style={{padding:"8px 8px",textAlign:"center"}}>
-                              <span style={{background:"#EEF2FF",color:C.blue,padding:"2px 8px",borderRadius:20,fontSize:10,fontWeight:600,whiteSpace:"nowrap",display:"inline-block",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis"}} title={p.clasificacion}>{p.clasificacion}</span>
+                            <td style={{padding:"10px 8px",fontWeight:700,fontSize:14,textAlign:"center",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}} title={p.folio}>{p.folio}</td>
+                            <td style={{padding:"10px 8px",color:p.concepto?C.text:C.muted,fontStyle:p.concepto?"normal":"italic",fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.concepto||"—"}>{p.concepto||"—"}</td>
+                            <td style={{padding:"10px 8px",textAlign:"center"}}>
+                              <span style={{background:"#EEF2FF",color:C.blue,padding:"3px 10px",borderRadius:20,fontSize:12,fontWeight:600,whiteSpace:"nowrap",display:"inline-block",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis"}} title={p.clasificacion}>{p.clasificacion}</span>
                             </td>
-                            <td style={{padding:"8px 8px",whiteSpace:"nowrap",fontSize:11,color:C.muted}}>{p.fecha||"—"}</td>
-                            <td style={{padding:"8px 8px",textAlign:"right",fontWeight:600,fontVariantNumeric:"tabular-nums",fontSize:11}}>{monedaSimbolo}{fmt(p.totalFactura||0)}</td>
-                            <td style={{padding:"8px 8px",textAlign:"right",fontWeight:700,color:C.ok,fontVariantNumeric:"tabular-nums",fontSize:11}}>{monedaSimbolo}{fmt(p.pagadoTotal||0)}</td>
-                            <td style={{padding:"8px 8px",textAlign:"right",fontWeight:600,color:p.pendiente>0?C.danger:C.muted,fontVariantNumeric:"tabular-nums",fontSize:11}}>{p.pendiente>0?`${monedaSimbolo}${fmt(p.pendiente)}`:"—"}</td>
-                            <td style={{padding:"8px 8px",whiteSpace:"nowrap",fontSize:11,color:C.muted}}>{p.vencimiento||"—"}</td>
-                            <td style={{padding:"8px 8px",textAlign:"center"}}>
-                              <span style={{background:monedaBg,color:monedaColor,padding:"2px 8px",borderRadius:20,fontSize:10,fontWeight:700}}>{p.moneda}</span>
+                            <td style={{padding:"10px 8px",whiteSpace:"nowrap",fontSize:13,color:C.muted,textAlign:"center"}}>{p.fecha||"—"}</td>
+                            <td style={{padding:"10px 8px",textAlign:"right",fontWeight:600,fontVariantNumeric:"tabular-nums",fontSize:14}}>{monedaSimbolo}{fmt(p.totalFactura||0)}</td>
+                            <td style={{padding:"10px 8px",textAlign:"right",fontWeight:700,color:C.ok,fontVariantNumeric:"tabular-nums",fontSize:14}}>{monedaSimbolo}{fmt(p.pagadoTotal||0)}</td>
+                            <td style={{padding:"10px 8px",textAlign:"right",fontWeight:600,color:p.pendiente>0?C.danger:C.muted,fontVariantNumeric:"tabular-nums",fontSize:14}}>{p.pendiente>0?`${monedaSimbolo}${fmt(p.pendiente)}`:"—"}</td>
+                            <td style={{padding:"10px 8px",whiteSpace:"nowrap",fontSize:13,color:C.muted,textAlign:"center"}}>{p.vencimiento||"—"}</td>
+                            <td style={{padding:"10px 8px",textAlign:"center"}}>
+                              <span style={{background:monedaBg,color:monedaColor,padding:"3px 10px",borderRadius:20,fontSize:12,fontWeight:700}}>{p.moneda}</span>
                             </td>
                           </tr>
                           );
@@ -10857,8 +10857,8 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                       </tbody>
                       <tfoot>
                         <tr style={{borderTop:`2px solid ${C.border}`,background:"#FAFBFC"}}>
-                          <td colSpan={5} style={{padding:"10px 8px",fontWeight:700,color:C.navy,fontSize:11,textAlign:"right"}}>Total pagado en este grupo:</td>
-                          <td colSpan={4} style={{padding:"10px 8px",fontWeight:800,color:C.ok,fontVariantNumeric:"tabular-nums",fontSize:14}}>{monedaSimbolo}{fmt(group.total)} <span style={{fontSize:10,color:C.muted,fontWeight:600}}>{group.moneda}</span></td>
+                          <td colSpan={5} style={{padding:"12px 8px",fontWeight:700,color:C.navy,fontSize:14,textAlign:"right"}}>Total pagado en este grupo:</td>
+                          <td colSpan={4} style={{padding:"12px 8px",fontWeight:800,color:C.ok,fontVariantNumeric:"tabular-nums",fontSize:17,textAlign:"right"}}>{monedaSimbolo}{fmt(group.total)} <span style={{fontSize:12,color:C.muted,fontWeight:600}}>{group.moneda}</span></td>
                         </tr>
                       </tfoot>
                     </table>
@@ -10868,12 +10868,12 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             );
           })}
           {/* Totales generales por moneda (ya NO sumamos monedas distintas) */}
-          <div style={{background:C.navy,borderRadius:12,marginTop:12,padding:"14px 18px"}}>
-            <div style={{fontWeight:800,color:"#fff",fontSize:13,marginBottom:8,letterSpacing:0.5}}>TOTAL GENERAL POR MONEDA</div>
-            <div style={{display:"flex",gap:20,flexWrap:"wrap"}}>
-              {totalesPorMoneda.MXN > 0 && <div style={{color:"#fff",fontSize:16,fontWeight:800,fontVariantNumeric:"tabular-nums"}}>🇲🇽 ${fmt(totalesPorMoneda.MXN)} MXN</div>}
-              {totalesPorMoneda.USD > 0 && <div style={{color:"#fff",fontSize:16,fontWeight:800,fontVariantNumeric:"tabular-nums"}}>🇺🇸 ${fmt(totalesPorMoneda.USD)} USD</div>}
-              {totalesPorMoneda.EUR > 0 && <div style={{color:"#fff",fontSize:16,fontWeight:800,fontVariantNumeric:"tabular-nums"}}>🇪🇺 €{fmt(totalesPorMoneda.EUR)} EUR</div>}
+          <div style={{background:C.navy,borderRadius:12,marginTop:14,padding:"18px 22px"}}>
+            <div style={{fontWeight:800,color:"#fff",fontSize:15,marginBottom:10,letterSpacing:0.6}}>TOTAL GENERAL POR MONEDA</div>
+            <div style={{display:"flex",gap:26,flexWrap:"wrap"}}>
+              {totalesPorMoneda.MXN > 0 && <div style={{color:"#fff",fontSize:20,fontWeight:800,fontVariantNumeric:"tabular-nums"}}>🇲🇽 ${fmt(totalesPorMoneda.MXN)} MXN</div>}
+              {totalesPorMoneda.USD > 0 && <div style={{color:"#fff",fontSize:20,fontWeight:800,fontVariantNumeric:"tabular-nums"}}>🇺🇸 ${fmt(totalesPorMoneda.USD)} USD</div>}
+              {totalesPorMoneda.EUR > 0 && <div style={{color:"#fff",fontSize:20,fontWeight:800,fontVariantNumeric:"tabular-nums"}}>🇪🇺 €{fmt(totalesPorMoneda.EUR)} EUR</div>}
             </div>
           </div>
         </ModalShell>
