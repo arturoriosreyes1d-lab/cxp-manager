@@ -122,9 +122,9 @@ const Field = ({label,children}) => (
   </div>
 );
 
-const ModalShell = ({title,onClose,wide,extraWide,children}) => (
-  <div style={{position:"fixed",inset:0,background:"rgba(15,45,74,.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}} onClick={onClose}>
-    <div onClick={e=>e.stopPropagation()} style={{background:C.surface,borderRadius:20,padding:32,width:"100%",maxWidth:extraWide?1200:wide?800:600,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,.25)"}}>
+const ModalShell = ({title,onClose,wide,extraWide,huge,children}) => (
+  <div style={{position:"fixed",inset:0,background:"rgba(15,45,74,.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:huge?12:20}} onClick={onClose}>
+    <div onClick={e=>e.stopPropagation()} style={{background:C.surface,borderRadius:20,padding:huge?24:32,width:huge?"96vw":"100%",maxWidth:huge?1600:extraWide?1200:wide?800:600,maxHeight:huge?"94vh":"90vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,.25)"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
         <h2 style={{fontSize:20,fontWeight:800,color:C.navy,margin:0}}>{title}</h2>
         <button onClick={onClose} style={{background:"#F1F5F9",border:"none",borderRadius:8,width:36,height:36,cursor:"pointer",fontSize:18}}>×</button>
@@ -10597,22 +10597,112 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             );
           }
           if (esConsulta) return <span style={{fontSize:11,color:C.muted}}>—</span>;
+          return <DropZoneAdjuntar onUpload={handleUpload} subiendo={subiendo} fileRef={fileRef}/>;
+        };
+
+        // Zona de drop para arrastrar el PDF (o click para abrir file picker)
+        const DropZoneAdjuntar = ({ onUpload, subiendo, fileRef }) => {
+          const [dragActive, setDragActive] = useState(false);
+
+          const handleDragEnter = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setDragActive(true);
+          };
+          const handleDragLeave = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setDragActive(false);
+          };
+          const handleDragOver = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!dragActive) setDragActive(true);
+          };
+          const handleDrop = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setDragActive(false);
+            const files = e.dataTransfer?.files;
+            if (!files || files.length === 0) return;
+            const file = files[0];
+            if (file.type !== 'application/pdf') {
+              alert('⚠️ Solo se aceptan archivos PDF');
+              return;
+            }
+            if (files.length > 1) {
+              alert('⚠️ Arrastra solo 1 PDF a la vez');
+              return;
+            }
+            onUpload(file);
+          };
+
           return (
-            <div onClick={e=>e.stopPropagation()}>
+            <div onClick={e=>e.stopPropagation()}
+                 onDragEnter={handleDragEnter}
+                 onDragLeave={handleDragLeave}
+                 onDragOver={handleDragOver}
+                 onDrop={handleDrop}
+                 style={{
+                   background: dragActive ? '#DBEAFE' : (subiendo ? '#F1F5F9' : '#F0F7FF'),
+                   border: dragActive ? '2px solid #185FA5' : '2px dashed #185FA5',
+                   color: '#185FA5',
+                   padding: dragActive ? '8px 18px' : '7px 16px',
+                   borderRadius: 8,
+                   fontSize: 12,
+                   fontWeight: 700,
+                   cursor: subiendo ? 'wait' : 'pointer',
+                   display: 'flex',
+                   alignItems: 'center',
+                   gap: 6,
+                   transition: 'all .15s',
+                   userSelect: 'none',
+                 }}>
               <input type="file" accept="application/pdf" ref={fileRef}
-                     onChange={(e) => handleUpload(e.target.files?.[0])}
+                     onChange={(e) => onUpload(e.target.files?.[0])}
                      style={{display:'none'}}/>
-              <button onClick={() => fileRef.current?.click()} disabled={subiendo}
-                      style={{background:subiendo?'#F1F5F9':'#F0F7FF',border:'1px dashed #185FA5',color:'#185FA5',padding:'5px 12px',borderRadius:6,fontSize:11,fontWeight:700,cursor:subiendo?'wait':'pointer',display:'flex',alignItems:'center',gap:4}}>
-                {subiendo ? '⏳ Subiendo...' : '📎 Adjuntar comprobante'}
-              </button>
+              <div onClick={() => !subiendo && fileRef.current?.click()}
+                   style={{display:'flex',alignItems:'center',gap:6,width:'100%'}}>
+                {subiendo ? (
+                  <>⏳ Subiendo...</>
+                ) : dragActive ? (
+                  <>⬇️ Suelta el PDF aquí</>
+                ) : (
+                  <>📎 Arrastra el PDF <span style={{opacity:0.6,fontWeight:500,fontSize:11}}>o haz clic</span></>
+                )}
+              </div>
             </div>
           );
         };
 
+        // 🔄 Recomputar pagos desde el state actual (reactivo a cambios de comprobante_url, etc.)
+        // así el modal se refresca cuando setPayments actualiza algún pago
+        const allInvsForDetail = [
+          ...invoices.MXN.map(i=>({...i,moneda:"MXN"})),
+          ...invoices.USD.map(i=>({...i,moneda:"USD"})),
+          ...invoices.EUR.map(i=>({...i,moneda:"EUR"})),
+        ];
+        const pagosActualizados = payments.filter(p => p.tipo === 'realizado').map(p => {
+          const inv = allInvsForDetail.find(i=>i.id===p.invoiceId);
+          if(!inv) return null;
+          if (inv.proveedor !== pagosDetail.proveedor) return null;
+          return { ...p, proveedor:inv.proveedor, folio:`${inv.serie}${inv.folio}`, tipo:inv.tipo, fecha:inv.fecha, concepto:inv.concepto, moneda:inv.moneda, totalFactura:inv.total };
+        }).filter(Boolean);
+
+        // Aplicar mismos filtros de fecha/búsqueda que en la vista principal
+        const pagosActualizadosFiltrados = pagosActualizados.filter(p => {
+          if(pagosFechaFrom && p.fechaPago < pagosFechaFrom) return false;
+          if(pagosFechaTo && p.fechaPago > pagosFechaTo) return false;
+          if(pagosSearch){
+            const q = pagosSearch.toLowerCase();
+            if(!(p.proveedor.toLowerCase().includes(q) || p.folio.toLowerCase().includes(q) || (p.concepto||"").toLowerCase().includes(q) || String(p.monto).includes(q) || p.moneda.toLowerCase().includes(q))) return false;
+          }
+          return true;
+        });
+
         // Agrupar por fecha + moneda (cada moneda es un grupo lógico separado)
         const byDateMoneda = {};
-        pagosDetail.pagos.forEach(p => {
+        pagosActualizadosFiltrados.forEach(p => {
           const d = p.fechaPago || "Sin fecha";
           const m = p.moneda || "MXN";
           const key = `${d}__${m}`;
@@ -10626,7 +10716,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
         // Totales por moneda para el resumen superior
         const totalesPorMoneda = { MXN:0, USD:0, EUR:0 };
-        pagosDetail.pagos.forEach(p => {
+        pagosActualizadosFiltrados.forEach(p => {
           const m = p.moneda || 'MXN';
           totalesPorMoneda[m] = (totalesPorMoneda[m] || 0) + p.monto;
         });
@@ -10638,11 +10728,11 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         const monedaFlag = { MXN:'🇲🇽', USD:'🇺🇸', EUR:'🇪🇺' };
 
         return (
-        <ModalShell title={`Pagos a ${pagosDetail.proveedor}`} onClose={()=>setPagosDetail(null)} extraWide>
+        <ModalShell title={`Pagos a ${pagosDetail.proveedor}`} onClose={()=>setPagosDetail(null)} huge>
           {/* Summary */}
           <div style={{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap"}}>
             <div style={{background:"#F8FAFC",borderRadius:8,padding:"8px 14px",fontSize:13}}>
-              <span style={{color:C.muted}}>Total pagos: </span><span style={{fontWeight:700}}>{pagosDetail.pagos.length}</span>
+              <span style={{color:C.muted}}>Total pagos: </span><span style={{fontWeight:700}}>{pagosActualizadosFiltrados.length}</span>
             </div>
             <div style={{background:"#F8FAFC",borderRadius:8,padding:"8px 14px",fontSize:13}}>
               <span style={{color:C.muted}}>Grupos: </span><span style={{fontWeight:700}}>{sortedGroups.length}</span>
@@ -10750,28 +10840,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         const saldoSinProgramar = saldoRest - totalSched;
         // Componente para adjuntar/ver/borrar el PDF del comprobante
         const ComprobanteButton = ({ pago, esConsulta }) => {
-          const [subiendo, setSubiendo] = useState(false);
-          const fileRef = useRef(null);
           const tieneComprobante = !!pago.comprobanteUrl;
-
-          const handleUpload = async (file) => {
-            if (!file) return;
-            setSubiendo(true);
-            try {
-              const result = await uploadComprobantePDF(file, pago.id, empresaId);
-              if (result.error) {
-                alert('Error: ' + result.error);
-              } else {
-                await updatePaymentComprobante(pago.id, result.url, result.nombre);
-                setPayments(prev => prev.map(x => x.id === pago.id
-                  ? { ...x, comprobanteUrl: result.url, comprobanteNombre: result.nombre }
-                  : x));
-              }
-            } catch (err) {
-              alert('Error al subir: ' + err.message);
-            }
-            setSubiendo(false);
-          };
 
           const handleVer = async () => {
             const url = await getComprobanteSignedUrl(pago.comprobanteUrl);
@@ -10779,41 +10848,15 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             else alert('No se pudo obtener el comprobante');
           };
 
-          const handleQuitar = async () => {
-            if (!confirm('¿Quitar el comprobante de este pago?')) return;
-            await deleteComprobantePDF(pago.comprobanteUrl);
-            await updatePaymentComprobante(pago.id, '', '');
-            setPayments(prev => prev.map(x => x.id === pago.id
-              ? { ...x, comprobanteUrl: '', comprobanteNombre: '' }
-              : x));
-          };
-
           if (tieneComprobante) {
             return (
-              <div style={{display:'flex',alignItems:'center',gap:4}}>
-                <button onClick={handleVer} title={pago.comprobanteNombre || 'Ver comprobante'}
-                        style={{background:'#DBEAFE',border:'1px solid #BFDBFE',color:'#185FA5',padding:'3px 8px',borderRadius:5,fontSize:11,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:3}}>
-                  📄 Ver
-                </button>
-                {!esConsulta && (
-                  <button onClick={handleQuitar} title="Quitar comprobante"
-                          style={{background:'#FEE',border:'1px solid #FCA5A5',color:'#C04A4D',width:22,height:22,borderRadius:5,fontSize:10,cursor:'pointer'}}>×</button>
-                )}
-              </div>
+              <button onClick={handleVer} title={pago.comprobanteNombre || 'Ver comprobante'}
+                      style={{background:'#DBEAFE',border:'1px solid #BFDBFE',color:'#185FA5',padding:'3px 8px',borderRadius:5,fontSize:11,fontWeight:700,cursor:'pointer',display:'inline-flex',alignItems:'center',gap:3}}>
+                📄 Ver PDF
+              </button>
             );
           }
-          if (esConsulta) return <span style={{fontSize:11,color:C.muted}}>—</span>;
-          return (
-            <div>
-              <input type="file" accept="application/pdf" ref={fileRef}
-                     onChange={(e) => handleUpload(e.target.files?.[0])}
-                     style={{display:'none'}}/>
-              <button onClick={() => fileRef.current?.click()} disabled={subiendo}
-                      style={{background:subiendo?'#F1F5F9':'#F0F7FF',border:'1px dashed #BFDBFE',color:'#185FA5',padding:'4px 10px',borderRadius:5,fontSize:11,fontWeight:600,cursor:subiendo?'wait':'pointer',display:'flex',alignItems:'center',gap:3}}>
-                {subiendo ? '⏳ Subiendo...' : '📎 Adjuntar PDF'}
-              </button>
-            </div>
-          );
+          return <span style={{fontSize:10,color:C.muted,fontStyle:'italic'}}>Sin PDF · adjunta desde Pagos</span>;
         };
 
         const PayTable = ({items,color,showType}) => (
