@@ -31,7 +31,7 @@ ALTER TABLE payments
   ADD COLUMN IF NOT EXISTS correo_error           text DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS idx_payments_correo_pendiente
-  ON payments (correo_enviado, empresa_id)
+  ON payments (correo_enviado, invoice_id)
   WHERE correo_enviado = false AND comprobante_url <> '';
 
 -- ────────────────────────────────────────────────────────────────────

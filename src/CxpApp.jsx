@@ -8647,16 +8647,16 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
       return p.proveedor.toLowerCase().includes(q) || p.folio.toLowerCase().includes(q) || (p.concepto||"").toLowerCase().includes(q) || String(p.monto).includes(q) || p.moneda.toLowerCase().includes(q);
     });
 
-    // Group by proveedor
+    // Group by proveedor con desglose por moneda
     const porProveedor = {};
     filtered.forEach(p => {
-      if(!porProveedor[p.proveedor]) porProveedor[p.proveedor] = { pagos:[], totalPagado:0, monedas:new Set() };
+      if(!porProveedor[p.proveedor]) porProveedor[p.proveedor] = { pagos:[], totalPorMoneda:{}, monedas:new Set() };
       porProveedor[p.proveedor].pagos.push(p);
-      porProveedor[p.proveedor].totalPagado += p.monto;
-      porProveedor[p.proveedor].monedas.add(p.moneda);
+      const m = p.moneda || 'MXN';
+      porProveedor[p.proveedor].totalPorMoneda[m] = (porProveedor[p.proveedor].totalPorMoneda[m] || 0) + p.monto;
+      porProveedor[p.proveedor].monedas.add(m);
     });
     const proveedores = Object.entries(porProveedor).sort((a,b) => a[0].localeCompare(b[0]));
-    const totalGeneral = filtered.reduce((s,p) => s+p.monto, 0);
     const porMoneda = {MXN:0,USD:0,EUR:0};
     filtered.forEach(p => { porMoneda[p.moneda] = (porMoneda[p.moneda]||0) + p.monto; });
 
@@ -8686,10 +8686,6 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
               <div style={{fontSize:11,color:C.muted,fontWeight:600,textTransform:"uppercase"}}>Pagos registrados</div>
               <div style={{fontSize:24,fontWeight:800,color:C.navy}}>{filtered.length}</div>
             </div>
-            <div style={{background:"#E8F5E9",border:"1px solid #A5D6A7",borderRadius:12,padding:"14px 20px"}}>
-              <div style={{fontSize:11,color:C.muted,fontWeight:600,textTransform:"uppercase"}}>Total pagado</div>
-              <div style={{fontSize:24,fontWeight:800,color:C.ok}}>${fmt(totalGeneral)}</div>
-            </div>
             {porMoneda.MXN>0 && <div style={{background:"#E3F2FD",border:"1px solid #90CAF9",borderRadius:12,padding:"14px 20px"}}><div style={{fontSize:11,color:C.muted,fontWeight:600}}>🇲🇽 MXN</div><div style={{fontSize:20,fontWeight:800,color:C.mxn}}>${fmt(porMoneda.MXN)}</div></div>}
             {porMoneda.USD>0 && <div style={{background:"#E8F5E9",border:"1px solid #A5D6A7",borderRadius:12,padding:"14px 20px"}}><div style={{fontSize:11,color:C.muted,fontWeight:600}}>🇺🇸 USD</div><div style={{fontSize:20,fontWeight:800,color:C.usd}}>${fmt(porMoneda.USD)}</div></div>}
             {porMoneda.EUR>0 && <div style={{background:"#F3E5F5",border:"1px solid #CE93D8",borderRadius:12,padding:"14px 20px"}}><div style={{fontSize:11,color:C.muted,fontWeight:600}}>🇪🇺 EUR</div><div style={{fontSize:20,fontWeight:800,color:C.eur}}>€{fmt(porMoneda.EUR)}</div></div>}
@@ -8706,7 +8702,9 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                 <th style={{padding:"12px 16px",textAlign:"right",color:C.muted,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>Total Pagado</th>
               </tr></thead>
               <tbody>
-                {proveedores.map(([prov, data]) => (
+                {proveedores.map(([prov, data]) => {
+                  const monedasArr = [...data.monedas];
+                  return (
                   <tr key={prov} onClick={()=>{setPagosExpandedDates(new Set());setPagosDetail({proveedor:prov, pagos:data.pagos});}}
                     style={{borderTop:`1px solid ${C.border}`,cursor:"pointer",transition:"background .15s"}}
                     onMouseEnter={e=>{e.currentTarget.style.background="#F0F7FF";}}
@@ -8714,17 +8712,32 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                     <td style={{padding:"14px 16px",fontWeight:700,color:C.navy}}>{prov}</td>
                     <td style={{padding:"14px 16px",textAlign:"center"}}>{data.pagos.length}</td>
                     <td style={{padding:"14px 16px",textAlign:"center"}}>
-                      {[...data.monedas].map(m=><span key={m} style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[m],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[m],padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,marginRight:4}}>{m}</span>)}
+                      {monedasArr.map(m=><span key={m} style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[m],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[m],padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,marginRight:4}}>{m}</span>)}
                     </td>
-                    <td style={{padding:"14px 16px",textAlign:"right",fontWeight:800,color:C.ok,fontSize:16}}>${fmt(data.totalPagado)}</td>
+                    <td style={{padding:"14px 16px",textAlign:"right",fontWeight:800,color:C.ok,fontSize:14}}>
+                      <div style={{display:"flex",flexDirection:"column",gap:2,alignItems:"flex-end"}}>
+                        {monedasArr.map(m => (
+                          <div key={m} style={{fontVariantNumeric:"tabular-nums",color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[m]||C.ok}}>
+                            {m==='EUR'?'€':'$'}{fmt(data.totalPorMoneda[m]||0)} <span style={{fontSize:10,color:C.muted,fontWeight:600}}>{m}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
               <tfoot><tr style={{borderTop:`2px solid ${C.navy}`,background:"#F8FAFC"}}>
-                <td style={{padding:"14px 16px",fontWeight:800,color:C.navy}}>TOTAL</td>
+                <td style={{padding:"14px 16px",fontWeight:800,color:C.navy}}>TOTAL POR MONEDA</td>
                 <td style={{padding:"14px 16px",textAlign:"center",fontWeight:700}}>{filtered.length}</td>
                 <td/>
-                <td style={{padding:"14px 16px",textAlign:"right",fontWeight:800,color:C.navy,fontSize:16}}>${fmt(totalGeneral)}</td>
+                <td style={{padding:"14px 16px",textAlign:"right"}}>
+                  <div style={{display:"flex",flexDirection:"column",gap:2,alignItems:"flex-end"}}>
+                    {porMoneda.MXN>0 && <div style={{fontVariantNumeric:"tabular-nums",fontWeight:800,color:C.mxn,fontSize:15}}>${fmt(porMoneda.MXN)} <span style={{fontSize:10,color:C.muted,fontWeight:600}}>MXN</span></div>}
+                    {porMoneda.USD>0 && <div style={{fontVariantNumeric:"tabular-nums",fontWeight:800,color:C.usd,fontSize:15}}>${fmt(porMoneda.USD)} <span style={{fontSize:10,color:C.muted,fontWeight:600}}>USD</span></div>}
+                    {porMoneda.EUR>0 && <div style={{fontVariantNumeric:"tabular-nums",fontWeight:800,color:C.eur,fontSize:15}}>€{fmt(porMoneda.EUR)} <span style={{fontSize:10,color:C.muted,fontWeight:600}}>EUR</span></div>}
+                  </div>
+                </td>
               </tr></tfoot>
             </table>
           </div>
@@ -10517,18 +10530,113 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
       {/* Pagos detail modal — grouped by date */}
       {pagosDetail && (()=>{
-        const totalPagDetail = pagosDetail.pagos.reduce((s,p)=>s+p.monto,0);
-        // Group by fechaPago
-        const byDate = {};
+        // Sub-componente para adjuntar PDF a un grupo (proveedor+fecha+moneda)
+        const ComprobanteGrupoButton = ({ pagosGrupo, groupKey }) => {
+          const [subiendo, setSubiendo] = useState(false);
+          const fileRef = useRef(null);
+          // Todos los pagos del grupo deberían tener el mismo comprobante_url
+          const pagoConComp = pagosGrupo.find(p => p.comprobanteUrl);
+          const tieneComprobante = !!pagoConComp;
+
+          const handleUpload = async (file) => {
+            if (!file) return;
+            setSubiendo(true);
+            try {
+              // Subir el PDF una sola vez
+              const primerPago = pagosGrupo[0];
+              const result = await uploadComprobantePDF(file, primerPago.id, empresaId);
+              if (result.error) {
+                alert('Error: ' + result.error);
+                setSubiendo(false);
+                return;
+              }
+              // Aplicar el mismo comprobante_url a TODOS los pagos del grupo
+              for (const p of pagosGrupo) {
+                await updatePaymentComprobante(p.id, result.url, result.nombre);
+              }
+              setPayments(prev => prev.map(x => {
+                const enGrupo = pagosGrupo.some(pg => pg.id === x.id);
+                return enGrupo ? { ...x, comprobanteUrl: result.url, comprobanteNombre: result.nombre } : x;
+              }));
+            } catch (err) {
+              alert('Error al subir: ' + err.message);
+            }
+            setSubiendo(false);
+          };
+
+          const handleVer = async () => {
+            const url = await getComprobanteSignedUrl(pagoConComp.comprobanteUrl);
+            if (url) window.open(url, '_blank');
+            else alert('No se pudo obtener el comprobante');
+          };
+
+          const handleQuitar = async () => {
+            if (!confirm(`¿Quitar el comprobante de este grupo de ${pagosGrupo.length} pago(s)?`)) return;
+            await deleteComprobantePDF(pagoConComp.comprobanteUrl);
+            for (const p of pagosGrupo) {
+              await updatePaymentComprobante(p.id, '', '');
+            }
+            setPayments(prev => prev.map(x => {
+              const enGrupo = pagosGrupo.some(pg => pg.id === x.id);
+              return enGrupo ? { ...x, comprobanteUrl: '', comprobanteNombre: '' } : x;
+            }));
+          };
+
+          if (tieneComprobante) {
+            return (
+              <div style={{display:'flex',alignItems:'center',gap:4}} onClick={e=>e.stopPropagation()}>
+                <button onClick={handleVer} title={pagoConComp.comprobanteNombre || 'Ver comprobante'}
+                        style={{background:'#DBEAFE',border:'1px solid #BFDBFE',color:'#185FA5',padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:4}}>
+                  📄 Ver PDF
+                </button>
+                {!esConsulta && (
+                  <button onClick={handleQuitar} title="Quitar comprobante"
+                          style={{background:'#FEE',border:'1px solid #FCA5A5',color:'#C04A4D',width:24,height:24,borderRadius:5,fontSize:11,cursor:'pointer'}}>×</button>
+                )}
+              </div>
+            );
+          }
+          if (esConsulta) return <span style={{fontSize:11,color:C.muted}}>—</span>;
+          return (
+            <div onClick={e=>e.stopPropagation()}>
+              <input type="file" accept="application/pdf" ref={fileRef}
+                     onChange={(e) => handleUpload(e.target.files?.[0])}
+                     style={{display:'none'}}/>
+              <button onClick={() => fileRef.current?.click()} disabled={subiendo}
+                      style={{background:subiendo?'#F1F5F9':'#F0F7FF',border:'1px dashed #185FA5',color:'#185FA5',padding:'5px 12px',borderRadius:6,fontSize:11,fontWeight:700,cursor:subiendo?'wait':'pointer',display:'flex',alignItems:'center',gap:4}}>
+                {subiendo ? '⏳ Subiendo...' : '📎 Adjuntar comprobante'}
+              </button>
+            </div>
+          );
+        };
+
+        // Agrupar por fecha + moneda (cada moneda es un grupo lógico separado)
+        const byDateMoneda = {};
         pagosDetail.pagos.forEach(p => {
           const d = p.fechaPago || "Sin fecha";
-          if(!byDate[d]) byDate[d] = { pagos:[], total:0, monedas:new Set() };
-          byDate[d].pagos.push(p);
-          byDate[d].total += p.monto;
-          byDate[d].monedas.add(p.moneda);
+          const m = p.moneda || "MXN";
+          const key = `${d}__${m}`;
+          if(!byDateMoneda[key]) byDateMoneda[key] = { fecha: d, moneda: m, pagos:[], total:0 };
+          byDateMoneda[key].pagos.push(p);
+          byDateMoneda[key].total += p.monto;
         });
-        const sortedDates = Object.keys(byDate).sort((a,b) => b.localeCompare(a));
-        const toggleDate = (d) => setPagosExpandedDates(prev => { const n=new Set(prev); if(n.has(d)) n.delete(d); else n.add(d); return n; });
+        // Ordenar por fecha desc, luego moneda
+        const sortedGroups = Object.entries(byDateMoneda)
+          .sort(([,a],[,b]) => b.fecha.localeCompare(a.fecha) || a.moneda.localeCompare(b.moneda));
+
+        // Totales por moneda para el resumen superior
+        const totalesPorMoneda = { MXN:0, USD:0, EUR:0 };
+        pagosDetail.pagos.forEach(p => {
+          const m = p.moneda || 'MXN';
+          totalesPorMoneda[m] = (totalesPorMoneda[m] || 0) + p.monto;
+        });
+
+        const toggleDate = (key) => setPagosExpandedDates(prev => { const n=new Set(prev); if(n.has(key)) n.delete(key); else n.add(key); return n; });
+
+        const monedaColor = { MXN:'#1565C0', USD:'#1D7A4E', EUR:'#7B1FA2' };
+        const monedaBg = { MXN:'#E3F2FD', USD:'#E8F5E9', EUR:'#F3E5F5' };
+        const monedaFlag = { MXN:'🇲🇽', USD:'🇺🇸', EUR:'🇪🇺' };
+
         return (
         <ModalShell title={`Pagos a ${pagosDetail.proveedor}`} onClose={()=>setPagosDetail(null)} extraWide>
           {/* Summary */}
@@ -10537,43 +10645,61 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
               <span style={{color:C.muted}}>Total pagos: </span><span style={{fontWeight:700}}>{pagosDetail.pagos.length}</span>
             </div>
             <div style={{background:"#F8FAFC",borderRadius:8,padding:"8px 14px",fontSize:13}}>
-              <span style={{color:C.muted}}>Fechas de pago: </span><span style={{fontWeight:700}}>{sortedDates.length}</span>
+              <span style={{color:C.muted}}>Grupos: </span><span style={{fontWeight:700}}>{sortedGroups.length}</span>
             </div>
-            <div style={{background:"#E8F5E9",borderRadius:8,padding:"8px 14px",fontSize:13}}>
-              <span style={{color:C.muted}}>Total pagado: </span><span style={{fontWeight:700,color:C.ok}}>${fmt(totalPagDetail)}</span>
-            </div>
+            {/* Totales por moneda (separados, ya no sumados como peras+manzanas) */}
+            {totalesPorMoneda.MXN > 0 && (
+              <div style={{background:monedaBg.MXN,borderRadius:8,padding:"8px 14px",fontSize:13}}>
+                <span style={{color:C.muted}}>{monedaFlag.MXN} MXN: </span><span style={{fontWeight:700,color:monedaColor.MXN}}>${fmt(totalesPorMoneda.MXN)}</span>
+              </div>
+            )}
+            {totalesPorMoneda.USD > 0 && (
+              <div style={{background:monedaBg.USD,borderRadius:8,padding:"8px 14px",fontSize:13}}>
+                <span style={{color:C.muted}}>{monedaFlag.USD} USD: </span><span style={{fontWeight:700,color:monedaColor.USD}}>${fmt(totalesPorMoneda.USD)}</span>
+              </div>
+            )}
+            {totalesPorMoneda.EUR > 0 && (
+              <div style={{background:monedaBg.EUR,borderRadius:8,padding:"8px 14px",fontSize:13}}>
+                <span style={{color:C.muted}}>{monedaFlag.EUR} EUR: </span><span style={{fontWeight:700,color:monedaColor.EUR}}>€{fmt(totalesPorMoneda.EUR)}</span>
+              </div>
+            )}
             <button onClick={()=>{
-              if(pagosExpandedDates.size===sortedDates.length) setPagosExpandedDates(new Set());
-              else setPagosExpandedDates(new Set(sortedDates));
+              if(pagosExpandedDates.size===sortedGroups.length) setPagosExpandedDates(new Set());
+              else setPagosExpandedDates(new Set(sortedGroups.map(([k])=>k)));
             }} style={{...btnStyle,padding:"6px 14px",fontSize:12,background:"#F1F5F9",color:C.text}}>
-              {pagosExpandedDates.size===sortedDates.length ? "Colapsar todo" : "Expandir todo"}
+              {pagosExpandedDates.size===sortedGroups.length ? "Colapsar todo" : "Expandir todo"}
             </button>
           </div>
-          {/* Date groups */}
-          {sortedDates.map(date => {
-            const group = byDate[date];
-            const isOpen = pagosExpandedDates.has(date);
+          {/* Grupos de fecha+moneda */}
+          {sortedGroups.map(([groupKey, group]) => {
+            const isOpen = pagosExpandedDates.has(groupKey);
+            const monedaSimbolo = group.moneda === 'EUR' ? '€' : '$';
             return (
-              <div key={date} style={{marginBottom:10,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
-                {/* Date header — clickable */}
-                <div onClick={()=>toggleDate(date)}
-                  style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 18px",background:isOpen?"#E8F0FE":"#F8FAFC",cursor:"pointer",transition:"background .15s"}}
+              <div key={groupKey} style={{marginBottom:10,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
+                {/* Header del grupo (fecha + moneda) */}
+                <div onClick={()=>toggleDate(groupKey)}
+                  style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 18px",background:isOpen?"#E8F0FE":"#F8FAFC",cursor:"pointer",transition:"background .15s",gap:12,flexWrap:"wrap"}}
                   onMouseEnter={e=>{if(!isOpen) e.currentTarget.style.background="#F0F4FF";}}
                   onMouseLeave={e=>{if(!isOpen) e.currentTarget.style.background="#F8FAFC";}}>
-                  <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                     <span style={{fontSize:16}}>{isOpen?"▼":"▶"}</span>
-                    <span style={{fontWeight:800,color:C.navy,fontSize:15}}>📅 {date}</span>
+                    <span style={{fontWeight:800,color:C.navy,fontSize:15}}>📅 {group.fecha}</span>
+                    <span style={{background:monedaBg[group.moneda]||"#F5F5F5",color:monedaColor[group.moneda]||"#666",padding:"2px 10px",borderRadius:20,fontSize:11,fontWeight:800}}>
+                      {monedaFlag[group.moneda]||""} {group.moneda}
+                    </span>
                     <span style={{fontSize:12,color:C.muted}}>{group.pagos.length} pago{group.pagos.length!==1?"s":""}</span>
-                    {[...group.monedas].map(m=><span key={m} style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[m],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[m],padding:"1px 7px",borderRadius:20,fontSize:10,fontWeight:700}}>{m}</span>)}
                   </div>
-                  <div style={{fontWeight:800,color:C.ok,fontSize:18}}>${fmt(group.total)}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:16}}>
+                    <ComprobanteGrupoButton pagosGrupo={group.pagos} groupKey={groupKey}/>
+                    <div style={{fontWeight:800,color:C.ok,fontSize:18,fontVariantNumeric:"tabular-nums"}}>{monedaSimbolo}{fmt(group.total)}</div>
+                  </div>
                 </div>
                 {/* Expanded: invoice detail */}
                 {isOpen && (
                   <div style={{padding:"0 8px 8px"}}>
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                       <thead><tr style={{background:"#FAFBFC"}}>
-                        {["Tipo","Fecha Fact.","Folio","Concepto","Moneda","Importe","Notas"].map(h=>(
+                        {["Tipo","Fecha Fact.","Folio","Concepto","Importe","Notas"].map(h=>(
                           <th key={h} style={{padding:"8px 10px",textAlign:"left",color:C.muted,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>{h}</th>
                         ))}
                       </tr></thead>
@@ -10584,15 +10710,14 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                             <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>{p.fecha}</td>
                             <td style={{padding:"8px 10px",fontWeight:700}}>{p.folio}</td>
                             <td style={{padding:"8px 10px",color:p.concepto?C.text:C.muted,fontStyle:p.concepto?"normal":"italic"}}>{p.concepto||"—"}</td>
-                            <td style={{padding:"8px 10px"}}><span style={{background:{MXN:"#E3F2FD",USD:"#E8F5E9",EUR:"#F3E5F5"}[p.moneda],color:{MXN:C.mxn,USD:C.usd,EUR:C.eur}[p.moneda],padding:"1px 6px",borderRadius:20,fontSize:10,fontWeight:700}}>{p.moneda}</span></td>
-                            <td style={{padding:"8px 10px",fontWeight:800,color:C.ok}}>${fmt(p.monto)}</td>
+                            <td style={{padding:"8px 10px",fontWeight:800,color:C.ok,fontVariantNumeric:"tabular-nums"}}>{monedaSimbolo}{fmt(p.monto)}</td>
                             <td style={{padding:"8px 10px",color:C.muted,fontSize:11}}>{p.notas||"—"}</td>
                           </tr>
                         ))}
                       </tbody>
                       <tfoot><tr style={{borderTop:`2px solid ${C.border}`,background:"#FAFBFC"}}>
-                        <td colSpan={5} style={{padding:"8px 10px",fontWeight:700,color:C.navy,fontSize:11}}>Subtotal {date}</td>
-                        <td style={{padding:"8px 10px",fontWeight:800,color:C.navy}}>${fmt(group.total)}</td>
+                        <td colSpan={4} style={{padding:"8px 10px",fontWeight:700,color:C.navy,fontSize:11}}>Subtotal {group.fecha} · {group.moneda}</td>
+                        <td style={{padding:"8px 10px",fontWeight:800,color:C.navy,fontVariantNumeric:"tabular-nums"}}>{monedaSimbolo}{fmt(group.total)}</td>
                         <td/>
                       </tr></tfoot>
                     </table>
@@ -10601,10 +10726,14 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
               </div>
             );
           })}
-          {/* Grand total */}
-          <div style={{display:"flex",justifyContent:"space-between",padding:"14px 18px",background:C.navy,borderRadius:12,marginTop:12}}>
-            <span style={{fontWeight:800,color:"#fff",fontSize:15}}>TOTAL GENERAL</span>
-            <span style={{fontWeight:800,color:"#fff",fontSize:18}}>${fmt(totalPagDetail)}</span>
+          {/* Totales generales por moneda (ya NO sumamos monedas distintas) */}
+          <div style={{background:C.navy,borderRadius:12,marginTop:12,padding:"14px 18px"}}>
+            <div style={{fontWeight:800,color:"#fff",fontSize:13,marginBottom:8,letterSpacing:0.5}}>TOTAL GENERAL POR MONEDA</div>
+            <div style={{display:"flex",gap:20,flexWrap:"wrap"}}>
+              {totalesPorMoneda.MXN > 0 && <div style={{color:"#fff",fontSize:16,fontWeight:800,fontVariantNumeric:"tabular-nums"}}>🇲🇽 ${fmt(totalesPorMoneda.MXN)} MXN</div>}
+              {totalesPorMoneda.USD > 0 && <div style={{color:"#fff",fontSize:16,fontWeight:800,fontVariantNumeric:"tabular-nums"}}>🇺🇸 ${fmt(totalesPorMoneda.USD)} USD</div>}
+              {totalesPorMoneda.EUR > 0 && <div style={{color:"#fff",fontSize:16,fontWeight:800,fontVariantNumeric:"tabular-nums"}}>🇪🇺 €{fmt(totalesPorMoneda.EUR)} EUR</div>}
+            </div>
           </div>
         </ModalShell>
         );
