@@ -282,6 +282,12 @@ export async function fetchPayments(empresaId) {
       id: r.id, invoiceId: r.invoice_id, monto: +r.monto || 0,
       fechaPago: r.fecha_pago || '', notas: r.notas || '', tipo: r.tipo || 'realizado',
       metodoPago: r.metodo_pago || 'banco',
+      comprobanteUrl: r.comprobante_url || '',
+      comprobanteNombre: r.comprobante_nombre || '',
+      correoEnviado: r.correo_enviado === true,
+      correoEnviadoAt: r.correo_enviado_at || null,
+      correoEnviadoA: r.correo_enviado_a || '',
+      correoError: r.correo_error || '',
     }));
   }
   // Sin filtro de empresa: paginado simple
