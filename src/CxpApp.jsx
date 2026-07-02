@@ -23,6 +23,7 @@ import {
   uploadComprobantePDF, getComprobanteSignedUrl, deleteComprobantePDF,
   updateSupplierEmails, updatePaymentComprobante,
   fetchAppConfigCorreos, updateAppConfigCorreos,
+  enviarCorreoPago,
   fetchTarjetas, updateTarjetaSaldo, fetchTarjetaMovimientos, bulkInsertMovimientos,
   fetchProgramados, upsertProgramado, deleteProgramado,
   fetchReporteSaldos, upsertReporteSaldos,
@@ -11196,6 +11197,76 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
       {/* ─── Modal: Configuración de Correos Automáticos ─────── */}
       {showConfigCorreosModal && (() => {
+        // Sub-componente · sección de prueba SMTP
+        const PruebaSMTPSection = ({ form, usuario }) => {
+          const [emailPrueba, setEmailPrueba] = useState(usuario?.email || '');
+          const [enviando, setEnviando] = useState(false);
+          const [resultado, setResultado] = useState(null); // { tipo:'ok'|'error', mensaje }
+
+          const handleEnviar = async () => {
+            if (!emailPrueba || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailPrueba)) {
+              setResultado({ tipo:'error', mensaje: '⚠️ Ingresa un email válido para recibir la prueba' });
+              return;
+            }
+            setEnviando(true);
+            setResultado(null);
+            // Reemplazar variables en asunto/cuerpo con datos ficticios de prueba
+            const hoy = new Date().toISOString().slice(0,10);
+            const reemplazar = (txt) => (txt||'')
+              .replace(/\{\{proveedor\}\}/g, 'PROVEEDOR DE PRUEBA')
+              .replace(/\{\{fecha\}\}/g, hoy)
+              .replace(/\{\{monto_total\}\}/g, '$1,234.56')
+              .replace(/\{\{lista_facturas\}\}/g, '• Folio ABC123 — Ejemplo — $1,234.56')
+              .replace(/\{\{metodo\}\}/g, 'Transferencia SPEI')
+              .replace(/\{\{empresa\}\}/g, 'Viajes Libero');
+            const r = await enviarCorreoPago({
+              modo: 'prueba',
+              destinatarioPrueba: emailPrueba,
+              cc: (form.emailsCcGlobales || []).filter(e => e && e.trim()),
+              asunto: reemplazar(form.plantillaAsunto),
+              cuerpo: reemplazar(form.plantillaCuerpo),
+              nombreRemitente: form.remitenteNombre,
+            });
+            setEnviando(false);
+            if (r.ok) {
+              setResultado({ tipo:'ok', mensaje: `✅ Correo enviado a ${emailPrueba} · Revisa tu bandeja (o spam)` });
+            } else {
+              setResultado({ tipo:'error', mensaje: `❌ Error: ${r.error}` });
+            }
+          };
+
+          return (
+            <div style={{background:'#F0F7FF',border:'1.5px solid #BFDBFE',borderRadius:10,padding:'14px 16px',marginTop:20}}>
+              <div style={{fontSize:12,fontWeight:800,color:'#185FA5',letterSpacing:0.3,marginBottom:10,display:'flex',alignItems:'center',gap:6}}>
+                🧪 PROBAR ENVÍO SMTP
+              </div>
+              <div style={{fontSize:11,color:'#64748B',marginBottom:10,lineHeight:1.5}}>
+                Envía un correo de prueba con la plantilla actual para verificar que la conexión con Gmail funciona. El asunto llevará "[PRUEBA]" y los datos serán ficticios.
+              </div>
+              <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+                <input value={emailPrueba} onChange={e=>setEmailPrueba(e.target.value)}
+                       placeholder="tu-correo@ejemplo.com"
+                       style={{flex:1,minWidth:220,border:`1px solid ${C.border}`,padding:'9px 12px',borderRadius:6,fontSize:13,background:'#fff'}}/>
+                <button onClick={handleEnviar} disabled={enviando}
+                        style={{background:enviando?'#94A3B8':'linear-gradient(135deg, #1D7A4E, #2EBC76)',color:'#fff',border:'none',padding:'9px 16px',borderRadius:8,fontSize:12,fontWeight:800,cursor:enviando?'wait':'pointer',display:'flex',alignItems:'center',gap:6}}>
+                  {enviando ? '⏳ Enviando...' : '🚀 Enviar prueba'}
+                </button>
+              </div>
+              {resultado && (
+                <div style={{marginTop:12,padding:'10px 12px',borderRadius:6,fontSize:12,fontWeight:600,lineHeight:1.5,
+                             background: resultado.tipo==='ok' ? '#DCFCE7' : '#FEE2E2',
+                             color:      resultado.tipo==='ok' ? '#166534' : '#991B1B',
+                             border:     resultado.tipo==='ok' ? '1px solid #86EFAC' : '1px solid #FCA5A5'}}>
+                  {resultado.mensaje}
+                </div>
+              )}
+              <div style={{fontSize:10,color:'#94A3B8',marginTop:8,fontStyle:'italic',lineHeight:1.5}}>
+                💡 Si aparece error, revisa que en Vercel estén configuradas las variables <code style={{background:'#fff',padding:'1px 4px',borderRadius:3}}>GMAIL_USER</code> y <code style={{background:'#fff',padding:'1px 4px',borderRadius:3}}>GMAIL_APP_PASSWORD</code>.
+              </div>
+            </div>
+          );
+        };
+
         const ConfigCorreosModal = () => {
           const [form, setForm] = useState({
             remitenteEmail: configCorreos?.remitenteEmail || 'cuentasporpagar@viajeslibero.com',
@@ -11331,13 +11402,8 @@ Viajes Libero`,
                     </div>
                   </div>
 
-                  {/* Estado del sistema */}
-                  <div style={{background:'#FFFBEB',border:'1px solid #FCD34D',borderRadius:8,padding:'12px 14px',marginTop:20}}>
-                    <div style={{fontSize:12,fontWeight:700,color:'#8C6B1A',marginBottom:4}}>🚧 Sistema en construcción · Fase 1 de 4</div>
-                    <div style={{fontSize:11,color:'#64748B',lineHeight:1.5}}>
-                      Esta pantalla te permite guardar la configuración. El envío efectivo de correos se habilitará en la Fase 3, cuando esté listo el endpoint SMTP.
-                    </div>
-                  </div>
+                  {/* ── Prueba de envío SMTP ─────────────────────────── */}
+                  <PruebaSMTPSection form={form} usuario={usuario}/>
                 </div>
 
                 {/* Footer */}

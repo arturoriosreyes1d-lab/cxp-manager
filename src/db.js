@@ -2657,3 +2657,49 @@ export async function updateAppConfigCorreos(empresaId, config, usuario) {
 
 /* ── Extender fetchSuppliers para incluir email y emails_cc ─────────── */
 // (Ya se leen los campos si son parte del SELECT *; no hace falta cambio en fetchSuppliers)
+
+/* ═════════════════════════════════════════════════════════════════════
+ * FASE 2 · Envío de correos vía endpoint serverless
+ * ═════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Envía un correo con comprobante de pago a través del endpoint /api/enviar-correo-pago
+ * @param {Object} params
+ * @param {'prueba'|'envio'} params.modo
+ * @param {string} params.destinatario         - Email del proveedor (modo=envio)
+ * @param {string} params.destinatarioPrueba   - Email para prueba (modo=prueba)
+ * @param {string[]} params.cc                 - Correos en CC (opcional)
+ * @param {string} params.asunto
+ * @param {string} params.cuerpo
+ * @param {string} params.nombreRemitente      - Ej: "Viajes Libero..."
+ * @param {string} params.comprobantePath      - Path del PDF en Storage (opcional)
+ * @param {string} params.comprobanteNombre    - Nombre visible del PDF (opcional)
+ * @returns {Promise<{ok: boolean, messageId?: string, error?: string}>}
+ */
+export async function enviarCorreoPago(params) {
+  try {
+    const res = await fetch('/api/enviar-correo-pago', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        modo: params.modo,
+        destinatario: params.destinatario,
+        destinatario_prueba: params.destinatarioPrueba,
+        cc: params.cc || [],
+        asunto: params.asunto,
+        cuerpo: params.cuerpo,
+        nombreRemitente: params.nombreRemitente,
+        comprobantePath: params.comprobantePath,
+        comprobanteNombre: params.comprobanteNombre,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      return { ok: false, error: data.error || `HTTP ${res.status}` };
+    }
+    return { ok: true, messageId: data.messageId };
+  } catch (err) {
+    console.error('[enviarCorreoPago]', err);
+    return { ok: false, error: err.message };
+  }
+}
