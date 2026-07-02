@@ -27,6 +27,7 @@
 // ════════════════════════════════════════════════════════════════════
 
 import nodemailer from 'nodemailer';
+import { FIRMA_VIAJES_LIBERO_BASE64 } from './_firma-viajes-libero.js';
 
 // Utilidad · CORS y verificar método
 function preflight(req, res) {
@@ -170,6 +171,18 @@ export default async function handler(req, res) {
     });
   }
 
+  // Firma de Viajes Libero (siempre embebida en correos de envio, no en prueba)
+  const cidFirma = 'firma-viajes-libero-cid@cxp-manager';
+  const incluirFirma = modo === 'envio';
+  if (incluirFirma) {
+    attachments.push({
+      filename: 'firma-viajes-libero.png',
+      content: Buffer.from(FIRMA_VIAJES_LIBERO_BASE64, 'base64'),
+      cid: cidFirma,
+      contentType: 'image/png',
+    });
+  }
+
   // Convertir el cuerpo de texto plano a HTML preservando saltos de línea
   // y embebiendo la imagen si aplica
   const cuerpoTexto = modo === 'prueba'
@@ -184,23 +197,30 @@ export default async function handler(req, res) {
     .replace(/"/g, '&quot;');
   const cuerpoHtml = escapeHtml(cuerpoTexto).replace(/\n/g, '<br>');
 
+  // Firma HTML · imagen embebida centrada
+  const firmaHtml = incluirFirma
+    ? `<div style="margin: 24px 0 8px; padding-top: 16px; border-top: 1px solid #E2E8F0;"><img src="cid:${cidFirma}" alt="Viajes Libero" style="max-width: 600px; width: 100%; height: auto; display: block;"/></div>`
+    : '';
+
   // Si hay imagen: la insertamos DESPUÉS del párrafo introductorio y ANTES del cierre
   // Usamos un marcador: si el cuerpo contiene "{{IMAGEN_RELACION}}" lo reemplazamos ahí;
   // si no, la insertamos automáticamente antes del cierre "Saludos" o al final del cuerpo.
-  let htmlFinal;
+  let cuerpoConImagen;
   if (imagenInlineBase64) {
     const imgTag = `<div style="margin: 16px 0; text-align: center;"><img src="cid:${cidRelacion}" alt="Relación de facturas pagadas" style="max-width: 100%; height: auto; border: 1px solid #E2E8F0; border-radius: 8px;"/></div>`;
     // Buscar dónde insertar la imagen: antes de "Saludos" si existe
     const idxSaludos = cuerpoHtml.search(/Saludos|Atentamente|Quedamos/i);
     if (idxSaludos > 0) {
-      htmlFinal = `<div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #1A2332; max-width: 720px;">${cuerpoHtml.slice(0, idxSaludos)}${imgTag}${cuerpoHtml.slice(idxSaludos)}</div>`;
+      cuerpoConImagen = `${cuerpoHtml.slice(0, idxSaludos)}${imgTag}${cuerpoHtml.slice(idxSaludos)}`;
     } else {
       // No hay marcador de despedida: la ponemos al final
-      htmlFinal = `<div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #1A2332; max-width: 720px;">${cuerpoHtml}${imgTag}</div>`;
+      cuerpoConImagen = `${cuerpoHtml}${imgTag}`;
     }
   } else {
-    htmlFinal = `<div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #1A2332; max-width: 720px;">${cuerpoHtml}</div>`;
+    cuerpoConImagen = cuerpoHtml;
   }
+
+  const htmlFinal = `<div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #1A2332; max-width: 720px;">${cuerpoConImagen}${firmaHtml}</div>`;
 
   const mailOptions = {
     from: fromLabel,

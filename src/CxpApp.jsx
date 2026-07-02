@@ -11388,12 +11388,10 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           // Preparar asunto y cuerpo con reemplazo de variables
           useEffect(() => {
             const cfg = configCorreos || {};
-            const plantillaAsunto = cfg.plantillaAsunto || 'Comprobante de pago · {{empresa}} · {{fecha}}';
+            const plantillaAsunto = cfg.plantillaAsunto || 'Comprobante de pago · Facturas {{folios}}';
             const plantillaCuerpo = cfg.plantillaCuerpo || `Estimados {{proveedor}},
 
-Adjunto encontrarán el comprobante de pago correspondiente a las siguientes facturas:
-
-{{lista_facturas}}
+Adjunto encontrarán el comprobante de pago correspondiente a las facturas cubiertas. En la imagen a continuación pueden ver el desglose completo:
 
 Total pagado: {{monto_total}}
 Fecha de pago: {{fecha}}
@@ -11410,11 +11408,19 @@ Viajes Libero`;
               return `• Folio ${p.folio}${conceptoCorto ? ` — ${conceptoCorto}` : ''} — ${monedaSimbolo}${fmt(p.monto)}`;
             }).join('\n');
 
+            // Lista de folios para el asunto (ej: "GTM79, GTM80, GTM81")
+            // Si son muchas facturas (>5), truncar para no hacer asunto larguísimo
+            const foliosArr = correoEnvioModal.pagosGrupo.map(p => p.folio).filter(Boolean);
+            const foliosStr = foliosArr.length > 5
+              ? `${foliosArr.slice(0, 5).join(', ')} y ${foliosArr.length - 5} más`
+              : foliosArr.join(', ');
+
             const reemplazar = (txt) => (txt || '')
               .replace(/\{\{proveedor\}\}/g, correoEnvioModal.proveedor)
               .replace(/\{\{fecha\}\}/g, correoEnvioModal.fecha)
               .replace(/\{\{monto_total\}\}/g, `${monedaSimbolo}${fmt(correoEnvioModal.totalGrupo)} ${correoEnvioModal.moneda}`)
               .replace(/\{\{lista_facturas\}\}/g, listaFacturas)
+              .replace(/\{\{folios\}\}/g, foliosStr)
               .replace(/\{\{metodo\}\}/g, 'Transferencia bancaria')
               .replace(/\{\{empresa\}\}/g, 'Viajes Libero');
 
@@ -11697,12 +11703,10 @@ Viajes Libero`;
             remitenteEmail: configCorreos?.remitenteEmail || 'cuentasporpagar@viajeslibero.com',
             remitenteNombre: configCorreos?.remitenteNombre || 'Viajes Libero · Cuentas por Pagar',
             emailsCcGlobales: configCorreos?.emailsCcGlobales || [],
-            plantillaAsunto: configCorreos?.plantillaAsunto || 'Comprobante de pago · {{empresa}} · {{fecha}}',
+            plantillaAsunto: configCorreos?.plantillaAsunto || 'Comprobante de pago · Facturas {{folios}}',
             plantillaCuerpo: configCorreos?.plantillaCuerpo || `Estimados {{proveedor}},
 
-Adjunto encontrarán el comprobante de pago correspondiente a las siguientes facturas:
-
-{{lista_facturas}}
+Adjunto encontrarán el comprobante de pago correspondiente a las facturas cubiertas. En la imagen a continuación pueden ver el desglose completo:
 
 Total pagado: {{monto_total}}
 Fecha de pago: {{fecha}}
@@ -11821,7 +11825,7 @@ Viajes Libero`,
                               style={{width:'100%',border:`1px solid ${C.border}`,padding:'10px 12px',borderRadius:6,fontSize:12,fontFamily:'monospace',lineHeight:1.6,resize:'vertical',outline:'none'}}/>
                     <div style={{fontSize:10,color:'#94A3B8',marginTop:8,lineHeight:1.5}}>
                       <strong>Variables disponibles:</strong>{' '}
-                      {['{{proveedor}}','{{fecha}}','{{monto_total}}','{{lista_facturas}}','{{metodo}}','{{empresa}}'].map(v => (
+                      {['{{proveedor}}','{{fecha}}','{{folios}}','{{monto_total}}','{{lista_facturas}}','{{metodo}}','{{empresa}}'].map(v => (
                         <code key={v} style={{background:'#F1F5F9',padding:'1px 5px',borderRadius:3,marginRight:6,fontSize:10}}>{v}</code>
                       ))}
                     </div>
