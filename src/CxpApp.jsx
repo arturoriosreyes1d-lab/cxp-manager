@@ -11926,6 +11926,18 @@ Saludos cordiales,`;
               return [...filtrados, ...nuevos];
             });
 
+            // ✅ CRÍTICO: sincronizar el montoPagado y estatus de cada factura afectada
+            // Sin esto, la factura sigue apareciendo como Pendiente en Cartera aunque
+            // el pago exista en la BD
+            const invoiceIdsAfectadas = new Set(nuevos.map(p => p.invoiceId));
+            for (const invId of invoiceIdsAfectadas) {
+              // Sumar TODOS los pagos realizados de esta factura (los previos + los nuevos)
+              const pagosPrevios = payments.filter(p => p.invoiceId === invId && p.tipo === 'realizado');
+              const pagosNuevos = nuevos.filter(p => p.invoiceId === invId);
+              const totalPaid = [...pagosPrevios, ...pagosNuevos].reduce((s, p) => s + p.monto, 0);
+              syncInvoicePayment(invId, totalPaid);
+            }
+
             setAplicando(false);
             setResultado({
               batchId,
@@ -12151,6 +12163,16 @@ Saludos cordiales,`;
               // Actualizar estado local
               const idsEliminar = new Set(idsAEliminar);
               setPayments(prev => [...prev.filter(p => !idsEliminar.has(p.id)), ...nuevasProg]);
+
+              // ✅ CRÍTICO: sincronizar el montoPagado y estatus de cada factura afectada
+              // Ahora tienen MENOS pagos realizados (los que borramos), hay que recalcular
+              const invoiceIdsAfectadas = new Set(batch.pagos.map(p => p.invoiceId));
+              for (const invId of invoiceIdsAfectadas) {
+                // Sumar los pagos realizados restantes (sin los que borramos)
+                const pagosRestantes = payments.filter(p => p.invoiceId === invId && p.tipo === 'realizado' && !idsEliminar.has(p.id));
+                const totalPaid = pagosRestantes.reduce((s, p) => s + p.monto, 0);
+                syncInvoicePayment(invId, totalPaid);
+              }
             } catch (err) {
               alert('Error al deshacer: ' + err.message);
             }
