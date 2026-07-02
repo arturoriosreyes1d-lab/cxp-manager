@@ -11690,6 +11690,7 @@ Saludos cordiales,`;
         const EnvioMasivoModal = () => {
           // Estado del modal
           const [filtroRapido, setFiltroRapido] = useState('pendientes'); // 'hoy' | 'ayer' | 'ultimos7' | 'estemes' | 'pendientes' | 'custom'
+          const [modoReenvio, setModoReenvio] = useState(false); // si true: incluye ya enviados
           const [fechaCustomFrom, setFechaCustomFrom] = useState('');
           const [fechaCustomTo, setFechaCustomTo] = useState('');
           const [seleccionados, setSeleccionados] = useState(new Set()); // set de groupKeys
@@ -11752,27 +11753,31 @@ Saludos cordiales,`;
           const primerDiaDelMes = `${hoy.slice(0, 7)}-01`;
 
           const gruposFiltrados = todosGrupos.filter(g => {
+            // En modo reenvío se muestran también los ya enviados
+            const filtroEstado = modoReenvio ? true : !g.correoEnviado;
             switch (filtroRapido) {
-              case 'hoy':        return g.fechaPago === hoy && !g.correoEnviado;
-              case 'ayer':       return g.fechaPago === ayer && !g.correoEnviado;
-              case 'ultimos7':   return g.fechaPago >= hace7 && !g.correoEnviado;
-              case 'estemes':    return g.fechaPago >= primerDiaDelMes && !g.correoEnviado;
-              case 'pendientes': return !g.correoEnviado;
+              case 'hoy':        return g.fechaPago === hoy && filtroEstado;
+              case 'ayer':       return g.fechaPago === ayer && filtroEstado;
+              case 'ultimos7':   return g.fechaPago >= hace7 && filtroEstado;
+              case 'estemes':    return g.fechaPago >= primerDiaDelMes && filtroEstado;
+              case 'pendientes': return filtroEstado;
               case 'custom':
                 if (fechaCustomFrom && g.fechaPago < fechaCustomFrom) return false;
                 if (fechaCustomTo   && g.fechaPago > fechaCustomTo)   return false;
-                return !g.correoEnviado;
+                return filtroEstado;
               default: return false;
             }
           }).sort((a, b) => (b.fechaPago || '').localeCompare(a.fechaPago || '') || a.proveedor.localeCompare(b.proveedor));
 
           // Contadores por filtro (para mostrar en botones)
+          // En modo reenvío cuentan TODOS los grupos; en modo normal solo los no enviados
+          const filtroCnt = (g) => modoReenvio ? true : !g.correoEnviado;
           const cnt = {
-            pendientes: todosGrupos.filter(g => !g.correoEnviado).length,
-            hoy:        todosGrupos.filter(g => g.fechaPago === hoy && !g.correoEnviado).length,
-            ayer:       todosGrupos.filter(g => g.fechaPago === ayer && !g.correoEnviado).length,
-            ultimos7:   todosGrupos.filter(g => g.fechaPago >= hace7 && !g.correoEnviado).length,
-            estemes:    todosGrupos.filter(g => g.fechaPago >= primerDiaDelMes && !g.correoEnviado).length,
+            pendientes: todosGrupos.filter(g => filtroCnt(g)).length,
+            hoy:        todosGrupos.filter(g => g.fechaPago === hoy && filtroCnt(g)).length,
+            ayer:       todosGrupos.filter(g => g.fechaPago === ayer && filtroCnt(g)).length,
+            ultimos7:   todosGrupos.filter(g => g.fechaPago >= hace7 && filtroCnt(g)).length,
+            estemes:    todosGrupos.filter(g => g.fechaPago >= primerDiaDelMes && filtroCnt(g)).length,
           };
 
           // Enriquecer con email del proveedor y si es enviable
@@ -11787,11 +11792,16 @@ Saludos cordiales,`;
             };
           });
 
-          // Seleccionar todos automáticamente al cambiar de filtro
+          // En modo NORMAL: auto-seleccionar todos los enviables (pendientes)
+          // En modo REENVÍO: NO auto-seleccionar (el usuario debe elegir manualmente los reenvíos)
           useEffect(() => {
-            const enviables = gruposConEmail.filter(g => g.enviable).map(g => g.key);
-            setSeleccionados(new Set(enviables));
-          }, [filtroRapido, fechaCustomFrom, fechaCustomTo]);
+            if (modoReenvio) {
+              setSeleccionados(new Set()); // limpiar selección al entrar/salir del modo reenvío
+            } else {
+              const enviables = gruposConEmail.filter(g => g.enviable).map(g => g.key);
+              setSeleccionados(new Set(enviables));
+            }
+          }, [filtroRapido, fechaCustomFrom, fechaCustomTo, modoReenvio]);
 
           const toggleSeleccion = (key) => {
             setSeleccionados(prev => {
@@ -11814,7 +11824,9 @@ Saludos cordiales,`;
 
           const handleEnviarMasivo = async () => {
             if (seleccionadosGrupos.length === 0) return;
-            const confirmar = window.confirm(`¿Enviar ${seleccionadosGrupos.length} correos a los proveedores?\n\nEste proceso puede tardar varios segundos.`);
+            const confirmar = window.confirm(modoReenvio
+              ? `⚠️ ¿REENVIAR ${seleccionadosGrupos.length} correos a los proveedores?\n\nAlgunos pueden haber sido enviados antes. Se sobrescribirán como "recién enviados".`
+              : `¿Enviar ${seleccionadosGrupos.length} correos a los proveedores?\n\nEste proceso puede tardar varios segundos.`);
             if (!confirmar) return;
 
             setEnviando(true);
@@ -12073,11 +12085,29 @@ Saludos cordiales,`;
                           style={{background:'#F1F5F9',border:'none',width:38,height:38,borderRadius:8,cursor:enviando?'not-allowed':'pointer',color:'#64748B',fontSize:20}}>×</button>
                 </div>
 
+                {/* Toggle modo reenvío (solo superadmin) */}
+                {esSuperadmin && (
+                  <div style={{padding:'12px 26px',borderBottom:'1px solid #F1F5F9',background: modoReenvio ? '#FEF3C7' : '#FAFCFE',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10}}>
+                    <label style={{display:'flex',alignItems:'center',gap:10,cursor:'pointer'}}>
+                      <input type="checkbox" checked={modoReenvio} onChange={e=>setModoReenvio(e.target.checked)}
+                             style={{width:18,height:18,cursor:'pointer'}}/>
+                      <span style={{fontSize:14,fontWeight:700,color: modoReenvio ? '#78350F' : '#1A2332'}}>
+                        🔄 Modo reenvío (incluir ya enviados)
+                      </span>
+                    </label>
+                    {modoReenvio && (
+                      <div style={{fontSize:12,color:'#78350F',fontStyle:'italic'}}>
+                        ⚠️ Los correos ya enviados se pueden reenviar. Selecciónalos manualmente.
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Filtros rápidos */}
                 <div style={{padding:'16px 26px',borderBottom:'1px solid #F1F5F9',background:'#FAFCFE'}}>
                   <div style={{fontSize:13,color:'#64748B',fontWeight:700,marginBottom:12,letterSpacing:0.3}}>FILTROS RÁPIDOS</div>
                   <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
-                    <FiltroBtn id="pendientes" label="Todos pendientes" icon="📆" count={cnt.pendientes}/>
+                    <FiltroBtn id="pendientes" label={modoReenvio ? "Todos" : "Todos pendientes"} icon="📆" count={cnt.pendientes}/>
                     <FiltroBtn id="hoy"        label="De hoy"           icon="⚡" count={cnt.hoy}/>
                     <FiltroBtn id="ayer"       label="De ayer"          icon="🕐" count={cnt.ayer}/>
                     <FiltroBtn id="ultimos7"   label="Últimos 7 días"   icon="📅" count={cnt.ultimos7}/>
@@ -12137,6 +12167,11 @@ Saludos cordiales,`;
                             {g.moneda==='MXN'?'🇲🇽 MXN':g.moneda==='USD'?'🇺🇸 USD':'🇪🇺 EUR'}
                           </span>
                           <span style={{color:'#64748B',fontSize:13,fontWeight:600}}>{g.pagos.length} pago{g.pagos.length!==1?'s':''}</span>
+                          {g.correoEnviado && (
+                            <span style={{background:'#FEF3C7',color:'#78350F',border:'1px solid #F59E0B',padding:'2px 9px',borderRadius:999,fontSize:11,fontWeight:700}}>
+                              ✅ Ya enviado
+                            </span>
+                          )}
                         </div>
                         <div style={{fontSize:13,color:'#64748B',lineHeight:1.6}}>
                           📅 {g.fechaPago} · 📄 {g.comprobanteNombre || 'comprobante.pdf'} ·
@@ -12174,8 +12209,8 @@ Saludos cordiales,`;
                   <button onClick={() => setEnvioMasivoModal(null)} disabled={enviando}
                           style={{flex:1,background:'#fff',border:`1px solid ${C.border}`,color:C.text,padding:14,borderRadius:8,fontSize:15,fontWeight:700,cursor:enviando?'not-allowed':'pointer'}}>Cancelar</button>
                   <button onClick={handleEnviarMasivo} disabled={enviando || seleccionadosGrupos.length === 0}
-                          style={{flex:2,background:(enviando||seleccionadosGrupos.length===0)?'#94A3B8':'linear-gradient(135deg, #1D7A4E, #2EBC76)',color:'#fff',border:'none',padding:14,borderRadius:8,fontSize:16,fontWeight:800,cursor:(enviando||seleccionadosGrupos.length===0)?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
-                    {enviando ? '⏳ Enviando...' : `📤 Enviar ${seleccionadosGrupos.length} correo${seleccionadosGrupos.length !== 1 ? 's' : ''}`}
+                          style={{flex:2,background:(enviando||seleccionadosGrupos.length===0)?'#94A3B8':(modoReenvio?'linear-gradient(135deg, #B45309, #F59E0B)':'linear-gradient(135deg, #1D7A4E, #2EBC76)'),color:'#fff',border:'none',padding:14,borderRadius:8,fontSize:16,fontWeight:800,cursor:(enviando||seleccionadosGrupos.length===0)?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+                    {enviando ? '⏳ Enviando...' : (modoReenvio ? `🔄 Reenviar ${seleccionadosGrupos.length} correo${seleccionadosGrupos.length !== 1 ? 's' : ''}` : `📤 Enviar ${seleccionadosGrupos.length} correo${seleccionadosGrupos.length !== 1 ? 's' : ''}`)}
                   </button>
                 </div>
               </div>
