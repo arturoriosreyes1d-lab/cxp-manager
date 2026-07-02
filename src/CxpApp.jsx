@@ -11479,47 +11479,90 @@ Saludos cordiales,`;
             setEnviando(true);
             setResultado(null);
             try {
-              // Paso 1 · Localizar el div del grupo y generar captura PNG
-              const grupoDiv = document.querySelector(`[data-correo-grupo="${correoEnvioModal.groupKey}"]`);
-              if (!grupoDiv) {
-                setResultado({tipo:'error', mensaje:'❌ No se encontró el desglose del grupo en pantalla'});
-                setEnviando(false);
-                return;
-              }
+              // Paso 1 · Generar captura PNG usando un div off-screen (no captura la UI real)
+              // Esto permite tener control total del contenido (sin botones, sin columna Clasif)
+              const g = {
+                proveedor: correoEnvioModal.proveedor,
+                fechaPago: correoEnvioModal.fecha,
+                moneda: correoEnvioModal.moneda,
+                total: correoEnvioModal.totalGrupo,
+                pagos: correoEnvioModal.pagosGrupo,
+              };
+              const monedaSimboloCap = g.moneda === 'EUR' ? '€' : '$';
 
-              // Asegurar que el grupo está EXPANDIDO antes de capturar
-              // (si estaba colapsado, la captura no incluiría la tabla)
-              const estabaExpandido = pagosExpandedDates.has(correoEnvioModal.groupKey);
-              if (!estabaExpandido) {
-                setPagosExpandedDates(prev => {
-                  const n = new Set(prev);
-                  n.add(correoEnvioModal.groupKey);
-                  return n;
-                });
-                // Esperar 2 ticks de React para que la tabla se renderice antes de capturar
-                await new Promise(r => setTimeout(r, 400));
-              }
+              // Calcular pagadoTotal por factura para columnas Pagado/Pendiente
+              const totalPagadoPorFacturaInd = {};
+              payments.filter(pp => pp.tipo === 'realizado').forEach(pp => {
+                totalPagadoPorFacturaInd[pp.invoiceId] = (totalPagadoPorFacturaInd[pp.invoiceId] || 0) + pp.monto;
+              });
+
+              const filasHtmlInd = g.pagos.map(p => {
+                const pagadoTotal = totalPagadoPorFacturaInd[p.invoiceId] || 0;
+                const pendiente = Math.max(0, (p.totalFactura || 0) - pagadoTotal);
+                const monedaBg = { MXN:'#E3F2FD', USD:'#E8F5E9', EUR:'#F3E5F5' }[p.moneda] || '#F5F5F5';
+                const monedaColor = { MXN:'#185FA5', USD:'#1D7A4E', EUR:'#6B47C7' }[p.moneda] || '#666';
+                return `<tr style="border-top:1px solid #E2E8F0;">
+                  <td style="padding:10px 8px;font-weight:700;font-size:14px;text-align:center;">${p.folio || ''}</td>
+                  <td style="padding:10px 8px;font-size:13px;color:${p.concepto?'#1A2332':'#94A3B8'};font-style:${p.concepto?'normal':'italic'};">${p.concepto || '—'}</td>
+                  <td style="padding:10px 8px;font-size:13px;color:#64748B;text-align:center;">${p.fecha || '—'}</td>
+                  <td style="padding:10px 8px;text-align:right;font-weight:600;font-size:14px;">${monedaSimboloCap}${fmt(p.totalFactura || 0)}</td>
+                  <td style="padding:10px 8px;text-align:right;font-weight:700;color:#1D7A4E;font-size:14px;">${monedaSimboloCap}${fmt(pagadoTotal)}</td>
+                  <td style="padding:10px 8px;text-align:right;font-weight:600;color:${pendiente>0?'#DC2626':'#94A3B8'};font-size:14px;">${pendiente>0?`${monedaSimboloCap}${fmt(pendiente)}`:'—'}</td>
+                  <td style="padding:10px 8px;font-size:13px;color:#64748B;text-align:center;">${p.vencimiento || '—'}</td>
+                  <td style="padding:10px 8px;text-align:center;"><span style="background:${monedaBg};color:${monedaColor};padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;">${p.moneda}</span></td>
+                </tr>`;
+              }).join('');
+
+              const monedaBgHeaderInd = { MXN:'#E3F2FD', USD:'#E8F5E9', EUR:'#F3E5F5' }[g.moneda] || '#F5F5F5';
+              const monedaColorHeaderInd = { MXN:'#185FA5', USD:'#1D7A4E', EUR:'#6B47C7' }[g.moneda] || '#666';
+              const monedaFlagInd = { MXN:'🇲🇽', USD:'🇺🇸', EUR:'🇪🇺' }[g.moneda] || '';
+
+              // Crear div temporal off-screen (mismo enfoque que el envío masivo)
+              const tempDivInd = document.createElement('div');
+              tempDivInd.style.cssText = 'position:fixed;left:-9999px;top:0;width:1000px;background:#fff;font-family:Arial,sans-serif;border:1px solid #E2E8F0;border-radius:12px;overflow:hidden;';
+              tempDivInd.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:#E8F0FE;gap:12px;">
+                  <div style="display:flex;align-items:center;gap:12px;">
+                    <span style="font-weight:800;color:#0F2D4A;font-size:17px;">📅 ${g.fechaPago}</span>
+                    <span style="background:${monedaBgHeaderInd};color:${monedaColorHeaderInd};padding:3px 12px;border-radius:20px;font-size:13px;font-weight:800;">${monedaFlagInd} ${g.moneda}</span>
+                    <span style="font-size:14px;color:#64748B;font-weight:600;">${g.pagos.length} pago${g.pagos.length!==1?'s':''}</span>
+                  </div>
+                  <div style="font-weight:800;color:#1D7A4E;font-size:22px;">${monedaSimboloCap}${fmt(g.total)}</div>
+                </div>
+                <div style="padding:0 10px 10px;">
+                  <table style="width:100%;border-collapse:collapse;font-size:14px;">
+                    <thead>
+                      <tr style="background:#FAFBFC;">
+                        <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Folio</th>
+                        <th style="padding:10px 8px;text-align:left;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Concepto</th>
+                        <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Fecha</th>
+                        <th style="padding:10px 8px;text-align:right;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Total</th>
+                        <th style="padding:10px 8px;text-align:right;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Pagado</th>
+                        <th style="padding:10px 8px;text-align:right;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Pendiente</th>
+                        <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Vence</th>
+                        <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Moneda</th>
+                      </tr>
+                    </thead>
+                    <tbody>${filasHtmlInd}</tbody>
+                  </table>
+                </div>`;
+              document.body.appendChild(tempDivInd);
 
               // Renderizar con html2canvas
               let imagenBase64 = null;
               try {
-                // Re-query el div por si React re-renderizó
-                const grupoDivExpandido = document.querySelector(`[data-correo-grupo="${correoEnvioModal.groupKey}"]`);
-                const canvas = await html2canvas(grupoDivExpandido || grupoDiv, {
+                await new Promise(r => setTimeout(r, 100));
+                const canvas = await html2canvas(tempDivInd, {
                   backgroundColor: '#ffffff',
-                  scale: 2, // alta resolución
+                  scale: 2,
                   logging: false,
                   useCORS: true,
                 });
                 imagenBase64 = canvas.toDataURL('image/png');
               } catch (err) {
                 console.error('[html2canvas]', err);
-                // Continuar sin imagen si falla la captura
               }
-
-              // Restaurar estado si estaba colapsado (para no cambiar la UI de forma inesperada)
-              // Nota: no lo restauramos por ahora — dejamos expandido para que el usuario vea
-              // qué se envió. Si molesta, se puede colapsar automáticamente aquí.
+              document.body.removeChild(tempDivInd);
 
               // Paso 2 · Extraer el path del comprobante para el endpoint
               const comprobantePath = correoEnvioModal.comprobanteUrl;
@@ -11887,7 +11930,6 @@ Saludos cordiales,`;
                   return `<tr style="border-top:1px solid #E2E8F0;">
                     <td style="padding:10px 8px;font-weight:700;font-size:14px;text-align:center;">${p.folio || ''}</td>
                     <td style="padding:10px 8px;font-size:13px;color:${p.concepto?'#1A2332':'#94A3B8'};font-style:${p.concepto?'normal':'italic'};">${p.concepto || '—'}</td>
-                    <td style="padding:10px 8px;text-align:center;"><span style="background:#EEF2FF;color:#185FA5;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;">${p.clasificacion || '—'}</span></td>
                     <td style="padding:10px 8px;font-size:13px;color:#64748B;text-align:center;">${p.fecha || '—'}</td>
                     <td style="padding:10px 8px;text-align:right;font-weight:600;font-size:14px;">${monedaSimbolo}${fmt(p.totalFactura || 0)}</td>
                     <td style="padding:10px 8px;text-align:right;font-weight:700;color:#1D7A4E;font-size:14px;">${monedaSimbolo}${fmt(pagadoTotal)}</td>
@@ -11919,7 +11961,6 @@ Saludos cordiales,`;
                         <tr style="background:#FAFBFC;">
                           <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Folio</th>
                           <th style="padding:10px 8px;text-align:left;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Concepto</th>
-                          <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Clasif.</th>
                           <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Fecha</th>
                           <th style="padding:10px 8px;text-align:right;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Total</th>
                           <th style="padding:10px 8px;text-align:right;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Pagado</th>
