@@ -11859,8 +11859,85 @@ Saludos cordiales,`;
                   ...((configCorreos?.emailsCcGlobales) || []),
                 ].filter(e => e && e.trim());
 
-                // Envío masivo NO incluye captura de imagen (los grupos no están todos expandidos en pantalla)
-                // Solo se envía el PDF adjunto y el texto+firma
+                // ── Generar captura de imagen del desglose (off-screen) ────
+                // Calcular pagadoTotal y pendiente por factura (misma lógica que el modal individual)
+                const totalPagadoPorFactura = {};
+                payments.filter(pp => pp.tipo === 'realizado').forEach(pp => {
+                  totalPagadoPorFactura[pp.invoiceId] = (totalPagadoPorFactura[pp.invoiceId] || 0) + pp.monto;
+                });
+
+                // Construir HTML de la tabla temporal (mismo estilo que la del modal)
+                const filasHtml = g.pagos.map(p => {
+                  const pagadoTotal = totalPagadoPorFactura[p.invoiceId] || 0;
+                  const pendiente = Math.max(0, (p.totalFactura || 0) - pagadoTotal);
+                  const monedaBg = { MXN:'#E3F2FD', USD:'#E8F5E9', EUR:'#F3E5F5' }[p.moneda] || '#F5F5F5';
+                  const monedaColor = { MXN:'#185FA5', USD:'#1D7A4E', EUR:'#6B47C7' }[p.moneda] || '#666';
+                  return `<tr style="border-top:1px solid #E2E8F0;">
+                    <td style="padding:10px 8px;font-weight:700;font-size:14px;text-align:center;">${p.folio || ''}</td>
+                    <td style="padding:10px 8px;font-size:13px;color:${p.concepto?'#1A2332':'#94A3B8'};font-style:${p.concepto?'normal':'italic'};">${p.concepto || '—'}</td>
+                    <td style="padding:10px 8px;text-align:center;"><span style="background:#EEF2FF;color:#185FA5;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;">${p.clasificacion || '—'}</span></td>
+                    <td style="padding:10px 8px;font-size:13px;color:#64748B;text-align:center;">${p.fecha || '—'}</td>
+                    <td style="padding:10px 8px;text-align:right;font-weight:600;font-size:14px;">${monedaSimbolo}${fmt(p.totalFactura || 0)}</td>
+                    <td style="padding:10px 8px;text-align:right;font-weight:700;color:#1D7A4E;font-size:14px;">${monedaSimbolo}${fmt(pagadoTotal)}</td>
+                    <td style="padding:10px 8px;text-align:right;font-weight:600;color:${pendiente>0?'#DC2626':'#94A3B8'};font-size:14px;">${pendiente>0?`${monedaSimbolo}${fmt(pendiente)}`:'—'}</td>
+                    <td style="padding:10px 8px;font-size:13px;color:#64748B;text-align:center;">${p.vencimiento || '—'}</td>
+                    <td style="padding:10px 8px;text-align:center;"><span style="background:${monedaBg};color:${monedaColor};padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;">${p.moneda}</span></td>
+                  </tr>`;
+                }).join('');
+
+                const monedaBgHeader = { MXN:'#E3F2FD', USD:'#E8F5E9', EUR:'#F3E5F5' }[g.moneda] || '#F5F5F5';
+                const monedaColorHeader = { MXN:'#185FA5', USD:'#1D7A4E', EUR:'#6B47C7' }[g.moneda] || '#666';
+                const monedaFlag = { MXN:'🇲🇽', USD:'🇺🇸', EUR:'🇪🇺' }[g.moneda] || '';
+
+                // Crear div temporal para captura
+                const tempDiv = document.createElement('div');
+                tempDiv.style.cssText = 'position:fixed;left:-9999px;top:0;width:1000px;background:#fff;font-family:Arial,sans-serif;border:1px solid #E2E8F0;border-radius:12px;overflow:hidden;';
+                tempDiv.innerHTML = `
+                  <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:#E8F0FE;gap:12px;">
+                    <div style="display:flex;align-items:center;gap:12px;">
+                      <span style="font-weight:800;color:#0F2D4A;font-size:17px;">📅 ${g.fechaPago}</span>
+                      <span style="background:${monedaBgHeader};color:${monedaColorHeader};padding:3px 12px;border-radius:20px;font-size:13px;font-weight:800;">${monedaFlag} ${g.moneda}</span>
+                      <span style="font-size:14px;color:#64748B;font-weight:600;">${g.pagos.length} pago${g.pagos.length!==1?'s':''}</span>
+                    </div>
+                    <div style="font-weight:800;color:#1D7A4E;font-size:22px;">${monedaSimbolo}${fmt(g.total)}</div>
+                  </div>
+                  <div style="padding:0 10px 10px;">
+                    <table style="width:100%;border-collapse:collapse;font-size:14px;">
+                      <thead>
+                        <tr style="background:#FAFBFC;">
+                          <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Folio</th>
+                          <th style="padding:10px 8px;text-align:left;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Concepto</th>
+                          <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Clasif.</th>
+                          <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Fecha</th>
+                          <th style="padding:10px 8px;text-align:right;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Total</th>
+                          <th style="padding:10px 8px;text-align:right;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Pagado</th>
+                          <th style="padding:10px 8px;text-align:right;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Pendiente</th>
+                          <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Vence</th>
+                          <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Moneda</th>
+                        </tr>
+                      </thead>
+                      <tbody>${filasHtml}</tbody>
+                    </table>
+                  </div>`;
+                document.body.appendChild(tempDiv);
+
+                let imagenBase64 = null;
+                try {
+                  // Esperar un tick para que el navegador renderice
+                  await new Promise(r => setTimeout(r, 100));
+                  const canvas = await html2canvas(tempDiv, {
+                    backgroundColor: '#ffffff',
+                    scale: 2,
+                    logging: false,
+                    useCORS: true,
+                  });
+                  imagenBase64 = canvas.toDataURL('image/png');
+                } catch (errCap) {
+                  console.error('[html2canvas masivo]', errCap);
+                }
+                // Destruir div temporal siempre (incluso si falló captura)
+                document.body.removeChild(tempDiv);
+
                 const r = await enviarCorreoPago({
                   modo: 'envio',
                   destinatario: g.email,
@@ -11870,7 +11947,7 @@ Saludos cordiales,`;
                   nombreRemitente: configCorreos?.remitenteNombre || 'Viajes Libero · Cuentas por Pagar',
                   comprobantePath: g.comprobanteUrl,
                   comprobanteNombre: g.comprobanteNombre || 'comprobante.pdf',
-                  imagenInlineBase64: null, // sin captura de imagen en masivo
+                  imagenInlineBase64: imagenBase64,
                 });
 
                 if (!r.ok) {
@@ -11894,11 +11971,11 @@ Saludos cordiales,`;
               }
             }
 
-            // Actualizar payments state
-            const claves = new Set(enviados.map(e => e.grupo.key));
+            // Actualizar payments state · usar los payment IDs de los grupos enviados
+            const idsEnviados = new Set();
+            enviados.forEach(e => e.grupo.pagos.forEach(p => idsEnviados.add(p.id)));
             setPayments(prev => prev.map(x => {
-              const key = `${x.proveedor || ''}||${x.fechaPago}||${x.moneda || 'MXN'}`;
-              if (claves.has(key)) {
+              if (idsEnviados.has(x.id)) {
                 return {
                   ...x,
                   correoEnviado: true,
@@ -11920,7 +11997,7 @@ Saludos cordiales,`;
                       background: filtroRapido === id ? '#185FA5' : '#fff',
                       border: filtroRapido === id ? '1px solid #185FA5' : '1px solid #CBD5E1',
                       color: filtroRapido === id ? '#fff' : '#1A2332',
-                      padding: '7px 14px', borderRadius: 6, fontSize: 12, fontWeight: 700,
+                      padding: '9px 16px', borderRadius: 6, fontSize: 14, fontWeight: 700,
                       cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap'
                     }}>
               {icon} {label} <span style={{opacity: 0.75, fontWeight: 600}}>({count})</span>
@@ -11984,53 +12061,53 @@ Saludos cordiales,`;
             <div onClick={() => !enviando && setEnvioMasivoModal(null)}
                  style={{position:'fixed',inset:0,background:'rgba(15, 45, 74, 0.65)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1050,padding:16}}>
               <div onClick={(e) => e.stopPropagation()}
-                   style={{background:'#fff',borderRadius:14,width:'95vw',maxWidth:1000,maxHeight:'92vh',display:'flex',flexDirection:'column',boxShadow:'0 24px 60px rgba(0,0,0,0.3)',overflow:'hidden'}}>
+                   style={{background:'#fff',borderRadius:14,width:'97vw',maxWidth:1300,maxHeight:'95vh',display:'flex',flexDirection:'column',boxShadow:'0 24px 60px rgba(0,0,0,0.3)',overflow:'hidden'}}>
 
                 {/* Header */}
-                <div style={{padding:'16px 22px',background:'linear-gradient(180deg, #fff, #FAFCFE)',borderBottom:'1px solid #F1F5F9',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <div style={{padding:'20px 26px',background:'linear-gradient(180deg, #fff, #FAFCFE)',borderBottom:'1px solid #F1F5F9',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                   <div>
-                    <div style={{fontSize:18,fontWeight:800,color:'#1A2332'}}>📤 Envío masivo de correos</div>
-                    <div style={{fontSize:12,color:'#64748B',marginTop:2}}>Selecciona los grupos y envía correos a los proveedores</div>
+                    <div style={{fontSize:22,fontWeight:800,color:'#1A2332'}}>📤 Envío masivo de correos</div>
+                    <div style={{fontSize:14,color:'#64748B',marginTop:4}}>Selecciona los grupos y envía correos a los proveedores</div>
                   </div>
                   <button onClick={() => !enviando && setEnvioMasivoModal(null)} disabled={enviando}
-                          style={{background:'#F1F5F9',border:'none',width:34,height:34,borderRadius:8,cursor:enviando?'not-allowed':'pointer',color:'#64748B',fontSize:18}}>×</button>
+                          style={{background:'#F1F5F9',border:'none',width:38,height:38,borderRadius:8,cursor:enviando?'not-allowed':'pointer',color:'#64748B',fontSize:20}}>×</button>
                 </div>
 
                 {/* Filtros rápidos */}
-                <div style={{padding:'14px 22px',borderBottom:'1px solid #F1F5F9',background:'#FAFCFE'}}>
-                  <div style={{fontSize:11,color:'#64748B',fontWeight:700,marginBottom:10,letterSpacing:0.3}}>FILTROS RÁPIDOS</div>
-                  <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                <div style={{padding:'16px 26px',borderBottom:'1px solid #F1F5F9',background:'#FAFCFE'}}>
+                  <div style={{fontSize:13,color:'#64748B',fontWeight:700,marginBottom:12,letterSpacing:0.3}}>FILTROS RÁPIDOS</div>
+                  <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
                     <FiltroBtn id="pendientes" label="Todos pendientes" icon="📆" count={cnt.pendientes}/>
                     <FiltroBtn id="hoy"        label="De hoy"           icon="⚡" count={cnt.hoy}/>
                     <FiltroBtn id="ayer"       label="De ayer"          icon="🕐" count={cnt.ayer}/>
                     <FiltroBtn id="ultimos7"   label="Últimos 7 días"   icon="📅" count={cnt.ultimos7}/>
                     <FiltroBtn id="estemes"    label="Este mes"         icon="🗓" count={cnt.estemes}/>
                     <button onClick={() => setFiltroRapido('custom')}
-                            style={{background:filtroRapido==='custom'?'#185FA5':'#fff',border:filtroRapido==='custom'?'1px solid #185FA5':'1px solid #CBD5E1',color:filtroRapido==='custom'?'#fff':'#1A2332',padding:'7px 14px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:6}}>
+                            style={{background:filtroRapido==='custom'?'#185FA5':'#fff',border:filtroRapido==='custom'?'1px solid #185FA5':'1px solid #CBD5E1',color:filtroRapido==='custom'?'#fff':'#1A2332',padding:'9px 16px',borderRadius:6,fontSize:14,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:6}}>
                       🎯 Personalizado
                     </button>
                   </div>
                   {filtroRapido === 'custom' && (
-                    <div style={{display:'flex',gap:10,marginTop:12,alignItems:'center'}}>
-                      <label style={{fontSize:12,fontWeight:700,color:C.navy}}>Desde:</label>
-                      <input type="date" value={fechaCustomFrom} onChange={e=>setFechaCustomFrom(e.target.value)} style={{...inputStyle,maxWidth:170,fontSize:12}}/>
-                      <label style={{fontSize:12,fontWeight:700,color:C.navy}}>Hasta:</label>
-                      <input type="date" value={fechaCustomTo}   onChange={e=>setFechaCustomTo(e.target.value)}   style={{...inputStyle,maxWidth:170,fontSize:12}}/>
+                    <div style={{display:'flex',gap:12,marginTop:14,alignItems:'center'}}>
+                      <label style={{fontSize:14,fontWeight:700,color:C.navy}}>Desde:</label>
+                      <input type="date" value={fechaCustomFrom} onChange={e=>setFechaCustomFrom(e.target.value)} style={{...inputStyle,maxWidth:180,fontSize:14}}/>
+                      <label style={{fontSize:14,fontWeight:700,color:C.navy}}>Hasta:</label>
+                      <input type="date" value={fechaCustomTo}   onChange={e=>setFechaCustomTo(e.target.value)}   style={{...inputStyle,maxWidth:180,fontSize:14}}/>
                     </div>
                   )}
                 </div>
 
                 {/* Barra de selección + total */}
-                <div style={{padding:'12px 22px',background:'#EFF6FF',borderBottom:'1px solid #BFDBFE',display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:13,flexWrap:'wrap',gap:8}}>
-                  <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
+                <div style={{padding:'14px 26px',background:'#EFF6FF',borderBottom:'1px solid #BFDBFE',display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:15,flexWrap:'wrap',gap:10}}>
+                  <label style={{display:'flex',alignItems:'center',gap:10,cursor:'pointer'}}>
                     <input type="checkbox"
                            checked={gruposConEmail.filter(g=>g.enviable).length > 0 && gruposConEmail.filter(g=>g.enviable).every(g => seleccionados.has(g.key))}
                            onChange={toggleTodos}
-                           style={{width:16,height:16}}/>
-                    <span style={{color:'#1A2332',fontWeight:700}}>Seleccionar todos</span>
-                    <span style={{color:'#64748B'}}>({seleccionados.size} de {gruposConEmail.filter(g=>g.enviable).length} enviables)</span>
+                           style={{width:18,height:18}}/>
+                    <span style={{color:'#1A2332',fontWeight:700,fontSize:15}}>Seleccionar todos</span>
+                    <span style={{color:'#64748B',fontSize:14}}>({seleccionados.size} de {gruposConEmail.filter(g=>g.enviable).length} enviables)</span>
                   </label>
-                  <div style={{color:'#185FA5',fontWeight:700,fontSize:13,display:'flex',gap:14,flexWrap:'wrap'}}>
+                  <div style={{color:'#185FA5',fontWeight:800,fontSize:16,display:'flex',gap:18,flexWrap:'wrap'}}>
                     {totalPorMoneda.MXN > 0 && <span>🇲🇽 ${fmt(totalPorMoneda.MXN)} MXN</span>}
                     {totalPorMoneda.USD > 0 && <span>🇺🇸 ${fmt(totalPorMoneda.USD)} USD</span>}
                     {totalPorMoneda.EUR > 0 && <span>🇪🇺 €{fmt(totalPorMoneda.EUR)} EUR</span>}
@@ -12038,30 +12115,30 @@ Saludos cordiales,`;
                 </div>
 
                 {/* Lista de grupos */}
-                <div style={{flex:1,overflowY:'auto',minHeight:200}}>
+                <div style={{flex:1,overflowY:'auto',minHeight:250}}>
                   {gruposConEmail.length === 0 ? (
-                    <div style={{textAlign:'center',padding:50,color:'#64748B',fontSize:14}}>
-                      <div style={{fontSize:40,marginBottom:12}}>📭</div>
+                    <div style={{textAlign:'center',padding:60,color:'#64748B',fontSize:16}}>
+                      <div style={{fontSize:48,marginBottom:14}}>📭</div>
                       No hay correos pendientes para este filtro.
-                      <div style={{fontSize:12,marginTop:8,color:'#94A3B8'}}>Prueba con otro filtro rápido o rango de fechas.</div>
+                      <div style={{fontSize:13,marginTop:10,color:'#94A3B8'}}>Prueba con otro filtro rápido o rango de fechas.</div>
                     </div>
                   ) : gruposConEmail.map(g => (
                     <div key={g.key}
-                         style={{padding:'12px 22px',borderBottom:'1px solid #F1F5F9',display:'flex',alignItems:'center',gap:12,opacity:g.enviable?1:0.55,cursor:g.enviable?'pointer':'not-allowed',background:g.enviable && seleccionados.has(g.key)?'#F0F9FF':'#fff'}}
+                         style={{padding:'14px 26px',borderBottom:'1px solid #F1F5F9',display:'flex',alignItems:'center',gap:14,opacity:g.enviable?1:0.55,cursor:g.enviable?'pointer':'not-allowed',background:g.enviable && seleccionados.has(g.key)?'#F0F9FF':'#fff'}}
                          onClick={()=>g.enviable && toggleSeleccion(g.key)}>
                       <input type="checkbox" checked={seleccionados.has(g.key)} disabled={!g.enviable}
                              onChange={()=>g.enviable && toggleSeleccion(g.key)}
                              onClick={e=>e.stopPropagation()}
-                             style={{width:16,height:16,cursor:g.enviable?'pointer':'not-allowed'}}/>
+                             style={{width:18,height:18,cursor:g.enviable?'pointer':'not-allowed'}}/>
                       <div style={{flex:1,minWidth:0}}>
-                        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4,flexWrap:'wrap'}}>
-                          <span style={{fontWeight:700,color:'#1A2332',fontSize:14}}>{g.proveedor}</span>
-                          <span style={{background:g.moneda==='MXN'?'#E3F2FD':g.moneda==='USD'?'#E8F5E9':'#F3E5F5',color:g.moneda==='MXN'?'#185FA5':g.moneda==='USD'?'#1D7A4E':'#6B47C7',padding:'2px 8px',borderRadius:999,fontSize:10,fontWeight:700}}>
+                        <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:5,flexWrap:'wrap'}}>
+                          <span style={{fontWeight:800,color:'#1A2332',fontSize:16}}>{g.proveedor}</span>
+                          <span style={{background:g.moneda==='MXN'?'#E3F2FD':g.moneda==='USD'?'#E8F5E9':'#F3E5F5',color:g.moneda==='MXN'?'#185FA5':g.moneda==='USD'?'#1D7A4E':'#6B47C7',padding:'3px 10px',borderRadius:999,fontSize:12,fontWeight:700}}>
                             {g.moneda==='MXN'?'🇲🇽 MXN':g.moneda==='USD'?'🇺🇸 USD':'🇪🇺 EUR'}
                           </span>
-                          <span style={{color:'#64748B',fontSize:11}}>{g.pagos.length} pago{g.pagos.length!==1?'s':''}</span>
+                          <span style={{color:'#64748B',fontSize:13,fontWeight:600}}>{g.pagos.length} pago{g.pagos.length!==1?'s':''}</span>
                         </div>
-                        <div style={{fontSize:11,color:'#64748B',lineHeight:1.5}}>
+                        <div style={{fontSize:13,color:'#64748B',lineHeight:1.6}}>
                           📅 {g.fechaPago} · 📄 {g.comprobanteNombre || 'comprobante.pdf'} ·
                           {g.enviable ? (
                             <span> ✉ {g.email}</span>
@@ -12071,10 +12148,10 @@ Saludos cordiales,`;
                         </div>
                       </div>
                       <div style={{textAlign:'right'}}>
-                        <div style={{fontWeight:800,color:'#1D7A4E',fontSize:16,fontVariantNumeric:'tabular-nums'}}>
+                        <div style={{fontWeight:800,color:'#1D7A4E',fontSize:18,fontVariantNumeric:'tabular-nums'}}>
                           {g.moneda==='EUR'?'€':'$'}{fmt(g.total)}
                         </div>
-                        <div style={{fontSize:10,color:'#64748B'}}>{g.moneda}</div>
+                        <div style={{fontSize:11,color:'#64748B'}}>{g.moneda}</div>
                       </div>
                     </div>
                   ))}
@@ -12082,22 +12159,22 @@ Saludos cordiales,`;
 
                 {/* Barra de progreso durante envío */}
                 {enviando && progreso && (
-                  <div style={{padding:'12px 22px',background:'#FEF3C7',borderTop:'1px solid #F59E0B'}}>
-                    <div style={{fontSize:12,fontWeight:700,color:'#78350F',marginBottom:6}}>
+                  <div style={{padding:'14px 26px',background:'#FEF3C7',borderTop:'1px solid #F59E0B'}}>
+                    <div style={{fontSize:14,fontWeight:700,color:'#78350F',marginBottom:8}}>
                       ⏳ {progreso.mensaje} ({progreso.actual}/{progreso.total})
                     </div>
-                    <div style={{height:8,background:'#FDE68A',borderRadius:4,overflow:'hidden'}}>
+                    <div style={{height:10,background:'#FDE68A',borderRadius:4,overflow:'hidden'}}>
                       <div style={{height:'100%',background:'#F59E0B',width:`${(progreso.actual/progreso.total)*100}%`,transition:'width .3s'}}/>
                     </div>
                   </div>
                 )}
 
                 {/* Footer con botón enviar */}
-                <div style={{padding:'14px 22px',borderTop:'1px solid #F1F5F9',display:'flex',gap:10,background:'#FAFCFE'}}>
+                <div style={{padding:'16px 26px',borderTop:'1px solid #F1F5F9',display:'flex',gap:12,background:'#FAFCFE'}}>
                   <button onClick={() => setEnvioMasivoModal(null)} disabled={enviando}
-                          style={{flex:1,background:'#fff',border:`1px solid ${C.border}`,color:C.text,padding:12,borderRadius:8,fontSize:13,fontWeight:700,cursor:enviando?'not-allowed':'pointer'}}>Cancelar</button>
+                          style={{flex:1,background:'#fff',border:`1px solid ${C.border}`,color:C.text,padding:14,borderRadius:8,fontSize:15,fontWeight:700,cursor:enviando?'not-allowed':'pointer'}}>Cancelar</button>
                   <button onClick={handleEnviarMasivo} disabled={enviando || seleccionadosGrupos.length === 0}
-                          style={{flex:2,background:(enviando||seleccionadosGrupos.length===0)?'#94A3B8':'linear-gradient(135deg, #1D7A4E, #2EBC76)',color:'#fff',border:'none',padding:12,borderRadius:8,fontSize:14,fontWeight:800,cursor:(enviando||seleccionadosGrupos.length===0)?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+                          style={{flex:2,background:(enviando||seleccionadosGrupos.length===0)?'#94A3B8':'linear-gradient(135deg, #1D7A4E, #2EBC76)',color:'#fff',border:'none',padding:14,borderRadius:8,fontSize:16,fontWeight:800,cursor:(enviando||seleccionadosGrupos.length===0)?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
                     {enviando ? '⏳ Enviando...' : `📤 Enviar ${seleccionadosGrupos.length} correo${seleccionadosGrupos.length !== 1 ? 's' : ''}`}
                   </button>
                 </div>
