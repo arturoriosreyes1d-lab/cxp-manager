@@ -97,6 +97,7 @@ export default async function handler(req, res) {
     nombreRemitente,
     comprobantePath,
     comprobanteNombre,
+    imagenInlineBase64, // captura PNG del desglose a incrustar (opcional)
   } = body;
 
   // ── 3. Validaciones
@@ -155,16 +156,59 @@ export default async function handler(req, res) {
   // ── 7. Construir mensaje
   const fromLabel = nombreRemitente ? `"${nombreRemitente}" <${GMAIL_USER}>` : GMAIL_USER;
   const asuntoFinal = modo === 'prueba' ? `[PRUEBA] ${asunto}` : asunto;
-  const cuerpoFinal = modo === 'prueba'
+
+  // Si hay imagen inline (captura del desglose), añadirla como attachment con cid
+  const cidRelacion = 'relacion-facturas-cid@cxp-manager';
+  if (imagenInlineBase64) {
+    // Limpiar el prefijo "data:image/png;base64," si viene
+    const b64 = imagenInlineBase64.replace(/^data:image\/\w+;base64,/, '');
+    attachments.push({
+      filename: 'relacion-facturas.png',
+      content: Buffer.from(b64, 'base64'),
+      cid: cidRelacion,
+      contentType: 'image/png',
+    });
+  }
+
+  // Convertir el cuerpo de texto plano a HTML preservando saltos de línea
+  // y embebiendo la imagen si aplica
+  const cuerpoTexto = modo === 'prueba'
     ? `⚠️ Este es un correo de PRUEBA generado desde CxP Manager.\nEl destinatario original habría sido: ${destinatario || '(no especificado)'}\n\n──────\n\n${cuerpo}`
     : cuerpo;
+
+  // HTML del correo · escapar HTML del cuerpo por seguridad + añadir imagen inline
+  const escapeHtml = (s) => (s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+  const cuerpoHtml = escapeHtml(cuerpoTexto).replace(/\n/g, '<br>');
+
+  // Si hay imagen: la insertamos DESPUÉS del párrafo introductorio y ANTES del cierre
+  // Usamos un marcador: si el cuerpo contiene "{{IMAGEN_RELACION}}" lo reemplazamos ahí;
+  // si no, la insertamos automáticamente antes del cierre "Saludos" o al final del cuerpo.
+  let htmlFinal;
+  if (imagenInlineBase64) {
+    const imgTag = `<div style="margin: 16px 0; text-align: center;"><img src="cid:${cidRelacion}" alt="Relación de facturas pagadas" style="max-width: 100%; height: auto; border: 1px solid #E2E8F0; border-radius: 8px;"/></div>`;
+    // Buscar dónde insertar la imagen: antes de "Saludos" si existe
+    const idxSaludos = cuerpoHtml.search(/Saludos|Atentamente|Quedamos/i);
+    if (idxSaludos > 0) {
+      htmlFinal = `<div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #1A2332; max-width: 720px;">${cuerpoHtml.slice(0, idxSaludos)}${imgTag}${cuerpoHtml.slice(idxSaludos)}</div>`;
+    } else {
+      // No hay marcador de despedida: la ponemos al final
+      htmlFinal = `<div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #1A2332; max-width: 720px;">${cuerpoHtml}${imgTag}</div>`;
+    }
+  } else {
+    htmlFinal = `<div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #1A2332; max-width: 720px;">${cuerpoHtml}</div>`;
+  }
 
   const mailOptions = {
     from: fromLabel,
     to: dest,
     cc: ccLimpio.length > 0 ? ccLimpio.join(', ') : undefined,
     subject: asuntoFinal,
-    text: cuerpoFinal,
+    text: cuerpoTexto, // fallback texto plano para clientes que no soportan HTML
+    html: htmlFinal,
     attachments,
   };
 

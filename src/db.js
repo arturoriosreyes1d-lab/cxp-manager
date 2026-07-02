@@ -2691,6 +2691,7 @@ export async function enviarCorreoPago(params) {
         nombreRemitente: params.nombreRemitente,
         comprobantePath: params.comprobantePath,
         comprobanteNombre: params.comprobanteNombre,
+        imagenInlineBase64: params.imagenInlineBase64,
       }),
     });
     const data = await res.json();

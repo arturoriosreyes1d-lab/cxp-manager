@@ -21,7 +21,7 @@ import {
   fetchGastosFijos, insertGastoFijo, updateGastoFijo, deleteGastoFijo,
   fetchRubrosPrestamo, insertRubroPrestamo, upsertPrestamoMovimientoExt,
   uploadComprobantePDF, getComprobanteSignedUrl, deleteComprobantePDF,
-  updateSupplierEmails, updatePaymentComprobante,
+  updateSupplierEmails, updatePaymentComprobante, marcarCorreoEnviado,
   fetchAppConfigCorreos, updateAppConfigCorreos,
   enviarCorreoPago,
   fetchTarjetas, updateTarjetaSaldo, fetchTarjetaMovimientos, bulkInsertMovimientos,
@@ -297,6 +297,10 @@ export default function CxpApp({ user, onLogout }) {
   // Fase 1 · Sistema de correos a proveedores
   const [configCorreos, setConfigCorreos] = useState(null);
   const [showConfigCorreosModal, setShowConfigCorreosModal] = useState(false);
+  // Modal para previsualizar y enviar correo a un grupo (proveedor+fecha+moneda)
+  const [correoEnvioModal, setCorreoEnvioModal] = useState(null);
+  // Modal para capturar email del proveedor cuando no lo tiene
+  const [capturarEmailModal, setCapturarEmailModal] = useState(null);
   const [financiamientoPagos, setFinanciamientoPagos] = useState([]);
   const [financModalId, setFinancModalId] = useState(null);
   const [financCollapsed, setFinancCollapsed] = useState(true);
@@ -10676,6 +10680,73 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           );
         };
 
+        // Botón "Enviar correo" que aparece cuando el grupo tiene comprobante
+        const EnviarCorreoGrupoButton = ({ pagosGrupo, groupKey, refPreviewNode }) => {
+          const pagoConComp = pagosGrupo.find(p => p.comprobanteUrl);
+          const yaEnviado = pagosGrupo.every(p => p.correoEnviado === true);
+          const algunEnviado = pagosGrupo.some(p => p.correoEnviado === true);
+
+          if (!pagoConComp) return null;  // sin PDF, no se puede enviar
+
+          if (yaEnviado) {
+            return (
+              <div style={{display:"flex",alignItems:"center",gap:6,background:"#DCFCE7",border:"1px solid #86EFAC",color:"#166534",padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:700}} onClick={e=>e.stopPropagation()}>
+                ✅ Correo enviado
+              </div>
+            );
+          }
+
+          const proveedorSup = suppliers.find(s => s.nombre === pagosDetail.proveedor);
+          const proveedorSupId = proveedorSup?.id;
+          const emailProveedor = proveedorSup?.email || '';
+
+          const handleEnviar = () => {
+            if (!emailProveedor) {
+              // Abrir modal para capturar email
+              setCapturarEmailModal({
+                supplierId: proveedorSupId,
+                supplierNombre: pagosDetail.proveedor,
+                onGuardado: (nuevoEmail) => {
+                  // Cuando el usuario capture y guarde, abrir el modal de envío con el email nuevo
+                  setCorreoEnvioModal({
+                    pagosGrupo,
+                    groupKey,
+                    proveedor: pagosDetail.proveedor,
+                    emailPrincipal: nuevoEmail,
+                    emailsCcProveedor: proveedorSup?.emailsCc || [],
+                    fecha: pagosGrupo[0]?.fechaPago || '',
+                    moneda: pagosGrupo[0]?.moneda || 'MXN',
+                    totalGrupo: pagosGrupo.reduce((s,p)=>s+p.monto,0),
+                    comprobanteUrl: pagoConComp.comprobanteUrl,
+                    comprobanteNombre: pagoConComp.comprobanteNombre,
+                  });
+                },
+              });
+              return;
+            }
+            // Abrir modal de previsualización
+            setCorreoEnvioModal({
+              pagosGrupo,
+              groupKey,
+              proveedor: pagosDetail.proveedor,
+              emailPrincipal: emailProveedor,
+              emailsCcProveedor: proveedorSup?.emailsCc || [],
+              fecha: pagosGrupo[0]?.fechaPago || '',
+              moneda: pagosGrupo[0]?.moneda || 'MXN',
+              totalGrupo: pagosGrupo.reduce((s,p)=>s+p.monto,0),
+              comprobanteUrl: pagoConComp.comprobanteUrl,
+              comprobanteNombre: pagoConComp.comprobanteNombre,
+            });
+          };
+
+          return (
+            <button onClick={(e)=>{e.stopPropagation();handleEnviar();}}
+                    style={{background:"linear-gradient(135deg, #1D7A4E, #2EBC76)",color:"#fff",border:"none",padding:"5px 12px",borderRadius:6,fontSize:11,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:4,boxShadow:"0 2px 6px rgba(29, 122, 78, 0.25)"}}>
+              📧 Enviar correo{algunEnviado && !yaEnviado ? " (parcial)" : ""}
+            </button>
+          );
+        };
+
         // 🔄 Recomputar pagos desde el state actual (reactivo a cambios de comprobante_url, etc.)
         // así el modal se refresca cuando setPayments actualiza algún pago
         const allInvsForDetail = [
@@ -10787,7 +10858,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             const isOpen = pagosExpandedDates.has(groupKey);
             const monedaSimbolo = group.moneda === 'EUR' ? '€' : '$';
             return (
-              <div key={groupKey} style={{marginBottom:10,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
+              <div key={groupKey} data-correo-grupo={groupKey} style={{marginBottom:10,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
                 {/* Header del grupo (fecha + moneda) */}
                 <div onClick={()=>toggleDate(groupKey)}
                   style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 18px",background:isOpen?"#E8F0FE":"#F8FAFC",cursor:"pointer",transition:"background .15s",gap:12,flexWrap:"wrap"}}
@@ -10803,6 +10874,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:16}}>
                     <ComprobanteGrupoButton pagosGrupo={group.pagos} groupKey={groupKey}/>
+                    <EnviarCorreoGrupoButton pagosGrupo={group.pagos} groupKey={groupKey}/>
                     <div style={{fontWeight:800,color:C.ok,fontSize:22,fontVariantNumeric:"tabular-nums"}}>{monedaSimbolo}{fmt(group.total)}</div>
                   </div>
                 </div>
@@ -11243,6 +11315,290 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           </div>
         </ModalShell>
         );
+      })()}
+
+      {/* ─── Modal: Capturar email del proveedor ─────── */}
+      {capturarEmailModal && (() => {
+        const CapturarEmailModal = () => {
+          const [email, setEmail] = useState('');
+          const [guardando, setGuardando] = useState(false);
+          const handleGuardar = async () => {
+            if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+              alert('⚠️ Ingresa un email válido');
+              return;
+            }
+            setGuardando(true);
+            try {
+              await updateSupplierEmails(capturarEmailModal.supplierId, email, []);
+              // Actualizar estado local
+              setSuppliers(prev => prev.map(s =>
+                s.id === capturarEmailModal.supplierId ? {...s, email} : s
+              ));
+              const cb = capturarEmailModal.onGuardado;
+              setCapturarEmailModal(null);
+              if (cb) cb(email);
+            } catch (err) {
+              alert('Error al guardar: ' + err.message);
+            }
+            setGuardando(false);
+          };
+          return (
+            <div onClick={() => !guardando && setCapturarEmailModal(null)}
+                 style={{position:'fixed',inset:0,background:'rgba(15, 45, 74, 0.65)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1100,padding:20}}>
+              <div onClick={(e) => e.stopPropagation()}
+                   style={{background:'#fff',borderRadius:14,width:'90vw',maxWidth:500,padding:24,boxShadow:'0 24px 60px rgba(0,0,0,0.3)'}}>
+                <div style={{fontSize:17,fontWeight:800,color:'#1A2332',marginBottom:6}}>📧 Falta email del proveedor</div>
+                <div style={{fontSize:13,color:'#64748B',marginBottom:16,lineHeight:1.5}}>
+                  El proveedor <strong style={{color:'#185FA5'}}>{capturarEmailModal.supplierNombre}</strong> no tiene email principal capturado.<br/>
+                  Ingrésalo aquí. Se guardará permanentemente para futuros envíos.
+                </div>
+                <label style={{fontSize:11,color:'#64748B',fontWeight:700,display:'block',marginBottom:4}}>EMAIL PRINCIPAL</label>
+                <input value={email} onChange={e=>setEmail(e.target.value)}
+                       placeholder="facturacion@proveedor.com"
+                       autoFocus
+                       onKeyDown={e => { if (e.key === 'Enter') handleGuardar(); }}
+                       style={{width:'100%',border:`1px solid ${C.border}`,padding:'10px 12px',borderRadius:6,fontSize:14,marginBottom:6}}/>
+                <div style={{fontSize:11,color:'#94A3B8',marginBottom:16,fontStyle:'italic'}}>
+                  💡 Después podrás agregar correos adicionales (CC) desde el editor de proveedor
+                </div>
+                <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+                  <button onClick={()=>setCapturarEmailModal(null)} disabled={guardando}
+                          style={{background:'#fff',border:`1px solid ${C.border}`,color:C.text,padding:'9px 16px',borderRadius:8,fontSize:13,fontWeight:700,cursor:guardando?'not-allowed':'pointer'}}>Cancelar</button>
+                  <button onClick={handleGuardar} disabled={guardando}
+                          style={{background:'linear-gradient(135deg, #185FA5, #2E78C7)',color:'#fff',border:'none',padding:'9px 20px',borderRadius:8,fontSize:13,fontWeight:800,cursor:guardando?'wait':'pointer',opacity:guardando?0.7:1}}>
+                    {guardando ? 'Guardando...' : '💾 Guardar y continuar'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        };
+        return <CapturarEmailModal/>;
+      })()}
+
+      {/* ─── Modal: Previsualización y envío del correo ─────── */}
+      {correoEnvioModal && (() => {
+        const EnvioCorreoModal = () => {
+          const [enviando, setEnviando] = useState(false);
+          const [resultado, setResultado] = useState(null); // {tipo, mensaje}
+          const [ccExtras, setCcExtras] = useState([]);  // CC ad-hoc para este envío
+          const [asuntoEditable, setAsuntoEditable] = useState('');
+          const [cuerpoEditable, setCuerpoEditable] = useState('');
+
+          // Preparar asunto y cuerpo con reemplazo de variables
+          useEffect(() => {
+            const cfg = configCorreos || {};
+            const plantillaAsunto = cfg.plantillaAsunto || 'Comprobante de pago · {{empresa}} · {{fecha}}';
+            const plantillaCuerpo = cfg.plantillaCuerpo || `Estimados {{proveedor}},
+
+Adjunto encontrarán el comprobante de pago correspondiente a las siguientes facturas:
+
+{{lista_facturas}}
+
+Total pagado: {{monto_total}}
+Fecha de pago: {{fecha}}
+Método: {{metodo}}
+
+Quedamos atentos a cualquier aclaración.
+
+Saludos cordiales,
+Viajes Libero`;
+
+            const monedaSimbolo = correoEnvioModal.moneda === 'EUR' ? '€' : '$';
+            const listaFacturas = correoEnvioModal.pagosGrupo.map(p => {
+              const conceptoCorto = (p.concepto || '').substring(0, 60);
+              return `• Folio ${p.folio}${conceptoCorto ? ` — ${conceptoCorto}` : ''} — ${monedaSimbolo}${fmt(p.monto)}`;
+            }).join('\n');
+
+            const reemplazar = (txt) => (txt || '')
+              .replace(/\{\{proveedor\}\}/g, correoEnvioModal.proveedor)
+              .replace(/\{\{fecha\}\}/g, correoEnvioModal.fecha)
+              .replace(/\{\{monto_total\}\}/g, `${monedaSimbolo}${fmt(correoEnvioModal.totalGrupo)} ${correoEnvioModal.moneda}`)
+              .replace(/\{\{lista_facturas\}\}/g, listaFacturas)
+              .replace(/\{\{metodo\}\}/g, 'Transferencia bancaria')
+              .replace(/\{\{empresa\}\}/g, 'Viajes Libero');
+
+            setAsuntoEditable(reemplazar(plantillaAsunto));
+            setCuerpoEditable(reemplazar(plantillaCuerpo));
+          }, []);
+
+          const emailsCcTodos = [
+            ...(correoEnvioModal.emailsCcProveedor || []),
+            ...((configCorreos?.emailsCcGlobales) || []),
+            ...ccExtras,
+          ].filter(e => e && e.trim());
+
+          const addCcExtra = () => {
+            const email = prompt('Email adicional para copia:');
+            if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+              setCcExtras(prev => [...prev, email.trim()]);
+            } else if (email) {
+              alert('⚠️ Email inválido');
+            }
+          };
+
+          const handleEnviar = async () => {
+            setEnviando(true);
+            setResultado(null);
+            try {
+              // Paso 1 · Localizar el div del grupo y generar captura PNG
+              const grupoDiv = document.querySelector(`[data-correo-grupo="${correoEnvioModal.groupKey}"]`);
+              if (!grupoDiv) {
+                setResultado({tipo:'error', mensaje:'❌ No se encontró el desglose del grupo en pantalla'});
+                setEnviando(false);
+                return;
+              }
+
+              // Renderizar con html2canvas
+              let imagenBase64 = null;
+              try {
+                const canvas = await html2canvas(grupoDiv, {
+                  backgroundColor: '#ffffff',
+                  scale: 2, // alta resolución
+                  logging: false,
+                  useCORS: true,
+                });
+                imagenBase64 = canvas.toDataURL('image/png');
+              } catch (err) {
+                console.error('[html2canvas]', err);
+                // Continuar sin imagen si falla la captura
+              }
+
+              // Paso 2 · Extraer el path del comprobante para el endpoint
+              const comprobantePath = correoEnvioModal.comprobanteUrl;
+
+              // Paso 3 · Enviar
+              const r = await enviarCorreoPago({
+                modo: 'envio',
+                destinatario: correoEnvioModal.emailPrincipal,
+                cc: emailsCcTodos,
+                asunto: asuntoEditable,
+                cuerpo: cuerpoEditable,
+                nombreRemitente: configCorreos?.remitenteNombre || 'Viajes Libero · Cuentas por Pagar',
+                comprobantePath,
+                comprobanteNombre: correoEnvioModal.comprobanteNombre || 'comprobante.pdf',
+                imagenInlineBase64: imagenBase64,
+              });
+
+              if (!r.ok) {
+                setResultado({tipo:'error', mensaje: `❌ Error: ${r.error}`});
+                setEnviando(false);
+                return;
+              }
+
+              // Paso 4 · Marcar los N pagos del grupo como enviados
+              const destinatariosParaAudit = [correoEnvioModal.emailPrincipal, ...emailsCcTodos].join(', ');
+              for (const p of correoEnvioModal.pagosGrupo) {
+                await marcarCorreoEnviado(p.id, destinatariosParaAudit, '');
+              }
+              // Actualizar state local
+              setPayments(prev => prev.map(x => {
+                const enGrupo = correoEnvioModal.pagosGrupo.some(pg => pg.id === x.id);
+                return enGrupo ? {
+                  ...x,
+                  correoEnviado: true,
+                  correoEnviadoAt: new Date().toISOString(),
+                  correoEnviadoA: destinatariosParaAudit,
+                  correoError: '',
+                } : x;
+              }));
+
+              setResultado({tipo:'ok', mensaje: `✅ Correo enviado a ${correoEnvioModal.emailPrincipal}${emailsCcTodos.length > 0 ? ` (+${emailsCcTodos.length} en copia)` : ''}`});
+              // Cerrar automáticamente después de 2 segundos
+              setTimeout(() => setCorreoEnvioModal(null), 2500);
+            } catch (err) {
+              console.error(err);
+              setResultado({tipo:'error', mensaje: `❌ Error: ${err.message}`});
+            }
+            setEnviando(false);
+          };
+
+          const monedaSimbolo = correoEnvioModal.moneda === 'EUR' ? '€' : '$';
+
+          return (
+            <div onClick={() => !enviando && setCorreoEnvioModal(null)}
+                 style={{position:'fixed',inset:0,background:'rgba(15, 45, 74, 0.65)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1050,padding:16}}>
+              <div onClick={(e) => e.stopPropagation()}
+                   style={{background:'#fff',borderRadius:14,width:'92vw',maxWidth:800,maxHeight:'90vh',display:'flex',flexDirection:'column',boxShadow:'0 24px 60px rgba(0,0,0,0.3)',overflow:'hidden'}}>
+                {/* Header */}
+                <div style={{padding:'16px 22px',background:'linear-gradient(180deg, #fff, #FAFCFE)',borderBottom:'1px solid #F1F5F9',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <div>
+                    <div style={{fontSize:17,fontWeight:800,color:'#1A2332'}}>📧 Enviar correo al proveedor</div>
+                    <div style={{fontSize:12,color:'#64748B',marginTop:2}}>
+                      {correoEnvioModal.proveedor} · {correoEnvioModal.fecha} · {monedaSimbolo}{fmt(correoEnvioModal.totalGrupo)} {correoEnvioModal.moneda}
+                    </div>
+                  </div>
+                  <button onClick={() => !enviando && setCorreoEnvioModal(null)} disabled={enviando}
+                          style={{background:'#F1F5F9',border:'none',width:32,height:32,borderRadius:8,cursor:enviando?'not-allowed':'pointer',color:'#64748B',fontSize:16}}>×</button>
+                </div>
+
+                {/* Content scroll */}
+                <div style={{flex:1,overflowY:'auto',padding:'18px 22px'}}>
+                  {/* Destinatario */}
+                  <div style={{marginBottom:16,background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:8,padding:'12px 14px'}}>
+                    <div style={{fontSize:11,color:'#64748B',fontWeight:700,marginBottom:6}}>📤 DESTINATARIOS</div>
+                    <div style={{fontSize:13,marginBottom:6}}>
+                      <strong style={{color:'#185FA5'}}>Para:</strong> <span style={{color:'#1A2332'}}>{correoEnvioModal.emailPrincipal}</span>
+                    </div>
+                    {emailsCcTodos.length > 0 && (
+                      <div style={{fontSize:12,color:'#64748B',marginBottom:6}}>
+                        <strong style={{color:'#185FA5'}}>CC:</strong> {emailsCcTodos.join(', ')}
+                      </div>
+                    )}
+                    <button onClick={addCcExtra} style={{background:'transparent',border:'1px dashed #185FA5',color:'#185FA5',padding:'3px 10px',borderRadius:5,fontSize:10,fontWeight:700,cursor:'pointer',marginTop:2}}>+ Agregar CC extra</button>
+                  </div>
+
+                  {/* Asunto */}
+                  <div style={{marginBottom:12}}>
+                    <label style={{fontSize:11,color:'#64748B',fontWeight:700,display:'block',marginBottom:4}}>ASUNTO</label>
+                    <input value={asuntoEditable} onChange={e=>setAsuntoEditable(e.target.value)}
+                           style={{width:'100%',border:`1px solid ${C.border}`,padding:'9px 12px',borderRadius:6,fontSize:13}}/>
+                  </div>
+
+                  {/* Cuerpo */}
+                  <div style={{marginBottom:12}}>
+                    <label style={{fontSize:11,color:'#64748B',fontWeight:700,display:'block',marginBottom:4}}>CUERPO DEL CORREO</label>
+                    <textarea value={cuerpoEditable} onChange={e=>setCuerpoEditable(e.target.value)} rows={12}
+                              style={{width:'100%',border:`1px solid ${C.border}`,padding:'10px 12px',borderRadius:6,fontSize:12,fontFamily:'inherit',lineHeight:1.6,resize:'vertical'}}/>
+                  </div>
+
+                  {/* Adjuntos + captura */}
+                  <div style={{background:'#F0F7FF',border:'1px solid #BFDBFE',borderRadius:8,padding:'10px 12px',marginBottom:12}}>
+                    <div style={{fontSize:11,color:'#185FA5',fontWeight:700,marginBottom:8}}>📎 QUE INCLUIRÁ EL CORREO</div>
+                    <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                      <div style={{fontSize:12,color:'#1A2332'}}>
+                        📄 <strong>{correoEnvioModal.comprobanteNombre || 'comprobante.pdf'}</strong> <span style={{color:'#64748B'}}>· como archivo adjunto</span>
+                      </div>
+                      <div style={{fontSize:12,color:'#1A2332'}}>
+                        🖼️ <strong>Captura del desglose de facturas</strong> <span style={{color:'#64748B'}}>· embebida en el cuerpo</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {resultado && (
+                    <div style={{padding:'10px 12px',borderRadius:6,fontSize:12,fontWeight:600,lineHeight:1.5,
+                                 background: resultado.tipo==='ok' ? '#DCFCE7' : '#FEE2E2',
+                                 color:      resultado.tipo==='ok' ? '#166534' : '#991B1B',
+                                 border:     resultado.tipo==='ok' ? '1px solid #86EFAC' : '1px solid #FCA5A5'}}>
+                      {resultado.mensaje}
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer */}
+                <div style={{padding:'14px 22px',borderTop:'1px solid #F1F5F9',display:'flex',gap:8,background:'#FAFCFE'}}>
+                  <button onClick={() => setCorreoEnvioModal(null)} disabled={enviando}
+                          style={{flex:1,background:'#fff',border:`1px solid ${C.border}`,color:C.text,padding:11,borderRadius:8,fontSize:13,fontWeight:700,cursor:enviando?'not-allowed':'pointer'}}>Cancelar</button>
+                  <button onClick={handleEnviar} disabled={enviando || resultado?.tipo === 'ok'}
+                          style={{flex:2,background:enviando||resultado?.tipo==='ok'?'#94A3B8':'linear-gradient(135deg, #1D7A4E, #2EBC76)',color:'#fff',border:'none',padding:11,borderRadius:8,fontSize:13,fontWeight:800,cursor:enviando?'wait':(resultado?.tipo==='ok'?'default':'pointer'),display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
+                    {enviando ? '⏳ Enviando correo...' : (resultado?.tipo === 'ok' ? '✅ Enviado' : '📧 Enviar ahora')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        };
+        return <EnvioCorreoModal/>;
       })()}
 
       {/* ─── Modal: Configuración de Correos Automáticos ─────── */}
