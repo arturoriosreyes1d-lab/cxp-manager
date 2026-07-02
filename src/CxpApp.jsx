@@ -10865,7 +10865,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                   onMouseEnter={e=>{if(!isOpen) e.currentTarget.style.background="#F0F4FF";}}
                   onMouseLeave={e=>{if(!isOpen) e.currentTarget.style.background="#F8FAFC";}}>
                   <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                    <span style={{fontSize:18}}>{isOpen?"▼":"▶"}</span>
+                    <span data-html2canvas-ignore="true" style={{fontSize:18}}>{isOpen?"▼":"▶"}</span>
                     <span style={{fontWeight:800,color:C.navy,fontSize:17}}>📅 {group.fecha}</span>
                     <span style={{background:monedaBg[group.moneda]||"#F5F5F5",color:monedaColor[group.moneda]||"#666",padding:"3px 12px",borderRadius:20,fontSize:13,fontWeight:800}}>
                       {monedaFlag[group.moneda]||""} {group.moneda}
@@ -10873,8 +10873,10 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                     <span style={{fontSize:14,color:C.muted,fontWeight:600}}>{group.pagos.length} pago{group.pagos.length!==1?"s":""}</span>
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:16}}>
-                    <ComprobanteGrupoButton pagosGrupo={group.pagos} groupKey={groupKey}/>
-                    <EnviarCorreoGrupoButton pagosGrupo={group.pagos} groupKey={groupKey}/>
+                    <span data-html2canvas-ignore="true" style={{display:"flex",alignItems:"center",gap:16}}>
+                      <ComprobanteGrupoButton pagosGrupo={group.pagos} groupKey={groupKey}/>
+                      <EnviarCorreoGrupoButton pagosGrupo={group.pagos} groupKey={groupKey}/>
+                    </span>
                     <div style={{fontWeight:800,color:C.ok,fontSize:22,fontVariantNumeric:"tabular-nums"}}>{monedaSimbolo}{fmt(group.total)}</div>
                   </div>
                 </div>
@@ -10927,12 +10929,6 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                           );
                         })}
                       </tbody>
-                      <tfoot>
-                        <tr style={{borderTop:`2px solid ${C.border}`,background:"#FAFBFC"}}>
-                          <td colSpan={5} style={{padding:"12px 8px",fontWeight:700,color:C.navy,fontSize:14,textAlign:"right"}}>Total pagado en este grupo:</td>
-                          <td colSpan={4} style={{padding:"12px 8px",fontWeight:800,color:C.ok,fontVariantNumeric:"tabular-nums",fontSize:17,textAlign:"right"}}>{monedaSimbolo}{fmt(group.total)} <span style={{fontSize:12,color:C.muted,fontWeight:600}}>{group.moneda}</span></td>
-                        </tr>
-                      </tfoot>
                     </table>
                   </div>
                 )}
@@ -11391,16 +11387,11 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             const plantillaAsunto = cfg.plantillaAsunto || 'Comprobante de pago · Facturas {{folios}}';
             const plantillaCuerpo = cfg.plantillaCuerpo || `Estimados {{proveedor}},
 
-Adjunto encontrarán el comprobante de pago correspondiente a las facturas cubiertas. En la imagen a continuación pueden ver el desglose completo:
-
-Total pagado: {{monto_total}}
-Fecha de pago: {{fecha}}
-Método: {{metodo}}
+Adjunto encontrarán el comprobante de pago correspondiente a las facturas cubiertas. A continuación pueden ver el desglose completo:
 
 Quedamos atentos a cualquier aclaración.
 
-Saludos cordiales,
-Viajes Libero`;
+Saludos cordiales,`;
 
             const monedaSimbolo = correoEnvioModal.moneda === 'EUR' ? '€' : '$';
             const listaFacturas = correoEnvioModal.pagosGrupo.map(p => {
@@ -11597,6 +11588,21 @@ Viajes Libero`;
                       <div style={{fontSize:12,color:'#1A2332'}}>
                         🖼️ <strong>Captura del desglose de facturas</strong> <span style={{color:'#64748B'}}>· embebida en el cuerpo</span>
                       </div>
+                      <div style={{fontSize:12,color:'#1A2332'}}>
+                        ✍️ <strong>Firma de Viajes Libero</strong> <span style={{color:'#64748B'}}>· al final del correo (ver abajo)</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Previsualización de la firma que se enviará */}
+                  <div style={{background:'#FAFCFE',border:'1px solid #E2E8F0',borderRadius:8,padding:'12px',marginBottom:12}}>
+                    <div style={{fontSize:11,color:'#64748B',fontWeight:700,marginBottom:8,letterSpacing:0.3}}>👁 VISTA PREVIA DE LA FIRMA</div>
+                    <div style={{textAlign:'center',background:'#fff',borderRadius:6,padding:'8px',border:'1px dashed #E2E8F0'}}>
+                      <img src="/firma-viajes-libero.png" alt="Firma Viajes Libero"
+                           style={{maxWidth:'100%',height:'auto',display:'inline-block'}}/>
+                    </div>
+                    <div style={{fontSize:10,color:'#94A3B8',marginTop:6,fontStyle:'italic',textAlign:'center'}}>
+                      Así se verá al final del correo del proveedor
                     </div>
                   </div>
 
@@ -11706,16 +11712,11 @@ Viajes Libero`;
             plantillaAsunto: configCorreos?.plantillaAsunto || 'Comprobante de pago · Facturas {{folios}}',
             plantillaCuerpo: configCorreos?.plantillaCuerpo || `Estimados {{proveedor}},
 
-Adjunto encontrarán el comprobante de pago correspondiente a las facturas cubiertas. En la imagen a continuación pueden ver el desglose completo:
-
-Total pagado: {{monto_total}}
-Fecha de pago: {{fecha}}
-Método: {{metodo}}
+Adjunto encontrarán el comprobante de pago correspondiente a las facturas cubiertas. A continuación pueden ver el desglose completo:
 
 Quedamos atentos a cualquier aclaración.
 
-Saludos cordiales,
-Viajes Libero`,
+Saludos cordiales,`,
           });
           const [guardando, setGuardando] = useState(false);
           const [pruebaEnviando, setPruebaEnviando] = useState(false);
