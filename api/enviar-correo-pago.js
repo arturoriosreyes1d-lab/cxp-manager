@@ -221,7 +221,10 @@ export default async function handler(req, res) {
   // si no, la insertamos automáticamente antes del cierre "Saludos" o al final del cuerpo.
   let cuerpoConImagen;
   if (imagenInlineBase64) {
-    const imgTag = `<div style="margin: 16px 0; text-align: center;"><img src="cid:${cidRelacion}" alt="Relación de facturas pagadas" style="max-width: 380px; width: 100%; height: auto; border: 1px solid #E2E8F0; border-radius: 8px;"/></div>`;
+    // Ancho fijo con atributo HTML `width` para Gmail (que ignora max-width en muchos casos)
+    // + style redundante para Outlook y otros clientes
+    // + max-width:100% para responsive móvil (no se sale de pantalla)
+    const imgTag = `<div style="margin: 16px 0; text-align: center;"><img src="cid:${cidRelacion}" alt="Relación de facturas pagadas" width="500" style="width: 500px; max-width: 100%; height: auto; display: block; margin: 0 auto; border: 1px solid #E2E8F0; border-radius: 8px;"/></div>`;
     // Buscar dónde insertar la imagen: antes de "Saludos" si existe
     const idxSaludos = cuerpoHtml.search(/Saludos|Atentamente|Quedamos/i);
     if (idxSaludos > 0) {
