@@ -278,34 +278,49 @@ export async function fetchPayments(empresaId) {
       if (res.error) { console.error('fetchPayments(chunk):', res.error); continue; }
       allPayments = allPayments.concat(res.data || []);
     }
-    return allPayments.map(r => ({
-      id: r.id, invoiceId: r.invoice_id, monto: +r.monto || 0,
-      fechaPago: r.fecha_pago || '', notas: r.notas || '', tipo: r.tipo || 'realizado',
-      metodoPago: r.metodo_pago || 'banco',
-      comprobanteUrl: r.comprobante_url || '',
-      comprobanteNombre: r.comprobante_nombre || '',
-      correoEnviado: r.correo_enviado === true,
-      correoEnviadoAt: r.correo_enviado_at || null,
-      correoEnviadoA: r.correo_enviado_a || '',
-      correoError: r.correo_error || '',
-    }));
+    return allPayments.map(r => {
+      // Helper: si comprobantes viene vacío pero hay comprobante_url viejo, generar array sintético
+      let compArr = Array.isArray(r.comprobantes) ? r.comprobantes : [];
+      if (compArr.length === 0 && r.comprobante_url) {
+        compArr = [{ url: r.comprobante_url, nombre: r.comprobante_nombre || 'comprobante.pdf' }];
+      }
+      return {
+        id: r.id, invoiceId: r.invoice_id, monto: +r.monto || 0,
+        fechaPago: r.fecha_pago || '', notas: r.notas || '', tipo: r.tipo || 'realizado',
+        metodoPago: r.metodo_pago || 'banco',
+        comprobanteUrl: r.comprobante_url || '',
+        comprobanteNombre: r.comprobante_nombre || '',
+        comprobantes: compArr,
+        correoEnviado: r.correo_enviado === true,
+        correoEnviadoAt: r.correo_enviado_at || null,
+        correoEnviadoA: r.correo_enviado_a || '',
+        correoError: r.correo_error || '',
+      };
+    });
   }
   // Sin filtro de empresa: paginado simple
   const res = await fetchAllPaginated(() =>
     supabase.from('payments').select('*').order('fecha_pago', { ascending: false })
   );
   if (res.error) { console.error('fetchPayments:', res.error); return []; }
-  return (res.data || []).map(r => ({
-    id: r.id, invoiceId: r.invoice_id, monto: +r.monto || 0,
-    fechaPago: r.fecha_pago || '', notas: r.notas || '', tipo: r.tipo || 'realizado',
-    metodoPago: r.metodo_pago || 'banco',
-    comprobanteUrl: r.comprobante_url || '',
-    comprobanteNombre: r.comprobante_nombre || '',
-    correoEnviado: r.correo_enviado === true,
-    correoEnviadoAt: r.correo_enviado_at || null,
-    correoEnviadoA: r.correo_enviado_a || '',
-    correoError: r.correo_error || '',
-  }));
+  return (res.data || []).map(r => {
+    let compArr = Array.isArray(r.comprobantes) ? r.comprobantes : [];
+    if (compArr.length === 0 && r.comprobante_url) {
+      compArr = [{ url: r.comprobante_url, nombre: r.comprobante_nombre || 'comprobante.pdf' }];
+    }
+    return {
+      id: r.id, invoiceId: r.invoice_id, monto: +r.monto || 0,
+      fechaPago: r.fecha_pago || '', notas: r.notas || '', tipo: r.tipo || 'realizado',
+      metodoPago: r.metodo_pago || 'banco',
+      comprobanteUrl: r.comprobante_url || '',
+      comprobanteNombre: r.comprobante_nombre || '',
+      comprobantes: compArr,
+      correoEnviado: r.correo_enviado === true,
+      correoEnviadoAt: r.correo_enviado_at || null,
+      correoEnviadoA: r.correo_enviado_a || '',
+      correoError: r.correo_error || '',
+    };
+  });
 }
 
 export async function insertPayment(p) {
@@ -2574,18 +2589,49 @@ export async function updateSupplierEmails(supplierId, email, emailsCc = []) {
   return data;
 }
 
-/* ── PAYMENTS · Actualizar comprobante ─────────────────────────────── */
+/* ── PAYMENTS · Actualizar comprobante (retrocompatible) ─────────────────
+ * Actualiza tanto los campos viejos (comprobante_url/comprobante_nombre)
+ * como el array nuevo (comprobantes). El array es la fuente autoritativa.
+ * -------------------------------------------------------------------- */
 export async function updatePaymentComprobante(paymentId, comprobanteUrl, comprobanteNombre) {
+  // Si se pasa vacío se limpia todo. Si se pasa un valor, se pone como único elemento del array.
+  const comprobantes = (comprobanteUrl && comprobanteUrl.trim())
+    ? [{ url: comprobanteUrl, nombre: comprobanteNombre || 'comprobante.pdf' }]
+    : [];
   const { data, error } = await supabase
     .from('payments')
     .update({
       comprobante_url: comprobanteUrl || '',
       comprobante_nombre: comprobanteNombre || '',
+      comprobantes,
     })
     .eq('id', paymentId)
     .select()
     .single();
   if (error) { console.error('[updatePaymentComprobante]', error); return null; }
+  return data;
+}
+
+/* ── PAYMENTS · Actualizar múltiples comprobantes (nuevo) ─────────────
+ * Acepta array de { url, nombre }. Actualiza el campo comprobantes (JSONB).
+ * También sincroniza comprobante_url/comprobante_nombre con el PRIMERO
+ * (para retrocompatibilidad con código viejo que lea esos campos).
+ * -------------------------------------------------------------------- */
+export async function updatePaymentComprobantes(paymentId, comprobantes = []) {
+  const arr = Array.isArray(comprobantes) ? comprobantes.filter(c => c && c.url) : [];
+  const first = arr[0] || null;
+  const { data, error } = await supabase
+    .from('payments')
+    .update({
+      comprobantes: arr,
+      // sincronizar campos viejos con el primero (retrocompatibilidad)
+      comprobante_url: first ? first.url : '',
+      comprobante_nombre: first ? (first.nombre || 'comprobante.pdf') : '',
+    })
+    .eq('id', paymentId)
+    .select()
+    .single();
+  if (error) { console.error('[updatePaymentComprobantes]', error); return null; }
   return data;
 }
 
@@ -2689,8 +2735,9 @@ export async function enviarCorreoPago(params) {
         asunto: params.asunto,
         cuerpo: params.cuerpo,
         nombreRemitente: params.nombreRemitente,
-        comprobantePath: params.comprobantePath,
-        comprobanteNombre: params.comprobanteNombre,
+        comprobantePath: params.comprobantePath,             // legacy
+        comprobanteNombre: params.comprobanteNombre,         // legacy
+        comprobantesPaths: params.comprobantesPaths,         // nuevo (array)
         imagenInlineBase64: params.imagenInlineBase64,
       }),
     });

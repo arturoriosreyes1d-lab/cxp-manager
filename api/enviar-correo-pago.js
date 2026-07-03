@@ -96,8 +96,9 @@ export default async function handler(req, res) {
     asunto,
     cuerpo,
     nombreRemitente,
-    comprobantePath,
-    comprobanteNombre,
+    comprobantePath,       // (legacy) path único
+    comprobanteNombre,     // (legacy) nombre único
+    comprobantesPaths,     // (nuevo) array de { path, nombre }
     imagenInlineBase64, // captura PNG del desglose a incrustar (opcional)
   } = body;
 
@@ -119,18 +120,31 @@ export default async function handler(req, res) {
     .filter(e => esEmailValido(e))
     .slice(0, 5);
 
-  // ── 4. Preparar attachment si aplica
+  // ── 4. Preparar attachments (soporta múltiples PDFs)
   let attachments = [];
-  if (comprobantePath) {
+
+  // Nuevo formato: comprobantesPaths es un array de { path, nombre }
+  const pathsARegistrar = [];
+  if (Array.isArray(comprobantesPaths) && comprobantesPaths.length > 0) {
+    for (const c of comprobantesPaths) {
+      if (c && c.path) pathsARegistrar.push({ path: c.path, nombre: c.nombre || 'comprobante.pdf' });
+    }
+  } else if (comprobantePath) {
+    // Legacy: si vino solo comprobantePath (un solo PDF), añadirlo
+    pathsARegistrar.push({ path: comprobantePath, nombre: comprobanteNombre || 'comprobante.pdf' });
+  }
+
+  // Descargar cada PDF y agregarlo como attachment
+  for (const item of pathsARegistrar) {
     try {
-      const pdfBuffer = await descargarPDFComprobante(comprobantePath);
+      const pdfBuffer = await descargarPDFComprobante(item.path);
       attachments.push({
-        filename: comprobanteNombre || 'comprobante.pdf',
+        filename: item.nombre,
         content: pdfBuffer,
         contentType: 'application/pdf',
       });
     } catch (err) {
-      return res.status(500).json({ ok: false, error: `Error al descargar comprobante: ${err.message}` });
+      return res.status(500).json({ ok: false, error: `Error al descargar comprobante "${item.nombre}": ${err.message}` });
     }
   }
 

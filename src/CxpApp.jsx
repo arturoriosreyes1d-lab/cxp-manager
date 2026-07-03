@@ -21,7 +21,7 @@ import {
   fetchGastosFijos, insertGastoFijo, updateGastoFijo, deleteGastoFijo,
   fetchRubrosPrestamo, insertRubroPrestamo, upsertPrestamoMovimientoExt,
   uploadComprobantePDF, getComprobanteSignedUrl, deleteComprobantePDF,
-  updateSupplierEmails, updatePaymentComprobante, marcarCorreoEnviado,
+  updateSupplierEmails, updatePaymentComprobante, updatePaymentComprobantes, marcarCorreoEnviado,
   fetchAppConfigCorreos, updateAppConfigCorreos,
   enviarCorreoPago,
   fetchTarjetas, updateTarjetaSaldo, fetchTarjetaMovimientos, bulkInsertMovimientos,
@@ -10654,10 +10654,22 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
         const ComprobanteGrupoButton = ({ pagosGrupo, groupKey }) => {
           const [subiendo, setSubiendo] = useState(false);
           const fileRef = useRef(null);
-          // Todos los pagos del grupo deberían tener el mismo comprobante_url
-          const pagoConComp = pagosGrupo.find(p => p.comprobanteUrl);
-          const tieneComprobante = !!pagoConComp;
+          // Todos los pagos del grupo deberían tener los MISMOS comprobantes
+          // Tomamos los del primer pago que tenga comprobantes (array)
+          const primerPagoConComprobantes = pagosGrupo.find(p => (p.comprobantes || []).length > 0)
+                                          || pagosGrupo.find(p => p.comprobanteUrl); // fallback retrocompat
+          const comprobantesActuales = (() => {
+            if (!primerPagoConComprobantes) return [];
+            if ((primerPagoConComprobantes.comprobantes || []).length > 0) return primerPagoConComprobantes.comprobantes;
+            // fallback: crear array sintético del comprobante viejo
+            if (primerPagoConComprobantes.comprobanteUrl) {
+              return [{ url: primerPagoConComprobantes.comprobanteUrl, nombre: primerPagoConComprobantes.comprobanteNombre || 'comprobante.pdf' }];
+            }
+            return [];
+          })();
+          const tieneComprobantes = comprobantesActuales.length > 0;
 
+          // Sube un PDF nuevo y lo AÑADE a la lista (no reemplaza)
           const handleUpload = async (file) => {
             if (!file) return;
             setSubiendo(true);
@@ -10670,13 +10682,22 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                 setSubiendo(false);
                 return;
               }
-              // Aplicar el mismo comprobante_url a TODOS los pagos del grupo
+              // Añadir a la lista de comprobantes (no reemplazar)
+              const nuevaLista = [...comprobantesActuales, { url: result.url, nombre: result.nombre }];
+              // Aplicar la misma lista a TODOS los pagos del grupo
               for (const p of pagosGrupo) {
-                await updatePaymentComprobante(p.id, result.url, result.nombre);
+                await updatePaymentComprobantes(p.id, nuevaLista);
               }
+              // Actualizar state local
+              const primero = nuevaLista[0];
               setPayments(prev => prev.map(x => {
                 const enGrupo = pagosGrupo.some(pg => pg.id === x.id);
-                return enGrupo ? { ...x, comprobanteUrl: result.url, comprobanteNombre: result.nombre } : x;
+                return enGrupo ? {
+                  ...x,
+                  comprobantes: nuevaLista,
+                  comprobanteUrl: primero.url,
+                  comprobanteNombre: primero.nombre,
+                } : x;
               }));
             } catch (err) {
               alert('Error al subir: ' + err.message);
@@ -10684,35 +10705,63 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
             setSubiendo(false);
           };
 
-          const handleVer = async () => {
-            const url = await getComprobanteSignedUrl(pagoConComp.comprobanteUrl);
+          // Ver un comprobante específico
+          const handleVer = async (comp) => {
+            const url = await getComprobanteSignedUrl(comp.url);
             if (url) window.open(url, '_blank');
             else alert('No se pudo obtener el comprobante');
           };
 
-          const handleQuitar = async () => {
-            if (!confirm(`¿Quitar el comprobante de este grupo de ${pagosGrupo.length} pago(s)?`)) return;
-            await deleteComprobantePDF(pagoConComp.comprobanteUrl);
-            for (const p of pagosGrupo) {
-              await updatePaymentComprobante(p.id, '', '');
+          // Quitar un comprobante específico de la lista
+          const handleQuitar = async (comp) => {
+            if (!confirm(`¿Quitar "${comp.nombre}" de este grupo de ${pagosGrupo.length} pago(s)?`)) return;
+            try {
+              await deleteComprobantePDF(comp.url);
+            } catch (e) {
+              // si falla el borrado del archivo, seguimos y limpiamos las referencias
+              console.warn('deleteComprobantePDF falló:', e);
             }
+            const nuevaLista = comprobantesActuales.filter(c => c.url !== comp.url);
+            for (const p of pagosGrupo) {
+              await updatePaymentComprobantes(p.id, nuevaLista);
+            }
+            const primero = nuevaLista[0] || null;
             setPayments(prev => prev.map(x => {
               const enGrupo = pagosGrupo.some(pg => pg.id === x.id);
-              return enGrupo ? { ...x, comprobanteUrl: '', comprobanteNombre: '' } : x;
+              return enGrupo ? {
+                ...x,
+                comprobantes: nuevaLista,
+                comprobanteUrl: primero ? primero.url : '',
+                comprobanteNombre: primero ? primero.nombre : '',
+              } : x;
             }));
           };
 
-          if (tieneComprobante) {
+          if (tieneComprobantes) {
             return (
-              <div style={{display:'flex',alignItems:'center',gap:4}} onClick={e=>e.stopPropagation()}>
-                <button onClick={handleVer} title={pagoConComp.comprobanteNombre || 'Ver comprobante'}
-                        style={{background:'#DBEAFE',border:'1px solid #BFDBFE',color:'#185FA5',padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:4}}>
-                  📄 Ver PDF
-                </button>
+              <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}} onClick={e=>e.stopPropagation()}>
+                {comprobantesActuales.map((comp, idx) => (
+                  <div key={comp.url + idx} style={{display:'flex',alignItems:'center',gap:2}}>
+                    <button onClick={()=>handleVer(comp)}
+                            title={comp.nombre || 'Ver PDF'}
+                            style={{background:'#DBEAFE',border:'1px solid #BFDBFE',color:'#185FA5',padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:4,maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                      📄 PDF {idx + 1}
+                    </button>
+                    {!esConsulta && (
+                      <button onClick={()=>handleQuitar(comp)} title={`Quitar ${comp.nombre}`}
+                              style={{background:'#FEE',border:'1px solid #FCA5A5',color:'#C04A4D',width:22,height:24,borderRadius:5,fontSize:11,cursor:'pointer'}}>×</button>
+                    )}
+                  </div>
+                ))}
                 {!esConsulta && (
-                  <button onClick={handleQuitar} title="Quitar comprobante"
-                          style={{background:'#FEE',border:'1px solid #FCA5A5',color:'#C04A4D',width:24,height:24,borderRadius:5,fontSize:11,cursor:'pointer'}}>×</button>
+                  <button onClick={()=>fileRef.current?.click()} disabled={subiendo}
+                          title="Agregar otro comprobante"
+                          style={{background:'#F0FDF4',border:'1px dashed #86EFAC',color:'#166534',padding:'4px 10px',borderRadius:6,fontSize:11,fontWeight:700,cursor:subiendo?'wait':'pointer'}}>
+                    {subiendo ? '⏳ Subiendo...' : '+ PDF'}
+                  </button>
                 )}
+                <input type="file" ref={fileRef} accept="application/pdf" style={{display:'none'}}
+                       onChange={e=>{ if(e.target.files?.[0]) { handleUpload(e.target.files[0]); e.target.value=''; } }}/>
               </div>
             );
           }
@@ -10797,7 +10846,16 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
         // Botón "Enviar correo" que aparece cuando el grupo tiene comprobante
         const EnviarCorreoGrupoButton = ({ pagosGrupo, groupKey, refPreviewNode }) => {
-          const pagoConComp = pagosGrupo.find(p => p.comprobanteUrl);
+          // Buscar cualquier pago del grupo que tenga comprobantes (array preferido, fallback a comprobanteUrl)
+          const pagoConComp = pagosGrupo.find(p => (p.comprobantes || []).length > 0)
+                          || pagosGrupo.find(p => p.comprobanteUrl);
+          // Array de comprobantes normalizado
+          const comprobantesGrupo = (() => {
+            if (!pagoConComp) return [];
+            if ((pagoConComp.comprobantes || []).length > 0) return pagoConComp.comprobantes;
+            if (pagoConComp.comprobanteUrl) return [{ url: pagoConComp.comprobanteUrl, nombre: pagoConComp.comprobanteNombre || 'comprobante.pdf' }];
+            return [];
+          })();
           const yaEnviado = pagosGrupo.every(p => p.correoEnviado === true);
           const algunEnviado = pagosGrupo.some(p => p.correoEnviado === true);
 
@@ -10820,6 +10878,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                 totalGrupo: pagosGrupo.reduce((s,p)=>s+p.monto,0),
                 comprobanteUrl: pagoConComp.comprobanteUrl,
                 comprobanteNombre: pagoConComp.comprobanteNombre,
+                comprobantes: comprobantesGrupo,
                 esReenvio: true,
               });
             };
@@ -10862,6 +10921,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                     totalGrupo: pagosGrupo.reduce((s,p)=>s+p.monto,0),
                     comprobanteUrl: pagoConComp.comprobanteUrl,
                     comprobanteNombre: pagoConComp.comprobanteNombre,
+                    comprobantes: comprobantesGrupo,
                   });
                 },
               });
@@ -10879,6 +10939,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
               totalGrupo: pagosGrupo.reduce((s,p)=>s+p.monto,0),
               comprobanteUrl: pagoConComp.comprobanteUrl,
               comprobanteNombre: pagoConComp.comprobanteNombre,
+              comprobantes: comprobantesGrupo,
             });
           };
 
@@ -11677,8 +11738,14 @@ Saludos cordiales,`;
               }
               document.body.removeChild(tempDivInd);
 
-              // Paso 2 · Extraer el path del comprobante para el endpoint
-              const comprobantePath = correoEnvioModal.comprobanteUrl;
+              // Paso 2 · Preparar array de comprobantes (soporta múltiples)
+              // Preferir el array 'comprobantes' del modal; si no existe, fallback al viejo comprobanteUrl
+              const comprobantesArr = (correoEnvioModal.comprobantes && correoEnvioModal.comprobantes.length > 0)
+                ? correoEnvioModal.comprobantes
+                : (correoEnvioModal.comprobanteUrl
+                    ? [{ url: correoEnvioModal.comprobanteUrl, nombre: correoEnvioModal.comprobanteNombre || 'comprobante.pdf' }]
+                    : []);
+              const comprobantesPaths = comprobantesArr.map(c => ({ path: c.url, nombre: c.nombre || 'comprobante.pdf' }));
 
               // Paso 3 · Enviar
               const r = await enviarCorreoPago({
@@ -11688,8 +11755,7 @@ Saludos cordiales,`;
                 asunto: asuntoEditable,
                 cuerpo: cuerpoEditable,
                 nombreRemitente: configCorreos?.remitenteNombre || 'Viajes Libero · Cuentas por Pagar',
-                comprobantePath,
-                comprobanteNombre: correoEnvioModal.comprobanteNombre || 'comprobante.pdf',
+                comprobantesPaths,
                 imagenInlineBase64: imagenBase64,
               });
 
@@ -11791,9 +11857,19 @@ Saludos cordiales,`;
                   <div style={{background:'#F0F7FF',border:'1px solid #BFDBFE',borderRadius:8,padding:'10px 12px',marginBottom:12}}>
                     <div style={{fontSize:11,color:'#185FA5',fontWeight:700,marginBottom:8}}>📎 QUE INCLUIRÁ EL CORREO</div>
                     <div style={{display:'flex',flexDirection:'column',gap:6}}>
-                      <div style={{fontSize:12,color:'#1A2332'}}>
-                        📄 <strong>{correoEnvioModal.comprobanteNombre || 'comprobante.pdf'}</strong> <span style={{color:'#64748B'}}>· como archivo adjunto</span>
-                      </div>
+                      {(() => {
+                        const arr = (correoEnvioModal.comprobantes && correoEnvioModal.comprobantes.length > 0)
+                          ? correoEnvioModal.comprobantes
+                          : (correoEnvioModal.comprobanteUrl
+                              ? [{ url: correoEnvioModal.comprobanteUrl, nombre: correoEnvioModal.comprobanteNombre || 'comprobante.pdf' }]
+                              : []);
+                        if (arr.length === 0) return null;
+                        return arr.map((c, idx) => (
+                          <div key={idx} style={{fontSize:12,color:'#1A2332'}}>
+                            📄 <strong>{c.nombre || 'comprobante.pdf'}</strong> <span style={{color:'#64748B'}}>· PDF adjunto {arr.length > 1 ? `#${idx + 1}` : ''}</span>
+                          </div>
+                        ));
+                      })()}
                       <div style={{fontSize:12,color:'#1A2332'}}>
                         🖼️ <strong>Captura del desglose de facturas</strong> <span style={{color:'#64748B'}}>· embebida en el cuerpo</span>
                       </div>
@@ -12313,12 +12389,18 @@ Saludos cordiales,`;
             };
           }).filter(Boolean);
 
-          // Agrupar por proveedor + fechaPago + moneda + comprobanteUrl (solo grupos con PDF)
+          // Agrupar por proveedor + fechaPago + moneda (solo grupos con PDF)
           const gruposMap = {};
           payRecordsGlobal.forEach(p => {
-            if (!p.comprobanteUrl) return; // sin PDF no se puede enviar
+            // Determinar si tiene comprobantes (nuevo array o legacy url)
+            const tieneComp = (p.comprobantes && p.comprobantes.length > 0) || !!p.comprobanteUrl;
+            if (!tieneComp) return; // sin PDF no se puede enviar
             const key = `${p.proveedor}||${p.fechaPago}||${p.moneda}`;
             if (!gruposMap[key]) {
+              // Normalizar array de comprobantes del grupo
+              const compArr = (p.comprobantes && p.comprobantes.length > 0)
+                ? p.comprobantes
+                : (p.comprobanteUrl ? [{ url: p.comprobanteUrl, nombre: p.comprobanteNombre || 'comprobante.pdf' }] : []);
               gruposMap[key] = {
                 key,
                 proveedor: p.proveedor,
@@ -12326,8 +12408,9 @@ Saludos cordiales,`;
                 moneda: p.moneda,
                 pagos: [],
                 total: 0,
-                comprobanteUrl: p.comprobanteUrl,
-                comprobanteNombre: p.comprobanteNombre,
+                comprobanteUrl: p.comprobanteUrl,           // legacy
+                comprobanteNombre: p.comprobanteNombre,     // legacy
+                comprobantes: compArr,                       // nuevo array
                 correoEnviado: true, // se recalcula
               };
             }
@@ -12574,6 +12657,12 @@ Saludos cordiales,`;
               setProgreso({ actual: i + 1, total: revision.correos.length, mensaje: `Enviando a ${g.proveedor}...` });
 
               try {
+                // Preparar array de comprobantes del grupo
+                const comprobantesArrMasivo = (g.comprobantes && g.comprobantes.length > 0)
+                  ? g.comprobantes
+                  : (g.comprobanteUrl ? [{ url: g.comprobanteUrl, nombre: g.comprobanteNombre || 'comprobante.pdf' }] : []);
+                const comprobantesPathsMasivo = comprobantesArrMasivo.map(c => ({ path: c.url, nombre: c.nombre || 'comprobante.pdf' }));
+
                 const r = await enviarCorreoPago({
                   modo: 'envio',
                   destinatario: c.destinatario,
@@ -12581,8 +12670,7 @@ Saludos cordiales,`;
                   asunto: c.asunto,
                   cuerpo: c.cuerpo,
                   nombreRemitente: configCorreos?.remitenteNombre || 'Viajes Libero · Cuentas por Pagar',
-                  comprobantePath: g.comprobanteUrl,
-                  comprobanteNombre: g.comprobanteNombre || 'comprobante.pdf',
+                  comprobantesPaths: comprobantesPathsMasivo,
                   imagenInlineBase64: c.imagenBase64,
                 });
 
@@ -12801,7 +12889,21 @@ Saludos cordiales,`;
                                   )}
 
                                   <div style={{marginTop:12,padding:'10px 12px',background:'#F0F7FF',border:'1px solid #BFDBFE',borderRadius:8,fontSize:11,color:'#185FA5'}}>
-                                    📎 <strong>Se adjuntará:</strong> {g.comprobanteNombre || 'comprobante.pdf'}
+                                    {(() => {
+                                      const arr = (g.comprobantes && g.comprobantes.length > 0)
+                                        ? g.comprobantes
+                                        : (g.comprobanteUrl ? [{ url: g.comprobanteUrl, nombre: g.comprobanteNombre || 'comprobante.pdf' }] : []);
+                                      if (arr.length === 0) return <span>📎 (Sin comprobantes)</span>;
+                                      if (arr.length === 1) return <span>📎 <strong>Se adjuntará:</strong> {arr[0].nombre}</span>;
+                                      return (
+                                        <div>
+                                          📎 <strong>Se adjuntarán {arr.length} PDFs:</strong>
+                                          <ul style={{margin:'4px 0 0 0',paddingLeft:22}}>
+                                            {arr.map((c, i) => <li key={i}>{c.nombre}</li>)}
+                                          </ul>
+                                        </div>
+                                      );
+                                    })()}
                                   </div>
                                 </div>
                               </div>
@@ -12998,7 +13100,14 @@ Saludos cordiales,`;
                           )}
                         </div>
                         <div style={{fontSize:13,color:'#64748B',lineHeight:1.6}}>
-                          📅 {g.fechaPago} · 📄 {g.comprobanteNombre || 'comprobante.pdf'} ·
+                          📅 {g.fechaPago} · {(() => {
+                            const arr = (g.comprobantes && g.comprobantes.length > 0)
+                              ? g.comprobantes
+                              : (g.comprobanteUrl ? [{ nombre: g.comprobanteNombre || 'comprobante.pdf' }] : []);
+                            if (arr.length === 0) return '📄 (sin PDF)';
+                            if (arr.length === 1) return `📄 ${arr[0].nombre || 'comprobante.pdf'}`;
+                            return `📄 ${arr.length} PDFs adjuntos`;
+                          })()} ·
                           {g.enviable ? (
                             <span> ✉ {g.email}</span>
                           ) : (
