@@ -12677,9 +12677,9 @@ Saludos cordiales,`;
             // Vista de tarjetas de revisión
             return (
               <div onClick={() => !enviando && setRevision(null)}
-                   style={{position:'fixed',inset:0,background:'rgba(15, 45, 74, 0.65)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1050,padding:16}}>
+                   style={{position:'fixed',inset:0,background:'rgba(15, 45, 74, 0.65)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1050,padding:8}}>
                 <div onClick={(e) => e.stopPropagation()}
-                     style={{background:'#fff',borderRadius:14,width:'97vw',maxWidth:1300,maxHeight:'95vh',display:'flex',flexDirection:'column',boxShadow:'0 24px 60px rgba(0,0,0,0.3)',overflow:'hidden'}}>
+                     style={{background:'#fff',borderRadius:14,width:'98vw',height:'97vh',maxWidth:'none',maxHeight:'97vh',display:'flex',flexDirection:'column',boxShadow:'0 24px 60px rgba(0,0,0,0.3)',overflow:'hidden'}}>
                   {/* Header */}
                   <div style={{padding:'20px 26px',background:'linear-gradient(180deg, #fff, #FAFCFE)',borderBottom:'1px solid #F1F5F9',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                     <div>
