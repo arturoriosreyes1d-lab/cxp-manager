@@ -9942,10 +9942,8 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           </div>
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-              <label style={{fontSize:11,color:C.muted,fontWeight:700}}>EMAILS ADICIONALES (CC · máximo 2)</label>
-              {(form.emailsCc||[]).length<2 && (
-                <button type="button" onClick={addEmailCc} style={{background:"transparent",border:"1px dashed #185FA5",color:"#185FA5",padding:"3px 9px",borderRadius:5,fontSize:10,fontWeight:700,cursor:"pointer"}}>+ Agregar</button>
-              )}
+              <label style={{fontSize:11,color:C.muted,fontWeight:700}}>EMAILS ADICIONALES (CC)</label>
+              <button type="button" onClick={addEmailCc} style={{background:"transparent",border:"1px dashed #185FA5",color:"#185FA5",padding:"3px 9px",borderRadius:5,fontSize:10,fontWeight:700,cursor:"pointer"}}>+ Agregar</button>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
               {(form.emailsCc||[]).map((ecc,idx)=>(

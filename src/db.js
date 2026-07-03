@@ -91,7 +91,7 @@ const supToDB = (sup) => ({
   contacto: sup.contacto || '',
   telefono: sup.telefono || '',
   email: sup.email || '',
-  emails_cc: (sup.emailsCc || []).filter(e => e && e.trim()).slice(0, 2),
+  emails_cc: (sup.emailsCc || []).filter(e => e && e.trim()),
   banco: sup.banco || '',
   clabe: sup.clabe || '',
   clasificacion: sup.clasificacion || 'Otros',
@@ -2560,7 +2560,7 @@ export async function deleteComprobantePDF(storagePath) {
 
 /* ── SUPPLIERS · Actualizar emails ─────────────────────────────────── */
 export async function updateSupplierEmails(supplierId, email, emailsCc = []) {
-  const filtered = (emailsCc || []).filter(e => e && e.trim()).slice(0, 2);
+  const filtered = (emailsCc || []).filter(e => e && e.trim());
   const { data, error } = await supabase
     .from('suppliers')
     .update({
