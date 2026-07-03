@@ -9903,7 +9903,6 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     };
     const addEmailCc=()=>{
       const arr=[...(form.emailsCc||[])];
-      if(arr.length>=2) return;
       arr.push('');
       setForm(f=>({...f,emailsCc:arr}));
     };
