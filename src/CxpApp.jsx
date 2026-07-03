@@ -12274,6 +12274,9 @@ Saludos cordiales,`;
           const [enviando, setEnviando] = useState(false);
           const [progreso, setProgreso] = useState(null); // {actual, total, mensaje}
           const [resumen, setResumen] = useState(null); // {enviados: [], fallidos: []}
+          // Estado para vista de REVISIÓN previa (paso intermedio antes de enviar)
+          const [revision, setRevision] = useState(null); // {correos: [{key, destinatario, cc, asunto, cuerpo, imagenBase64, editado, ...}], preparando: bool}
+          const [correoExpandido, setCorreoExpandido] = useState(null); // key del correo cuya tarjeta está expandida en revisión
 
           // Construir la lista de TODOS los grupos posibles del sistema (todos los proveedores)
           // Reusa la misma lógica que renderPagos pero global
@@ -12399,149 +12402,180 @@ Saludos cordiales,`;
           const totalPorMoneda = { MXN: 0, USD: 0, EUR: 0 };
           seleccionadosGrupos.forEach(g => { totalPorMoneda[g.moneda] = (totalPorMoneda[g.moneda] || 0) + g.total; });
 
-          const handleEnviarMasivo = async () => {
-            if (seleccionadosGrupos.length === 0) return;
-            const confirmar = window.confirm(modoReenvio
-              ? `⚠️ ¿REENVIAR ${seleccionadosGrupos.length} correos a los proveedores?\n\nAlgunos pueden haber sido enviados antes. Se sobrescribirán como "recién enviados".`
-              : `¿Enviar ${seleccionadosGrupos.length} correos a los proveedores?\n\nEste proceso puede tardar varios segundos.`);
-            if (!confirmar) return;
-
-            setEnviando(true);
-            const enviados = [];
-            const fallidos = [];
-
-            for (let i = 0; i < seleccionadosGrupos.length; i++) {
-              const g = seleccionadosGrupos[i];
-              setProgreso({ actual: i + 1, total: seleccionadosGrupos.length, mensaje: `Enviando a ${g.proveedor}...` });
-
-              try {
-                // Preparar asunto y cuerpo con reemplazo de variables
-                const cfg = configCorreos || {};
-                const plantillaAsunto = cfg.plantillaAsunto || 'Comprobante de pago · Facturas {{folios}}';
-                const plantillaCuerpo = cfg.plantillaCuerpo || `Estimados {{proveedor}},
+          // Helper: dado un grupo, prepara los datos del correo (asunto, cuerpo, CC, destinatario, imagen)
+          // Devuelve { destinatario, cc, asunto, cuerpo, imagenBase64, grupo }
+          const prepararCorreoDeGrupo = async (g) => {
+            // Preparar asunto y cuerpo con reemplazo de variables
+            const cfg = configCorreos || {};
+            const plantillaAsunto = cfg.plantillaAsunto || 'Comprobante de pago · Facturas {{folios}}';
+            const plantillaCuerpo = cfg.plantillaCuerpo || `Estimados {{proveedor}},
 
 Adjunto encontrarán el comprobante de pago correspondiente a las facturas cubiertas. A continuación pueden ver el desglose completo:
 
 Quedamos atentos a cualquier aclaración.
 
 Saludos cordiales,`;
-                const monedaSimbolo = g.moneda === 'EUR' ? '€' : '$';
-                const foliosArr = g.pagos.map(p => p.folio).filter(Boolean);
-                const foliosStr = foliosArr.length > 5
-                  ? `${foliosArr.slice(0, 5).join(', ')} y ${foliosArr.length - 5} más`
-                  : foliosArr.join(', ');
-                const listaFacturas = g.pagos.map(p => {
-                  const conceptoCorto = (p.concepto || '').substring(0, 60);
-                  return `• Folio ${p.folio}${conceptoCorto ? ` — ${conceptoCorto}` : ''} — ${monedaSimbolo}${fmt(p.monto)}`;
-                }).join('\n');
-                const reemplazar = (txt) => (txt || '')
-                  .replace(/\{\{proveedor\}\}/g, g.proveedor)
-                  .replace(/\{\{fecha\}\}/g, g.fechaPago)
-                  .replace(/\{\{monto_total\}\}/g, `${monedaSimbolo}${fmt(g.total)} ${g.moneda}`)
-                  .replace(/\{\{lista_facturas\}\}/g, listaFacturas)
-                  .replace(/\{\{folios\}\}/g, foliosStr)
-                  .replace(/\{\{metodo\}\}/g, 'Transferencia bancaria')
-                  .replace(/\{\{empresa\}\}/g, 'Viajes Libero');
+            const monedaSimbolo = g.moneda === 'EUR' ? '€' : '$';
+            const foliosArr = g.pagos.map(p => p.folio).filter(Boolean);
+            const foliosStr = foliosArr.length > 5
+              ? `${foliosArr.slice(0, 5).join(', ')} y ${foliosArr.length - 5} más`
+              : foliosArr.join(', ');
+            const listaFacturas = g.pagos.map(p => {
+              const conceptoCorto = (p.concepto || '').substring(0, 60);
+              return `• Folio ${p.folio}${conceptoCorto ? ` — ${conceptoCorto}` : ''} — ${monedaSimbolo}${fmt(p.monto)}`;
+            }).join('\n');
+            const reemplazar = (txt) => (txt || '')
+              .replace(/\{\{proveedor\}\}/g, g.proveedor)
+              .replace(/\{\{fecha\}\}/g, g.fechaPago)
+              .replace(/\{\{monto_total\}\}/g, `${monedaSimbolo}${fmt(g.total)} ${g.moneda}`)
+              .replace(/\{\{lista_facturas\}\}/g, listaFacturas)
+              .replace(/\{\{folios\}\}/g, foliosStr)
+              .replace(/\{\{metodo\}\}/g, 'Transferencia bancaria')
+              .replace(/\{\{empresa\}\}/g, 'Viajes Libero');
 
-                const emailsCcTodos = [
-                  ...(g.emailsCc || []),
-                  ...((configCorreos?.emailsCcGlobales) || []),
-                ].filter(e => e && e.trim());
+            const emailsCcTodos = [
+              ...(g.emailsCc || []),
+              ...((configCorreos?.emailsCcGlobales) || []),
+            ].filter(e => e && e.trim());
 
-                // ── Generar captura de imagen del desglose (off-screen) ────
-                // Calcular pagadoTotal y pendiente por factura (misma lógica que el modal individual)
-                const totalPagadoPorFactura = {};
-                payments.filter(pp => pp.tipo === 'realizado').forEach(pp => {
-                  totalPagadoPorFactura[pp.invoiceId] = (totalPagadoPorFactura[pp.invoiceId] || 0) + pp.monto;
-                });
+            // ── Generar captura de imagen del desglose (off-screen) ────
+            const totalPagadoPorFactura = {};
+            payments.filter(pp => pp.tipo === 'realizado').forEach(pp => {
+              totalPagadoPorFactura[pp.invoiceId] = (totalPagadoPorFactura[pp.invoiceId] || 0) + pp.monto;
+            });
 
-                // Construir HTML de la tabla temporal (mismo estilo que la del modal)
-                const filasHtml = g.pagos.map(p => {
-                  const pagadoTotal = totalPagadoPorFactura[p.invoiceId] || 0;
-                  const pendiente = Math.max(0, (p.totalFactura || 0) - pagadoTotal);
-                  const monedaBg = { MXN:'#E3F2FD', USD:'#E8F5E9', EUR:'#F3E5F5' }[p.moneda] || '#F5F5F5';
-                  const monedaColor = { MXN:'#185FA5', USD:'#1D7A4E', EUR:'#6B47C7' }[p.moneda] || '#666';
-                  return `<tr style="border-top:1px solid #E2E8F0;">
-                    <td style="padding:10px 8px;font-weight:700;font-size:14px;text-align:center;">${p.folio || ''}</td>
-                    <td style="padding:10px 8px;font-size:13px;color:${p.concepto?'#1A2332':'#94A3B8'};font-style:${p.concepto?'normal':'italic'};">${p.concepto || '—'}</td>
-                    <td style="padding:10px 8px;font-size:13px;color:#64748B;text-align:center;">${p.fecha || '—'}</td>
-                    <td style="padding:10px 8px;text-align:right;font-weight:600;font-size:14px;">${monedaSimbolo}${fmt(p.totalFactura || 0)}</td>
-                    <td style="padding:10px 8px;text-align:right;font-weight:700;color:#1D7A4E;font-size:14px;">${monedaSimbolo}${fmt(pagadoTotal)}</td>
-                    <td style="padding:10px 8px;text-align:right;font-weight:600;color:${pendiente>0?'#DC2626':'#94A3B8'};font-size:14px;">${pendiente>0?`${monedaSimbolo}${fmt(pendiente)}`:'—'}</td>
-                    <td style="padding:10px 8px;font-size:13px;color:#64748B;text-align:center;">${p.vencimiento || '—'}</td>
-                    <td style="padding:10px 8px;text-align:center;"><span style="background:${monedaBg};color:${monedaColor};padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;">${p.moneda}</span></td>
-                  </tr>`;
-                }).join('');
+            const filasHtml = g.pagos.map(p => {
+              const pagadoTotal = totalPagadoPorFactura[p.invoiceId] || 0;
+              const pendiente = Math.max(0, (p.totalFactura || 0) - pagadoTotal);
+              const monedaBg = { MXN:'#E3F2FD', USD:'#E8F5E9', EUR:'#F3E5F5' }[p.moneda] || '#F5F5F5';
+              const monedaColor = { MXN:'#185FA5', USD:'#1D7A4E', EUR:'#6B47C7' }[p.moneda] || '#666';
+              return `<tr style="border-top:1px solid #E2E8F0;">
+                <td style="padding:10px 8px;font-weight:700;font-size:14px;text-align:center;">${p.folio || ''}</td>
+                <td style="padding:10px 8px;font-size:13px;color:${p.concepto?'#1A2332':'#94A3B8'};font-style:${p.concepto?'normal':'italic'};">${p.concepto || '—'}</td>
+                <td style="padding:10px 8px;font-size:13px;color:#64748B;text-align:center;">${p.fecha || '—'}</td>
+                <td style="padding:10px 8px;text-align:right;font-weight:600;font-size:14px;">${monedaSimbolo}${fmt(p.totalFactura || 0)}</td>
+                <td style="padding:10px 8px;text-align:right;font-weight:700;color:#1D7A4E;font-size:14px;">${monedaSimbolo}${fmt(pagadoTotal)}</td>
+                <td style="padding:10px 8px;text-align:right;font-weight:600;color:${pendiente>0?'#DC2626':'#94A3B8'};font-size:14px;">${pendiente>0?`${monedaSimbolo}${fmt(pendiente)}`:'—'}</td>
+                <td style="padding:10px 8px;font-size:13px;color:#64748B;text-align:center;">${p.vencimiento || '—'}</td>
+                <td style="padding:10px 8px;text-align:center;"><span style="background:${monedaBg};color:${monedaColor};padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;">${p.moneda}</span></td>
+              </tr>`;
+            }).join('');
 
-                const monedaBgHeader = { MXN:'#E3F2FD', USD:'#E8F5E9', EUR:'#F3E5F5' }[g.moneda] || '#F5F5F5';
-                const monedaColorHeader = { MXN:'#185FA5', USD:'#1D7A4E', EUR:'#6B47C7' }[g.moneda] || '#666';
-                const monedaFlag = { MXN:'🇲🇽', USD:'🇺🇸', EUR:'🇪🇺' }[g.moneda] || '';
+            const monedaBgHeader = { MXN:'#E3F2FD', USD:'#E8F5E9', EUR:'#F3E5F5' }[g.moneda] || '#F5F5F5';
+            const monedaColorHeader = { MXN:'#185FA5', USD:'#1D7A4E', EUR:'#6B47C7' }[g.moneda] || '#666';
+            const monedaFlag = { MXN:'🇲🇽', USD:'🇺🇸', EUR:'🇪🇺' }[g.moneda] || '';
 
-                // Crear div temporal para captura
-                const tempDiv = document.createElement('div');
-                tempDiv.style.cssText = 'position:fixed;left:-9999px;top:0;width:1000px;background:#fff;font-family:Arial,sans-serif;border:1px solid #E2E8F0;border-radius:12px;overflow:hidden;';
-                tempDiv.innerHTML = `
-                  <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:#E8F0FE;gap:12px;">
-                    <div style="display:flex;align-items:center;gap:12px;">
-                      <span style="font-weight:800;color:#0F2D4A;font-size:17px;">📅 ${g.fechaPago}</span>
-                      <span style="background:${monedaBgHeader};color:${monedaColorHeader};padding:3px 12px;border-radius:20px;font-size:13px;font-weight:800;">${monedaFlag} ${g.moneda}</span>
-                      <span style="font-size:14px;color:#64748B;font-weight:600;">${g.pagos.length} pago${g.pagos.length!==1?'s':''}</span>
-                    </div>
-                    <div style="font-weight:800;color:#1D7A4E;font-size:22px;">${monedaSimbolo}${fmt(g.total)}</div>
-                  </div>
-                  <div style="padding:0 10px 10px;">
-                    <table style="width:100%;border-collapse:collapse;font-size:14px;">
-                      <thead>
-                        <tr style="background:#FAFBFC;">
-                          <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Folio</th>
-                          <th style="padding:10px 8px;text-align:left;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Concepto</th>
-                          <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Fecha</th>
-                          <th style="padding:10px 8px;text-align:right;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Total</th>
-                          <th style="padding:10px 8px;text-align:right;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Pagado</th>
-                          <th style="padding:10px 8px;text-align:right;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Pendiente</th>
-                          <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Vence</th>
-                          <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Moneda</th>
-                        </tr>
-                      </thead>
-                      <tbody>${filasHtml}</tbody>
-                    </table>
-                  </div>`;
-                document.body.appendChild(tempDiv);
+            const tempDiv = document.createElement('div');
+            tempDiv.style.cssText = 'position:fixed;left:-9999px;top:0;width:1000px;background:#fff;font-family:Arial,sans-serif;border:1px solid #E2E8F0;border-radius:12px;overflow:hidden;';
+            tempDiv.innerHTML = `
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:#E8F0FE;gap:12px;">
+                <div style="display:flex;align-items:center;gap:12px;">
+                  <span style="font-weight:800;color:#0F2D4A;font-size:17px;">📅 ${g.fechaPago}</span>
+                  <span style="background:${monedaBgHeader};color:${monedaColorHeader};padding:3px 12px;border-radius:20px;font-size:13px;font-weight:800;">${monedaFlag} ${g.moneda}</span>
+                  <span style="font-size:14px;color:#64748B;font-weight:600;">${g.pagos.length} pago${g.pagos.length!==1?'s':''}</span>
+                </div>
+                <div style="font-weight:800;color:#1D7A4E;font-size:22px;">${monedaSimbolo}${fmt(g.total)}</div>
+              </div>
+              <div style="padding:0 10px 10px;">
+                <table style="width:100%;border-collapse:collapse;font-size:14px;">
+                  <thead>
+                    <tr style="background:#FAFBFC;">
+                      <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Folio</th>
+                      <th style="padding:10px 8px;text-align:left;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Concepto</th>
+                      <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Fecha</th>
+                      <th style="padding:10px 8px;text-align:right;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Total</th>
+                      <th style="padding:10px 8px;text-align:right;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Pagado</th>
+                      <th style="padding:10px 8px;text-align:right;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Pendiente</th>
+                      <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Vence</th>
+                      <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Moneda</th>
+                    </tr>
+                  </thead>
+                  <tbody>${filasHtml}</tbody>
+                </table>
+              </div>`;
+            document.body.appendChild(tempDiv);
 
-                let imagenBase64 = null;
-                try {
-                  // Esperar un tick para que el navegador renderice
-                  await new Promise(r => setTimeout(r, 100));
-                  const canvas = await html2canvas(tempDiv, {
-                    backgroundColor: '#ffffff',
-                    scale: 2,
-                    logging: false,
-                    useCORS: true,
-                  });
-                  imagenBase64 = canvas.toDataURL('image/png');
-                } catch (errCap) {
-                  console.error('[html2canvas masivo]', errCap);
-                }
-                // Destruir div temporal siempre (incluso si falló captura)
-                document.body.removeChild(tempDiv);
+            let imagenBase64 = null;
+            try {
+              await new Promise(r => setTimeout(r, 100));
+              const canvas = await html2canvas(tempDiv, {
+                backgroundColor: '#ffffff',
+                scale: 2,
+                logging: false,
+                useCORS: true,
+              });
+              imagenBase64 = canvas.toDataURL('image/png');
+            } catch (errCap) {
+              console.error('[html2canvas preparar]', errCap);
+            }
+            document.body.removeChild(tempDiv);
 
+            return {
+              key: g.key,
+              grupo: g,
+              destinatario: g.email,
+              cc: emailsCcTodos,
+              asunto: reemplazar(plantillaAsunto),
+              cuerpo: reemplazar(plantillaCuerpo),
+              imagenBase64,
+              editado: false,
+            };
+          };
+
+          const handleEnviarMasivo = async () => {
+            if (seleccionadosGrupos.length === 0) return;
+
+            // ── Nuevo flujo: preparar todos los correos y abrir vista de revisión ──
+            setRevision({ correos: [], preparando: true, totalPrep: seleccionadosGrupos.length });
+            const preparados = [];
+            for (let i = 0; i < seleccionadosGrupos.length; i++) {
+              const g = seleccionadosGrupos[i];
+              setRevision({ correos: preparados.slice(), preparando: true, totalPrep: seleccionadosGrupos.length, actualPrep: i + 1, mensajePrep: `Preparando correo para ${g.proveedor}...` });
+              try {
+                const correo = await prepararCorreoDeGrupo(g);
+                preparados.push(correo);
+              } catch (err) {
+                console.error('Error preparando correo', g.proveedor, err);
+              }
+            }
+            setRevision({ correos: preparados, preparando: false });
+          };
+
+          // Envío definitivo (después de la revisión)
+          const handleEnviarDefinitivo = async () => {
+            if (!revision || !revision.correos || revision.correos.length === 0) return;
+            const confirmar = window.confirm(modoReenvio
+              ? `⚠️ ¿REENVIAR ${revision.correos.length} correos a los proveedores?\n\nAlgunos pueden haber sido enviados antes.`
+              : `¿Enviar ${revision.correos.length} correos a los proveedores?`);
+            if (!confirmar) return;
+
+            setEnviando(true);
+            const enviados = [];
+            const fallidos = [];
+
+            for (let i = 0; i < revision.correos.length; i++) {
+              const c = revision.correos[i];
+              const g = c.grupo;
+              setProgreso({ actual: i + 1, total: revision.correos.length, mensaje: `Enviando a ${g.proveedor}...` });
+
+              try {
                 const r = await enviarCorreoPago({
                   modo: 'envio',
-                  destinatario: g.email,
-                  cc: emailsCcTodos,
-                  asunto: reemplazar(plantillaAsunto),
-                  cuerpo: reemplazar(plantillaCuerpo),
+                  destinatario: c.destinatario,
+                  cc: c.cc,
+                  asunto: c.asunto,
+                  cuerpo: c.cuerpo,
                   nombreRemitente: configCorreos?.remitenteNombre || 'Viajes Libero · Cuentas por Pagar',
                   comprobantePath: g.comprobanteUrl,
                   comprobanteNombre: g.comprobanteNombre || 'comprobante.pdf',
-                  imagenInlineBase64: imagenBase64,
+                  imagenInlineBase64: c.imagenBase64,
                 });
 
                 if (!r.ok) {
                   fallidos.push({ grupo: g, error: r.error });
                 } else {
-                  // Marcar en BD
-                  const destinatariosAudit = [g.email, ...emailsCcTodos].join(', ');
+                  // Marcar en BD (usar los destinatarios EDITADOS por el usuario, no los originales)
+                  const destinatariosAudit = [c.destinatario, ...c.cc].filter(Boolean).join(', ');
                   for (const p of g.pagos) {
                     await marcarCorreoEnviado(p.id, destinatariosAudit, '');
                   }
@@ -12549,7 +12583,7 @@ Saludos cordiales,`;
                 }
 
                 // Espaciar 1 segundo entre envíos para no activar anti-spam
-                if (i < seleccionadosGrupos.length - 1) {
+                if (i < revision.correos.length - 1) {
                   await new Promise(r => setTimeout(r, 1000));
                 }
               } catch (err) {
@@ -12574,6 +12608,7 @@ Saludos cordiales,`;
 
             setEnviando(false);
             setProgreso(null);
+            setRevision(null); // cerrar la vista de revisión
             setResumen({ enviados, fallidos });
           };
 
@@ -12590,6 +12625,205 @@ Saludos cordiales,`;
               {icon} {label} <span style={{opacity: 0.75, fontWeight: 600}}>({count})</span>
             </button>
           );
+
+          // Helpers para editar correos en revisión
+          const actualizarCorreo = (key, cambios) => {
+            setRevision(prev => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                correos: prev.correos.map(c => c.key === key ? {...c, ...cambios, editado: true} : c),
+              };
+            });
+          };
+          const eliminarCorreoDeRevision = (key) => {
+            setRevision(prev => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                correos: prev.correos.filter(c => c.key !== key),
+              };
+            });
+            setCorreoExpandido(exp => exp === key ? null : exp);
+          };
+
+          // ── Vista de REVISIÓN previa ──────────────────────────────
+          if (revision) {
+            // Si está preparando, mostrar barra de progreso
+            if (revision.preparando) {
+              const pct = revision.totalPrep ? Math.round((revision.actualPrep || 0) / revision.totalPrep * 100) : 0;
+              return (
+                <div style={{position:'fixed',inset:0,background:'rgba(15, 45, 74, 0.65)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1050,padding:16}}>
+                  <div style={{background:'#fff',borderRadius:14,width:'92vw',maxWidth:560,boxShadow:'0 24px 60px rgba(0,0,0,0.3)',overflow:'hidden'}}>
+                    <div style={{padding:'24px 28px'}}>
+                      <div style={{fontSize:18,fontWeight:800,color:'#1A2332',marginBottom:8}}>
+                        ⏳ Preparando correos...
+                      </div>
+                      <div style={{fontSize:13,color:'#64748B',marginBottom:14}}>
+                        {revision.mensajePrep || 'Generando previsualizaciones e imágenes'}
+                      </div>
+                      <div style={{height:12,background:'#F1F5F9',borderRadius:6,overflow:'hidden',marginBottom:8}}>
+                        <div style={{height:'100%',background:'linear-gradient(90deg, #185FA5, #2E78C7)',width:`${pct}%`,transition:'width .3s'}}/>
+                      </div>
+                      <div style={{fontSize:12,color:'#64748B',textAlign:'center'}}>
+                        {revision.actualPrep || 0} de {revision.totalPrep || 0} ({pct}%)
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            // Vista de tarjetas de revisión
+            return (
+              <div onClick={() => !enviando && setRevision(null)}
+                   style={{position:'fixed',inset:0,background:'rgba(15, 45, 74, 0.65)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1050,padding:16}}>
+                <div onClick={(e) => e.stopPropagation()}
+                     style={{background:'#fff',borderRadius:14,width:'97vw',maxWidth:1300,maxHeight:'95vh',display:'flex',flexDirection:'column',boxShadow:'0 24px 60px rgba(0,0,0,0.3)',overflow:'hidden'}}>
+                  {/* Header */}
+                  <div style={{padding:'20px 26px',background:'linear-gradient(180deg, #fff, #FAFCFE)',borderBottom:'1px solid #F1F5F9',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <div>
+                      <div style={{fontSize:22,fontWeight:800,color:'#1A2332'}}>📋 Revisión antes de enviar</div>
+                      <div style={{fontSize:14,color:'#64748B',marginTop:4}}>
+                        {revision.correos.length} correo{revision.correos.length!==1?'s':''} listo{revision.correos.length!==1?'s':''} para enviar. Puedes editar cada uno o quitarlo antes de confirmar.
+                      </div>
+                    </div>
+                    <button onClick={() => !enviando && setRevision(null)} disabled={enviando}
+                            style={{background:'#F1F5F9',border:'none',width:38,height:38,borderRadius:8,cursor:enviando?'not-allowed':'pointer',color:'#64748B',fontSize:20}}>×</button>
+                  </div>
+
+                  {/* Lista de tarjetas */}
+                  <div style={{flex:1,overflowY:'auto',padding:'16px 26px'}}>
+                    {revision.correos.length === 0 ? (
+                      <div style={{textAlign:'center',padding:60,color:'#64748B',fontSize:16}}>
+                        <div style={{fontSize:48,marginBottom:14}}>📭</div>
+                        No hay correos para enviar. Cierra y vuelve a seleccionar.
+                      </div>
+                    ) : revision.correos.map(c => {
+                      const expandida = correoExpandido === c.key;
+                      const g = c.grupo;
+                      const monedaSimbolo = g.moneda === 'EUR' ? '€' : '$';
+                      return (
+                        <div key={c.key} style={{border:'1px solid #E2E8F0',borderRadius:12,marginBottom:12,overflow:'hidden',background:'#fff',boxShadow:expandida?'0 4px 12px rgba(0,0,0,0.08)':'none'}}>
+                          {/* Header de tarjeta (colapsado) */}
+                          <div style={{padding:'14px 18px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',background: expandida ? '#F8FAFC' : '#fff',borderBottom: expandida ? '1px solid #E2E8F0' : 'none'}}
+                               onClick={()=>setCorreoExpandido(expandida ? null : c.key)}>
+                            <span style={{fontSize:18,color:'#64748B'}}>{expandida?'▼':'▶'}</span>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:5,flexWrap:'wrap'}}>
+                                <span style={{fontWeight:800,color:'#1A2332',fontSize:15}}>{g.proveedor}</span>
+                                <span style={{background:g.moneda==='MXN'?'#E3F2FD':g.moneda==='USD'?'#E8F5E9':'#F3E5F5',color:g.moneda==='MXN'?'#185FA5':g.moneda==='USD'?'#1D7A4E':'#6B47C7',padding:'2px 8px',borderRadius:999,fontSize:11,fontWeight:700}}>
+                                  {g.moneda}
+                                </span>
+                                {c.editado && (
+                                  <span style={{background:'#FEF3C7',color:'#78350F',border:'1px solid #F59E0B',padding:'2px 8px',borderRadius:999,fontSize:10,fontWeight:800}}>
+                                    ✎ EDITADO
+                                  </span>
+                                )}
+                                {!c.imagenBase64 && (
+                                  <span style={{background:'#FEE2E2',color:'#991B1B',padding:'2px 8px',borderRadius:999,fontSize:10,fontWeight:700}}>
+                                    ⚠️ Sin imagen
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{fontSize:12,color:'#64748B',lineHeight:1.5}}>
+                                <strong>Para:</strong> {c.destinatario || <span style={{color:'#991B1B'}}>(vacío)</span>}
+                                {c.cc.length > 0 && <> · <strong>CC:</strong> {c.cc.length} destinatario{c.cc.length!==1?'s':''}</>}
+                              </div>
+                              <div style={{fontSize:12,color:'#1A2332',marginTop:3,fontStyle:'italic'}}>
+                                {c.asunto || '(sin asunto)'}
+                              </div>
+                            </div>
+                            <div style={{textAlign:'right'}}>
+                              <div style={{fontWeight:800,color:'#1D7A4E',fontSize:15}}>{monedaSimbolo}{fmt(g.total)}</div>
+                              <div style={{fontSize:11,color:'#64748B'}}>{g.pagos.length} pago{g.pagos.length!==1?'s':''}</div>
+                            </div>
+                            <button onClick={(e)=>{e.stopPropagation(); if (window.confirm(`¿Quitar el correo para ${g.proveedor} de este envío?`)) eliminarCorreoDeRevision(c.key);}}
+                                    title="Quitar del envío"
+                                    style={{background:'#FEE',border:'1px solid #FCA5A5',color:'#C04A4D',width:32,height:32,borderRadius:6,fontSize:14,cursor:'pointer'}}>×</button>
+                          </div>
+
+                          {/* Contenido expandido: editar el correo */}
+                          {expandida && (
+                            <div style={{padding:'16px 18px',background:'#FAFCFE'}}>
+                              {/* Grid: izquierda edición, derecha preview imagen */}
+                              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,alignItems:'start'}}>
+                                {/* Columna izquierda: campos editables */}
+                                <div>
+                                  <label style={{fontSize:11,color:'#64748B',fontWeight:700,display:'block',marginBottom:4}}>PARA (DESTINATARIO PRINCIPAL)</label>
+                                  <input value={c.destinatario} onChange={e=>actualizarCorreo(c.key, {destinatario: e.target.value})}
+                                         placeholder="destinatario@ejemplo.com"
+                                         style={{width:'100%',border:`1px solid ${C.border}`,padding:'8px 10px',borderRadius:6,fontSize:13,marginBottom:10}}/>
+
+                                  <label style={{fontSize:11,color:'#64748B',fontWeight:700,display:'block',marginBottom:4}}>CC (uno por línea)</label>
+                                  <textarea value={c.cc.join('\n')} onChange={e=>actualizarCorreo(c.key, {cc: e.target.value.split('\n').map(s=>s.trim()).filter(Boolean)})}
+                                            rows={3}
+                                            placeholder="cc1@ejemplo.com&#10;cc2@ejemplo.com"
+                                            style={{width:'100%',border:`1px solid ${C.border}`,padding:'8px 10px',borderRadius:6,fontSize:12,marginBottom:10,fontFamily:'inherit',resize:'vertical'}}/>
+
+                                  <label style={{fontSize:11,color:'#64748B',fontWeight:700,display:'block',marginBottom:4}}>ASUNTO</label>
+                                  <input value={c.asunto} onChange={e=>actualizarCorreo(c.key, {asunto: e.target.value})}
+                                         style={{width:'100%',border:`1px solid ${C.border}`,padding:'8px 10px',borderRadius:6,fontSize:13,marginBottom:10}}/>
+
+                                  <label style={{fontSize:11,color:'#64748B',fontWeight:700,display:'block',marginBottom:4}}>CUERPO DEL CORREO</label>
+                                  <textarea value={c.cuerpo} onChange={e=>actualizarCorreo(c.key, {cuerpo: e.target.value})}
+                                            rows={10}
+                                            style={{width:'100%',border:`1px solid ${C.border}`,padding:'10px 12px',borderRadius:6,fontSize:12,fontFamily:'inherit',lineHeight:1.6,resize:'vertical'}}/>
+                                </div>
+
+                                {/* Columna derecha: preview de imagen */}
+                                <div>
+                                  <div style={{fontSize:11,color:'#64748B',fontWeight:700,marginBottom:6,letterSpacing:0.3}}>👁 PREVIEW DE LA IMAGEN EMBEBIDA</div>
+                                  {c.imagenBase64 ? (
+                                    <div style={{border:'1px dashed #CBD5E1',borderRadius:8,padding:8,background:'#fff'}}>
+                                      <img src={c.imagenBase64} alt="Desglose de facturas"
+                                           style={{width:'100%',height:'auto',display:'block',borderRadius:4}}/>
+                                    </div>
+                                  ) : (
+                                    <div style={{padding:20,textAlign:'center',background:'#FEE2E2',border:'1px solid #FCA5A5',borderRadius:8,color:'#991B1B',fontSize:12}}>
+                                      ⚠️ No se pudo generar imagen del desglose.<br/>El correo se enviará sin ella.
+                                    </div>
+                                  )}
+
+                                  <div style={{marginTop:12,padding:'10px 12px',background:'#F0F7FF',border:'1px solid #BFDBFE',borderRadius:8,fontSize:11,color:'#185FA5'}}>
+                                    📎 <strong>Se adjuntará:</strong> {g.comprobanteNombre || 'comprobante.pdf'}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Barra de progreso durante envío */}
+                  {enviando && progreso && (
+                    <div style={{padding:'14px 26px',background:'#FEF3C7',borderTop:'1px solid #F59E0B'}}>
+                      <div style={{fontSize:14,fontWeight:700,color:'#78350F',marginBottom:8}}>
+                        ⏳ {progreso.mensaje} ({progreso.actual}/{progreso.total})
+                      </div>
+                      <div style={{height:10,background:'#FDE68A',borderRadius:4,overflow:'hidden'}}>
+                        <div style={{height:'100%',background:'#F59E0B',width:`${(progreso.actual/progreso.total)*100}%`,transition:'width .3s'}}/>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Footer */}
+                  <div style={{padding:'16px 26px',borderTop:'1px solid #F1F5F9',display:'flex',gap:12,background:'#FAFCFE'}}>
+                    <button onClick={() => !enviando && setRevision(null)} disabled={enviando}
+                            style={{flex:1,background:'#fff',border:`1px solid ${C.border}`,color:C.text,padding:14,borderRadius:8,fontSize:15,fontWeight:700,cursor:enviando?'not-allowed':'pointer'}}>
+                      ← Regresar
+                    </button>
+                    <button onClick={handleEnviarDefinitivo} disabled={enviando || revision.correos.length === 0}
+                            style={{flex:2,background:(enviando||revision.correos.length===0)?'#94A3B8':(modoReenvio?'linear-gradient(135deg, #B45309, #F59E0B)':'linear-gradient(135deg, #1D7A4E, #2EBC76)'),color:'#fff',border:'none',padding:14,borderRadius:8,fontSize:16,fontWeight:800,cursor:(enviando||revision.correos.length===0)?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+                      {enviando ? '⏳ Enviando...' : (modoReenvio ? `🔄 Confirmar reenvío (${revision.correos.length})` : `📤 Confirmar envío (${revision.correos.length})`)}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          }
 
           // ── Vista de resumen final ──────────────────────────────
           if (resumen) {
@@ -12785,7 +13019,7 @@ Saludos cordiales,`;
                           style={{flex:1,background:'#fff',border:`1px solid ${C.border}`,color:C.text,padding:14,borderRadius:8,fontSize:15,fontWeight:700,cursor:enviando?'not-allowed':'pointer'}}>Cancelar</button>
                   <button onClick={handleEnviarMasivo} disabled={enviando || seleccionadosGrupos.length === 0}
                           style={{flex:2,background:(enviando||seleccionadosGrupos.length===0)?'#94A3B8':(modoReenvio?'linear-gradient(135deg, #B45309, #F59E0B)':'linear-gradient(135deg, #1D7A4E, #2EBC76)'),color:'#fff',border:'none',padding:14,borderRadius:8,fontSize:16,fontWeight:800,cursor:(enviando||seleccionadosGrupos.length===0)?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
-                    {enviando ? '⏳ Enviando...' : (modoReenvio ? `🔄 Reenviar ${seleccionadosGrupos.length} correo${seleccionadosGrupos.length !== 1 ? 's' : ''}` : `📤 Enviar ${seleccionadosGrupos.length} correo${seleccionadosGrupos.length !== 1 ? 's' : ''}`)}
+                    {enviando ? '⏳ Enviando...' : (modoReenvio ? `🔄 Revisar y reenviar ${seleccionadosGrupos.length}` : `📤 Revisar y enviar ${seleccionadosGrupos.length} correo${seleccionadosGrupos.length !== 1 ? 's' : ''}`)}
                   </button>
                 </div>
               </div>
