@@ -11028,14 +11028,15 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                   <div style={{padding:"0 10px 10px"}}>
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:14,tableLayout:"fixed"}}>
                       <colgroup>
+                        <col style={{width:'8%'}}/>
+                        <col style={{width:'20%'}}/>
                         <col style={{width:'9%'}}/>
-                        <col style={{width:'22%'}}/>
-                        <col style={{width:'10%'}}/>
+                        <col style={{width:'8%'}}/>
                         <col style={{width:'9%'}}/>
-                        <col style={{width:'10%'}}/>
-                        <col style={{width:'10%'}}/>
-                        <col style={{width:'10%'}}/>
                         <col style={{width:'9%'}}/>
+                        <col style={{width:'9%'}}/>
+                        <col style={{width:'9%'}}/>
+                        <col style={{width:'8%'}}/>
                         <col style={{width:'11%'}}/>
                       </colgroup>
                       <thead><tr style={{background:"#FAFBFC"}}>
@@ -11044,7 +11045,8 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                         <th style={{padding:"10px 8px",textAlign:"center",color:C.muted,fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:0.3}}>Clasif.</th>
                         <th style={{padding:"10px 8px",textAlign:"center",color:C.muted,fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:0.3}}>Fecha</th>
                         <th style={{padding:"10px 8px",textAlign:"right",color:C.muted,fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:0.3}}>Total</th>
-                        <th style={{padding:"10px 8px",textAlign:"right",color:C.muted,fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:0.3}}>Pagado</th>
+                        <th style={{padding:"10px 8px",textAlign:"right",color:C.muted,fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:0.3}}>Pago Anterior</th>
+                        <th style={{padding:"10px 8px",textAlign:"right",color:C.muted,fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:0.3}}>Pago Hoy</th>
                         <th style={{padding:"10px 8px",textAlign:"right",color:C.muted,fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:0.3}}>Pendiente</th>
                         <th style={{padding:"10px 8px",textAlign:"center",color:C.muted,fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:0.3}}>Vence</th>
                         <th style={{padding:"10px 8px",textAlign:"center",color:C.muted,fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:0.3}}>Moneda</th>
@@ -11053,6 +11055,10 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                         {group.pagos.map(p=>{
                           const monedaBg = { MXN:"#E3F2FD", USD:"#E8F5E9", EUR:"#F3E5F5" }[p.moneda] || "#F5F5F5";
                           const monedaColor = { MXN:C.mxn, USD:C.usd, EUR:C.eur }[p.moneda] || "#666";
+                          // Pago hoy = el monto del pago actual (este grupo)
+                          // Pago anterior = pagadoTotal acumulado menos el pago de hoy
+                          const pagoHoy = p.monto || 0;
+                          const pagoAnterior = Math.max(0, (p.pagadoTotal || 0) - pagoHoy);
                           return (
                           <tr key={p.id} style={{borderTop:`1px solid ${C.border}`}}>
                             <td style={{padding:"10px 8px",fontWeight:700,fontSize:14,textAlign:"center",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}} title={p.folio}>{p.folio}</td>
@@ -11062,7 +11068,8 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                             </td>
                             <td style={{padding:"10px 8px",whiteSpace:"nowrap",fontSize:13,color:C.muted,textAlign:"center"}}>{p.fecha||"—"}</td>
                             <td style={{padding:"10px 8px",textAlign:"right",fontWeight:600,fontVariantNumeric:"tabular-nums",fontSize:14}}>{monedaSimbolo}{fmt(p.totalFactura||0)}</td>
-                            <td style={{padding:"10px 8px",textAlign:"right",fontWeight:700,color:C.ok,fontVariantNumeric:"tabular-nums",fontSize:14}}>{monedaSimbolo}{fmt(p.pagadoTotal||0)}</td>
+                            <td style={{padding:"10px 8px",textAlign:"right",fontWeight:600,color:pagoAnterior>0?"#0369A1":C.muted,fontVariantNumeric:"tabular-nums",fontSize:14}}>{pagoAnterior>0?`${monedaSimbolo}${fmt(pagoAnterior)}`:"—"}</td>
+                            <td style={{padding:"10px 8px",textAlign:"right",fontWeight:700,color:C.ok,fontVariantNumeric:"tabular-nums",fontSize:14}}>{monedaSimbolo}{fmt(pagoHoy)}</td>
                             <td style={{padding:"10px 8px",textAlign:"right",fontWeight:600,color:p.pendiente>0?C.danger:C.muted,fontVariantNumeric:"tabular-nums",fontSize:14}}>{p.pendiente>0?`${monedaSimbolo}${fmt(p.pendiente)}`:"—"}</td>
                             <td style={{padding:"10px 8px",whiteSpace:"nowrap",fontSize:13,color:C.muted,textAlign:"center"}}>{p.vencimiento||"—"}</td>
                             <td style={{padding:"10px 8px",textAlign:"center"}}>
@@ -11601,6 +11608,8 @@ Saludos cordiales,`;
               const filasHtmlInd = g.pagos.map(p => {
                 const pagadoTotal = totalPagadoPorFacturaInd[p.invoiceId] || 0;
                 const pendiente = Math.max(0, (p.totalFactura || 0) - pagadoTotal);
+                const pagoHoy = p.monto || 0;
+                const pagoAnterior = Math.max(0, pagadoTotal - pagoHoy);
                 const monedaBg = { MXN:'#E3F2FD', USD:'#E8F5E9', EUR:'#F3E5F5' }[p.moneda] || '#F5F5F5';
                 const monedaColor = { MXN:'#185FA5', USD:'#1D7A4E', EUR:'#6B47C7' }[p.moneda] || '#666';
                 return `<tr style="border-top:1px solid #E2E8F0;">
@@ -11608,7 +11617,8 @@ Saludos cordiales,`;
                   <td style="padding:10px 8px;font-size:13px;color:${p.concepto?'#1A2332':'#94A3B8'};font-style:${p.concepto?'normal':'italic'};">${p.concepto || '—'}</td>
                   <td style="padding:10px 8px;font-size:13px;color:#64748B;text-align:center;">${p.fecha || '—'}</td>
                   <td style="padding:10px 8px;text-align:right;font-weight:600;font-size:14px;">${monedaSimboloCap}${fmt(p.totalFactura || 0)}</td>
-                  <td style="padding:10px 8px;text-align:right;font-weight:700;color:#1D7A4E;font-size:14px;">${monedaSimboloCap}${fmt(pagadoTotal)}</td>
+                  <td style="padding:10px 8px;text-align:right;font-weight:600;color:${pagoAnterior>0?'#0369A1':'#94A3B8'};font-size:14px;">${pagoAnterior>0?`${monedaSimboloCap}${fmt(pagoAnterior)}`:'—'}</td>
+                  <td style="padding:10px 8px;text-align:right;font-weight:700;color:#1D7A4E;font-size:14px;">${monedaSimboloCap}${fmt(pagoHoy)}</td>
                   <td style="padding:10px 8px;text-align:right;font-weight:600;color:${pendiente>0?'#DC2626':'#94A3B8'};font-size:14px;">${pendiente>0?`${monedaSimboloCap}${fmt(pendiente)}`:'—'}</td>
                   <td style="padding:10px 8px;font-size:13px;color:#64748B;text-align:center;">${p.vencimiento || '—'}</td>
                   <td style="padding:10px 8px;text-align:center;"><span style="background:${monedaBg};color:${monedaColor};padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;">${p.moneda}</span></td>
@@ -11639,7 +11649,8 @@ Saludos cordiales,`;
                         <th style="padding:10px 8px;text-align:left;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Concepto</th>
                         <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Fecha</th>
                         <th style="padding:10px 8px;text-align:right;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Total</th>
-                        <th style="padding:10px 8px;text-align:right;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Pagado</th>
+                        <th style="padding:10px 8px;text-align:right;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Pago Anterior</th>
+                        <th style="padding:10px 8px;text-align:right;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Pago Hoy</th>
                         <th style="padding:10px 8px;text-align:right;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Pendiente</th>
                         <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Vence</th>
                         <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Moneda</th>
@@ -12447,6 +12458,8 @@ Saludos cordiales,`;
             const filasHtml = g.pagos.map(p => {
               const pagadoTotal = totalPagadoPorFactura[p.invoiceId] || 0;
               const pendiente = Math.max(0, (p.totalFactura || 0) - pagadoTotal);
+              const pagoHoy = p.monto || 0;
+              const pagoAnterior = Math.max(0, pagadoTotal - pagoHoy);
               const monedaBg = { MXN:'#E3F2FD', USD:'#E8F5E9', EUR:'#F3E5F5' }[p.moneda] || '#F5F5F5';
               const monedaColor = { MXN:'#185FA5', USD:'#1D7A4E', EUR:'#6B47C7' }[p.moneda] || '#666';
               return `<tr style="border-top:1px solid #E2E8F0;">
@@ -12454,7 +12467,8 @@ Saludos cordiales,`;
                 <td style="padding:10px 8px;font-size:13px;color:${p.concepto?'#1A2332':'#94A3B8'};font-style:${p.concepto?'normal':'italic'};">${p.concepto || '—'}</td>
                 <td style="padding:10px 8px;font-size:13px;color:#64748B;text-align:center;">${p.fecha || '—'}</td>
                 <td style="padding:10px 8px;text-align:right;font-weight:600;font-size:14px;">${monedaSimbolo}${fmt(p.totalFactura || 0)}</td>
-                <td style="padding:10px 8px;text-align:right;font-weight:700;color:#1D7A4E;font-size:14px;">${monedaSimbolo}${fmt(pagadoTotal)}</td>
+                <td style="padding:10px 8px;text-align:right;font-weight:600;color:${pagoAnterior>0?'#0369A1':'#94A3B8'};font-size:14px;">${pagoAnterior>0?`${monedaSimbolo}${fmt(pagoAnterior)}`:'—'}</td>
+                <td style="padding:10px 8px;text-align:right;font-weight:700;color:#1D7A4E;font-size:14px;">${monedaSimbolo}${fmt(pagoHoy)}</td>
                 <td style="padding:10px 8px;text-align:right;font-weight:600;color:${pendiente>0?'#DC2626':'#94A3B8'};font-size:14px;">${pendiente>0?`${monedaSimbolo}${fmt(pendiente)}`:'—'}</td>
                 <td style="padding:10px 8px;font-size:13px;color:#64748B;text-align:center;">${p.vencimiento || '—'}</td>
                 <td style="padding:10px 8px;text-align:center;"><span style="background:${monedaBg};color:${monedaColor};padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;">${p.moneda}</span></td>
@@ -12484,7 +12498,8 @@ Saludos cordiales,`;
                       <th style="padding:10px 8px;text-align:left;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Concepto</th>
                       <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Fecha</th>
                       <th style="padding:10px 8px;text-align:right;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Total</th>
-                      <th style="padding:10px 8px;text-align:right;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Pagado</th>
+                      <th style="padding:10px 8px;text-align:right;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Pago Anterior</th>
+                      <th style="padding:10px 8px;text-align:right;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Pago Hoy</th>
                       <th style="padding:10px 8px;text-align:right;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Pendiente</th>
                       <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Vence</th>
                       <th style="padding:10px 8px;text-align:center;color:#64748B;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Moneda</th>
