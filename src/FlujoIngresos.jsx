@@ -993,6 +993,8 @@ export default function FlujoIngresos({
   const [saveState, setSaveState] = useState("idle");
   const [segFilter, setSegFilter] = useState("todos");
   const [search, setSearch] = useState("");
+  const [soloMovimiento, setSoloMovimiento] = useState(false); // ocultar filas en cero
+  const [diaFiltro, setDiaFiltro] = useState(null);            // null=todos, 0-4 = día
   const [adding, setAdding] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [newSeg, setNewSeg] = useState("Transporte");
@@ -1351,8 +1353,11 @@ export default function FlujoIngresos({
           if (!r.cliente.toLowerCase().includes(s) &&
               !r.concepto.toLowerCase().includes(s)) return false;
         }
+        const total = (r.amounts || []).reduce((a, b) => a + (b || 0), 0);
+        if (soloMovimiento && total === 0) return false;
+        if (diaFiltro != null && !(r.amounts || [])[diaFiltro]) return false;
         return true;
-      }), [data.rows, segFilter, search]);
+      }), [data.rows, segFilter, search, soloMovimiento, diaFiltro]);
 
   // ── Navegación con teclado (estilo Excel) ──
   // Grid 2D con 9 columnas: [Segmento, Cliente, L, M, M, J, V, Total, Concepto]
@@ -1894,7 +1899,7 @@ export default function FlujoIngresos({
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar…"
+            placeholder="Buscar en todo (ingresos y egresos)…"
             style={{
               padding: "3px 6px", outline: "none", border: "none",
               width: "140px", fontFamily: FONT, fontSize: "11px",
@@ -1907,6 +1912,35 @@ export default function FlujoIngresos({
             </button>
           )}
         </div>
+
+        <button
+          onClick={() => setSoloMovimiento(v => !v)}
+          title="Mostrar solo filas con movimiento (Total distinto de cero)"
+          style={{
+            ...toolbarBtn(), padding: "3px 8px", fontSize: "10px",
+            background: soloMovimiento ? C.headerBlue : "#ffffff",
+            color: soloMovimiento ? "#ffffff" : C.text,
+            borderColor: soloMovimiento ? C.headerBlueDark : C.gridLine,
+            fontWeight: soloMovimiento ? 700 : 400,
+          }}
+        >Solo con movimiento</button>
+
+        <select
+          value={diaFiltro == null ? "" : diaFiltro}
+          onChange={(e) => setDiaFiltro(e.target.value === "" ? null : Number(e.target.value))}
+          title="Mostrar solo lo que tuvo movimiento un día específico"
+          style={{
+            padding: "3px 6px", fontSize: "10px", fontFamily: FONT,
+            border: `1px solid ${diaFiltro != null ? C.headerBlueDark : C.gridLine}`,
+            background: diaFiltro != null ? "#EAF2FF" : "#ffffff",
+            color: C.text, cursor: "pointer",
+          }}
+        >
+          <option value="">Cualquier día</option>
+          {weekDates.map((d, i) => (
+            <option key={i} value={i}>Movió: {dayLabel(d)}</option>
+          ))}
+        </select>
 
         <div style={{ color: C.textMuted, fontSize: "10px" }}>
           {visibleRows.length}/{rowsCount} · {rowsWithData} con movimiento
@@ -2344,125 +2378,83 @@ export default function FlujoIngresos({
             {/*   RUBROS DE EGRESOS — celdas editables               */}
             {/* ═══════════════════════════════════════════════════ */}
             {EGRESOS_POR_RUBRO.map((rubro) => {
-              // Bordes externos del rubro: top en la 1ra fila, bottom en la última, izq/der siempre.
+              // ── Filtrado: búsqueda global + solo con movimiento + día específico ──
+              const impsRubroAll = (data.importados || []).filter(imp => (imp.rubro || "").trim().toUpperCase() === rubro.label.toUpperCase());
+              const itemsVis = rubro.items.filter(item => {
+                const eg = data.egresos?.[item.id] || { amounts: [0,0,0,0,0], concepto: "" };
+                const total = eg.amounts.reduce((a, b) => a + (b || 0), 0);
+                if (soloMovimiento && !(total !== 0 || (eg.concepto && eg.concepto.trim()))) return false;
+                if (diaFiltro != null && !eg.amounts[diaFiltro]) return false;
+                if (search) {
+                  const s = search.toLowerCase();
+                  if (!(item.proveedor || "").toLowerCase().includes(s) && !((eg.concepto || "").toLowerCase().includes(s))) return false;
+                }
+                return true;
+              });
+              const impsVis = impsRubroAll.filter(imp => {
+                const total = (imp.amounts || [0,0,0,0,0]).reduce((a, b) => a + (b || 0), 0);
+                if (soloMovimiento && total === 0) return false;
+                if (diaFiltro != null && !(imp.amounts || [])[diaFiltro]) return false;
+                if (search) {
+                  const s = search.toLowerCase();
+                  if (!(imp.proveedor || "").toLowerCase().includes(s) && !((imp.concepto || "").toLowerCase().includes(s))) return false;
+                }
+                return true;
+              });
+              const filas = [
+                ...itemsVis.map(item => ({ tipo: "item", item })),
+                ...impsVis.map(imp => ({ tipo: "imp", imp })),
+              ];
+              if (filas.length === 0) return null;
+              const nFilas = filas.length;
               const outer = (rIdx, edges = {}) => ({
-                borderTop:    rIdx === 0              ? `1px solid ${C.gridLine}` : "none",
-                borderBottom: rIdx === rubro.rows - 1 ? `1px solid ${C.gridLine}` : "none",
+                borderTop:    rIdx === 0          ? `1px solid ${C.gridLine}` : "none",
+                borderBottom: rIdx === nFilas - 1 ? `1px solid ${C.gridLine}` : "none",
                 borderLeft:   edges.left  ? `1px solid ${C.gridLine}` : "none",
                 borderRight:  edges.right ? `1px solid ${C.gridLine}` : "none",
               });
-              const impsRubro = (data.importados || []).filter(imp => (imp.rubro || "").trim().toUpperCase() === rubro.label.toUpperCase());
-              const totalFilasRubro = rubro.rows + impsRubro.length;
               return (
                 <React.Fragment key={rubro.id}>
-                  {rubro.items.map((item, rIdx) => {
-                    const eg = data.egresos?.[item.id] || { amounts: [0,0,0,0,0], concepto: "" };
-                    const rowTotal = eg.amounts.reduce((a, b) => a + (b || 0), 0);
-                    const hasData = rowTotal > 0 || (eg.concepto && eg.concepto.trim());
-                    // Verde automático en celdas de día/total/concepto cuando hay movimiento (igual que Ingresos)
-                    const dayBg = hasData ? C.green : "transparent";
-                    return (
-                      <tr key={`${rubro.id}-${rIdx}`}>
-                        {/* Etiqueta vertical del rubro — fusionada en toda su altura */}
-                        {rIdx === 0 && (
-                          <td
-                            rowSpan={totalFilasRubro}
-                            style={{
-                              ...baseCell,
-                              background: C.rubroGray,
-                              verticalAlign: "middle",
-                              textAlign: "center",
-                              padding: 0,
-                              height: "auto",
-                              border: `1px solid ${C.gridLine}`,
-                            }}
-                          >
-                            <div
-                              style={{
-                                writingMode: "vertical-rl",
-                                transform: "rotate(180deg)",
-                                fontSize: rubro.rows >= 3 ? "14px" : "11px",
-                                fontWeight: 700,
-                                letterSpacing: "0.1em",
-                                color: C.text,
-                                padding: "8px 0",
-                                display: "inline-block",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {rubro.label}
-                            </div>
+                  {filas.map((fila, rIdx) => {
+                    const labelCell = rIdx === 0 ? (
+                      <td rowSpan={nFilas} style={{ ...baseCell, background: C.rubroGray, verticalAlign: "middle", textAlign: "center", padding: 0, height: "auto", border: `1px solid ${C.gridLine}` }}>
+                        <div style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", fontSize: nFilas >= 3 ? "14px" : "11px", fontWeight: 700, letterSpacing: "0.1em", color: C.text, padding: "8px 0", display: "inline-block", whiteSpace: "nowrap" }}>{rubro.label}</div>
+                      </td>
+                    ) : null;
+
+                    if (fila.tipo === "item") {
+                      const item = fila.item;
+                      const eg = data.egresos?.[item.id] || { amounts: [0,0,0,0,0], concepto: "" };
+                      const rowTotal = eg.amounts.reduce((a, b) => a + (b || 0), 0);
+                      const hasData = rowTotal > 0 || (eg.concepto && eg.concepto.trim());
+                      const dayBg = hasData ? C.green : "transparent";
+                      return (
+                        <tr key={`${rubro.id}-i-${item.id}`}>
+                          {labelCell}
+                          <td style={{ ...baseCell, ...outer(rIdx, { left: false, right: true }), padding: "2px 5px", fontSize: "11px" }}>{item.segmento || ""}</td>
+                          <td style={{ ...baseCell, ...outer(rIdx, { left: false, right: true }), padding: "2px 5px", fontSize: "11px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={item.proveedor}>{item.proveedor}</td>
+                          {[0,1,2,3,4].map(j => (
+                            <td key={j} style={{ ...baseCell, ...outer(rIdx, { left: false, right: j === 4 }), background: dayBg, padding: 0 }}>
+                              <AccountingCell value={eg.amounts[j]} onChange={v => updateEgresoAmount(item.id, j, v)} {...cellProps(`egreso-${item.id}-${j}`)} />
+                            </td>
+                          ))}
+                          <td style={{ ...baseCell, ...outer(rIdx, { left: false, right: true }), background: dayBg, padding: 0 }}>
+                            <AccountingCell value={rowTotal} onChange={() => {}} readOnly bold {...cellProps(`egtotal-${item.id}`)} />
                           </td>
-                        )}
-                        {/* Segmento (solo lectura) */}
-                        <td style={{
-                          ...baseCell,
-                          ...outer(rIdx, { left: false, right: true }),
-                          padding: "2px 5px",
-                          fontSize: "11px",
-                        }}>{item.segmento || ""}</td>
-                        {/* Proveedor (solo lectura) */}
-                        <td style={{
-                          ...baseCell,
-                          ...outer(rIdx, { left: false, right: true }),
-                          padding: "2px 5px",
-                          fontSize: "11px",
-                          fontWeight: 600,
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                        }} title={item.proveedor}>{item.proveedor}</td>
-                        {/* 5 días — editables */}
-                        {[0,1,2,3,4].map(j => (
-                          <td key={j} style={{
-                            ...baseCell,
-                            ...outer(rIdx, { left: false, right: j === 4 }),
-                            background: dayBg,
-                            padding: 0,
-                          }}>
-                            <AccountingCell
-                              value={eg.amounts[j]}
-                              onChange={v => updateEgresoAmount(item.id, j, v)}
-                              {...cellProps(`egreso-${item.id}-${j}`)}
-                            />
+                          <td style={{ ...baseCell, ...outer(rIdx, { left: false, right: true }), padding: 0 }}>
+                            <TextCell value={eg.concepto} onChange={v => updateEgresoConcepto(item.id, v)} {...cellProps(`egconcepto-${item.id}`)} />
                           </td>
-                        ))}
-                        {/* Total auto-calculado (solo lectura) */}
-                        <td style={{
-                          ...baseCell,
-                          ...outer(rIdx, { left: false, right: true }),
-                          background: dayBg,
-                          padding: 0,
-                        }}>
-                          <AccountingCell
-                            value={rowTotal}
-                            onChange={() => {}}
-                            readOnly
-                            bold
-                            {...cellProps(`egtotal-${item.id}`)}
-                          />
-                        </td>
-                        {/* Concepto — editable */}
-                        <td style={{
-                          ...baseCell,
-                          ...outer(rIdx, { left: false, right: true }),
-                          padding: 0,
-                        }}>
-                          <TextCell
-                            value={eg.concepto}
-                            onChange={v => updateEgresoConcepto(item.id, v)}
-                            {...cellProps(`egconcepto-${item.id}`)}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {impsRubro.map((imp) => {
+                        </tr>
+                      );
+                    }
+
+                    const imp = fila.imp;
                     const rowTotalImp = (imp.amounts || [0,0,0,0,0]).reduce((a, b) => a + (b || 0), 0);
                     const hasDataImp = rowTotalImp > 0;
                     const dayBgImp = hasDataImp ? C.green : "transparent";
                     return (
-                      <tr key={imp.id}>
+                      <tr key={`${rubro.id}-imp-${imp.id}`}>
+                        {labelCell}
                         <td style={{ ...baseCell, ...gridCell, background: "#FFF7E8", fontSize: "10px", padding: "2px 5px", fontWeight: 600, color: "#7C2D12" }}>{imp.segmento || ""}</td>
                         <td style={{ ...baseCell, ...gridCell, textAlign: "left", padding: "2px 5px", background: hasDataImp ? "#FFFBEB" : "transparent" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
