@@ -1045,6 +1045,7 @@ export default function FlujoIngresos({
   // Autoguardar en Supabase (debounce 400ms)
   const saveTimer = useRef(null);
   const loadedWeekRef = useRef(null); // semana a la que pertenece el 'data' cargado
+  const dataRef = useRef(null);        // último snapshot de data (para flush)
   useEffect(() => {
     if (loading || loadedWeekRef.current !== weekKey) return;
     setSaveState("saving");
@@ -1072,6 +1073,26 @@ export default function FlujoIngresos({
     }, 400);
     return () => saveTimer.current && clearTimeout(saveTimer.current);
   }, [data, empresaId, weekKey, loading]);
+
+  // Mantener siempre el último snapshot de data
+  useEffect(() => { dataRef.current = data; }, [data]);
+
+  // FLUSH: al cambiar de semana (o desmontar) guardar de inmediato lo pendiente,
+  // sin esperar el debounce (evita perder lo recién escrito al navegar rápido).
+  useEffect(() => {
+    return () => {
+      if (loadedWeekRef.current !== weekKey) return; // los datos no eran de esta semana
+      const snapshot = dataRef.current;
+      if (!snapshot) return;
+      supabase
+        .from("flujo_efectivo_semanal")
+        .upsert(
+          { empresa_id: empresaId, week_key: weekKey, data: snapshot, updated_at: new Date().toISOString() },
+          { onConflict: "empresa_id,week_key" }
+        )
+        .then(({ error }) => { if (error) console.error("[FlujoIngresos] flush error:", error); });
+    };
+  }, [weekKey, empresaId]);
 
   // Zoom con Ctrl + rueda del mouse (estilo Excel)
   useEffect(() => {
