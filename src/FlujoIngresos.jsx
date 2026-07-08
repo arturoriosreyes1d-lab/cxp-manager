@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import html2canvas from "html2canvas";
 import { supabase } from "./supabase.js";
 
 // ─── Iconos como componentes locales (reemplazan lucide-react) ──
@@ -1018,6 +1019,8 @@ export default function FlujoIngresos({
   const [zoom, setZoom] = useState(1); // Zoom tipo Excel (Ctrl + rueda)
   const [hayPrevia, setHayPrevia] = useState(false); // ¿semana anterior con datos? (saldo inicial arrastrado)
   const tableScrollRef = useRef(null);
+  const tableRef = useRef(null);
+  const [exportando, setExportando] = useState(false);
 
   const weekKey = formatDateKey(weekStart);
 
@@ -1195,6 +1198,50 @@ export default function FlujoIngresos({
   const zoomIn = () => setZoom(z => Math.min(2, Math.round((z + 0.1) * 10) / 10));
   const zoomOut = () => setZoom(z => Math.max(0.5, Math.round((z - 0.1) * 10) / 10));
   const zoomReset = () => setZoom(1);
+
+  // Exportar el Flujo (lo que esté filtrado) como imagen de alta resolución
+  const exportarImagen = async (accion) => {
+    const el = tableRef.current;
+    if (!el || exportando) return;
+    setExportando(true);
+    const prevZoom = zoom;
+    try {
+      if (prevZoom !== 1) { setZoom(1); await new Promise(r => setTimeout(r, 90)); }
+      const canvas = await html2canvas(el, {
+        scale: 3,
+        backgroundColor: "#ffffff",
+        useCORS: true,
+        windowWidth: el.scrollWidth + 40,
+      });
+      await new Promise((resolve) => {
+        canvas.toBlob(async (blob) => {
+          if (!blob) { resolve(); return; }
+          if (accion === "copiar") {
+            try {
+              await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+              alert("✅ Imagen copiada. Pégala en WhatsApp con Ctrl+V.");
+            } catch (e) {
+              alert("No se pudo copiar automáticamente en este navegador. Usa 'Descargar PNG'.");
+            }
+          } else {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `flujo-efectivo-${formatDateKey(weekStart)}.png`;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          }
+          resolve();
+        }, "image/png");
+      });
+    } catch (e) {
+      console.error("[exportarImagen]", e);
+      alert("Error al generar la imagen: " + e.message);
+    } finally {
+      if (prevZoom !== 1) setZoom(prevZoom);
+      setExportando(false);
+    }
+  };
 
   // Mutadores
   const updateAmount = (rowIdx, dayIdx, v) => setData(d => ({
@@ -1851,7 +1898,9 @@ export default function FlujoIngresos({
 
   // ── Render ────────────────────────────────────────────────
   return (
-    <div style={{
+    <div
+      onClick={(e) => { if (tableRef.current && !tableRef.current.contains(e.target)) setSelectedId(null); }}
+      style={{
       minHeight: "100vh", width: "100%",
       backgroundColor: "#ffffff",
       fontFamily: FONT, color: C.text,
@@ -1958,6 +2007,19 @@ export default function FlujoIngresos({
         <div style={{ color: C.textMuted, fontSize: "10px" }}>
           {visibleRows.length}/{rowsCount} · {rowsWithData} con movimiento
         </div>
+
+        <button
+          onClick={() => exportarImagen("copiar")}
+          disabled={exportando}
+          title="Copiar la imagen del flujo (lo filtrado) al portapapeles"
+          style={{ ...toolbarBtn(), padding: "6px 11px", fontSize: "12px", background: "#0D9488", color: "#ffffff", borderColor: "#0D9488", opacity: exportando ? 0.6 : 1 }}
+        >{exportando ? "⏳…" : "📋 Copiar imagen"}</button>
+        <button
+          onClick={() => exportarImagen("descargar")}
+          disabled={exportando}
+          title="Descargar PNG del flujo (lo filtrado)"
+          style={{ ...toolbarBtn(), padding: "6px 11px", fontSize: "12px", opacity: exportando ? 0.6 : 1 }}
+        >⬇️ PNG</button>
 
         <div style={{ flex: 1 }} />
 
@@ -2074,7 +2136,7 @@ export default function FlujoIngresos({
         style={{ padding: "16px", overflow: "auto" }}
       >
         <div style={{ zoom, display: "inline-block" }}>
-          <table style={{
+          <table ref={tableRef} style={{
             borderCollapse: "collapse", background: "#ffffff",
             fontFamily: FONT, color: C.text,
           }}>
