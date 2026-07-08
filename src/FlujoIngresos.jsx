@@ -1022,6 +1022,23 @@ export default function FlujoIngresos({
     return sI;
   };
 
+  // Cierre PROYECTADO de una semana (con plan de cobranza), partiendo del
+  // saldo inicial proyectado. Se arrastra como saldo inicial proyectado de la
+  // semana siguiente.
+  const cierreProyectadoSemana = (wd) => {
+    if (!wd) return 0;
+    const rows = wd.rows || [];
+    const plan = wd.planCobranza || [0, 0, 0, 0, 0];
+    const clientSums = [0, 0, 0, 0, 0];
+    rows.forEach(r => (r.amounts || []).forEach((a, i) => { clientSums[i] += (a || 0); }));
+    const eg = [0, 0, 0, 0, 0];
+    Object.values(wd.egresos || {}).forEach(e => (e.amounts || []).forEach((a, i) => { eg[i] += (a || 0); }));
+    (wd.importados || []).forEach(imp => (imp.amounts || []).forEach((a, i) => { eg[i] += (a || 0); }));
+    let sI = (wd.saldoInicialProy != null) ? wd.saldoInicialProy : ((wd.saldoInicial && wd.saldoInicial[0]) || 0);
+    for (let i = 0; i < 5; i++) { sI = sI + clientSums[i] + (plan[i] || 0) - eg[i]; }
+    return sI;
+  };
+
   // ¿La semana tiene algún dato capturado?
   const weekTieneDatos = (wd) => {
     if (!wd) return false;
@@ -1073,11 +1090,13 @@ export default function FlujoIngresos({
           ? (typeof prevRow.data === "string" ? JSON.parse(prevRow.data) : prevRow.data)
           : null;
         if (weekTieneDatos(prevData)) {
-          const cierre = cierreBancarioSemana(prevData);
+          const cierreBanco = cierreBancarioSemana(prevData);
+          const cierreProy = cierreProyectadoSemana(prevData);
           setHayPrevia(true);
-          setData(prev => ({ ...prev, saldoInicial: [cierre, 0, 0, 0, 0] }));
+          setData(prev => ({ ...prev, saldoInicial: [cierreBanco, 0, 0, 0, 0], saldoInicialProy: cierreProy }));
         } else {
           setHayPrevia(false);
+          setData(prev => ({ ...prev, saldoInicialProy: null }));
         }
       } catch (e) {
         console.error("[FlujoIngresos] error cargando semana:", e);
@@ -1265,15 +1284,20 @@ export default function FlujoIngresos({
     // Saldo Final[d] = Saldo Inicial[d] + Ingresos[d] + Plan Cobranza[d] - Egresos[d]
     //               = Proyección[d] - Egresos[d] = FLUJO PROYECTADO[d]
     // Sólo el saldo inicial del día 0 (Lunes) es editable; los demás se calculan.
-    const saldoInicial = [data.saldoInicial[0] || 0, 0, 0, 0, 0];
+    const bankOpen = data.saldoInicial[0] || 0;
+    const proyOpen = (data.saldoInicialProy != null && data.saldoInicialProy !== undefined) ? data.saldoInicialProy : bankOpen;
+    const saldoInicial = [bankOpen, 0, 0, 0, 0];        // cadena BANCARIA (visible)
+    const saldoInicialProy = [proyOpen, 0, 0, 0, 0];    // cadena PROYECTADA (con plan de cobranza)
     const totalsPerDay = [0, 0, 0, 0, 0];
     const proyeccionPerDay = [0, 0, 0, 0, 0];
 
     for (let i = 0; i < 5; i++) {
       totalsPerDay[i] = saldoInicial[i] + clientSums[i];
-      proyeccionPerDay[i] = totalsPerDay[i] + (data.planCobranza[i] || 0);
-      // Cascada al día siguiente: saldo final del día actual (descontando egresos)
-      if (i < 4) saldoInicial[i + 1] = proyeccionPerDay[i] - egresosPerDay[i];
+      proyeccionPerDay[i] = saldoInicialProy[i] + clientSums[i] + (data.planCobranza[i] || 0);
+      if (i < 4) {
+        saldoInicial[i + 1]     = saldoInicial[i] + clientSums[i] - egresosPerDay[i];   // bancaria (sin plan)
+        saldoInicialProy[i + 1] = proyeccionPerDay[i] - egresosPerDay[i];               // proyectada (con plan)
+      }
     }
 
     // Grand totals — suma simple de los 5 días (coherente con las filas de cliente)
@@ -1298,6 +1322,7 @@ export default function FlujoIngresos({
 
     return {
       saldoInicial,
+      saldoInicialProy,
       totalsPerDay,
       proyeccionPerDay,
       planGrand,
@@ -1313,7 +1338,7 @@ export default function FlujoIngresos({
       flujoNetoPerDay,
       flujoProyectadoPerDay,
     };
-  }, [data.saldoInicial, data.rows, data.planCobranza, data.egresos, data.compromisos]);
+  }, [data.saldoInicial, data.saldoInicialProy, data.rows, data.planCobranza, data.egresos, data.importados, data.compromisos]);
 
   // Filas visibles
   const visibleRows = useMemo(() =>
@@ -1630,7 +1655,7 @@ export default function FlujoIngresos({
   const rowsWithData = data.rows.filter(r => r.amounts.some(a => a > 0)).length;
   // rowSpan de la columna Rubro fusionada — cubre sólo Saldo Inicial + filas de clientes visibles.
   // Totales, Plan y Proyección tienen sus propias celdas independientes.
-  const ingresoRubroSpan = 1 + Math.max(visibleRows.length, 1);
+  const ingresoRubroSpan = 2 + Math.max(visibleRows.length, 1);
 
   // ─── IMPORTAR DE CXP ──────────────────────────────────────────
   // Lista de rubros disponibles (los 19 estándar) — el usuario elige
@@ -2087,6 +2112,23 @@ export default function FlujoIngresos({
               ))}
               <td style={{ ...baseCell, ...blockEnd, background: C.saldoGray }}>
                 <AccountingCell value={calc.saldoInicial[0]} onChange={() => {}} readOnly />
+              </td>
+              <td style={baseCell}></td>
+            </tr>
+
+            {/* Saldo inicial PROYECTADO (con plan de cobranza) */}
+            <tr>
+              <td style={baseCell}></td>
+              <td style={{ ...baseCell, ...blockEnd, background: "#FFF3D6", padding: "2px 5px", fontStyle: "italic", color: "#7C5B00" }}>
+                Saldo inicial proyectado
+              </td>
+              {calc.saldoInicialProy.map((v, i) => (
+                <td key={i} style={{ ...baseCell, ...(i === 4 ? blockEnd : {}), background: "#FFF3D6" }}>
+                  <AccountingCell value={v} onChange={() => {}} readOnly />
+                </td>
+              ))}
+              <td style={{ ...baseCell, ...blockEnd, background: "#FFF3D6" }}>
+                <AccountingCell value={calc.saldoInicialProy[0]} onChange={() => {}} readOnly />
               </td>
               <td style={baseCell}></td>
             </tr>
