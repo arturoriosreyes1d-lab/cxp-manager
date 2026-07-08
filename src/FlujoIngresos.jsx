@@ -1001,9 +1001,37 @@ export default function FlujoIngresos({
   const [selectedId, setSelectedId] = useState(null);
   const [hoverRow, setHoverRow] = useState(null);
   const [zoom, setZoom] = useState(1); // Zoom tipo Excel (Ctrl + rueda)
+  const [hayPrevia, setHayPrevia] = useState(false); // ¿semana anterior con datos? (saldo inicial arrastrado)
   const tableScrollRef = useRef(null);
 
   const weekKey = formatDateKey(weekStart);
+
+  // Cierre BANCARIO de una semana: saldo inicial + ingresos reales − egresos
+  // (SIN plan de cobranza). Es el que se arrastra como saldo inicial de la
+  // semana siguiente. Cuando NO hay plan de cobranza coincide con el proyectado.
+  const cierreBancarioSemana = (wd) => {
+    if (!wd) return 0;
+    const rows = wd.rows || [];
+    const clientSums = [0, 0, 0, 0, 0];
+    rows.forEach(r => (r.amounts || []).forEach((a, i) => { clientSums[i] += (a || 0); }));
+    const eg = [0, 0, 0, 0, 0];
+    Object.values(wd.egresos || {}).forEach(e => (e.amounts || []).forEach((a, i) => { eg[i] += (a || 0); }));
+    (wd.importados || []).forEach(imp => (imp.amounts || []).forEach((a, i) => { eg[i] += (a || 0); }));
+    let sI = (wd.saldoInicial && wd.saldoInicial[0]) || 0;
+    for (let i = 0; i < 5; i++) { sI = sI + clientSums[i] - eg[i]; }
+    return sI;
+  };
+
+  // ¿La semana tiene algún dato capturado?
+  const weekTieneDatos = (wd) => {
+    if (!wd) return false;
+    if ((wd.saldoInicial && wd.saldoInicial[0])) return true;
+    if ((wd.rows || []).some(r => (r.amounts || []).some(a => a))) return true;
+    if (Object.keys(wd.egresos || {}).length > 0) return true;
+    if ((wd.importados || []).length > 0) return true;
+    if ((wd.planCobranza || []).some(x => x)) return true;
+    return false;
+  };
 
   // Cargar semana desde Supabase
   useEffect(() => {
@@ -1031,6 +1059,25 @@ export default function FlujoIngresos({
           });
         } else {
           setData(emptyWeek());
+        }
+        // Arrastre: saldo inicial = cierre BANCARIO de la semana anterior (si tiene datos)
+        const prevKey = formatDateKey(addDays(weekStart, -7));
+        const { data: prevRow } = await supabase
+          .from("flujo_efectivo_semanal")
+          .select("data")
+          .eq("empresa_id", empresaId)
+          .eq("week_key", prevKey)
+          .maybeSingle();
+        if (cancel) return;
+        const prevData = prevRow && prevRow.data
+          ? (typeof prevRow.data === "string" ? JSON.parse(prevRow.data) : prevRow.data)
+          : null;
+        if (weekTieneDatos(prevData)) {
+          const cierre = cierreBancarioSemana(prevData);
+          setHayPrevia(true);
+          setData(prev => ({ ...prev, saldoInicial: [cierre, 0, 0, 0, 0] }));
+        } else {
+          setHayPrevia(false);
         }
       } catch (e) {
         console.error("[FlujoIngresos] error cargando semana:", e);
@@ -2033,8 +2080,8 @@ export default function FlujoIngresos({
                   <AccountingCell
                     value={v}
                     onChange={nv => updateSaldoInicial(0, nv)}
-                    {...(i === 0 ? cellProps(`saldo-0`) : {})}
-                    readOnly={i !== 0}
+                    {...(i === 0 && !hayPrevia ? cellProps(`saldo-0`) : {})}
+                    readOnly={i !== 0 || hayPrevia}
                   />
                 </td>
               ))}
