@@ -548,7 +548,7 @@ function abreviarRubro(label) {
 
 function AccountingCell({
   value, onChange, cellId, autoFocusId, onAutoFocused, onNavigate,
-  bold = false, readOnly = false,
+  bold = false, readOnly = false, big = false,
   selected = false, onSelect,
 }) {
   const [editing, setEditing] = useState(false);
@@ -664,7 +664,7 @@ function AccountingCell({
       style={{
         display: "flex", justifyContent: "flex-end", alignItems: "center",
         padding: "2px 7px", height: "100%", cursor: readOnly ? "default" : "text",
-        fontFamily: FONT, fontSize: "12px", color: C.text,
+        fontFamily: FONT, fontSize: big ? "14px" : "12px", color: C.text,
         fontWeight: bold ? 700 : 400,
         userSelect: "none",
         ...selectedStyle,
@@ -835,7 +835,7 @@ function SegmentoCell({
 // Celda de flujo — muestra monto con color verde si positivo, rojo si negativo
 // Soporta tanto solo lectura como editable (para Compromisos)
 function FlowCell({
-  value, onChange, readOnly = true, bold = true,
+  value, onChange, readOnly = true, bold = true, big = false,
   cellId, autoFocusId, onAutoFocused, onNavigate,
   selected = false, onSelect,
 }) {
@@ -953,7 +953,7 @@ function FlowCell({
       style={{
         display: "flex", justifyContent: "flex-end", alignItems: "center",
         padding: "2px 7px", height: "100%",
-        fontFamily: FONT, fontSize: "12px", color,
+        fontFamily: FONT, fontSize: big ? "14px" : "12px", color,
         fontWeight: bold ? 700 : 400,
         cursor: readOnly ? "default" : "text",
         userSelect: "none",
@@ -2059,9 +2059,6 @@ export default function FlujoIngresos({
           {saveState === "idle" && !loading && <span style={{ opacity: 0.7 }}>Sincronizado</span>}
         </div>
 
-        <button onClick={loadDemo} style={toolbarBtn()} title="Cargar datos del screenshot">
-          <Sparkles size={11} /> Demo
-        </button>
         <button
           onClick={() => setImportModalOpen(true)}
           style={{
@@ -2075,9 +2072,6 @@ export default function FlujoIngresos({
         </button>
         <button onClick={exportCSV} style={toolbarBtn()} title="Descargar CSV">
           <Download size={11} /> Exportar
-        </button>
-        <button onClick={clearWeek} style={toolbarBtn()} title="Limpiar semana">
-          <Eraser size={11} /> Limpiar
         </button>
         <button
           onClick={() => setAdding(x => !x)}
@@ -2388,12 +2382,13 @@ export default function FlujoIngresos({
                   <AccountingCell
                     value={v}
                     onChange={nv => updatePlanCobranza(i, nv)}
+                    big
                     {...cellProps(`plan-${i}`)}
                   />
                 </td>
               ))}
               <td style={baseCell}>
-                <AccountingCell value={calc.planGrand} onChange={() => {}} readOnly />
+                <AccountingCell value={calc.planGrand} onChange={() => {}} readOnly big />
               </td>
               <td style={baseCell}></td>
             </tr>
@@ -2418,7 +2413,7 @@ export default function FlujoIngresos({
                   borderBottom: `1px solid #BFA060`,
                   borderRight: i === 4 ? `1px solid #BFA060` : "none",
                 }}>
-                  <AccountingCell value={p} onChange={() => {}} readOnly bold />
+                  <AccountingCell value={p} onChange={() => {}} readOnly bold big />
                 </td>
               ))}
               <td style={baseCell}></td>
@@ -2537,7 +2532,7 @@ export default function FlujoIngresos({
                           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontWeight: 600, fontSize: "11px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{imp.proveedor}</div>
-                              <div style={{ fontSize: "10px", color: C.textMuted }}>{imp.tipo === "programado" ? "📅" : "💰"} {imp.folio} · desde CxP</div>
+                              <div style={{ fontSize: "10px", color: C.textMuted }}>{imp.folio}</div>
                             </div>
                             <button onClick={() => removeImported(imp.id)} title="Quitar esta importación (no afecta CxP)" style={{ background: "transparent", border: "none", color: "#B91C1C", cursor: "pointer", fontSize: 12, padding: "0 4px", lineHeight: 1 }}>✕</button>
                           </div>
@@ -2735,7 +2730,7 @@ export default function FlujoIngresos({
                   borderTop: `1px solid ${C.gridLine}`,
                   borderBottom: `1px solid ${C.gridLine}`,
                 }}>
-                  <FlowCell value={v} readOnly />
+                  <FlowCell value={v} readOnly big />
                 </td>
               ))}
               <td style={baseCell}></td>
@@ -2761,6 +2756,7 @@ export default function FlujoIngresos({
                     value={v}
                     onChange={nv => updateCompromiso(i, nv)}
                     readOnly={false}
+                    big
                     {...cellProps(`compromiso-${i}`)}
                   />
                 </td>
@@ -2786,7 +2782,7 @@ export default function FlujoIngresos({
                   background: C.green,
                   borderBottom: `1px solid ${C.gridLine}`,
                 }}>
-                  <FlowCell value={v} readOnly />
+                  <FlowCell value={v} readOnly big />
                 </td>
               ))}
               <td style={baseCell}></td>
@@ -2817,7 +2813,7 @@ export default function FlujoIngresos({
                   borderBottom: `1px solid #BFA060`,
                   borderRight: i === 4 ? `1px solid #BFA060` : "none",
                 }}>
-                  <FlowCell value={v} readOnly />
+                  <FlowCell value={v} readOnly big />
                 </td>
               ))}
               <td style={baseCell}></td>
