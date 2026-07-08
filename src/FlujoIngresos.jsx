@@ -2532,25 +2532,29 @@ export default function FlujoIngresos({
                     return (
                       <tr key={`${rubro.id}-imp-${imp.id}`}>
                         {labelCell}
-                        <td style={{ ...baseCell, ...gridCell, background: "#FFF7E8", fontSize: "10px", padding: "2px 5px", fontWeight: 600, color: "#7C2D12" }}>{imp.segmento || ""}</td>
-                        <td style={{ ...baseCell, ...gridCell, textAlign: "left", padding: "2px 5px", background: hasDataImp ? "#FFFBEB" : "transparent" }}>
+                        <td style={{ ...baseCell, ...outer(rIdx, { left: false, right: true }), padding: "2px 5px", fontSize: "11px" }}>{imp.segmento || ""}</td>
+                        <td style={{ ...baseCell, ...outer(rIdx, { left: false, right: true }), padding: "2px 5px" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontWeight: 600, fontSize: "11px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{imp.proveedor}</div>
-                              <div style={{ fontSize: "9px", color: C.textMuted }}>{imp.tipo === "programado" ? "📅" : "💰"} {imp.folio} · desde CxP</div>
+                              <div style={{ fontSize: "10px", color: C.textMuted }}>{imp.tipo === "programado" ? "📅" : "💰"} {imp.folio} · desde CxP</div>
                             </div>
                             <button onClick={() => removeImported(imp.id)} title="Quitar esta importación (no afecta CxP)" style={{ background: "transparent", border: "none", color: "#B91C1C", cursor: "pointer", fontSize: 12, padding: "0 4px", lineHeight: 1 }}>✕</button>
                           </div>
                         </td>
                         {[0,1,2,3,4].map(dIdx => (
-                          <td key={dIdx} style={{ ...baseCell, ...gridCell, background: dayBgImp, padding: 0 }}>
+                          <td key={dIdx} style={{ ...baseCell, ...outer(rIdx, { left: false, right: dIdx === 4 }), padding: 0 }}>
                             <AccountingCell value={imp.amounts[dIdx]} onChange={() => {}} readOnly />
                           </td>
                         ))}
-                        <td style={{ ...baseCell, ...gridCell, background: C.lightBlue, padding: 0 }}>
+                        <td style={{ ...baseCell, ...outer(rIdx, { left: false, right: true }), padding: 0 }}>
                           <AccountingCell value={rowTotalImp} onChange={() => {}} readOnly bold />
                         </td>
-                        <td style={{ ...baseCell, ...gridCell, padding: "2px 5px", fontSize: "10px", color: C.textMuted, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={imp.concepto}>{imp.concepto || ""}</td>
+                        <td style={{ ...baseCell, ...outer(rIdx, { left: false, right: true }), padding: 0 }}>
+                          <div style={{ padding: "2px 7px", height: "100%", display: "flex", alignItems: "center", fontSize: "12px", color: C.text }}>
+                            <span style={{ width: "100%", textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={imp.concepto}>{imp.concepto || ""}</span>
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}
