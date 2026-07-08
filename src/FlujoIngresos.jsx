@@ -531,6 +531,20 @@ const EGRESOS_POR_RUBRO = (() => {
 // ───────────────────────────────────────────────────────────────
 // Celda con formato contable: $ a la izquierda, número a la derecha
 // ───────────────────────────────────────────────────────────────
+const RUBRO_ABREV = {
+  "FINANCIAMIENTOS": "FINANC.", "IMPUESTOS": "IMPTOS", "NÓMINA": "NÓMINA", "NOMINA": "NÓMINA",
+  "CAPITAL HUMANO": "CAP.HUM.", "COMBUSTIBLE": "COMBUS.", "MANTENIMIENTO DE UNIDADES": "MANTTO",
+  "COSTO UNIDADES / ADAPTACIÓN": "COSTO U.", "PEAJES DE SERVICIOS": "PEAJES", "SEGUROS": "SEGUROS",
+  "RENTAS": "RENTAS", "SERVICIOS": "SERVIC.", "SISTEMAS": "SISTEMAS", "HONORARIOS": "HONOR.",
+  "APOYOS DE TRANSPORTACIÓN": "APOYOS", "FONDO FIJO": "F.FIJO", "GASTOS COMERCIALES": "G.COMERC.",
+  "GASTOS VARIOS": "G.VARIOS", "REPROTECCIONES": "REPROT.",
+};
+function abreviarRubro(label) {
+  const k = String(label || "").toUpperCase().trim();
+  if (RUBRO_ABREV[k]) return RUBRO_ABREV[k];
+  return k.length > 8 ? k.slice(0, 7) + "." : k;
+}
+
 function AccountingCell({
   value, onChange, cellId, autoFocusId, onAutoFocused, onNavigate,
   bold = false, readOnly = false,
@@ -647,16 +661,15 @@ function AccountingCell({
       ref={divRef}
       onClick={start}
       style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        padding: "2px 5px", height: "100%", cursor: readOnly ? "default" : "text",
-        fontFamily: FONT, fontSize: "11px", color: C.text,
+        display: "flex", justifyContent: "flex-end", alignItems: "center",
+        padding: "2px 7px", height: "100%", cursor: readOnly ? "default" : "text",
+        fontFamily: FONT, fontSize: "12px", color: C.text,
         fontWeight: bold ? 700 : 400,
         userSelect: "none",
         ...selectedStyle,
       }}
     >
-      <span>$</span>
-      <span>{fmtAccountingNumber(value)}</span>
+      <span style={{ whiteSpace: "nowrap" }}>{"$" + fmtAccountingNumber(value)}</span>
     </div>
   );
 }
@@ -749,15 +762,16 @@ function TextCell({
       ref={divRef}
       onClick={start}
       style={{
-        padding: "2px 5px", height: "100%", cursor: "text",
-        fontFamily: FONT, fontSize: "11px", color: C.text,
-        textAlign: align, fontWeight: bold ? 700 : 400,
-        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        padding: "2px 7px", height: "100%", cursor: "text",
+        fontFamily: FONT, fontSize: "12px", color: C.text,
+        display: "flex", alignItems: "center",
+        justifyContent: align === "right" ? "flex-end" : align === "center" ? "center" : "flex-start",
+        fontWeight: bold ? 700 : 400,
         userSelect: "none",
         ...selectedStyle,
       }}
     >
-      {value || "\u00A0"}
+      <span style={{ width: "100%", textAlign: align, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value || "\u00A0"}</span>
     </div>
   );
 }
@@ -936,17 +950,16 @@ function FlowCell({
       ref={divRef}
       onClick={start}
       style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        padding: "2px 5px", height: "100%",
-        fontFamily: FONT, fontSize: "11px", color,
+        display: "flex", justifyContent: "flex-end", alignItems: "center",
+        padding: "2px 7px", height: "100%",
+        fontFamily: FONT, fontSize: "12px", color,
         fontWeight: bold ? 700 : 400,
         cursor: readOnly ? "default" : "text",
         userSelect: "none",
         ...selectedStyle,
       }}
     >
-      <span>$</span>
-      <span>{fmtAccountingNumber(value)}</span>
+      <span style={{ whiteSpace: "nowrap" }}>{"$" + fmtAccountingNumber(value)}</span>
     </div>
   );
 }
@@ -967,11 +980,11 @@ function Kbd({ children }) {
 
 function toolbarBtn() {
   return {
-    display: "inline-flex", alignItems: "center", gap: "4px",
-    padding: "3px 8px",
+    display: "inline-flex", alignItems: "center", gap: "6px",
+    padding: "6px 12px",
     background: "#ffffff",
     border: `1px solid ${C.gridLine}`,
-    fontFamily: FONT, fontSize: "11px",
+    fontFamily: FONT, fontSize: "13px",
     color: C.text,
     cursor: "pointer",
   };
@@ -1810,9 +1823,9 @@ export default function FlujoIngresos({
   // en los índices 2 (fin de meta), 7 (fin de días) y 8 (fin de total)
   const baseCell = {
     fontFamily: FONT,
-    fontSize: "11px",
+    fontSize: "12px",
     padding: 0,
-    height: "20px",
+    height: "24px",
     verticalAlign: "middle",
     color: C.text,
     fontVariantNumeric: "tabular-nums",
@@ -1845,10 +1858,10 @@ export default function FlujoIngresos({
     }}>
       {/* Toolbar */}
       <div style={{
-        display: "flex", alignItems: "center", gap: "10px",
-        padding: "8px 12px",
+        display: "flex", alignItems: "center", gap: "12px",
+        padding: "12px 16px",
         borderBottom: `1px solid ${C.gridLine}`,
-        fontFamily: FONT, fontSize: "11px",
+        fontFamily: FONT, fontSize: "13px",
         background: "#F8F8F8",
         flexWrap: "wrap",
       }}>
@@ -1867,7 +1880,7 @@ export default function FlujoIngresos({
           </button>
           <button
             onClick={() => setWeekStart(getMonday(new Date()))}
-            style={{ ...toolbarBtn(), padding: "3px 8px", fontSize: "10px" }}
+            style={{ ...toolbarBtn(), padding: "6px 11px", fontSize: "12px" }}
             title="Semana actual"
           >Hoy</button>
         </div>
@@ -1879,7 +1892,7 @@ export default function FlujoIngresos({
               onClick={() => setSegFilter(s)}
               style={{
                 ...toolbarBtn(),
-                padding: "3px 8px", fontSize: "10px",
+                padding: "6px 11px", fontSize: "12px",
                 background: segFilter === s ? C.headerBlue : "#ffffff",
                 color: segFilter === s ? "#ffffff" : C.text,
                 borderColor: segFilter === s ? C.headerBlueDark : C.gridLine,
@@ -1901,8 +1914,8 @@ export default function FlujoIngresos({
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar en todo (ingresos y egresos)…"
             style={{
-              padding: "3px 6px", outline: "none", border: "none",
-              width: "140px", fontFamily: FONT, fontSize: "11px",
+              padding: "6px 8px", outline: "none", border: "none",
+              width: "220px", fontFamily: FONT, fontSize: "13px",
               background: "transparent",
             }}
           />
@@ -1917,7 +1930,7 @@ export default function FlujoIngresos({
           onClick={() => setSoloMovimiento(v => !v)}
           title="Mostrar solo filas con movimiento (Total distinto de cero)"
           style={{
-            ...toolbarBtn(), padding: "3px 8px", fontSize: "10px",
+            ...toolbarBtn(), padding: "6px 11px", fontSize: "12px",
             background: soloMovimiento ? C.headerBlue : "#ffffff",
             color: soloMovimiento ? "#ffffff" : C.text,
             borderColor: soloMovimiento ? C.headerBlueDark : C.gridLine,
@@ -1930,7 +1943,7 @@ export default function FlujoIngresos({
           onChange={(e) => setDiaFiltro(e.target.value === "" ? null : Number(e.target.value))}
           title="Mostrar solo lo que tuvo movimiento un día específico"
           style={{
-            padding: "3px 6px", fontSize: "10px", fontFamily: FONT,
+            padding: "6px 8px", fontSize: "12px", fontFamily: FONT,
             border: `1px solid ${diaFiltro != null ? C.headerBlueDark : C.gridLine}`,
             background: diaFiltro != null ? "#EAF2FF" : "#ffffff",
             color: C.text, cursor: "pointer",
@@ -2418,7 +2431,7 @@ export default function FlujoIngresos({
                   {filas.map((fila, rIdx) => {
                     const labelCell = rIdx === 0 ? (
                       <td rowSpan={nFilas} style={{ ...baseCell, background: C.rubroGray, verticalAlign: "middle", textAlign: "center", padding: 0, height: "auto", border: `1px solid ${C.gridLine}` }}>
-                        <div style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", fontSize: nFilas >= 3 ? "14px" : "11px", fontWeight: 700, letterSpacing: "0.1em", color: C.text, padding: "8px 0", display: "inline-block", whiteSpace: "nowrap" }}>{rubro.label}</div>
+                        <div style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", fontSize: "10px", fontWeight: 700, letterSpacing: "0.02em", color: C.text, padding: "6px 0", display: "inline-block", whiteSpace: "nowrap" }}>{abreviarRubro(rubro.label)}</div>
                       </td>
                     ) : null;
 
