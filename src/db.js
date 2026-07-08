@@ -2751,3 +2751,28 @@ export async function enviarCorreoPago(params) {
     return { ok: false, error: err.message };
   }
 }
+
+/**
+ * Reconoce los saldos de una captura (screenshot) del estado de cuenta
+ * bancario usando el endpoint /api/reconocer-saldos (Gemini visión).
+ * @param {string} imagenBase64  - dataURL o base64 puro de la imagen (PNG/JPG)
+ * @returns {Promise<{ok:boolean, cuentas?:Array, error?:string}>}
+ *   cuentas: [ { banco, numeroCuenta, moneda, esInversion, saldo } ]
+ */
+export async function reconocerSaldosDesdeImagen(imagenBase64) {
+  try {
+    const res = await fetch('/api/reconocer-saldos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imagenBase64 }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      return { ok: false, error: data.error || `HTTP ${res.status}` };
+    }
+    return { ok: true, cuentas: Array.isArray(data.cuentas) ? data.cuentas : [] };
+  } catch (err) {
+    console.error('[reconocerSaldosDesdeImagen]', err);
+    return { ok: false, error: err.message };
+  }
+}

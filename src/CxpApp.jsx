@@ -23,7 +23,7 @@ import {
   uploadComprobantePDF, getComprobanteSignedUrl, deleteComprobantePDF,
   updateSupplierEmails, updatePaymentComprobante, updatePaymentComprobantes, marcarCorreoEnviado,
   fetchAppConfigCorreos, updateAppConfigCorreos,
-  enviarCorreoPago,
+  enviarCorreoPago, reconocerSaldosDesdeImagen,
   fetchTarjetas, updateTarjetaSaldo, fetchTarjetaMovimientos, bulkInsertMovimientos,
   fetchProgramados, upsertProgramado, deleteProgramado,
   fetchReporteSaldos, upsertReporteSaldos,
@@ -6730,6 +6730,9 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     const [edicionHistoricaSaldos, setEdicionHistoricaSaldos] = useState(false);
     const [showCopiarMenu, setShowCopiarMenu] = useState(false);
     const [importarECModal, setImportarECModal] = useState(null);
+    // Pegar captura (screenshot) -> reconocer saldos con IA
+    // { open, imagen, reconociendo, filas, guardando, error }
+    const [pegarCapturaModal, setPegarCapturaModal] = useState(null);
     // Préstamos: por ahora un solo préstamo activo por empresa
     const [prestamo, setPrestamo] = useState(null);          // {id, banco, montoAutorizado, ...} o null
     const [prestamoMovs, setPrestamoMovs] = useState([]);    // movimientos del préstamo activo
@@ -6817,6 +6820,111 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
     // Ej: saldo $1,215 - reserva $2,000 = -$784 (debes meter $784 para cumplir reserva)
     const disponible = (c, m) => saldoReal(c.id, m) - reservaCta(c) - movsPend(c.id, m);
     const ajusteVisible = (c, m) => reservaCta(c) > 0 || movsPend(c.id, m) !== 0;
+
+    // ─── Pegar captura → reconocer saldos con IA ──────────────────────
+    const normBancoCap = (b) => String(b || '').toUpperCase().replace(/[^A-Z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+    const soloDigitosCap = (n) => String(n || '').replace(/\D/g, '');
+
+    // Empareja una cuenta detectada por la IA con una cuenta de la BD.
+    // Orden de preferencia: número de cuenta → banco → único candidato.
+    const matchCuentaCaptura = (det, cuentasBD, yaUsadas) => {
+      const candidatos = cuentasBD.filter(c =>
+        c.moneda === det.moneda &&
+        ((c.tipo === 'inversion') === !!det.esInversion) &&
+        !yaUsadas.has(c.id)
+      );
+      if (candidatos.length === 0) return null;
+      const ncDet = soloDigitosCap(det.numeroCuenta);
+      if (ncDet) {
+        const porNum = candidatos.find(c => {
+          const ncBD = soloDigitosCap(c.numeroCuenta);
+          return ncBD && (ncBD === ncDet || ncBD.endsWith(ncDet) || ncDet.endsWith(ncBD));
+        });
+        if (porNum) return porNum;
+      }
+      const nbDet = normBancoCap(det.banco);
+      if (nbDet) {
+        const porBanco = candidatos.find(c => {
+          const nbBD = normBancoCap(c.banco);
+          return nbBD && (nbBD === nbDet || nbBD.includes(nbDet) || nbDet.includes(nbBD));
+        });
+        if (porBanco) return porBanco;
+      }
+      return candidatos.length === 1 ? candidatos[0] : null;
+    };
+
+    // Manda la imagen a la IA y arma las filas emparejadas con la BD
+    const procesarCaptura = async (dataUrl) => {
+      setPegarCapturaModal(prev => ({ ...prev, imagen: dataUrl, reconociendo: true, filas: null, error: null }));
+      const r = await reconocerSaldosDesdeImagen(dataUrl);
+      if (!r.ok) {
+        setPegarCapturaModal(prev => (prev ? { ...prev, reconociendo: false, error: r.error } : prev));
+        return;
+      }
+      const yaUsadas = new Set();
+      const filas = (r.cuentas || []).map((det, idx) => {
+        const cuentaBD = matchCuentaCaptura(det, cuentas, yaUsadas);
+        if (cuentaBD) yaUsadas.add(cuentaBD.id);
+        return {
+          key: idx,
+          banco: det.banco,
+          numeroCuenta: det.numeroCuenta,
+          moneda: det.moneda,
+          esInversion: !!det.esInversion,
+          saldo: det.saldo,
+          cuentaId: cuentaBD?.id || null,
+          cuentaLabel: cuentaBD
+            ? `${cuentaBD.banco}${cuentaBD.tipo === 'inversion' ? ' · Inversión' : ''} · ${cuentaBD.numeroCuenta || 's/n'}`
+            : null,
+        };
+      });
+      setPegarCapturaModal(prev => (prev ? { ...prev, reconociendo: false, filas } : prev));
+    };
+
+    // Guarda los saldos reconocidos como INICIO de día (conserva pendientes)
+    const parseSaldoCap = (v) => { const n = parseFloat(String(v).replace(/[^0-9.\-]/g, '')); return Number.isFinite(n) ? n : NaN; };
+    const guardarCaptura = async () => {
+      const modal = pegarCapturaModal;
+      if (!modal?.filas) return;
+      const aGuardar = modal.filas.filter(f => f.cuentaId && Number.isFinite(parseSaldoCap(f.saldo)));
+      if (aGuardar.length === 0) { alert('No hay cuentas reconocidas para guardar.'); return; }
+      setPegarCapturaModal(prev => ({ ...prev, guardando: true }));
+      let guardados = 0, errores = 0;
+      for (const f of aGuardar) {
+        const pendActual = movsPend(f.cuentaId, 'inicio');
+        const ok = await upsertSaldoDiario({
+          cuentaId: f.cuentaId, empresaId, fecha: fechaConsulta, momento: 'inicio',
+          saldoReal: parseSaldoCap(f.saldo), movsPendientes: pendActual,
+        }, user?.nombre || 'desconocido');
+        if (ok) guardados++; else errores++;
+      }
+      await recargar();
+      setPegarCapturaModal(null);
+      alert(`✅ Se guardaron ${guardados} saldo${guardados === 1 ? '' : 's'} de inicio.${errores > 0 ? `\n⚠️ ${errores} con error.` : ''}`);
+    };
+
+    // Listener de Ctrl+V mientras el modal de captura está abierto
+    useEffect(() => {
+      if (!pegarCapturaModal?.open) return;
+      const onPaste = (e) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        for (const it of items) {
+          if (it.type && it.type.startsWith('image/')) {
+            const blob = it.getAsFile();
+            if (!blob) continue;
+            const reader = new FileReader();
+            reader.onload = () => procesarCaptura(reader.result);
+            reader.readAsDataURL(blob);
+            e.preventDefault();
+            return;
+          }
+        }
+      };
+      window.addEventListener('paste', onPaste);
+      return () => window.removeEventListener('paste', onPaste);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pegarCapturaModal?.open]);
 
     // ─── Cálculos del préstamo ─────────────────────────────────────
     // utilizado = suma de disposiciones - suma de pagos
@@ -7285,6 +7393,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
               <button onClick={() => setShowPrestamoMov({ tipo:'crear-prestamo', mov:null })} style={{background:'#fff',border:`1px solid #F59E0B`,color:'#92400E',padding:'7px 12px',borderRadius:7,fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>+ Registrar préstamo</button>
             )}
             <button onClick={() => setImportarECModal({ open: true, archivo: null, parseando: false, resultado: null, sobreescribir: new Set() })} disabled={esConsulta} style={{background:esConsulta?'#999':'#1976D2',color:'#fff',border:'none',padding:'7px 12px',borderRadius:7,fontSize:11,fontWeight:700,cursor:esConsulta?'not-allowed':'pointer',fontFamily:'inherit'}}>📥 Importar Excel</button>
+            <button onClick={() => setPegarCapturaModal({ open: true, imagen: null, reconociendo: false, filas: null, guardando: false, error: null })} disabled={esConsulta || bloqueoSaldos} title="Pega una captura del estado de cuenta y la IA llena los saldos de inicio de día" style={{background:(esConsulta||bloqueoSaldos)?'#999':'#0D9488',color:'#fff',border:'none',padding:'7px 12px',borderRadius:7,fontSize:11,fontWeight:700,cursor:(esConsulta||bloqueoSaldos)?'not-allowed':'pointer',fontFamily:'inherit'}}>📋 Pegar captura</button>
             <button onClick={() => setShowCopiarMenu(true)} disabled={cuentas.length===0} style={{background:cuentas.length===0?'#999':C.navy,color:'#fff',border:'none',padding:'7px 12px',borderRadius:7,fontSize:11,fontWeight:700,cursor:cuentas.length===0?'not-allowed':'pointer',fontFamily:'inherit'}}>📸 Copiar Imagen</button>
           </div>
         </div>
@@ -7693,6 +7802,129 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
                     <button onClick={() => setImportarECModal(null)} disabled={m.guardando} style={{background:'#F1F5F9',color:'#374151',border:'none',padding:'10px 20px',borderRadius:8,fontSize:13,fontWeight:700,cursor:m.guardando?'not-allowed':'pointer',fontFamily:'inherit'}}>Cancelar</button>
                     <button onClick={aplicar} disabled={m.guardando || (totalSaldos - totalSinCuenta) === 0} style={{background:m.guardando||(totalSaldos-totalSinCuenta)===0?'#B0BEC5':'#1B5E20',color:'#fff',border:'none',padding:'10px 20px',borderRadius:8,fontSize:13,fontWeight:700,cursor:m.guardando||(totalSaldos-totalSinCuenta)===0?'not-allowed':'pointer',fontFamily:'inherit'}}>
                       {m.guardando ? '⏳ Guardando...' : `💾 Aplicar ${totalSaldos - totalSinCuenta} saldo${(totalSaldos-totalSinCuenta)===1?'':'s'}`}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
+        {pegarCapturaModal?.open && (() => {
+          const modal = pegarCapturaModal;
+          const setFila = (key, patch) => setPegarCapturaModal(prev => (prev ? { ...prev, filas: prev.filas.map(f => f.key === key ? { ...f, ...patch } : f) } : prev));
+          const asignarCuenta = (key, cuentaId) => {
+            const c = cuentas.find(x => x.id === cuentaId);
+            setFila(key, {
+              cuentaId: cuentaId || null,
+              cuentaLabel: c ? `${c.banco}${c.tipo === 'inversion' ? ' · Inversión' : ''} · ${c.numeroCuenta || 's/n'}` : null,
+            });
+          };
+          const filas = modal.filas || [];
+          const reconocidas = filas.filter(f => f.cuentaId).length;
+          const monedaSym = (m) => m === 'EUR' ? '€' : '$';
+          return (
+            <div onClick={(e) => { if (e.target === e.currentTarget && !modal.guardando) setPegarCapturaModal(null); }}
+              style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:14}}>
+              <div style={{background:'#fff',borderRadius:14,width:'100%',maxWidth:640,maxHeight:'92vh',display:'flex',flexDirection:'column',boxShadow:'0 20px 60px rgba(0,0,0,0.4)',overflow:'hidden'}}>
+                {/* Header */}
+                <div style={{padding:'16px 20px',background:C.navy,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:10}}>
+                    <span style={{fontSize:22}}>📋</span>
+                    <div>
+                      <div style={{color:'#fff',fontSize:16,fontWeight:800}}>Pegar captura de saldos</div>
+                      <div style={{color:'#93C5FD',fontSize:12,fontWeight:600}}>{empresa.nombre} · Inicio de día · {fmtFechaLarga(fechaConsulta)}</div>
+                    </div>
+                  </div>
+                  <button onClick={() => { if (!modal.guardando) setPegarCapturaModal(null); }} style={{background:'transparent',border:'none',fontSize:22,cursor:'pointer',color:'#93C5FD'}}>×</button>
+                </div>
+
+                <div style={{overflow:'auto',padding:18,flex:1}}>
+                  {/* Estado 1: esperando pegado */}
+                  {!modal.imagen && !modal.reconociendo && !modal.filas && (
+                    <div style={{border:'2px dashed #94A3B8',borderRadius:12,padding:'40px 20px',textAlign:'center',background:'#F8FAFC'}}>
+                      <div style={{fontSize:40,marginBottom:12}}>🖼️</div>
+                      <div style={{fontSize:15,fontWeight:800,color:C.navy,marginBottom:6}}>Presiona <span style={{background:'#E0E7FF',padding:'2px 8px',borderRadius:6}}>Ctrl + V</span> para pegar la captura</div>
+                      <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>Toma un screenshot del estado de cuenta (Win+Shift+S), luego pégalo aquí.<br/>La IA leerá el saldo de cada cuenta.</div>
+                    </div>
+                  )}
+
+                  {/* Estado 2: reconociendo */}
+                  {modal.reconociendo && (
+                    <div style={{textAlign:'center',padding:'40px 20px'}}>
+                      {modal.imagen && <img src={modal.imagen} alt="captura" style={{maxWidth:'100%',maxHeight:180,borderRadius:8,border:`1px solid ${C.border}`,marginBottom:16}}/>}
+                      <div style={{fontSize:15,fontWeight:800,color:'#0D9488'}}>⏳ Reconociendo saldos...</div>
+                      <div style={{fontSize:12,color:C.muted,marginTop:4}}>Esto toma unos segundos</div>
+                    </div>
+                  )}
+
+                  {/* Estado error */}
+                  {modal.error && !modal.reconociendo && (
+                    <div style={{background:'#FEF2F2',border:'1px solid #FCA5A5',borderRadius:10,padding:'14px 16px',marginBottom:12}}>
+                      <div style={{fontSize:13,fontWeight:800,color:'#B91C1C',marginBottom:4}}>⚠️ No se pudo reconocer la captura</div>
+                      <div style={{fontSize:12,color:'#7F1D1D',lineHeight:1.5}}>{modal.error}</div>
+                      <div style={{fontSize:11,color:'#991B1B',marginTop:8}}>Vuelve a pegar con Ctrl+V para reintentar.</div>
+                    </div>
+                  )}
+
+                  {/* Estado 3: resultados */}
+                  {modal.filas && !modal.reconociendo && (
+                    <>
+                      <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',background: reconocidas === filas.length ? '#ECFDF5' : '#FFFBEB',border:`1px solid ${reconocidas === filas.length ? '#A7F3D0' : '#FDE68A'}`,borderRadius:10,marginBottom:12}}>
+                        <span style={{fontSize:18}}>{reconocidas === filas.length ? '✅' : '⚠️'}</span>
+                        <div style={{flex:1,fontSize:12,color:'#374151'}}>
+                          <b>{reconocidas}</b> de <b>{filas.length}</b> cuentas reconocidas. Revisa y corrige antes de guardar.
+                        </div>
+                      </div>
+                      <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                        <thead>
+                          <tr style={{color:C.muted,textAlign:'left'}}>
+                            <th style={{padding:'6px 6px',fontWeight:700}}>Detectado</th>
+                            <th style={{padding:'6px 6px',fontWeight:700}}>Cuenta</th>
+                            <th style={{padding:'6px 6px',fontWeight:700,textAlign:'right'}}>Saldo</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filas.map(f => {
+                            const cuentasDisponibles = cuentas.filter(c => c.id === f.cuentaId || !filas.some(o => o.key !== f.key && o.cuentaId === c.id));
+                            return (
+                              <tr key={f.key} style={{borderTop:`1px solid ${C.border}`}}>
+                                <td style={{padding:'8px 6px'}}>
+                                  <div style={{fontWeight:700,color:C.text}}>{f.banco || '—'}{f.esInversion ? ' · Inv.' : ''}</div>
+                                  <div style={{fontSize:10,color:'#94A3B8',fontFamily:'monospace'}}>{f.numeroCuenta || 's/n'} · {f.moneda}</div>
+                                </td>
+                                <td style={{padding:'8px 6px'}}>
+                                  <select value={f.cuentaId || ''} onChange={(e) => asignarCuenta(f.key, e.target.value)}
+                                    style={{width:'100%',padding:'6px 8px',borderRadius:6,fontSize:11,fontFamily:'inherit',border:`1px solid ${f.cuentaId ? '#A7F3D0' : '#FCA5A5'}`,background:f.cuentaId ? '#F0FDF4' : '#FEF2F2',color:C.text}}>
+                                    <option value="">⚠️ No asignada</option>
+                                    {cuentasDisponibles.map(c => (
+                                      <option key={c.id} value={c.id}>{c.banco}{c.tipo === 'inversion' ? ' · Inversión' : ''} · {c.numeroCuenta || 's/n'} · {c.moneda}</option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td style={{padding:'8px 6px',textAlign:'right',whiteSpace:'nowrap'}}>
+                                  <span style={{color:C.muted,marginRight:2}}>{monedaSym(f.moneda)}</span>
+                                  <input value={f.saldo} onChange={(e) => setFila(f.key, { saldo: e.target.value })}
+                                    style={{width:100,padding:'6px 8px',borderRadius:6,fontSize:12,fontFamily:'inherit',border:`1px solid ${C.border}`,textAlign:'right'}}/>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                      <div style={{marginTop:12,padding:'8px 12px',background:'#F0F4FF',borderRadius:8,fontSize:11,color:C.navy,lineHeight:1.5}}>
+                        ℹ️ Se guarda solo el <b>saldo</b> de cada cuenta como <b>inicio de día</b>. El disponible lo calcula la app (saldo − reserva mínima). Las cuentas no asignadas no se guardan.
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Footer */}
+                {modal.filas && !modal.reconociendo && (
+                  <div style={{padding:'12px 20px',borderTop:`1px solid ${C.border}`,display:'flex',justifyContent:'flex-end',gap:10}}>
+                    <button onClick={() => setPegarCapturaModal(null)} disabled={modal.guardando} style={{background:'#F1F5F9',color:'#374151',border:'none',padding:'10px 20px',borderRadius:8,fontSize:13,fontWeight:700,cursor:modal.guardando?'not-allowed':'pointer',fontFamily:'inherit'}}>Cancelar</button>
+                    <button onClick={guardarCaptura} disabled={modal.guardando || reconocidas === 0} style={{background:(modal.guardando||reconocidas===0)?'#B0BEC5':'#0D9488',color:'#fff',border:'none',padding:'10px 20px',borderRadius:8,fontSize:13,fontWeight:700,cursor:(modal.guardando||reconocidas===0)?'not-allowed':'pointer',fontFamily:'inherit'}}>
+                      {modal.guardando ? '⏳ Guardando...' : `💾 Guardar ${reconocidas} saldo${reconocidas===1?'':'s'}`}
                     </button>
                   </div>
                 )}
