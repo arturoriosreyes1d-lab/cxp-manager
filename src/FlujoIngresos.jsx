@@ -38,7 +38,7 @@ const ZoomOut = makeIcon("🔎");
 // Tipografía — Carlito es un clon métrico-compatible de Calibri
 // ───────────────────────────────────────────────────────────────
 const FONTS_HREF =
-  "https://fonts.googleapis.com/css2?family=Carlito:ital,wght@0,400;0,700;1,400&display=swap";
+  "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap";
 
 function useInjectFonts() {
   useEffect(() => {
@@ -50,7 +50,7 @@ function useInjectFonts() {
   }, []);
 }
 
-const FONT = "'Carlito', Calibri, 'Segoe UI', system-ui, sans-serif";
+const FONT = "'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif";
 
 // ── Paleta Office auténtica del Excel
 const C = {
@@ -1036,7 +1036,7 @@ export default function FlujoIngresos({
         console.error("[FlujoIngresos] error cargando semana:", e);
         if (!cancel) setData(emptyWeek());
       } finally {
-        if (!cancel) setLoading(false);
+        if (!cancel) { loadedWeekRef.current = weekKey; setLoading(false); }
       }
     })();
     return () => { cancel = true; };
@@ -1044,8 +1044,9 @@ export default function FlujoIngresos({
 
   // Autoguardar en Supabase (debounce 400ms)
   const saveTimer = useRef(null);
+  const loadedWeekRef = useRef(null); // semana a la que pertenece el 'data' cargado
   useEffect(() => {
-    if (loading) return;
+    if (loading || loadedWeekRef.current !== weekKey) return;
     setSaveState("saving");
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
@@ -1716,6 +1717,8 @@ export default function FlujoIngresos({
     height: "20px",
     verticalAlign: "middle",
     color: C.text,
+    fontVariantNumeric: "tabular-nums",
+    fontFeatureSettings: '"tnum" 1',
   };
   const blockEnd = { borderRight: `1px solid ${C.gridLine}` };
   const blockEndHeader = { borderRight: `1px solid ${C.headerBlueDark}` };
@@ -2238,6 +2241,8 @@ export default function FlujoIngresos({
                 borderLeft:   edges.left  ? `1px solid ${C.gridLine}` : "none",
                 borderRight:  edges.right ? `1px solid ${C.gridLine}` : "none",
               });
+              const impsRubro = (data.importados || []).filter(imp => (imp.rubro || "").trim().toUpperCase() === rubro.label.toUpperCase());
+              const totalFilasRubro = rubro.rows + impsRubro.length;
               return (
                 <React.Fragment key={rubro.id}>
                   {rubro.items.map((item, rIdx) => {
@@ -2251,7 +2256,7 @@ export default function FlujoIngresos({
                         {/* Etiqueta vertical del rubro — fusionada en toda su altura */}
                         {rIdx === 0 && (
                           <td
-                            rowSpan={rubro.rows}
+                            rowSpan={totalFilasRubro}
                             style={{
                               ...baseCell,
                               background: C.rubroGray,
@@ -2342,15 +2347,45 @@ export default function FlujoIngresos({
                       </tr>
                     );
                   })}
+                  {impsRubro.map((imp) => {
+                    const rowTotalImp = (imp.amounts || [0,0,0,0,0]).reduce((a, b) => a + (b || 0), 0);
+                    const hasDataImp = rowTotalImp > 0;
+                    const dayBgImp = hasDataImp ? C.green : "transparent";
+                    return (
+                      <tr key={imp.id}>
+                        <td style={{ ...baseCell, ...gridCell, background: "#FFF7E8", fontSize: "10px", padding: "2px 5px", fontWeight: 600, color: "#7C2D12" }}>{imp.segmento || ""}</td>
+                        <td style={{ ...baseCell, ...gridCell, textAlign: "left", padding: "2px 5px", background: hasDataImp ? "#FFFBEB" : "transparent" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontWeight: 600, fontSize: "11px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{imp.proveedor}</div>
+                              <div style={{ fontSize: "9px", color: C.textMuted }}>{imp.tipo === "programado" ? "📅" : "💰"} {imp.folio} · desde CxP</div>
+                            </div>
+                            <button onClick={() => removeImported(imp.id)} title="Quitar esta importación (no afecta CxP)" style={{ background: "transparent", border: "none", color: "#B91C1C", cursor: "pointer", fontSize: 12, padding: "0 4px", lineHeight: 1 }}>✕</button>
+                          </div>
+                        </td>
+                        {[0,1,2,3,4].map(dIdx => (
+                          <td key={dIdx} style={{ ...baseCell, ...gridCell, background: dayBgImp, padding: 0 }}>
+                            <AccountingCell value={imp.amounts[dIdx]} onChange={() => {}} readOnly />
+                          </td>
+                        ))}
+                        <td style={{ ...baseCell, ...gridCell, background: C.lightBlue, padding: 0 }}>
+                          <AccountingCell value={rowTotalImp} onChange={() => {}} readOnly bold />
+                        </td>
+                        <td style={{ ...baseCell, ...gridCell, padding: "2px 5px", fontSize: "10px", color: C.textMuted, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={imp.concepto}>{imp.concepto || ""}</td>
+                      </tr>
+                    );
+                  })}
                 </React.Fragment>
               );
             })}
 
             {/* ═══════════════════════════════════════════════════ */}
-            {/*   IMPORTADOS DE CXP — sección dinámica               */}
+            {/*   IMPORTADOS DE CXP — sección dinámica (solo sin rubro) */}
             {/* ═══════════════════════════════════════════════════ */}
-            {(data.importados || []).length > 0 && (() => {
-              const importedRows = data.importados || [];
+            {(() => {
+              const rubroLabelsSet = new Set(EGRESOS_POR_RUBRO.map(r => r.label.toUpperCase()));
+              const importedRows = (data.importados || []).filter(imp => !rubroLabelsSet.has((imp.rubro || "").trim().toUpperCase()));
+              if (importedRows.length === 0) return null;
               const totalRows = importedRows.length;
               return (
                 <React.Fragment key="rubro-importados">
