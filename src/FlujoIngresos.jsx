@@ -2194,7 +2194,7 @@ export default function FlujoIngresos({
             {visibleRows.map(({ r, originalIdx }) => {
               const rowTotal = r.amounts.reduce((a, b) => a + (b || 0), 0);
               const hasAnyData = r.amounts.some(a => a > 0) || r.concepto;
-              const greenBg = hasAnyData ? C.green : "#ffffff";
+              const greenBg = "#ffffff";
               const isHover = hoverRow === r.id;
               return (
                 <tr
@@ -2336,6 +2336,8 @@ export default function FlujoIngresos({
               <td style={baseCell}></td>
             </tr>
 
+            <tr><td colSpan={10} style={{ height: "6px", border: "none", background: "transparent", padding: 0 }}></td></tr>
+
             {/* PROYECCION INGRESOS — cajón ámbar (proyección, igual que FLUJO PROYECTADO) */}
             <tr>
               <td style={baseCell}></td>
@@ -2440,7 +2442,7 @@ export default function FlujoIngresos({
                       const eg = data.egresos?.[item.id] || { amounts: [0,0,0,0,0], concepto: "" };
                       const rowTotal = eg.amounts.reduce((a, b) => a + (b || 0), 0);
                       const hasData = rowTotal > 0 || (eg.concepto && eg.concepto.trim());
-                      const dayBg = hasData ? C.green : "transparent";
+                      const dayBg = "transparent";
                       return (
                         <tr key={`${rubro.id}-i-${item.id}`}>
                           {labelCell}
@@ -2464,7 +2466,7 @@ export default function FlujoIngresos({
                     const imp = fila.imp;
                     const rowTotalImp = (imp.amounts || [0,0,0,0,0]).reduce((a, b) => a + (b || 0), 0);
                     const hasDataImp = rowTotalImp > 0;
-                    const dayBgImp = hasDataImp ? C.green : "transparent";
+                    const dayBgImp = "transparent";
                     return (
                       <tr key={`${rubro.id}-imp-${imp.id}`}>
                         {labelCell}
@@ -2507,7 +2509,7 @@ export default function FlujoIngresos({
                   {importedRows.map((imp, rIdx) => {
                     const rowTotal = (imp.amounts || [0,0,0,0,0]).reduce((a, b) => a + (b || 0), 0);
                     const hasData = rowTotal > 0;
-                    const dayBg = hasData ? C.green : "transparent";
+                    const dayBg = "transparent";
                     return (
                       <tr key={imp.id}>
                         {/* Etiqueta vertical IMPORTADOS — solo en la primera fila */}
