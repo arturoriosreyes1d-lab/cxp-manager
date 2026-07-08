@@ -1,10 +1,10 @@
 // ════════════════════════════════════════════════════════════════════
 // Endpoint: POST /api/reconocer-saldos
 // Recibe la captura (screenshot) del estado de cuenta bancario y usa
-// Gemini (visión) para extraer el saldo de cada cuenta.
+// Claude (visión) de Anthropic para extraer el saldo de cada cuenta.
 //
 // Variable de entorno requerida en Vercel:
-//   GEMINI_API_KEY  → API key gratis de Google AI Studio (aistudio.google.com)
+//   ANTHROPIC_API_KEY  → API key de console.anthropic.com (empieza con sk-ant-)
 //
 // Body JSON esperado:
 // {
@@ -17,8 +17,9 @@
 // { ok: false, error: 'mensaje descriptivo' }
 // ════════════════════════════════════════════════════════════════════
 
-// Modelo de visión (rápido y dentro de la capa gratuita de Google)
-const GEMINI_MODEL = 'gemini-2.0-flash';
+// Modelo de visión (barato y con visión). Si necesitas más precisión,
+// puedes cambiarlo por 'claude-sonnet-5'.
+const CLAUDE_MODEL = 'claude-haiku-4-5-20251001';
 
 // Utilidad · CORS y verificar método
 function preflight(req, res) {
@@ -72,9 +73,9 @@ export default async function handler(req, res) {
   }
 
   // ── 1. Credencial del entorno
-  const API_KEY = process.env.GEMINI_API_KEY;
+  const API_KEY = process.env.ANTHROPIC_API_KEY;
   if (!API_KEY) {
-    return res.status(500).json({ ok: false, error: 'Falta la variable GEMINI_API_KEY en Vercel' });
+    return res.status(500).json({ ok: false, error: 'Falta la variable ANTHROPIC_API_KEY en Vercel' });
   }
 
   // ── 2. Parsear body
@@ -92,68 +93,75 @@ export default async function handler(req, res) {
   }
 
   // Detectar mime y limpiar el prefijo "data:image/xxx;base64,"
-  let mimeType = 'image/png';
+  let mediaType = 'image/png';
   const mimeMatch = imagenBase64.match(/^data:(image\/\w+);base64,/);
-  if (mimeMatch) mimeType = mimeMatch[1];
+  if (mimeMatch) mediaType = mimeMatch[1];
   const b64 = imagenBase64.replace(/^data:image\/\w+;base64,/, '');
 
-  // ── 3. Llamar a Gemini
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${API_KEY}`;
-  const geminiBody = {
-    contents: [{
-      parts: [
-        { text: PROMPT },
-        { inline_data: { mime_type: mimeType, data: b64 } },
-      ],
-    }],
-    generationConfig: {
-      temperature: 0,
-      responseMimeType: 'application/json',
-    },
+  // ── 3. Llamar a Claude (Anthropic Messages API)
+  const anthropicBody = {
+    model: CLAUDE_MODEL,
+    max_tokens: 2048,
+    temperature: 0,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: PROMPT },
+          { type: 'image', source: { type: 'base64', media_type: mediaType, data: b64 } },
+        ],
+      },
+      { role: 'assistant', content: '{' },
+    ],
   };
 
-  let geminiRes;
+  let apiRes;
   try {
-    geminiRes = await fetch(url, {
+    apiRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(geminiBody),
+      headers: {
+        'x-api-key': API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(anthropicBody),
     });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: `No se pudo conectar con Gemini: ${err.message}` });
+    return res.status(500).json({ ok: false, error: `No se pudo conectar con Anthropic: ${err.message}` });
   }
 
-  if (!geminiRes.ok) {
+  if (!apiRes.ok) {
     let detalle = '';
     try {
-      const errJson = await geminiRes.json();
+      const errJson = await apiRes.json();
       detalle = errJson?.error?.message || '';
     } catch { /* ignore */ }
     return res.status(500).json({
       ok: false,
-      error: `Gemini respondió ${geminiRes.status}${detalle ? `: ${detalle}` : ''}`,
+      error: `Anthropic respondió ${apiRes.status}${detalle ? `: ${detalle}` : ''}`,
     });
   }
 
-  // ── 4. Extraer el texto JSON de la respuesta
+  // ── 4. Extraer el texto de la respuesta
   let data;
   try {
-    data = await geminiRes.json();
-  } catch (err) {
-    return res.status(500).json({ ok: false, error: 'Respuesta de Gemini no es JSON válido' });
+    data = await apiRes.json();
+  } catch {
+    return res.status(500).json({ ok: false, error: 'Respuesta de Anthropic no es JSON válido' });
   }
 
-  const texto = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  const bloque = Array.isArray(data?.content) ? data.content.find(b => b.type === 'text') : null;
+  let texto = bloque?.text;
   if (!texto) {
-    return res.status(500).json({ ok: false, error: 'Gemini no devolvió contenido reconocible' });
+    return res.status(500).json({ ok: false, error: 'Claude no devolvió contenido reconocible' });
   }
+  texto = '{' + texto;
 
   // ── 5. Parsear el JSON devuelto por el modelo
   let parsed;
   try {
     parsed = JSON.parse(texto);
   } catch {
-    // Fallback: intentar recortar hasta el primer { y el último }
     const ini = texto.indexOf('{');
     const fin = texto.lastIndexOf('}');
     if (ini >= 0 && fin > ini) {
@@ -161,10 +169,9 @@ export default async function handler(req, res) {
     }
   }
   if (!parsed) {
-    return res.status(500).json({ ok: false, error: 'No se pudo interpretar el JSON de Gemini' });
+    return res.status(500).json({ ok: false, error: 'No se pudo interpretar el JSON de Claude' });
   }
 
-  // Aceptar tanto { cuentas: [...] } como un array directo
   const listaRaw = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.cuentas) ? parsed.cuentas : []);
 
   // ── 6. Normalizar cada cuenta
