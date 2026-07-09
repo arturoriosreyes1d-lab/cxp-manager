@@ -549,14 +549,15 @@ function abreviarRubro(label) {
 function AccountingCell({
   value, onChange, cellId, autoFocusId, onAutoFocused, onNavigate,
   bold = false, readOnly = false, big = false, paid = false,
-  selected = false, onSelect,
+  selected = false, onSelect, onModClick,
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const ref = useRef(null);
   const divRef = useRef(null);
 
-  const start = () => {
+  const start = (e) => {
+    if (e && (e.ctrlKey || e.metaKey || e.shiftKey) && onModClick) { e.preventDefault(); e.stopPropagation(); onModClick(e); return; }
     if (readOnly) {
       // Aunque sea solo lectura, queremos poder seleccionarla con flechas
       if (onSelect && cellId) onSelect(cellId);
@@ -646,7 +647,7 @@ function AccountingCell({
     return (
       <div
         ref={divRef}
-        onClick={start}
+        onClick={(e) => start(e)}
         style={{
           height: "100%", width: "100%", minHeight: "20px",
           cursor: readOnly ? "default" : "text",
@@ -660,7 +661,7 @@ function AccountingCell({
   return (
     <div
       ref={divRef}
-      onClick={start}
+      onClick={(e) => start(e)}
       style={{
         display: "flex", justifyContent: "flex-end", alignItems: "center",
         padding: "2px 7px", height: "100%", cursor: readOnly ? "default" : "text",
@@ -761,7 +762,7 @@ function TextCell({
   return (
     <div
       ref={divRef}
-      onClick={start}
+      onClick={(e) => start(e)}
       style={{
         padding: "2px 7px", height: "100%", cursor: "text",
         fontFamily: FONT, fontSize: "12px", color: C.text,
@@ -930,7 +931,7 @@ function FlowCell({
     return (
       <div
         ref={divRef}
-        onClick={start}
+        onClick={(e) => start(e)}
         style={{
           display: "flex", justifyContent: "flex-end", alignItems: "center",
           padding: "2px 5px", height: "100%",
@@ -949,7 +950,7 @@ function FlowCell({
   return (
     <div
       ref={divRef}
-      onClick={start}
+      onClick={(e) => start(e)}
       style={{
         display: "flex", justifyContent: "flex-end", alignItems: "center",
         padding: "2px 7px", height: "100%",
@@ -1022,6 +1023,10 @@ export default function FlujoIngresos({
   const tableRef = useRef(null);
   const [exportando, setExportando] = useState(false);
   const [detalleImp, setDetalleImp] = useState(null);
+  const [selCeldas, setSelCeldas] = useState([]);
+  const [fechaMover, setFechaMover] = useState("");
+  const [confirmMover, setConfirmMover] = useState(false);
+  const [undoMover, setUndoMover] = useState(null);
 
   const weekKey = formatDateKey(weekStart);
   const hoyKey = formatDateKey(new Date());  // para resaltar la columna de HOY
@@ -1300,6 +1305,99 @@ export default function FlujoIngresos({
     if (s.has(key)) s.delete(key); else s.add(key);
     return { ...d, pagados: Array.from(s) };
   });
+
+  // ══ Reprogramar pagos (selección múltiple + mover de fecha) ══
+  const parseFechaLocal = (s) => { const [y, m, d] = String(s).split("-").map(Number); return new Date(y, (m || 1) - 1, d || 1); };
+  const selKeyCelda = (cd) => `${cd.tipo}-${cd.id}-${cd.dayIdx}`;
+  const isSelCelda = (cd) => selCeldas.some(x => selKeyCelda(x) === selKeyCelda(cd));
+  const toggleSelCelda = (cd) => setSelCeldas(prev => {
+    const k = selKeyCelda(cd);
+    return prev.some(x => selKeyCelda(x) === k) ? prev.filter(x => selKeyCelda(x) !== k) : [...prev, cd];
+  });
+  const totalSel = selCeldas.reduce((a, c) => a + (c.monto || 0), 0);
+  const fmtMoneyMove = (n) => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const doMover = async (nuevaFecha) => {
+    if (!nuevaFecha || selCeldas.length === 0) return;
+    const imps = selCeldas.filter(c => c.tipo === "imp");
+    const egs = selCeldas.filter(c => c.tipo === "eg");
+    const snap = { dataPrev: JSON.parse(JSON.stringify(data)), cxpPrev: [], targetWeeks: {} };
+
+    // Importados → reprogramar en CxP (fecha de proyección)
+    const invIds = [...new Set(imps.map(c => c.invoiceId).filter(Boolean))];
+    const payIds = [...new Set(imps.map(c => c.paymentId).filter(Boolean))];
+    imps.forEach(c => {
+      const inv = invoicesById.get(c.invoiceId);
+      snap.cxpPrev.push({ invoiceId: c.invoiceId, paymentId: c.paymentId, prevFechaProg: (inv && inv.fechaProgramacion) || null });
+    });
+    try {
+      if (invIds.length) await supabase.from("invoices").update({ fecha_programacion: nuevaFecha }).in("id", invIds);
+      if (payIds.length) await supabase.from("payments").update({ fecha_pago: nuevaFecha }).in("id", payIds);
+    } catch (e) { console.error("[mover CxP]", e); }
+
+    let nuevaData = { ...data, importados: (data.importados || []).filter(imp => !imps.some(c => c.id === imp.id)) };
+
+    // Egresos capturados a mano → mover de día / de semana
+    const targetMonday = getMonday(parseFechaLocal(nuevaFecha));
+    const targetKey = formatDateKey(targetMonday);
+    let targetDayIdx = Math.round((parseFechaLocal(nuevaFecha) - targetMonday) / 86400000);
+    if (targetDayIdx < 0) targetDayIdx = 0;
+    if (targetDayIdx > 4) targetDayIdx = 4;
+
+    const egMap = { ...(nuevaData.egresos || {}) };
+    const egOtras = egs.filter(c => targetKey !== weekKey);
+    egs.filter(c => targetKey === weekKey).forEach(c => {
+      const cur = { ...(egMap[c.id] || { amounts: [0,0,0,0,0], concepto: "" }) };
+      const amts = [...cur.amounts]; const val = amts[c.dayIdx] || 0;
+      amts[c.dayIdx] = 0; amts[targetDayIdx] = (amts[targetDayIdx] || 0) + val;
+      egMap[c.id] = { ...cur, amounts: amts };
+    });
+    nuevaData = { ...nuevaData, egresos: egMap };
+
+    if (egOtras.length) {
+      try {
+        const { data: row } = await supabase.from("flujo_efectivo_semanal").select("data").eq("empresa_id", empresaId).eq("week_key", targetKey).maybeSingle();
+        const tData = row && row.data ? (typeof row.data === "string" ? JSON.parse(row.data) : row.data) : emptyWeek();
+        snap.targetWeeks[targetKey] = JSON.parse(JSON.stringify(tData));
+        const tEg = { ...(tData.egresos || {}) };
+        const egMap2 = { ...(nuevaData.egresos || {}) };
+        egOtras.forEach(c => {
+          const cur = { ...(egMap2[c.id] || { amounts: [0,0,0,0,0], concepto: "" }) };
+          const amts = [...cur.amounts]; const val = amts[c.dayIdx] || 0; amts[c.dayIdx] = 0; egMap2[c.id] = { ...cur, amounts: amts };
+          const tcur = { ...(tEg[c.id] || { amounts: [0,0,0,0,0], concepto: "" }) };
+          const tamts = [...tcur.amounts]; tamts[targetDayIdx] = (tamts[targetDayIdx] || 0) + val; tEg[c.id] = { ...tcur, amounts: tamts };
+        });
+        nuevaData = { ...nuevaData, egresos: egMap2 };
+        await supabase.from("flujo_efectivo_semanal").upsert({ empresa_id: empresaId, week_key: targetKey, data: { ...tData, egresos: tEg }, updated_at: new Date().toISOString() }, { onConflict: "empresa_id,week_key" });
+      } catch (e) { console.error("[mover semana destino]", e); }
+    }
+
+    setData(nuevaData);
+    setUndoMover(snap);
+    setSelCeldas([]); setConfirmMover(false);
+    const nSel = imps.length + egs.length;
+    setFechaMover("");
+    alert(`✅ Reprogramados ${nSel} pago(s) al ${nuevaFecha}.`);
+  };
+
+  const deshacerMover = async () => {
+    if (!undoMover) return;
+    const snap = undoMover;
+    for (const c of snap.cxpPrev) {
+      try {
+        if (c.invoiceId) await supabase.from("invoices").update({ fecha_programacion: c.prevFechaProg }).eq("id", c.invoiceId);
+        if (c.paymentId) await supabase.from("payments").update({ fecha_pago: c.prevFechaProg }).eq("id", c.paymentId);
+      } catch (e) { /* ignore */ }
+    }
+    for (const k of Object.keys(snap.targetWeeks)) {
+      try {
+        await supabase.from("flujo_efectivo_semanal").upsert({ empresa_id: empresaId, week_key: k, data: snap.targetWeeks[k], updated_at: new Date().toISOString() }, { onConflict: "empresa_id,week_key" });
+      } catch (e) { /* ignore */ }
+    }
+    setData(snap.dataPrev);
+    setUndoMover(null);
+    alert("↩️ Movimiento deshecho.");
+  };
 
   const loadDemo = () => setData(demoWeek());
   const clearWeek = () => {
@@ -2525,11 +2623,15 @@ export default function FlujoIngresos({
                           {labelCell}
                           <td style={{ ...baseCell, ...outer(rIdx, { left: false, right: true }), padding: "2px 5px", fontSize: "11px" }}>{item.segmento || ""}</td>
                           <td style={{ ...baseCell, ...outer(rIdx, { left: false, right: true }), padding: "2px 5px", fontSize: "11px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={item.proveedor}>{item.proveedor}</td>
-                          {[0,1,2,3,4].map(j => (
-                            <td key={j} style={{ ...baseCell, ...outer(rIdx, { left: false, right: j === 4 }), background: dayBg, padding: 0 }}>
-                              <AccountingCell value={eg.amounts[j]} onChange={v => updateEgresoAmount(item.id, j, v)} {...cellProps(`egreso-${item.id}-${j}`)} />
+                          {[0,1,2,3,4].map(j => {
+                            const cdEg = { tipo: "eg", id: item.id, dayIdx: j, monto: eg.amounts[j] };
+                            const selEg = eg.amounts[j] ? isSelCelda(cdEg) : false;
+                            return (
+                            <td key={j} style={{ ...baseCell, ...outer(rIdx, { left: false, right: j === 4 }), background: selEg ? "#DCEBFF" : dayBg, padding: 0, ...(selEg ? { outline: "2px solid #2F6BFF", outlineOffset: "-2px" } : {}) }}>
+                              <AccountingCell value={eg.amounts[j]} onChange={v => updateEgresoAmount(item.id, j, v)} onModClick={eg.amounts[j] ? () => toggleSelCelda(cdEg) : undefined} {...cellProps(`egreso-${item.id}-${j}`)} />
                             </td>
-                          ))}
+                            );
+                          })}
                           <td style={{ ...baseCell, ...outer(rIdx, { left: false, right: true }), background: dayBg, padding: 0 }}>
                             <AccountingCell value={rowTotal} onChange={() => {}} readOnly bold {...cellProps(`egtotal-${item.id}`)} />
                           </td>
@@ -2559,8 +2661,10 @@ export default function FlujoIngresos({
                         {[0,1,2,3,4].map(dIdx => {
                           const valImp = imp.amounts[dIdx];
                           const tienePagoImp = valImp && valImp !== 0;
+                          const cdImp = { tipo: "imp", id: imp.id, dayIdx: dIdx, monto: valImp, invoiceId: imp.invoiceId, paymentId: imp.paymentId };
+                          const selImp = tienePagoImp ? isSelCelda(cdImp) : false;
                           return (
-                            <td key={dIdx} onClick={tienePagoImp ? () => setDetalleImp(imp) : undefined} title={tienePagoImp ? "Ver detalle / marcar pagado" : undefined} style={{ ...baseCell, ...outer(rIdx, { left: false, right: dIdx === 4 }), padding: 0, cursor: tienePagoImp ? "pointer" : "default" }}>
+                            <td key={dIdx} onClick={tienePagoImp ? (e) => { if (e.ctrlKey || e.metaKey) toggleSelCelda(cdImp); else setDetalleImp(imp); } : undefined} title={tienePagoImp ? "Clic: detalle · Ctrl+clic: seleccionar para mover" : undefined} style={{ ...baseCell, ...outer(rIdx, { left: false, right: dIdx === 4 }), padding: 0, cursor: tienePagoImp ? "pointer" : "default", background: selImp ? "#DCEBFF" : undefined, ...(selImp ? { outline: "2px solid #2F6BFF", outlineOffset: "-2px" } : {}) }}>
                               <AccountingCell value={valImp} onChange={() => {}} readOnly paid={tienePagoImp && isPagado(`imp-${imp.id}`)} />
                             </td>
                           );
@@ -2869,6 +2973,43 @@ export default function FlujoIngresos({
       </div>
 
       {/* MODAL DE IMPORTACIÓN DE CXP */}
+      {/* Barra flotante de reprogramación (selección múltiple) */}
+      {selCeldas.length > 0 && (
+        <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 9998, display: "flex", justifyContent: "center", padding: 14, pointerEvents: "none" }}>
+          <div style={{ pointerEvents: "auto", background: "#16233C", borderRadius: 12, padding: "12px 16px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", boxShadow: "0 12px 34px rgba(0,0,0,0.3)", fontFamily: FONT }}>
+            <span style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>{selCeldas.length} pago(s) seleccionado(s) · <b style={{ color: "#7FE0B0" }}>{fmtMoneyMove(totalSel)}</b></span>
+            <span style={{ color: "#9DB6E0", fontSize: 12 }}>Mover a:</span>
+            <input type="date" value={fechaMover} onChange={e => setFechaMover(e.target.value)} style={{ padding: "7px 10px", borderRadius: 8, border: "none", fontFamily: FONT, fontSize: 12 }} />
+            <button onClick={() => { if (!fechaMover) { alert("Elige la fecha destino."); return; } setConfirmMover(true); }} style={{ background: "#2F6BFF", color: "#fff", border: "none", borderRadius: 8, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Reprogramar</button>
+            <button onClick={() => setSelCeldas([])} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.35)", color: "#fff", borderRadius: 8, padding: "9px 14px", fontSize: 12, cursor: "pointer" }}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      {/* Chip de deshacer (tras reprogramar) */}
+      {undoMover && selCeldas.length === 0 && (
+        <div style={{ position: "fixed", right: 16, bottom: 16, zIndex: 9998, fontFamily: FONT }}>
+          <button onClick={deshacerMover} style={{ background: "#16233C", color: "#FDE68A", border: "none", borderRadius: 10, padding: "10px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer", boxShadow: "0 10px 30px rgba(0,0,0,0.3)" }}>↩️ Deshacer reprogramación</button>
+        </div>
+      )}
+
+      {/* Confirmar reprogramación */}
+      {confirmMover && (
+        <div onClick={e => { if (e.target === e.currentTarget) setConfirmMover(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, fontFamily: FONT }}>
+          <div style={{ background: "#fff", borderRadius: 14, maxWidth: 460, width: "100%", padding: 20, boxShadow: "0 22px 66px rgba(0,0,0,0.45)" }}>
+            <div style={{ fontSize: 17, fontWeight: 700, color: C.headerBlue, marginBottom: 10 }}>Reprogramar pagos</div>
+            <div style={{ fontSize: 13, color: C.text, lineHeight: 1.65 }}>
+              Vas a mover <b>{selCeldas.length}</b> pago(s) por <b>{fmtMoneyMove(totalSel)}</b> a la fecha <b>{fechaMover}</b>.<br /><br />
+              Los pagos importados cambiarán su <b>fecha de proyección en la Cartera (CxP)</b>. Podrás deshacerlo después.
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
+              <button onClick={() => setConfirmMover(false)} style={{ background: "#F1F5F9", border: "none", borderRadius: 8, padding: "10px 16px", fontWeight: 700, cursor: "pointer", fontFamily: FONT }}>Cancelar</button>
+              <button onClick={() => doMover(fechaMover)} style={{ background: "#2F6BFF", color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontWeight: 700, cursor: "pointer", fontFamily: FONT }}>Confirmar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {detalleImp && (() => {
         const imp = detalleImp;
         const inv = invoicesById.get(imp.invoiceId) || {};
