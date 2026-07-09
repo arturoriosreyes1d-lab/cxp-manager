@@ -664,7 +664,7 @@ function AccountingCell({
       ref={divRef}
       onClick={(e) => start(e)}
       style={{
-        display: "flex", justifyContent: "flex-end", alignItems: "center",
+        display: "flex", justifyContent: "flex-end", alignItems: "center", width: "100%",
         padding: "2px 7px", height: "100%", cursor: readOnly ? "default" : "text",
         fontFamily: FONT, fontSize: big ? "14px" : "12px", color: C.text,
         fontWeight: (bold || paid) ? 700 : 400,
@@ -934,7 +934,7 @@ function FlowCell({
         ref={divRef}
         onClick={(e) => start(e)}
         style={{
-          display: "flex", justifyContent: "flex-end", alignItems: "center",
+          display: "flex", justifyContent: "flex-end", alignItems: "center", width: "100%",
           padding: "2px 5px", height: "100%",
           fontFamily: FONT, fontSize: "11px", color: "#000000",
           fontWeight: bold ? 700 : 400,
@@ -953,7 +953,7 @@ function FlowCell({
       ref={divRef}
       onClick={(e) => start(e)}
       style={{
-        display: "flex", justifyContent: "flex-end", alignItems: "center",
+        display: "flex", justifyContent: "flex-end", alignItems: "center", width: "100%",
         padding: "2px 7px", height: "100%",
         fontFamily: FONT, fontSize: big ? "14px" : "12px", color,
         fontWeight: bold ? 700 : 400,
