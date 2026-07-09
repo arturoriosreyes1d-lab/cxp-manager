@@ -236,6 +236,7 @@ export default function CxpApp({ user, onLogout }) {
   const [carteraTab, setCarteraTab] = useState("activas"); // "activas" | "pagadas" | "resumen"
   const [filtroGrupo, setFiltroGrupo] = useState("");
   const [filtroProveedores, setFiltroProveedores] = useState(new Set()); // multi-select
+  const [menuOculto, setMenuOculto] = useState(false);
   const [grupoPor, setGrupoPor] = useState("proveedor");
   const [grupo2, setGrupo2] = useState(""); // secondary grouping
   const [modalInv, setModalInv] = useState(null);
@@ -10213,8 +10214,15 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
 
   return (
     <div style={{display:"flex",height:"100vh",fontFamily:"'Inter','Segoe UI',sans-serif",background:C.cream,color:C.text,overflow:"hidden"}}>
+      {menuOculto && (
+        <button onClick={()=>setMenuOculto(false)} title="Mostrar menú" style={{position:"fixed",top:12,left:12,zIndex:5000,background:C.navy,color:"#fff",border:"none",borderRadius:8,width:36,height:36,cursor:"pointer",fontSize:18,boxShadow:"0 4px 14px rgba(0,0,0,0.25)"}}>☰</button>
+      )}
       {/* Sidebar */}
+      {!menuOculto && (
       <aside style={{width:220,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",padding:"24px 12px",flexShrink:0}}>
+        <div style={{display:"flex",justifyContent:"flex-end",marginBottom:6}}>
+          <button onClick={()=>setMenuOculto(true)} title="Ocultar menú" style={{background:"transparent",border:"none",cursor:"pointer",color:C.muted,fontSize:18,lineHeight:1,padding:"2px 6px"}}>«</button>
+        </div>
         <div style={{padding:"0 8px 16px",borderBottom:`1px solid ${C.border}`,marginBottom:12}}>
           {/* Logo de empresa */}
           <div style={{display:"flex",justifyContent:"center",marginBottom:10}}>
@@ -10295,6 +10303,7 @@ ${pagosProgramadosHoy.map(p => `• ${p.proveedor}: Adeuda $${fmt(p.importeAdeud
           </button>
         </div>
       </aside>
+      )}
 
       {/* Main */}
       <main style={{flex:1,overflowY:"auto",padding:32}}>

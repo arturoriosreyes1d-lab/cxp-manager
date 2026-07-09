@@ -1019,6 +1019,7 @@ export default function FlujoIngresos({
   const [hoverRow, setHoverRow] = useState(null);
   const [zoom, setZoom] = useState(1); // Zoom tipo Excel (Ctrl + rueda)
   const [hayPrevia, setHayPrevia] = useState(false); // ¿semana anterior con datos? (saldo inicial arrastrado)
+  const [mostrarProy, setMostrarProy] = useState(true); // ver/ocultar saldo inicial proyectado
   const tableScrollRef = useRef(null);
   const tableRef = useRef(null);
   const [exportando, setExportando] = useState(false);
@@ -1838,7 +1839,7 @@ export default function FlujoIngresos({
   const rowsWithData = data.rows.filter(r => r.amounts.some(a => a > 0)).length;
   // rowSpan de la columna Rubro fusionada — cubre sólo Saldo Inicial + filas de clientes visibles.
   // Totales, Plan y Proyección tienen sus propias celdas independientes.
-  const ingresoRubroSpan = 2 + Math.max(visibleRows.length, 1);
+  const ingresoRubroSpan = (mostrarProy ? 2 : 1) + Math.max(visibleRows.length, 1);
 
   // ─── IMPORTAR DE CXP ──────────────────────────────────────────
   // Lista de rubros disponibles (los 19 estándar) — el usuario elige
@@ -2122,6 +2123,8 @@ export default function FlujoIngresos({
           ))}
         </select>
 
+        <button onClick={() => setMostrarProy(v => !v)} title="Mostrar u ocultar el Saldo inicial proyectado" style={{ ...toolbarBtn(), padding: "6px 11px", fontSize: "12px", background: mostrarProy ? "#ffffff" : "#EEF2FF", color: C.text }}>{mostrarProy ? "Ocultar saldo proy." : "Ver saldo proy."}</button>
+
         <div style={{ color: C.textMuted, fontSize: "10px" }}>
           {visibleRows.length}/{rowsCount} · {rowsWithData} con movimiento
         </div>
@@ -2338,7 +2341,7 @@ export default function FlujoIngresos({
             </tr>
 
             {/* Saldo inicial PROYECTADO (con plan de cobranza) */}
-            <tr>
+            {mostrarProy && (<tr>
               <td style={baseCell}></td>
               <td style={{ ...baseCell, ...blockEnd, background: "#FFF3D6", padding: "2px 5px", fontStyle: "italic", color: "#7C5B00" }}>
                 Saldo inicial proyectado
@@ -2352,7 +2355,7 @@ export default function FlujoIngresos({
                 <AccountingCell value={calc.saldoInicialProy[0]} onChange={() => {}} readOnly />
               </td>
               <td style={baseCell}></td>
-            </tr>
+            </tr>)}
 
             {/* Clientes */}
             {visibleRows.length === 0 && (
