@@ -2054,12 +2054,13 @@ export default function FlujoIngresos({
       {/* Toolbar */}
       <div style={{
         display: "flex", alignItems: "center", gap: "12px",
-        padding: "12px 16px",
+        padding: "14px 46px",
+        margin: "-32px -32px 12px",
         borderBottom: `1px solid ${C.gridLine}`,
         fontFamily: FONT, fontSize: "13px",
         background: "#F8F8F8",
         flexWrap: "wrap",
-        position: "sticky", top: 0, zIndex: 1000,
+        position: "sticky", top: "-1px", zIndex: 1000,
         boxShadow: "0 2px 10px rgba(15,23,42,0.06)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
