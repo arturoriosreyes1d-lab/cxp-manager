@@ -2037,16 +2037,18 @@ export default function FlujoIngresos({
         fontFamily: FONT, fontSize: "13px",
         background: "#F8F8F8",
         flexWrap: "wrap",
+        position: "sticky", top: 0, zIndex: 100,
+        boxShadow: "0 2px 10px rgba(15,23,42,0.06)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
           <button onClick={() => setWeekStart(addDays(weekStart, -7))} style={toolbarBtn()} title="Semana anterior">
             <ChevronLeft size={13} />
           </button>
           <div style={{
-            padding: "3px 10px", background: "#ffffff",
-            border: `1px solid ${C.gridLine}`,
-            fontSize: "11px", fontWeight: 700,
-            minWidth: "170px", textAlign: "center",
+            padding: "8px 14px", background: C.headerBlue, color: "#ffffff",
+            borderRadius: 8, margin: "0 4px",
+            fontSize: "14px", fontWeight: 700,
+            minWidth: "190px", textAlign: "center",
           }}>{rangeLabel}</div>
           <button onClick={() => setWeekStart(addDays(weekStart, 7))} style={toolbarBtn()} title="Semana siguiente">
             <ChevronRight size={13} />
@@ -2058,28 +2060,26 @@ export default function FlujoIngresos({
           >Hoy</button>
         </div>
 
-        <div style={{ display: "flex", borderLeft: `1px solid ${C.gridLine}`, paddingLeft: "10px", gap: "2px" }}>
+        <div style={{ display: "flex", background: "#EEF2F7", borderRadius: 10, padding: 3, gap: 3 }}>
           {["todos", "Transporte", "TAS"].map(s => (
             <button
               key={s}
               onClick={() => setSegFilter(s)}
               style={{
-                ...toolbarBtn(),
-                padding: "6px 11px", fontSize: "12px",
-                background: segFilter === s ? C.headerBlue : "#ffffff",
-                color: segFilter === s ? "#ffffff" : C.text,
-                borderColor: segFilter === s ? C.headerBlueDark : C.gridLine,
-                fontWeight: segFilter === s ? 700 : 400,
-                textTransform: "capitalize",
+                border: "none", cursor: "pointer", fontFamily: FONT,
+                padding: "7px 14px", fontSize: "12px", borderRadius: 8,
+                background: segFilter === s ? C.headerBlue : "transparent",
+                color: segFilter === s ? "#ffffff" : C.textMuted,
+                fontWeight: 600, textTransform: "capitalize",
               }}
             >{s}</button>
           ))}
         </div>
 
         <div style={{
-          display: "flex", alignItems: "center",
+          display: "flex", alignItems: "center", flex: 1, minWidth: 220,
           background: "#ffffff", border: `1px solid ${C.gridLine}`,
-          paddingLeft: "6px",
+          borderRadius: 10, paddingLeft: "10px",
         }}>
           <Search size={11} style={{ color: C.textMuted }} />
           <input
@@ -2087,8 +2087,8 @@ export default function FlujoIngresos({
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar en todo (ingresos y egresos)…"
             style={{
-              padding: "6px 8px", outline: "none", border: "none",
-              width: "220px", fontFamily: FONT, fontSize: "13px",
+              padding: "9px 8px", outline: "none", border: "none",
+              flex: 1, width: "100%", fontFamily: FONT, fontSize: "13px",
               background: "transparent",
             }}
           />
@@ -2575,6 +2575,7 @@ export default function FlujoIngresos({
               // ── Filtrado: búsqueda global + solo con movimiento + día específico ──
               const impsRubroAll = (data.importados || []).filter(imp => (imp.rubro || "").trim().toUpperCase() === rubro.label.toUpperCase());
               const itemsVis = rubro.items.filter(item => {
+                if (segFilter !== "todos" && (item.segmento || "").toUpperCase() !== segFilter.toUpperCase()) return false;
                 const eg = data.egresos?.[item.id] || { amounts: [0,0,0,0,0], concepto: "" };
                 const total = eg.amounts.reduce((a, b) => a + (b || 0), 0);
                 if (soloMovimiento && !(total !== 0 || (eg.concepto && eg.concepto.trim()))) return false;
@@ -2587,6 +2588,7 @@ export default function FlujoIngresos({
                 return true;
               });
               const impsVis = impsRubroAll.filter(imp => {
+                if (segFilter !== "todos" && (imp.segmento || "").toUpperCase() !== segFilter.toUpperCase()) return false;
                 const total = (imp.amounts || [0,0,0,0,0]).reduce((a, b) => a + (b || 0), 0);
                 if (soloMovimiento && total === 0) return false;
                 if (diaFiltro != null && !(imp.amounts || [])[diaFiltro]) return false;
