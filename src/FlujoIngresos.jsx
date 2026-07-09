@@ -2250,7 +2250,7 @@ export default function FlujoIngresos({
         ref={tableScrollRef}
         style={{ padding: "16px", overflow: "auto" }}
       >
-        <div style={{ zoom, display: "inline-block" }}>
+        <div style={{ zoom, display: "inline-block", borderRadius: 14, overflow: "hidden", border: "0.5px solid #E4E8EF", boxShadow: "0 6px 20px rgba(15,23,42,0.06)" }}>
           <table ref={tableRef} style={{
             borderCollapse: "collapse", background: "#ffffff",
             fontFamily: FONT, color: C.text,
@@ -2516,23 +2516,19 @@ export default function FlujoIngresos({
 
             <tr><td colSpan={10} style={{ height: "6px", border: "none", background: "transparent", padding: 0 }}></td></tr>
 
-            {/* PROYECCION INGRESOS — cajón ámbar (proyección, igual que FLUJO PROYECTADO) */}
+            {/* PROYECCION INGRESOS — estilo B: línea fina ámbar arriba */}
             <tr>
               <td style={baseCell}></td>
               <td style={baseCell}></td>
               <td style={{
                 ...baseCell, textAlign: "right",
                 padding: "2px 5px", fontWeight: 700,
-                background: "#FFF4E0",
-                border: `1px solid #BFA060`,
+                borderTop: `2px solid #E0A93F`,
               }}>PROYECCION INGRESOS</td>
               {calc.proyeccionPerDay.map((p, i) => (
                 <td key={i} style={{
                   ...baseCell,
-                  background: "#FFF4E0",
-                  borderTop: `1px solid #BFA060`,
-                  borderBottom: `1px solid #BFA060`,
-                  borderRight: i === 4 ? `1px solid #BFA060` : "none",
+                  borderTop: `2px solid #E0A93F`,
                 }}>
                   <AccountingCell value={p} onChange={() => {}} readOnly bold big />
                 </td>
