@@ -2277,7 +2277,7 @@ export default function FlujoIngresos({
         ref={tableScrollRef}
         style={{ padding: "16px", overflow: "auto" }}
       >
-        <div style={{ zoom, display: "inline-block", borderRadius: 14, overflow: "hidden", border: "0.5px solid #E4E8EF", boxShadow: "0 6px 20px rgba(15,23,42,0.06)" }}>
+        <div style={{ zoom, display: "inline-block", borderRadius: 14, overflow: "hidden", border: "0.5px solid #E4E8EF", boxShadow: "0 6px 20px rgba(15,23,42,0.06)", position: "relative", zIndex: 0 }}>
           <table ref={tableRef} style={{
             borderCollapse: "collapse", background: "#ffffff",
             fontFamily: FONT, color: C.text,
