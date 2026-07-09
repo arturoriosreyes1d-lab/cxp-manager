@@ -549,7 +549,7 @@ function abreviarRubro(label) {
 function AccountingCell({
   value, onChange, cellId, autoFocusId, onAutoFocused, onNavigate,
   bold = false, readOnly = false, big = false, paid = false,
-  selected = false, onSelect, onModClick,
+  selected = false, onSelect, onModClick, onAltClick,
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -557,6 +557,7 @@ function AccountingCell({
   const divRef = useRef(null);
 
   const start = (e) => {
+    if (e && e.altKey && onAltClick) { e.preventDefault(); e.stopPropagation(); onAltClick(e); return; }
     if (e && (e.ctrlKey || e.metaKey || e.shiftKey) && onModClick) { e.preventDefault(); e.stopPropagation(); onModClick(e); return; }
     if (readOnly) {
       // Aunque sea solo lectura, queremos poder seleccionarla con flechas
@@ -1100,6 +1101,7 @@ export default function FlujoIngresos({
             importados: parsed.importados || [],
             compromisos: parsed.compromisos || [0, 0, 0, 0, 0],
             pagados: parsed.pagados || [],
+            egresosNombres: parsed.egresosNombres || {},
           });
         } else {
           setData(emptyWeek());
@@ -1282,6 +1284,9 @@ export default function FlujoIngresos({
     const current = d.egresos[egId] || { amounts: [0, 0, 0, 0, 0], concepto: "" };
     return { ...d, egresos: { ...d.egresos, [egId]: { ...current, concepto } } };
   });
+  const updateEgresoNombre = (itemId, nombre) => setData(d => ({
+    ...d, egresosNombres: { ...(d.egresosNombres || {}), [itemId]: nombre },
+  }));
   // Compromisos por día (importe comprometido a algo)
   const updateCompromiso = (idx, v) => setData(d => ({
     ...d,
@@ -2576,7 +2581,8 @@ export default function FlujoIngresos({
                 if (diaFiltro != null && !eg.amounts[diaFiltro]) return false;
                 if (search) {
                   const s = search.toLowerCase();
-                  if (!(item.proveedor || "").toLowerCase().includes(s) && !((eg.concepto || "").toLowerCase().includes(s))) return false;
+                  const nomBusq = (data.egresosNombres && data.egresosNombres[item.id]) || item.proveedor;
+                  if (!(nomBusq || "").toLowerCase().includes(s) && !((eg.concepto || "").toLowerCase().includes(s))) return false;
                 }
                 return true;
               });
@@ -2621,13 +2627,15 @@ export default function FlujoIngresos({
                         <tr key={`${rubro.id}-i-${item.id}`}>
                           {labelCell}
                           <td style={{ ...baseCell, ...outer(rIdx, { left: false, right: true }), padding: "2px 5px", fontSize: "11px" }}>{item.segmento || ""}</td>
-                          <td style={{ ...baseCell, ...outer(rIdx, { left: false, right: true }), padding: "2px 5px", fontSize: "11px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={item.proveedor}>{item.proveedor}</td>
+                          <td style={{ ...baseCell, ...outer(rIdx, { left: false, right: true }), padding: 0 }}>
+                            <TextCell value={(data.egresosNombres && data.egresosNombres[item.id]) || item.proveedor} onChange={v => updateEgresoNombre(item.id, v)} bold {...cellProps(`egnombre-${item.id}`)} />
+                          </td>
                           {[0,1,2,3,4].map(j => {
                             const cdEg = { tipo: "eg", id: item.id, dayIdx: j, monto: eg.amounts[j] };
                             const selEg = eg.amounts[j] ? isSelCelda(cdEg) : false;
                             return (
-                            <td key={j} style={{ ...baseCell, ...outer(rIdx, { left: false, right: j === 4 }), background: selEg ? "#DCEBFF" : dayBg, padding: 0, ...(selEg ? { outline: "2px solid #2F6BFF", outlineOffset: "-2px" } : {}) }}>
-                              <AccountingCell value={eg.amounts[j]} onChange={v => updateEgresoAmount(item.id, j, v)} onModClick={eg.amounts[j] ? () => toggleSelCelda(cdEg) : undefined} {...cellProps(`egreso-${item.id}-${j}`)} />
+                            <td key={j} title={eg.amounts[j] ? "Alt+clic: marcar pagado · Ctrl+clic: seleccionar" : undefined} style={{ ...baseCell, ...outer(rIdx, { left: false, right: j === 4 }), background: selEg ? "#DCEBFF" : dayBg, padding: 0, ...(selEg ? { outline: "2px solid #2F6BFF", outlineOffset: "-2px" } : {}) }}>
+                              <AccountingCell value={eg.amounts[j]} onChange={v => updateEgresoAmount(item.id, j, v)} onModClick={eg.amounts[j] ? () => toggleSelCelda(cdEg) : undefined} onAltClick={eg.amounts[j] ? () => togglePagado(`eg-${item.id}-${j}`) : undefined} paid={eg.amounts[j] ? isPagado(`eg-${item.id}-${j}`) : false} {...cellProps(`egreso-${item.id}-${j}`)} />
                             </td>
                             );
                           })}
