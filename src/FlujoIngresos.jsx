@@ -558,7 +558,7 @@ function AccountingCell({
 
   const start = (e) => {
     if (e && e.altKey && onAltClick) { e.preventDefault(); e.stopPropagation(); onAltClick(e); return; }
-    if (e && (e.ctrlKey || e.metaKey || e.shiftKey) && onModClick) { e.preventDefault(); e.stopPropagation(); onModClick(e); return; }
+    if (e && (e.ctrlKey || e.metaKey || e.shiftKey)) { e.preventDefault(); e.stopPropagation(); if (onModClick) onModClick(e); return; }
     if (readOnly) {
       // Aunque sea solo lectura, queremos poder seleccionarla con flechas
       if (onSelect && cellId) onSelect(cellId);
@@ -1321,6 +1321,28 @@ export default function FlujoIngresos({
     return prev.some(x => selKeyCelda(x) === k) ? prev.filter(x => selKeyCelda(x) !== k) : [...prev, cd];
   });
   const totalSel = selCeldas.reduce((a, c) => a + (c.monto || 0), 0);
+  // Selección por arrastre (Ctrl + arrastrar), estilo Excel
+  const dragSel = useRef({ active: false, mode: "add" });
+  const aplicarSel = (cd, mode) => setSelCeldas(prev => {
+    const k = selKeyCelda(cd);
+    const has = prev.some(x => selKeyCelda(x) === k);
+    if (mode === "add" && !has) return [...prev, cd];
+    if (mode === "remove" && has) return prev.filter(x => selKeyCelda(x) !== k);
+    return prev;
+  });
+  const onCeldaMouseDown = (e, cd) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    const mode = isSelCelda(cd) ? "remove" : "add";
+    dragSel.current = { active: true, mode };
+    aplicarSel(cd, mode);
+  };
+  const onCeldaMouseEnter = (cd) => { if (dragSel.current.active) aplicarSel(cd, dragSel.current.mode); };
+  useEffect(() => {
+    const up = () => { dragSel.current.active = false; };
+    window.addEventListener("mouseup", up);
+    return () => window.removeEventListener("mouseup", up);
+  }, []);
   const fmtMoneyMove = (n) => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const doMover = async (nuevaFecha) => {
@@ -2037,7 +2059,7 @@ export default function FlujoIngresos({
         fontFamily: FONT, fontSize: "13px",
         background: "#F8F8F8",
         flexWrap: "wrap",
-        position: "sticky", top: 0, zIndex: 100,
+        position: "sticky", top: 0, zIndex: 1000,
         boxShadow: "0 2px 10px rgba(15,23,42,0.06)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
@@ -2636,8 +2658,8 @@ export default function FlujoIngresos({
                             const cdEg = { tipo: "eg", id: item.id, dayIdx: j, monto: eg.amounts[j] };
                             const selEg = eg.amounts[j] ? isSelCelda(cdEg) : false;
                             return (
-                            <td key={j} title={eg.amounts[j] ? "Alt+clic: marcar pagado · Ctrl+clic: seleccionar" : undefined} style={{ ...baseCell, ...outer(rIdx, { left: false, right: j === 4 }), background: selEg ? "#DCEBFF" : dayBg, padding: 0, ...(selEg ? { outline: "2px solid #2F6BFF", outlineOffset: "-2px" } : {}) }}>
-                              <AccountingCell value={eg.amounts[j]} onChange={v => updateEgresoAmount(item.id, j, v)} onModClick={eg.amounts[j] ? () => toggleSelCelda(cdEg) : undefined} onAltClick={eg.amounts[j] ? () => togglePagado(`eg-${item.id}-${j}`) : undefined} paid={eg.amounts[j] ? isPagado(`eg-${item.id}-${j}`) : false} {...cellProps(`egreso-${item.id}-${j}`)} />
+                            <td key={j} onMouseDown={eg.amounts[j] ? (e) => onCeldaMouseDown(e, cdEg) : undefined} onMouseEnter={eg.amounts[j] ? () => onCeldaMouseEnter(cdEg) : undefined} title={eg.amounts[j] ? "Alt+clic: pagado · Ctrl+clic o Ctrl+arrastrar: seleccionar" : undefined} style={{ ...baseCell, ...outer(rIdx, { left: false, right: j === 4 }), background: selEg ? "#DCEBFF" : dayBg, padding: 0, ...(selEg ? { outline: "2px solid #2F6BFF", outlineOffset: "-2px" } : {}) }}>
+                              <AccountingCell value={eg.amounts[j]} onChange={v => updateEgresoAmount(item.id, j, v)} onAltClick={eg.amounts[j] ? () => togglePagado(`eg-${item.id}-${j}`) : undefined} paid={eg.amounts[j] ? isPagado(`eg-${item.id}-${j}`) : false} {...cellProps(`egreso-${item.id}-${j}`)} />
                             </td>
                             );
                           })}
@@ -2673,7 +2695,7 @@ export default function FlujoIngresos({
                           const cdImp = { tipo: "imp", id: imp.id, dayIdx: dIdx, monto: valImp, invoiceId: imp.invoiceId, paymentId: imp.paymentId };
                           const selImp = tienePagoImp ? isSelCelda(cdImp) : false;
                           return (
-                            <td key={dIdx} onClick={tienePagoImp ? (e) => { if (e.ctrlKey || e.metaKey) toggleSelCelda(cdImp); else setDetalleImp(imp); } : undefined} title={tienePagoImp ? "Clic: detalle · Ctrl+clic: seleccionar para mover" : undefined} style={{ ...baseCell, ...outer(rIdx, { left: false, right: dIdx === 4 }), padding: 0, cursor: tienePagoImp ? "pointer" : "default", background: selImp ? "#DCEBFF" : undefined, ...(selImp ? { outline: "2px solid #2F6BFF", outlineOffset: "-2px" } : {}) }}>
+                            <td key={dIdx} onMouseDown={tienePagoImp ? (e) => onCeldaMouseDown(e, cdImp) : undefined} onMouseEnter={tienePagoImp ? () => onCeldaMouseEnter(cdImp) : undefined} onClick={tienePagoImp ? (e) => { if (e.altKey) togglePagado(`imp-${imp.id}`); else if (!e.ctrlKey && !e.metaKey) setDetalleImp(imp); } : undefined} title={tienePagoImp ? "Clic: detalle · Ctrl+clic/arrastrar: seleccionar · Alt+clic: pagado" : undefined} style={{ ...baseCell, ...outer(rIdx, { left: false, right: dIdx === 4 }), padding: 0, cursor: tienePagoImp ? "pointer" : "default", background: selImp ? "#DCEBFF" : undefined, ...(selImp ? { outline: "2px solid #2F6BFF", outlineOffset: "-2px" } : {}) }}>
                               <AccountingCell value={valImp} onChange={() => {}} readOnly paid={tienePagoImp && isPagado(`imp-${imp.id}`)} />
                             </td>
                           );
