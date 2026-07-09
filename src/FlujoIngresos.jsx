@@ -2550,7 +2550,7 @@ export default function FlujoIngresos({
             {/*   HEADER DE EGRESOS — mismo azul rey                 */}
             {/* ═══════════════════════════════════════════════════ */}
             <tr>
-              <th style={headerCell}>Rubro</th>
+              <th style={{ ...headerCell, borderTopLeftRadius: 12 }}>Rubro</th>
               <th style={headerCell}>Segmento</th>
               <th style={{ ...headerCell, ...blockEndHeader }}>Egresos</th>
               {weekDates.map((d, i) => (
@@ -2560,7 +2560,7 @@ export default function FlujoIngresos({
                 >{dayLabel(d)}</th>
               ))}
               <th style={{ ...headerCell, ...blockEndHeader }}>Total</th>
-              <th style={headerCell}>Concepto</th>
+              <th style={{ ...headerCell, borderTopRightRadius: 12 }}>Concepto</th>
             </tr>
 
             {/* ═══════════════════════════════════════════════════ */}
@@ -2928,16 +2928,12 @@ export default function FlujoIngresos({
               <td style={{
                 ...baseCell, textAlign: "right",
                 padding: "2px 5px", fontWeight: 700, fontSize: "12px",
-                background: "#FFF4E0",
-                border: `1px solid #BFA060`,
+                borderTop: `2px solid #E0A93F`,
               }}>FLUJO PROYECTADO</td>
               {calc.flujoProyectadoPerDay.map((v, i) => (
                 <td key={i} style={{
                   ...baseCell,
-                  background: "#FFF4E0",
-                  borderTop: `1px solid #BFA060`,
-                  borderBottom: `1px solid #BFA060`,
-                  borderRight: i === 4 ? `1px solid #BFA060` : "none",
+                  borderTop: `2px solid #E0A93F`,
                 }}>
                   <FlowCell value={v} readOnly big />
                 </td>
