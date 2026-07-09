@@ -548,7 +548,7 @@ function abreviarRubro(label) {
 
 function AccountingCell({
   value, onChange, cellId, autoFocusId, onAutoFocused, onNavigate,
-  bold = false, readOnly = false, big = false,
+  bold = false, readOnly = false, big = false, paid = false,
   selected = false, onSelect,
 }) {
   const [editing, setEditing] = useState(false);
@@ -665,12 +665,12 @@ function AccountingCell({
         display: "flex", justifyContent: "flex-end", alignItems: "center",
         padding: "2px 7px", height: "100%", cursor: readOnly ? "default" : "text",
         fontFamily: FONT, fontSize: big ? "14px" : "12px", color: C.text,
-        fontWeight: bold ? 700 : 400,
+        fontWeight: (bold || paid) ? 700 : 400,
         userSelect: "none",
         ...selectedStyle,
       }}
     >
-      <span style={{ whiteSpace: "nowrap" }}>{"$" + fmtAccountingNumber(value)}</span>
+      <span style={{ whiteSpace: "nowrap" }}>{paid ? <span style={{ color: "#0E7A3B", marginRight: 3 }}>✓</span> : null}{"$" + fmtAccountingNumber(value)}</span>
     </div>
   );
 }
@@ -1021,6 +1021,7 @@ export default function FlujoIngresos({
   const tableScrollRef = useRef(null);
   const tableRef = useRef(null);
   const [exportando, setExportando] = useState(false);
+  const [detalleImp, setDetalleImp] = useState(null);
 
   const weekKey = formatDateKey(weekStart);
 
@@ -1091,6 +1092,7 @@ export default function FlujoIngresos({
             egresos: parsed.egresos || {},
             importados: parsed.importados || [],
             compromisos: parsed.compromisos || [0, 0, 0, 0, 0],
+            pagados: parsed.pagados || [],
           });
         } else {
           setData(emptyWeek());
@@ -1290,6 +1292,14 @@ export default function FlujoIngresos({
     }));
     setNewName(""); setAdding(false);
   };
+  // ── Pagos marcados (control diario) ──
+  const isPagado = (key) => (data.pagados || []).includes(key);
+  const togglePagado = (key) => setData(d => {
+    const s = new Set(d.pagados || []);
+    if (s.has(key)) s.delete(key); else s.add(key);
+    return { ...d, pagados: Array.from(s) };
+  });
+
   const loadDemo = () => setData(demoWeek());
   const clearWeek = () => {
     if (confirm("¿Borrar toda la información de esta semana?")) setData(emptyWeek());
@@ -1418,6 +1428,15 @@ export default function FlujoIngresos({
         if (diaFiltro != null && !(r.amounts || [])[diaFiltro]) return false;
         return true;
       }), [data.rows, segFilter, search, soloMovimiento, diaFiltro]);
+
+  // Índice de facturas por id (para el detalle del importe importado)
+  const invoicesById = useMemo(() => {
+    const m = new Map();
+    Object.entries(invoices || {}).forEach(([mon, list]) => {
+      (list || []).forEach(inv => m.set(inv.id, { ...inv, moneda: inv.moneda || mon }));
+    });
+    return m;
+  }, [invoices]);
 
   // ── Navegación con teclado (estilo Excel) ──
   // Grid 2D con 9 columnas: [Segmento, Cliente, L, M, M, J, V, Total, Concepto]
@@ -2537,11 +2556,15 @@ export default function FlujoIngresos({
                             <button onClick={() => removeImported(imp.id)} title="Quitar esta importación (no afecta CxP)" style={{ background: "transparent", border: "none", color: "#B91C1C", cursor: "pointer", fontSize: 12, padding: "0 4px", lineHeight: 1 }}>✕</button>
                           </div>
                         </td>
-                        {[0,1,2,3,4].map(dIdx => (
-                          <td key={dIdx} style={{ ...baseCell, ...outer(rIdx, { left: false, right: dIdx === 4 }), padding: 0 }}>
-                            <AccountingCell value={imp.amounts[dIdx]} onChange={() => {}} readOnly />
-                          </td>
-                        ))}
+                        {[0,1,2,3,4].map(dIdx => {
+                          const valImp = imp.amounts[dIdx];
+                          const tienePagoImp = valImp && valImp !== 0;
+                          return (
+                            <td key={dIdx} onClick={tienePagoImp ? () => setDetalleImp(imp) : undefined} title={tienePagoImp ? "Ver detalle / marcar pagado" : undefined} style={{ ...baseCell, ...outer(rIdx, { left: false, right: dIdx === 4 }), padding: 0, cursor: tienePagoImp ? "pointer" : "default" }}>
+                              <AccountingCell value={valImp} onChange={() => {}} readOnly paid={tienePagoImp && isPagado(`imp-${imp.id}`)} />
+                            </td>
+                          );
+                        })}
                         <td style={{ ...baseCell, ...outer(rIdx, { left: false, right: true }), padding: 0 }}>
                           <AccountingCell value={rowTotalImp} onChange={() => {}} readOnly bold />
                         </td>
@@ -2846,6 +2869,59 @@ export default function FlujoIngresos({
       </div>
 
       {/* MODAL DE IMPORTACIÓN DE CXP */}
+      {detalleImp && (() => {
+        const imp = detalleImp;
+        const inv = invoicesById.get(imp.invoiceId) || {};
+        const dIdx = (imp.amounts || []).findIndex(a => a && a !== 0);
+        const fechaPago = dIdx >= 0 ? dayLabel(weekDates[dIdx]) : "";
+        const monto = (imp.amounts || []).reduce((a, b) => a + (b || 0), 0);
+        const total = inv.total != null ? inv.total : monto;
+        const pagadoInv = inv.montoPagado != null ? inv.montoPagado : 0;
+        const pendiente = Math.max(0, total - pagadoInv);
+        const key = `imp-${imp.id}`;
+        const yaPagado = isPagado(key);
+        const money = (n) => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const th = { padding: "8px 10px", fontWeight: 700, fontSize: 10, whiteSpace: "nowrap", color: C.textMuted, textAlign: "left" };
+        const td = { padding: "10px", fontSize: 12 };
+        return (
+          <div onClick={(e) => { if (e.target === e.currentTarget) setDetalleImp(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, fontFamily: FONT }}>
+            <div style={{ background: "#fff", borderRadius: 14, width: "100%", maxWidth: 940, maxHeight: "88vh", overflow: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.4)" }}>
+              <div style={{ padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: `1px solid ${C.gridLine}` }}>
+                <div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: C.headerBlue }}>Detalle — {imp.proveedor}</div>
+                  <div style={{ fontSize: 12, color: C.textMuted, marginTop: 4 }}>Fecha: <b>{fechaPago}</b> &nbsp;·&nbsp; Total: <b style={{ color: "#185FA5" }}>{money(monto)}</b></div>
+                </div>
+                <button onClick={() => setDetalleImp(null)} style={{ background: "#F1F5F9", border: "none", borderRadius: 8, width: 30, height: 30, cursor: "pointer", fontSize: 16, color: "#555" }}>×</button>
+              </div>
+              <div style={{ padding: "12px 20px", overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums" }}>
+                  <thead><tr style={{ borderBottom: `1px solid ${C.gridLine}` }}>
+                    {["FOLIO", "CONCEPTO", "CLASIFICACIÓN", "FECHA", "TOTAL", "PAGADO", "PAGO PROGRAMADO", "IMPORTE PENDIENTE", "VENCIMIENTO", "MONEDA"].map(h => (<th key={h} style={th}>{h}</th>))}
+                  </tr></thead>
+                  <tbody>
+                    <tr style={{ borderBottom: `1px solid ${C.gridLine}` }}>
+                      <td style={{ ...td, fontWeight: 700 }}>{imp.folio || "—"}</td>
+                      <td style={td}>{imp.concepto || inv.concepto || "—"}</td>
+                      <td style={td}><span style={{ background: "#EAF2FF", color: "#16305C", borderRadius: 6, padding: "2px 8px", fontSize: 11 }}>{inv.clasificacion || imp.rubro || "—"}</span></td>
+                      <td style={{ ...td, whiteSpace: "nowrap" }}>{inv.fecha || "—"}</td>
+                      <td style={{ ...td, textAlign: "right" }}>{money(total)}</td>
+                      <td style={{ ...td, textAlign: "right", color: "#0E7A3B" }}>{money(pagadoInv)}</td>
+                      <td style={{ ...td, textAlign: "right", color: "#B8860B", fontWeight: 700 }}>{money(monto)}</td>
+                      <td style={{ ...td, textAlign: "right" }}>{pendiente ? money(pendiente) : "—"}</td>
+                      <td style={{ ...td, whiteSpace: "nowrap" }}>{inv.vencimiento || "—"}</td>
+                      <td style={td}><span style={{ background: "#EEF2FF", color: "#3730A3", borderRadius: 6, padding: "2px 8px", fontSize: 11 }}>{imp.moneda || inv.moneda || "MXN"}</span></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ padding: "14px 20px", borderTop: `1px solid ${C.gridLine}`, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                <button onClick={() => togglePagado(key)} style={{ background: yaPagado ? "#DCEFE3" : "#0E7A3B", color: yaPagado ? "#0E7A3B" : "#fff", border: yaPagado ? "1px solid #0E7A3B" : "none", padding: "10px 18px", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: FONT }}>{yaPagado ? "✓ Pagado (clic para desmarcar)" : "Marcar como pagado"}</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {importModalOpen && (
         <ImportCxpModal
           pagos={pagosImportables}
