@@ -1024,6 +1024,7 @@ export default function FlujoIngresos({
   const [detalleImp, setDetalleImp] = useState(null);
 
   const weekKey = formatDateKey(weekStart);
+  const hoyKey = formatDateKey(new Date());  // para resaltar la columna de HOY
 
   // Cierre BANCARIO de una semana: saldo inicial + ingresos reales − egresos
   // (SIN plan de cobranza). Es el que se arrastra como saldo inicial de la
@@ -2174,7 +2175,7 @@ export default function FlujoIngresos({
               {weekDates.map((d, i) => (
                 <th
                   key={i}
-                  style={{ ...headerCell, ...(i === 4 ? blockEndHeader : {}) }}
+                  style={{ ...headerCell, ...(i === 4 ? blockEndHeader : {}), ...(formatDateKey(d) === hoyKey ? { backgroundColor: "#0E7A3B" } : {}) }}
                 >{dayLabel(d)}</th>
               ))}
               <th style={{ ...headerCell, ...blockEndHeader }}>Total</th>
@@ -2458,7 +2459,7 @@ export default function FlujoIngresos({
               {weekDates.map((d, i) => (
                 <th
                   key={`eg-h-${i}`}
-                  style={{ ...headerCell, ...(i === 4 ? blockEndHeader : {}) }}
+                  style={{ ...headerCell, ...(i === 4 ? blockEndHeader : {}), ...(formatDateKey(d) === hoyKey ? { backgroundColor: "#0E7A3B" } : {}) }}
                 >{dayLabel(d)}</th>
               ))}
               <th style={{ ...headerCell, ...blockEndHeader }}>Total</th>
@@ -2551,7 +2552,6 @@ export default function FlujoIngresos({
                           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontWeight: 600, fontSize: "11px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{imp.proveedor}</div>
-                              <div style={{ fontSize: "10px", color: C.textMuted }}>{imp.folio}</div>
                             </div>
                             <button onClick={() => removeImported(imp.id)} title="Quitar esta importación (no afecta CxP)" style={{ background: "transparent", border: "none", color: "#B91C1C", cursor: "pointer", fontSize: 12, padding: "0 4px", lineHeight: 1 }}>✕</button>
                           </div>
@@ -2885,13 +2885,13 @@ export default function FlujoIngresos({
         const td = { padding: "10px", fontSize: 12 };
         return (
           <div onClick={(e) => { if (e.target === e.currentTarget) setDetalleImp(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, fontFamily: FONT }}>
-            <div style={{ background: "#fff", borderRadius: 14, width: "100%", maxWidth: 940, maxHeight: "88vh", overflow: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.4)" }}>
-              <div style={{ padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: `1px solid ${C.gridLine}` }}>
+            <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 940, maxHeight: "88vh", overflow: "auto", boxShadow: "0 24px 70px rgba(0,0,0,0.45)" }}>
+              <div style={{ padding: "18px 20px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", background: C.headerBlue }}>
                 <div>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: C.headerBlue }}>Detalle — {imp.proveedor}</div>
-                  <div style={{ fontSize: 12, color: C.textMuted, marginTop: 4 }}>Fecha: <b>{fechaPago}</b> &nbsp;·&nbsp; Total: <b style={{ color: "#185FA5" }}>{money(monto)}</b></div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "#ffffff", letterSpacing: 0.2 }}>Detalle — {imp.proveedor}</div>
+                  <div style={{ fontSize: 12, color: "#9DB6E0", marginTop: 5 }}>Fecha: <b style={{ color: "#ffffff" }}>{fechaPago}</b> &nbsp;·&nbsp; Total: <b style={{ color: "#7FE0B0" }}>{money(monto)}</b></div>
                 </div>
-                <button onClick={() => setDetalleImp(null)} style={{ background: "#F1F5F9", border: "none", borderRadius: 8, width: 30, height: 30, cursor: "pointer", fontSize: 16, color: "#555" }}>×</button>
+                <button onClick={() => setDetalleImp(null)} style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 8, width: 30, height: 30, cursor: "pointer", fontSize: 16, color: "#ffffff" }}>×</button>
               </div>
               <div style={{ padding: "12px 20px", overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums" }}>
